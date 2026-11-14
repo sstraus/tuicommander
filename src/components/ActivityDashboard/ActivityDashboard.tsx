@@ -5,6 +5,7 @@ import { registerModal } from "../../stores/modalStack";
 import { rateLimitStore } from "../../stores/ratelimit";
 import { repositoriesStore } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
+import { getSessionConnection } from "../../transportRuntime";
 import {
 	effectiveActivityState,
 	isActivityWorking,
@@ -14,6 +15,7 @@ import {
 } from "../../utils/activitySnapshot";
 import { displayTask } from "../../utils/displayTask";
 import { navigateToTerminal } from "../../utils/navigateToTerminal";
+import { reconcileById } from "../../utils/reconcileById";
 import { getRepoColor } from "../../utils/repoColor";
 import { formatRelativeTime } from "../../utils/time";
 import { GlobeIcon } from "../GlobeIcon";
@@ -21,6 +23,7 @@ import { Button } from "../ui/Button";
 import { PanelWindowControls } from "../ui/PanelWindowControls";
 import { SubAgentIcon } from "../ui/SubAgentIcon";
 import s from "./ActivityDashboard.module.css";
+import { AgentHealthView } from "./AgentHealthView";
 
 export const statusClasses = {
 	rateLimited: s.statusRateLimited,
@@ -85,37 +88,15 @@ export type TerminalRow = {
 	subAgentTag: string | null;
 };
 
-/** Field-equality for a row. `status` is derived fresh on every build, so it is
- *  the one member that must be compared by value rather than by reference. */
-function sameRow(a: TerminalRow, b: TerminalRow): boolean {
-	for (const key of Object.keys(a) as Array<keyof TerminalRow>) {
-		if (key === "status") continue;
-		if (a[key] !== b[key]) return false;
-	}
-	return a.status.label === b.status.label && a.status.className === b.status.className;
-}
-
 /** Rows are rendered through a reference-keyed `<For>`, and both producers
  *  (the store memo below, the 1 Hz snapshot in panelAdapters/activity.tsx)
- *  rebuild every row object from scratch on every tick — so an untouched
- *  terminal's DOM subtree was torn down and recreated once a second, forever.
- *  Hand the previous rows back in: unchanged ones keep their identity, and when
- *  nothing at all moved `prev` is returned itself so the `<For>` does not re-run. */
+ *  rebuild every row object from scratch on every tick — see `reconcileById`. */
 export function reconcileTerminalRows(next: TerminalRow[], prev?: readonly TerminalRow[]): TerminalRow[] {
-	const prevById = prev ? new Map(prev.map((r) => [r.id, r])) : undefined;
-	const rows = next.map((r) => {
-		const old = prevById?.get(r.id);
-		return old && sameRow(old, r) ? old : r;
-	});
-	// Positional, not just per-id: two reused rows that swapped places are still
-	// a changed list, and handing back `prev` would silently keep the old order.
-	if (prev && prev.length === rows.length && rows.every((r, i) => r === prev[i])) {
-		return prev as TerminalRow[];
-	}
-	return rows;
+	return reconcileById(next, prev, (row) => row.id);
 }
 
 interface ActivityDashboardProps {
+	onOpenSession?: (sessionId: string, connectionId: string | null) => void;
 	onSelect?: (id: string) => void;
 	onPromote?: (id: string) => void;
 	/** When true, renders without overlay — used in detached panel windows. */
@@ -235,6 +216,17 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 			</div>
 
 			<div class={s.list}>
+				<AgentHealthView
+					onOpenSession={(sessionId, connectionId) => {
+						if (props.onOpenSession) {
+							props.onOpenSession(sessionId, connectionId);
+							return;
+						}
+						if ((getSessionConnection(sessionId) ?? null) !== connectionId) return;
+						const id = terminalsStore.findBySessionId(sessionId);
+						if (id) handleRowClick(id);
+					}}
+				/>
 				<Show when={terminals().length === 0}>
 					<div class={s.empty}>No active terminals</div>
 				</Show>

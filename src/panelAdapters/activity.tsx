@@ -10,6 +10,8 @@ import { invoke } from "../invoke";
 import type { PanelAdapter } from "../panelRouter";
 import { activityDashboardStore } from "../stores/activityDashboard";
 import { globalWorkspaceStore } from "../stores/globalWorkspace";
+import { terminalsStore } from "../stores/terminals";
+import { getSessionConnection } from "../transportRuntime";
 import {
 	type ActivitySnapshot,
 	buildActivitySnapshot,
@@ -74,6 +76,7 @@ const DetachedActivityDashboard: Component<{ params: URLSearchParams }> = () => 
 		<ActivityDashboard
 			embedded
 			terminals={rows}
+			onOpenSession={(sessionId, connectionId) => void emitAction("attention-session", { sessionId, connectionId })}
 			onSelect={(id) => void emitAction("navigate", { termId: id })}
 			onPromote={(id) => void emitAction("promote", { termId: id })}
 		/>
@@ -90,6 +93,15 @@ export const activityPanelAdapter: PanelAdapter = {
 	serialize: buildActivitySnapshot,
 	handleAction(action: string, data: unknown) {
 		const d = data as Record<string, unknown> | null;
+		if (action === "attention-session" && typeof d?.sessionId === "string") {
+			if ((getSessionConnection(d.sessionId) ?? null) !== d.connectionId) return;
+			const id = terminalsStore.findBySessionId(d.sessionId);
+			if (id) {
+				void invoke("focus_main_window");
+				navigateToTerminal(id);
+			}
+			return;
+		}
 		if (typeof d?.termId !== "string") return;
 		const termId = d.termId;
 		if (action === "navigate") {

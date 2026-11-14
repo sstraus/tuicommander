@@ -278,8 +278,10 @@
  padding-block: calc(var(--control-padding-x, 8px) / 2);
 }
 /* Shared intrinsic editor bounds; rich editors can retain their existing cap. */
-.autoGrow {
+.autoGrowMinimum, .autoGrow {
  min-height: var(--control-height, 36px);
+}
+.autoGrow {
  max-height: var(--auto-grow-max-height, calc(var(--control-height, 36px) * 3));
  overflow-y: auto;
 }
@@ -288,7 +290,7 @@
  resize: none;
 }
 @media (max-width: 600px) {
- .textareaCompact, .autoGrow { min-height: max(44px, var(--control-height, 36px)); }
+ .textareaCompact, .autoGrowMinimum, .autoGrow { min-height: max(44px, var(--control-height, 36px)); }
  .autoGrow { max-height: var(--auto-grow-max-height, calc(max(44px, var(--control-height, 36px)) * 3)); }
 }
 

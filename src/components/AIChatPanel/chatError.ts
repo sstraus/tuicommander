@@ -28,3 +28,12 @@ export function chatErrorView(message: string): ChatErrorView {
 	}
 	return { text: message, retryable: true, startNew: false };
 }
+
+/**
+ * ego 0.4.3 with no provider or model fails the first prompt with
+ * `no model: pass --model provider/model, set EGO_MODEL, or put model in a config file`
+ * (story 2595-4245 probe, 2026-11-06).
+ */
+export function isNoModelConfigured(message: string | null): boolean {
+	return message?.includes("no model: pass --model") === true;
+}

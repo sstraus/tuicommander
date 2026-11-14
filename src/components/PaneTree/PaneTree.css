@@ -303,3 +303,15 @@
   font-size: 13px;
   opacity: 0.5;
 }
+
+/* Where a dragged tab lands: half a pane for an edge, the whole pane for the center. */
+.pane-edge-drop-preview {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  transition: left 80ms ease, top 80ms ease, width 80ms ease, height 80ms ease;
+}

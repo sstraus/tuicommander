@@ -75,9 +75,12 @@ pub(super) fn complete_schema(tool: &mut Value) {
                     "orphan_cleanup_answer",
                     "branch_delete",
                     "progress_list",
+                    "get_settings",
+                    "set_settings",
                 ],
                 &["path"],
             );
+            required(&["set_settings"], &["settings"]);
             required(
                 &["branch_integration", "worktree_lifecycle", "branch_delete"],
                 &["branch"],
@@ -93,6 +96,7 @@ pub(super) fn complete_schema(tool: &mut Value) {
                 "repo_path",
                 "browser",
                 "script",
+                "result_offset",
                 "format",
                 "quality",
                 "max_long_edge",
@@ -103,7 +107,7 @@ pub(super) fn complete_schema(tool: &mut Value) {
                 .as_str()
                 .unwrap_or_default();
             schema["properties"]["url"]["description"] = json!(format!(
-                "{tab_url} For design_start/design_navigate: absolute HTTP(S) page URL; remote hosts require an extension host grant."
+                "{tab_url} For design_start/design_navigate: absolute HTTP(S) page URL; remote hosts require sidebar host consent."
             ));
             required(&["design_start"], &["session_id"]);
             required(
@@ -295,6 +299,127 @@ pub(super) fn advertise_schema(tool: &mut Value) {
         }
     }
     nested_unions(schema);
+    if tool["name"] == "workflow" {
+        // The private schema still validates every typed action before dispatch.
+        tool["inputSchema"]["properties"]["input"] = json!({
+            "type": "object",
+            "description": "Action payload. The server returns typed field errors for invalid input."
+        });
+    }
+    prune_unreferenced_defs(&mut tool["inputSchema"]);
+    if tool["name"]
+        .as_str()
+        .is_some_and(|name| TYPE_NOTES_IN_HELP.contains(&name))
+        && let Some(defs) = tool["inputSchema"]
+            .get_mut("$defs")
+            .and_then(Value::as_object_mut)
+    {
+        for def in defs.values_mut() {
+            walk_type_notes(def, "", &mut |_, _| {}, true);
+        }
+    }
+}
+
+/// Tools whose advertised schema leaves its `$defs` notes to `help`: the
+/// `workflow` schema sits at the 65,536-byte `search_tools` budget, and the
+/// notes are prose, not contract. The private validation schema keeps them.
+pub(super) const TYPE_NOTES_IN_HELP: &[&str] = &["workflow"];
+
+/// Visit every `description` keyword of a schema, keyed by its JSON path, and
+/// remove it when `strip`. Keys of a `properties` map are field names, so a
+/// field named `description` is never touched.
+fn walk_type_notes(schema: &mut Value, path: &str, note: &mut dyn FnMut(&str, &str), strip: bool) {
+    let Some(object) = schema.as_object_mut() else {
+        return;
+    };
+    let description = if strip {
+        object.remove("description")
+    } else {
+        object.get("description").cloned()
+    };
+    if let Some(text) = description.as_ref().and_then(Value::as_str) {
+        note(path, text);
+    }
+    for (keyword, child) in object.iter_mut() {
+        match keyword.as_str() {
+            "properties" | "$defs" | "definitions" | "patternProperties" => {
+                if let Some(map) = child.as_object_mut() {
+                    for (name, field) in map.iter_mut() {
+                        walk_type_notes(field, &format!("{path}/{name}"), note, strip);
+                    }
+                }
+            }
+            "anyOf" | "oneOf" | "allOf" | "prefixItems" => {
+                if let Some(items) = child.as_array_mut() {
+                    for (index, item) in items.iter_mut().enumerate() {
+                        walk_type_notes(item, &format!("{path}/{index}"), note, strip);
+                    }
+                }
+            }
+            "items" | "additionalProperties" | "not" => {
+                walk_type_notes(child, path, note, strip);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The `$defs` notes a tool's advertised schema leaves out, keyed `Type/field`.
+pub(super) fn type_notes(tool: &Value) -> serde_json::Map<String, Value> {
+    let mut notes = serde_json::Map::new();
+    let mut schema = tool["inputSchema"]["$defs"].clone();
+    if let Some(defs) = schema.as_object_mut() {
+        for (name, def) in defs.iter_mut() {
+            walk_type_notes(
+                def,
+                name,
+                &mut |path, text| {
+                    notes.insert(path.to_owned(), json!(text));
+                },
+                false,
+            );
+        }
+    }
+    notes
+}
+
+/// Keep only the root `$defs` that the advertised schema still reaches. A capability denial
+/// removes action variants, and their subtypes must not stay advertised through `$defs`.
+fn prune_unreferenced_defs(schema: &mut Value) {
+    let Some(Value::Object(mut defs)) = schema.as_object_mut().and_then(|o| o.remove("$defs"))
+    else {
+        return;
+    };
+    fn collect_refs(value: &Value, refs: &mut Vec<String>) {
+        match value {
+            Value::Object(object) => {
+                if let Some(name) = object
+                    .get("$ref")
+                    .and_then(Value::as_str)
+                    .and_then(|target| target.strip_prefix("#/$defs/"))
+                {
+                    refs.push(name.to_owned());
+                }
+                object.values().for_each(|child| collect_refs(child, refs));
+            }
+            Value::Array(array) => array.iter().for_each(|child| collect_refs(child, refs)),
+            _ => {}
+        }
+    }
+    let mut pending = Vec::new();
+    collect_refs(schema, &mut pending);
+    let mut reached = std::collections::BTreeSet::new();
+    while let Some(name) = pending.pop() {
+        if reached.insert(name.clone())
+            && let Some(definition) = defs.get(&name)
+        {
+            collect_refs(definition, &mut pending);
+        }
+    }
+    defs.retain(|name, _| reached.contains(name));
+    if !defs.is_empty() {
+        schema["$defs"] = Value::Object(defs);
+    }
 }
 
 struct Contract {
@@ -319,6 +444,64 @@ static CONTRACTS: LazyLock<HashMap<String, Contract>> = LazyLock::new(|| {
         .collect()
 });
 
+type ValidationError = jsonschema::ValidationError<'static>;
+
+fn union_branches(error: &ValidationError) -> Option<&Vec<Vec<ValidationError>>> {
+    match error.kind() {
+        jsonschema::error::ValidationErrorKind::OneOfNotValid { context }
+        | jsonschema::error::ValidationErrorKind::AnyOf { context } => Some(context),
+        _ => None,
+    }
+}
+
+/// Deepest instance location this error or a nested union branch reaches.
+fn reach(error: &ValidationError) -> usize {
+    let own = error.instance_path().as_str().matches('/').count();
+    union_branches(error)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(reach)
+        .fold(own, usize::max)
+}
+
+/// A failed union only says that no branch matched. Rank each branch by whether its tag matched
+/// (no `const` failure of its own), then by how deep it got into the instance. When exactly one
+/// branch leads, report its errors, so a malformed or missing field of the matched action keeps
+/// its path. Mismatched branches fail on their tag, and untagged branches at equal depth tie.
+fn most_specific(error: jsonschema::ValidationError<'_>) -> Vec<ValidationError> {
+    let error = error.to_owned();
+    let Some(branches) = union_branches(&error) else {
+        return vec![error];
+    };
+    let ranks: Vec<(bool, usize)> = branches
+        .iter()
+        .map(|branch| {
+            let tag_matched = !branch.iter().any(|error| {
+                matches!(
+                    error.kind(),
+                    jsonschema::error::ValidationErrorKind::Constant { .. }
+                )
+            });
+            (tag_matched, branch.iter().map(reach).max().unwrap_or(0))
+        })
+        .collect();
+    let best = ranks.iter().copied().max().unwrap_or_default();
+    let mut leaders = (0..ranks.len()).filter(|index| ranks[*index] == best);
+    let (Some(index), None) = (leaders.next(), leaders.next()) else {
+        return vec![error];
+    };
+    match error.into_parts().kind {
+        jsonschema::error::ValidationErrorKind::OneOfNotValid { mut context }
+        | jsonschema::error::ValidationErrorKind::AnyOf { mut context } => context
+            .swap_remove(index)
+            .into_iter()
+            .flat_map(most_specific)
+            .collect(),
+        _ => unreachable!("union error kind checked above"),
+    }
+}
+
 pub(super) fn validate(name: &str, args: &Value) -> Option<Value> {
     let contract = CONTRACTS.get(name)?;
     let validator = match &contract.validator {
@@ -331,6 +514,7 @@ pub(super) fn validate(name: &str, args: &Value) -> Option<Value> {
     };
     let violations: Vec<Value> = validator
         .iter_errors(args)
+        .flat_map(most_specific)
         .take(16)
         .map(|error| {
             let schema_path = error.schema_path().to_string();
@@ -342,16 +526,86 @@ pub(super) fn validate(name: &str, args: &Value) -> Option<Value> {
             })
         })
         .collect();
-    (!violations.is_empty()).then(|| json!({
+    if violations.is_empty() {
+        return semantic_violation(name, args);
+    }
+    Some(rejection(name, violations))
+}
+
+/// The JSON schema is one flat object for every action, so a field legal for another action
+/// (`count` on `list`) passes it and only the typed parser rejects it. That is still the caller's
+/// malformed arguments, not a server fault: answer it with the same contract error.
+/// `help` is a catalogue action answered after the role gates, not an automation action.
+fn semantic_violation(name: &str, args: &Value) -> Option<Value> {
+    if name != "automations" || args["action"] == "help" {
+        return None;
+    }
+    let message = crate::automations::api::parse(args.clone()).err()?;
+    Some(rejection(
+        name,
+        vec![json!({"path":"","schema_path":"","constraint":null,"message":message})],
+    ))
+}
+
+fn rejection(name: &str, violations: Vec<Value>) -> Value {
+    json!({
         "error": format!("{name}: {}: {}", violations[0]["path"].as_str().unwrap_or(""), violations[0]["message"].as_str().unwrap_or("invalid arguments")),
         "code":"invalid_arguments", "effect":"not_started", "outcome":"rejected",
         "retryable":false, "repair":{"retry_after_correction":true}, "violations":violations
-    }))
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Catches: union expansion naming an arbitrary branch when no action tag matched, so an
+    /// unknown action is reported as a broken field of an unrelated action.
+    #[test]
+    fn unknown_nested_action_keeps_the_union_violation() {
+        let error = validate(
+            "workflow",
+            &json!({"action":"neutral","input":{"action":"no_such_action"}}),
+        )
+        .unwrap();
+        assert_eq!(error["code"], "invalid_arguments");
+        let paths: Vec<&str> = error["violations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|violation| violation["path"].as_str().unwrap())
+            .collect();
+        assert!(
+            paths.iter().all(|path| path.len() <= "/input".len()),
+            "{error}"
+        );
+    }
+
+    /// Catches: a matched action whose own field is missing being reported as the generic union
+    /// failure (with the whole union as its constraint) instead of the missing field.
+    #[test]
+    fn matched_action_with_a_missing_field_names_that_field() {
+        let error = validate(
+            "workflow",
+            &json!({"action":"neutral","input":{"action":"publish","id":"d"}}),
+        )
+        .unwrap();
+        assert!(
+            error["violations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|violation| {
+                    let message = violation["message"].as_str().unwrap();
+                    violation["path"] == "/input"
+                        && message.contains("expected_revision")
+                        && message.contains("required")
+                }),
+            "{error}"
+        );
+        let bytes = serde_json::to_vec(&error).unwrap().len();
+        assert!(bytes < 4096, "{bytes} bytes: {error}");
+    }
 
     /// Catches: agent task actions accept a missing or non-string task handle before dispatch.
     #[test]

@@ -18,7 +18,7 @@ import { appLogger } from "./stores/appLogger";
 import { getDebugSnapshot, listDebugSnapshots } from "./stores/debugRegistry";
 import { pluginStore } from "./stores/pluginStore";
 import { terminalsStore } from "./stores/terminals";
-import { clearFreezes, getFreezes, startFreezeDetector } from "./utils/freezeDetector";
+import { clearFreezes, getFreezes, startFreezeDetector, stopFreezeDetector } from "./utils/freezeDetector";
 import { isPerfDebug, setPerfDebug } from "./utils/perfDebug";
 
 export function initDebugGlobals(): void {
@@ -146,6 +146,7 @@ export function initDebugGlobals(): void {
 		setPerfDebug(on: boolean) {
 			setPerfDebug(on);
 			if (on) startFreezeDetector();
+			else stopFreezeDetector();
 			return isPerfDebug();
 		},
 

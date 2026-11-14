@@ -7,6 +7,7 @@
 use serde_json::{Value, json};
 
 use super::claude::{AdapterStats, MAX_TEXT_CHARS, cap_strings, clean};
+use crate::agent_question::{Row, questions_text};
 
 #[derive(Default)]
 pub(crate) struct CodexAdapter {
@@ -84,6 +85,39 @@ impl CodexAdapter {
                 Vec::new()
             }
         }
+    }
+}
+
+/// What one rollout row means for the question ledger (`agent_question`). Read
+/// apart from `CodexAdapter`, which stays completed-only: an open call is never
+/// a chat row.
+pub(crate) fn question_rows(line: &str) -> Vec<Row> {
+    let Ok(row) = serde_json::from_str::<Value>(line.trim()) else {
+        return Vec::new();
+    };
+    let payload = &row["payload"];
+    let call_id = || payload["call_id"].as_str().map(str::to_owned);
+    match (row["type"].as_str(), payload["type"].as_str()) {
+        (Some("response_item"), Some("function_call"))
+            if payload["name"] == "request_user_input" =>
+        {
+            let arguments = match &payload["arguments"] {
+                Value::String(text) => serde_json::from_str(text).unwrap_or(Value::Null),
+                other => other.clone(),
+            };
+            let text = questions_text(&arguments["questions"]);
+            match call_id() {
+                Some(id) if !text.is_empty() => vec![Row::Open { id, text }],
+                _ => Vec::new(),
+            }
+        }
+        (Some("response_item"), Some("function_call_output")) => {
+            call_id().map(Row::Settled).into_iter().collect()
+        }
+        (Some("event_msg"), Some("task_started" | "task_complete" | "turn_aborted")) => {
+            vec![Row::TurnEnded]
+        }
+        _ => Vec::new(),
     }
 }
 

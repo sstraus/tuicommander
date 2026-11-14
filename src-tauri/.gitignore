@@ -11,3 +11,6 @@
 
 # cargo-mutants output (make mutants)
 /mutants.out*/
+
+# Downloaded by scripts/fetch-vulkan-loader.py for the Windows installer.
+/windows/vulkan/

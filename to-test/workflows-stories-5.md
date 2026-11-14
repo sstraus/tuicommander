@@ -1,0 +1,3 @@
+# To Test — Workflows, stories, plans and Design Mode (5)
+
+- [ ] After an authorized manual Rust rebuild/restart, open the catalog workflow designer on a throwaway GitHub repository, open "New from template: GitHub PR review", set the model profile, model and effort of both model activities and save. Confirm the graph shows the snapshot, the parallel review and verification, the condition, the operator question and the publication; publish it and enable a pull_request binding for the repository. Open a PR and push twice while the first run is active: only the latest head gets one COMMENT review pinned to its commit, and the review does not start another run (#3035-1def).

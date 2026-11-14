@@ -9,8 +9,9 @@ import { Button } from "./Button";
 import "./markdown-content.css";
 import { type Component, createEffect, createMemo, Index, onCleanup, Show } from "solid-js";
 import { appLogger } from "../../stores/appLogger";
+import { isHandlerLink } from "../../utils/handlerLink";
 import { type MarkdownSegment, type StreamSplit, splitStream } from "../../utils/incrementalMarkdown";
-import { handleOpenUrl } from "../../utils/openUrl";
+import { handleOpenUrl, openConfirmedLink } from "../../utils/openUrl";
 import { rewriteLocalImages } from "../../utils/repoImageUrl";
 import { stripAnsi } from "../../utils/stripAnsi";
 import {
@@ -585,7 +586,9 @@ export const ContentRenderer: Component<ContentRendererProps> = (props) => {
 				)
 			)
 		) {
-			appLogger.debug("app", "Blocked Markdown link scheme", { href });
+			// A custom-scheme link opens with its system handler only after the owner confirms it.
+			if (isHandlerLink(href)) void openConfirmedLink(href);
+			else appLogger.debug("app", "Blocked Markdown link scheme", { href });
 		} else if (props.onLinkClick) {
 			void Promise.resolve(props.onLinkClick(href)).then((opened) => {
 				if (opened !== false) return;

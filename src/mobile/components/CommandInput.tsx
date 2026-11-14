@@ -3,10 +3,12 @@ import { Button } from "../../components/ui";
 import { uploadAttachment } from "../../services/uploadAttachment";
 import { appLogger } from "../../stores/appLogger";
 import { chatViewStore } from "../../stores/chatView";
+import { terminalPromptDraft } from "../../stores/terminalPromptDraft";
 import { toastsStore } from "../../stores/toasts";
 import { HttpRpcError, rpc } from "../../transport";
 import { spacedUrlPaste } from "../../utils/pastedUrl";
-import { sendCommand, waitForAgentEnterGap } from "../../utils/sendCommand";
+import { promptKeyAction } from "../../utils/promptKeybinding";
+import { agentInputPayload, sendCommand, waitForAgentEnterGap } from "../../utils/sendCommand";
 import { sendNativeChoice } from "../../utils/sendNativeChoice";
 import { useBrowserDictation } from "../useBrowserDictation";
 import { useKeyboardCorrection } from "../useKeyboardCorrection";
@@ -58,6 +60,7 @@ interface CommandInputProps {
 
 export function CommandInput(props: CommandInputProps) {
 	const keyboardCorrection = useKeyboardCorrection();
+	const promptDraft = createMemo(() => terminalPromptDraft(props.sessionId));
 	// Offer a restored dictated draft without writing on mount. The PTY may have
 	// changed while this client was away; reconcile it on the first explicit edit/send.
 	const restoredPartial = loadDictationPartial(props.sessionId);
@@ -265,7 +268,13 @@ export function CommandInput(props: CommandInputProps) {
 	function syncNativeDraft(newText: string): Promise<unknown> {
 		const delta = computeInputDelta(syncedText ?? props.ptyInputLine ?? restoredPartial, newText);
 		syncedText = newText;
-		return delta ? writePty(delta) : lastInputWrite;
+		if (!delta) return lastInputWrite;
+		// A long unframed write loses all but the tail of its first read (#2915).
+		// Frame the inserted text only; the backspaces stay plain key events.
+		// DEFERRED (2026-11-08) — an agent may collapse a framed paste into one
+		// placeholder, so a later mid-text edit can over-delete; needs live evidence.
+		const erased = delta.length - delta.replace(/^\x7f+/, "").length;
+		return writePty(delta.slice(0, erased) + agentInputPayload(delta.slice(erased), props.agentType));
 	}
 
 	function parkChatDraft(): Promise<unknown> {
@@ -307,12 +316,21 @@ export function CommandInput(props: CommandInputProps) {
 	}
 
 	async function attachFile(file: File): Promise<void> {
+		const sessionId = props.sessionId;
 		setUploading(file.name);
 		try {
-			const receipt = await uploadAttachment(file, { kind: "pty", id: props.sessionId });
+			const receipt = await uploadAttachment(file, { kind: "pty", id: sessionId });
 			if (receipt.notice) toastsStore.add("Attachment access", receipt.notice, "warn", true);
-			// DEFERRED (2026-10-19) — upload completion still edits the live draft;
-			// changing sessions during upload needs a separate draft-ownership contract.
+			// The textarea now holds another session's draft: never add this path to it.
+			if (props.sessionId !== sessionId) {
+				toastsStore.add(
+					"Attachment not added",
+					`The session changed during the upload. The file is at @${receipt.path}`,
+					"warn",
+					true,
+				);
+				return;
+			}
 			const current = textareaEl?.value ?? value();
 			const next = `${current}${current && !/\s$/.test(current) ? " " : ""}@${receipt.path}`;
 			setValue(next);
@@ -400,6 +418,15 @@ export function CommandInput(props: CommandInputProps) {
 		);
 	}
 
+	function restoreParkedAfterSend(sessionId: string) {
+		if (props.sessionId !== sessionId || (textareaEl?.value ?? value())) return;
+		const owner = terminalPromptDraft(sessionId);
+		if (!owner.parked()) return;
+		owner.restoreAfterSend();
+		if (textareaEl) textareaEl.value = owner.text();
+		updateInput(owner.text());
+	}
+
 	async function send() {
 		sendTrace.record("send");
 		const text = (textareaEl?.value ?? value()).trim();
@@ -439,6 +466,7 @@ export function CommandInput(props: CommandInputProps) {
 						textareaEl.style.height = "auto";
 					}
 				}
+				restoreParkedAfterSend(sessionId);
 			} catch (error) {
 				rollback();
 				toastsStore.add(
@@ -484,6 +512,7 @@ export function CommandInput(props: CommandInputProps) {
 				}
 				setValue("");
 				if (textareaEl) textareaEl.value = "";
+				restoreParkedAfterSend(sessionId);
 			} catch (err) {
 				rollback();
 				let msg = err instanceof Error ? err.message : String(err);
@@ -531,8 +560,21 @@ export function CommandInput(props: CommandInputProps) {
 			await waitForAgentEnterGap(agentType);
 			await retryWrite(() => rpc("write_pty", { sessionId, data: "\r" }));
 			setCodexNotesMode(false);
+			// The restored draft is a live PTY write: keep it out of the Enter's read.
+			await waitForAgentEnterGap(agentType);
+			restoreParkedAfterSend(sessionId);
 		} catch (err) {
 			rollback();
+			// The PTY still holds the typed line. Keep the composer and the sync
+			// baseline on it, or the next edit is typed onto the stale command.
+			if (!(textareaEl?.value ?? value())) {
+				syncedText = text;
+				setValue(text);
+				if (textareaEl) {
+					textareaEl.value = text;
+					autoResize();
+				}
+			}
 			const msg = err instanceof Error ? err.message : String(err);
 			appLogger.error("network", `Failed to send command after retries: ${msg}`);
 			toastsStore.add("Send failed", `Could not send command: ${msg}`, "error", true);
@@ -540,6 +582,20 @@ export function CommandInput(props: CommandInputProps) {
 	}
 
 	function handleKeyDown(e: KeyboardEvent) {
+		if (e.isComposing || e.keyCode === 229) return;
+		if (promptKeyAction(e) === "park") {
+			e.preventDefault();
+			e.stopPropagation();
+			if (e.repeat || submitting() || props.sessionExists === false) return;
+			browserDictation.cancel();
+			const owner = promptDraft();
+			owner.set(textareaEl?.value ?? value());
+			owner.parkOrSwap();
+			const next = owner.text();
+			if (textareaEl) textareaEl.value = next;
+			updateInput(next);
+			return;
+		}
 		if (props.sessionExists === false) {
 			e.preventDefault();
 			return;
@@ -556,7 +612,7 @@ export function CommandInput(props: CommandInputProps) {
 			requestInputKey("Tab");
 			return;
 		}
-		if (e.key === "Enter" && !e.shiftKey) {
+		if (promptKeyAction(e) === "send") {
 			e.preventDefault();
 			send();
 		}

@@ -888,6 +888,30 @@ describe("terminalsStore", () => {
 			});
 		});
 
+		// catches: after a model-driven open moves Boss to another repo, Back skips
+		// the terminal he was working in and lands one step older
+		it("back_returns_to_the_current_terminal_after_a_model_driven_move", () => {
+			testInScope(() => {
+				const [a, b] = addActivated(2);
+				store.noteModelNavigation();
+				expect(store.getHistoryTarget("back")).toBe(b);
+				expect(store.stepHistory("back")).toBe(b);
+				store.setActive(b);
+				expect(store.getHistoryTarget("back")).toBe(a);
+				expect(store.state.history).toEqual([b, a]);
+			});
+		});
+
+		// catches: a user activation after the model move still treats Back as "return"
+		it("a_user_activation_clears_the_model_driven_step", () => {
+			testInScope(() => {
+				const [a, b] = addActivated(2);
+				store.noteModelNavigation();
+				store.setActive(b);
+				expect(store.getHistoryTarget("back")).toBe(a);
+			});
+		});
+
 		// catches: unbounded history growth
 		it("keeps_only_the_ten_most_recent_distinct_terminals", () => {
 			testInScope(() => {

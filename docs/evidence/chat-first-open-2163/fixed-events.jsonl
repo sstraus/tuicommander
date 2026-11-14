@@ -1,0 +1,109 @@
+{"kind":"visibility","state":"hidden"}
+{"kind":"load","standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":844}
+{"kind":"tap","label":"Chat","trusted":true}
+{"kind":"snapshot-parse","elapsedMs":0,"updates":2000}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=0","headersMs":17,"bodyMs":1,"elapsedMs":18,"bytes":481442}
+{"kind":"snapshot-consumer","elapsedMs":366,"layoutMs":159,"layoutReads":1}
+{"kind":"chat","elapsedMs":405,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"visibility","state":"hidden"}
+{"kind":"visibility","state":"visible"}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=2000&epoch=1","headersMs":48,"bodyMs":1,"elapsedMs":49,"bytes":87}
+{"kind":"resume","elapsedMs":51,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=2000&epoch=1","headersMs":5,"bodyMs":0,"elapsedMs":5,"bytes":87}
+{"kind":"tap","label":"CLI","trusted":true}
+{"kind":"cli","elapsedMs":58,"entryCount":0,"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"tap","label":"Chat","trusted":true}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=0","headersMs":86,"bodyMs":3,"elapsedMs":89,"bytes":481442}
+{"kind":"snapshot-parse","elapsedMs":0,"updates":2000}
+{"kind":"snapshot-consumer","elapsedMs":507,"layoutMs":182,"layoutReads":1}
+{"kind":"chat","elapsedMs":617.0000000000036,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=2000&epoch=1","headersMs":3,"bodyMs":0,"elapsedMs":3,"bytes":87}
+{"kind":"tap","label":"CLI","trusted":true}
+{"kind":"cli","elapsedMs":83,"entryCount":0,"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"visibility","state":"hidden"}
+{"kind":"load","standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":844}
+{"kind":"tap","label":"Chat","trusted":true}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=0","headersMs":66,"bodyMs":8,"elapsedMs":74,"bytes":481442}
+{"kind":"snapshot-parse","elapsedMs":1,"updates":2000}
+{"kind":"snapshot-consumer","elapsedMs":587.0000000000005,"layoutMs":188,"layoutReads":1}
+{"kind":"chat","elapsedMs":686,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"visibility","state":"hidden"}
+{"kind":"visibility","state":"visible"}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=2000&epoch=1","headersMs":74.00000000000091,"bodyMs":0,"elapsedMs":74.00000000000091,"bytes":87}
+{"kind":"resume","elapsedMs":81.99999999999909,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=2000&epoch=1","headersMs":3,"bodyMs":0,"elapsedMs":3,"bytes":87}
+{"kind":"tap","label":"CLI","trusted":true}
+{"kind":"cli","elapsedMs":40.99999999999818,"entryCount":0,"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"tap","label":"Chat","trusted":true}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=0","headersMs":6,"bodyMs":1.999999999998181,"elapsedMs":7.999999999998181,"bytes":481442}
+{"kind":"snapshot-parse","elapsedMs":0,"updates":2000}
+{"kind":"snapshot-consumer","elapsedMs":376.9999999999982,"layoutMs":162,"layoutReads":1}
+{"kind":"chat","elapsedMs":418,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=2000&epoch=1","headersMs":3,"bodyMs":0,"elapsedMs":3,"bytes":87}
+{"kind":"tap","label":"CLI","trusted":true}
+{"kind":"cli","elapsedMs":40,"entryCount":0,"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"load","standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":844}
+{"kind":"tap","label":"Chat","trusted":true}
+{"kind":"snapshot-parse","elapsedMs":0,"updates":2000}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=0","headersMs":6,"bodyMs":1,"elapsedMs":7,"bytes":481442}
+{"kind":"snapshot-consumer","elapsedMs":371,"layoutMs":165,"layoutReads":1}
+{"kind":"chat","elapsedMs":406,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"visibility","state":"hidden"}
+{"kind":"visibility","state":"visible"}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=2000&epoch=1","headersMs":59,"bodyMs":2,"elapsedMs":61,"bytes":87}
+{"kind":"resume","elapsedMs":64,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=2000&epoch=1","headersMs":2,"bodyMs":1,"elapsedMs":3,"bytes":87}
+{"kind":"tap","label":"CLI","trusted":true}
+{"kind":"cli","elapsedMs":39.00000000000182,"entryCount":0,"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"tap","label":"Chat","trusted":true}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=0","headersMs":9,"bodyMs":1.999999999998181,"elapsedMs":10.999999999998181,"bytes":481442}
+{"kind":"snapshot-parse","elapsedMs":0,"updates":2000}
+{"kind":"snapshot-consumer","elapsedMs":370,"layoutMs":167,"layoutReads":1}
+{"kind":"chat","elapsedMs":407.0000000000018,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=2000&epoch=1","headersMs":4,"bodyMs":0,"elapsedMs":4,"bytes":87}
+{"kind":"tap","label":"CLI","trusted":true}
+{"kind":"cli","elapsedMs":122,"entryCount":0,"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"visibility","state":"hidden"}
+{"kind":"load","standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":844}
+{"kind":"tap","label":"Chat","trusted":true}
+{"kind":"snapshot-parse","elapsedMs":1,"updates":2000}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=0","headersMs":5,"bodyMs":1,"elapsedMs":6,"bytes":481442}
+{"kind":"snapshot-consumer","elapsedMs":368,"layoutMs":160,"layoutReads":1}
+{"kind":"chat","elapsedMs":399,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"visibility","state":"hidden"}
+{"kind":"visibility","state":"visible"}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=2000&epoch=1","headersMs":60,"bodyMs":0,"elapsedMs":60,"bytes":87}
+{"kind":"resume","elapsedMs":63,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=2000&epoch=1","headersMs":1.999999999998181,"bodyMs":1,"elapsedMs":2.999999999998181,"bytes":87}
+{"kind":"tap","label":"CLI","trusted":true}
+{"kind":"cli","elapsedMs":42,"entryCount":0,"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"tap","label":"Chat","trusted":true}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=0","headersMs":4,"bodyMs":2,"elapsedMs":6,"bytes":481442}
+{"kind":"snapshot-parse","elapsedMs":0,"updates":2000}
+{"kind":"snapshot-consumer","elapsedMs":379,"layoutMs":163,"layoutReads":1}
+{"kind":"chat","elapsedMs":407.9999999999982,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=2000&epoch=1","headersMs":3,"bodyMs":0,"elapsedMs":3,"bytes":87}
+{"kind":"tap","label":"CLI","trusted":true}
+{"kind":"cli","elapsedMs":54.99999999999636,"entryCount":0,"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"visibility","state":"hidden"}
+{"kind":"load","standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":844}
+{"kind":"tap","label":"Chat","trusted":true}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=0","headersMs":5,"bodyMs":2,"elapsedMs":7,"bytes":481442}
+{"kind":"snapshot-parse","elapsedMs":0,"updates":2000}
+{"kind":"snapshot-consumer","elapsedMs":405,"layoutMs":167,"layoutReads":1}
+{"kind":"chat","elapsedMs":448,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"visibility","state":"hidden"}
+{"kind":"visibility","state":"visible"}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=2000&epoch=1","headersMs":48,"bodyMs":0,"elapsedMs":48,"bytes":87}
+{"kind":"resume","elapsedMs":51,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=2000&epoch=1","headersMs":3,"bodyMs":0,"elapsedMs":3,"bytes":87}
+{"kind":"tap","label":"CLI","trusted":true}
+{"kind":"cli","elapsedMs":46,"entryCount":0,"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"tap","label":"Chat","trusted":true}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=0","headersMs":6,"bodyMs":2,"elapsedMs":8,"bytes":481442}
+{"kind":"snapshot-parse","elapsedMs":0,"updates":2000}
+{"kind":"snapshot-consumer","elapsedMs":353,"layoutMs":157.99999999999818,"layoutReads":1}
+{"kind":"chat","elapsedMs":382.9999999999982,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/458017ce-0a37-4fe7-87be-7f73b103cdee/chat-view?from_seq=2000&epoch=1","headersMs":3,"bodyMs":0,"elapsedMs":3,"bytes":87}
+{"kind":"tap","label":"CLI","trusted":true}
+{"kind":"cli","elapsedMs":39,"entryCount":0,"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}

@@ -27,6 +27,7 @@ where
     let mut no_agent_configs_seen = false;
     let mut supervised_seen = false;
     let mut wait_for_restart_seen = false;
+    let mut no_automations_seen = false;
     let mut remote = tuicommander_lib::RemoteOptions::default();
     let mut args = args.into_iter().map(Into::into);
     while let Some(arg) = args.next() {
@@ -139,6 +140,13 @@ where
                 }
                 wait_for_restart_seen = true;
                 remote.wait_for_restart = true;
+            }
+            "--no-automations" => {
+                if no_automations_seen {
+                    anyhow::bail!("--no-automations may only be specified once");
+                }
+                no_automations_seen = true;
+                remote.automations = false;
             }
             _ => anyhow::bail!("Unknown argument: {arg}"),
         }
@@ -276,6 +284,15 @@ mod tests {
         assert_eq!(parsed.remote.bind, IpAddr::V4(Ipv4Addr::LOCALHOST));
         assert_eq!(parsed.remote.survive_secs, Some(1800));
         assert!(!parsed.remote.agent_configs);
+    }
+
+    // Catches: the flag being ignored, inverted, or accepted twice.
+    #[test]
+    fn no_automations_flag_disables_automations_and_defaults_on() {
+        assert!(parse_args(Vec::<String>::new()).unwrap().remote.automations);
+        let parsed = parse_args(["--no-automations"]).unwrap();
+        assert!(!parsed.remote.automations);
+        assert!(parse_args(["--no-automations", "--no-automations"]).is_err());
     }
 
     #[test]

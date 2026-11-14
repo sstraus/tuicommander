@@ -3,6 +3,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { createStore } from "solid-js/store";
 import { isTauri, rpc } from "../transport";
+import { installUpdate } from "../utils/installUpdate";
 import { compareAppVersion } from "../utils/semver";
 import { clearUpdateRestartMark, markUpdateRestart } from "../utils/updateRestart";
 import { appLogger } from "./appLogger";
@@ -259,7 +260,7 @@ function createUpdaterStore() {
 			try {
 				let contentLength = 0;
 				let downloaded = 0;
-				await pendingUpdate.downloadAndInstall((event) => {
+				await installUpdate(pendingUpdate, (event) => {
 					if (event.event === "Started") {
 						contentLength = (event.data as { contentLength?: number }).contentLength ?? 0;
 					} else if (event.event === "Progress") {

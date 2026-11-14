@@ -5,6 +5,7 @@ import { setLocale } from "../i18n";
 import { invoke } from "../invoke";
 import { settingNumberDefault } from "../services/settingsCatalogue";
 import { settingsRefresh } from "../services/settingsRefresh";
+import { HttpRpcError } from "../transport/http";
 import type { IssueFilterMode } from "../types";
 import { isAcpConfigured } from "../utils/acpAvailability";
 import { runSerializedConfigWrite, updateAppConfig } from "../utils/updateAppConfig";
@@ -587,7 +588,26 @@ function createSettingsStore() {
 			savedRender = renderedConfig(config);
 		} catch (err) {
 			appLogger.error("config", "Failed to save config", err);
+			if (err instanceof HttpRpcError && err.status === 403 && err.detail === "confirmation_required") {
+				await revertRefusedEdits();
+			}
 		}
+	}
+
+	/** PUT /config refuses a save that changes an owner-confirmed setting, whole.
+	 *  Keeping those edits pending would make every later save carry them and
+	 *  be refused too, so drop them and show the stored values again. */
+	async function revertRefusedEdits(): Promise<void> {
+		try {
+			applyConfig(await invoke<RustAppConfig>("load_config"), false);
+		} catch (err) {
+			appLogger.error("config", "Failed to reload settings after a refused save", err);
+		}
+		toastsStore.add(
+			"Settings not saved",
+			"A changed setting needs owner confirmation and cannot be saved from this browser. The edit was reverted.",
+			"warn",
+		);
 	}
 
 	/** Debounced save — coalesces rapid setting changes into a single persist */

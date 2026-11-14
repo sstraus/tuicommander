@@ -39,7 +39,7 @@ async function capture() {
             const d=frame.contentDocument;
             d.querySelectorAll('body > details').forEach(el=>el.open=true);
             const rect=el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}};
-            const groups=[d.querySelector('header .actions'),d.querySelector('#grant-capture').parentElement,d.querySelector('#server-list'),d.querySelector('footer'),d.querySelector('#errors .card'),d.querySelector('#cards .card')];
+            const groups=[d.querySelector('header .actions'),d.querySelector('#grant-host').parentElement,d.querySelector('#server-list'),d.querySelector('footer'),d.querySelector('#errors .card'),d.querySelector('#cards .card')];
             return {width:frame.clientWidth,overflow:d.documentElement.scrollWidth,
               summaries:[...d.querySelectorAll('body > details > summary')].map(rect),
               groups:groups.map(el=>({name:el.id||el.className||el.tagName,box:rect(el),evidence:el.querySelector(':scope > details')?rect(el.querySelector(':scope > details')):null,buttons:[...el.querySelectorAll('button')].map(button=>({text:button.textContent,...rect(button)}))}))};

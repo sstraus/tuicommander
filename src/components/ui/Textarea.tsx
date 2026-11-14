@@ -7,10 +7,12 @@ export type TextareaProps = JSX.TextareaHTMLAttributes<HTMLTextAreaElement> & {
 	autoGrow?: boolean;
 	/** One-control-height minimum for an editor whose owner manages expansion. */
 	compact?: boolean;
+	/** Native editor inside a composer whose shell owns its border and focus. */
+	embedded?: boolean;
 };
 
 export function Textarea(props: TextareaProps) {
-	const [local, rest] = splitProps(props, ["class", "classList", "autoGrow", "compact", "ref"]);
+	const [local, rest] = splitProps(props, ["class", "classList", "autoGrow", "compact", "embedded", "ref"]);
 	let element: HTMLTextAreaElement | undefined;
 	const resize = () => {
 		if (!element) return;
@@ -50,12 +52,12 @@ export function Textarea(props: TextareaProps) {
 				element = node;
 				if (typeof local.ref === "function") local.ref(node);
 			}}
-			data-form-control
+			data-form-control={local.embedded ? undefined : true}
 			class={cx(
-				s.control,
-				s.textarea,
-				(local.compact || local.autoGrow) && s.textareaCompact,
-				local.autoGrow && s.textareaAutoGrow,
+				!local.embedded && s.control,
+				!local.embedded && s.textarea,
+				!local.embedded && (local.compact || local.autoGrow) && s.textareaCompact,
+				!local.embedded && local.autoGrow && s.textareaAutoGrow,
 				local.class,
 			)}
 			classList={local.classList}

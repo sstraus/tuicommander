@@ -22,7 +22,7 @@ pub enum ReflowMode {
     HistoryOnly,
 }
 
-impl<T: GridCell + Default + PartialEq> Grid<T> {
+impl<T: GridCell + Default + PartialEq + Clone> Grid<T> {
     /// Resize the grid's width and/or height.
     pub fn resize<D>(&mut self, reflow: ReflowMode, lines: usize, columns: usize)
     where
@@ -219,7 +219,7 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
                 let mut target = self.cursor.point.sub(self, Boundary::Cursor, num_wrapped);
 
                 // Clamp to the last column, if no content was reflown with the cursor.
-                if target.column.0 == 0 && row.is_clear() {
+                if target.column.0 == 0 && row.is_blank() {
                     self.cursor.input_needs_wrap = true;
                     target = target.sub(self, Boundary::Cursor, 1);
                 }
@@ -229,7 +229,7 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
                 // this will always be either `0` or `1`.
                 let line_delta = self.cursor.point.line - target.line;
 
-                if row.is_clear() {
+                if row.is_blank() {
                     last_row.reflow_wrap = row.reflow_wrap;
                     if line_delta != 0 {
                         continue;
@@ -243,7 +243,7 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
                 }
 
                 cursor_line_delta += line_delta.0 as usize;
-            } else if row.is_clear() {
+            } else if row.is_blank() {
                 last_row.reflow_wrap = row.reflow_wrap;
 
                 if i < self.display_offset {
@@ -291,9 +291,22 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
 
         // Reverse iterator and fill all rows that are still too short.
         let mut new_raw = Vec::with_capacity(reversed.len());
-        for mut row in reversed.drain(..).rev() {
+        for (k, mut row) in reversed.drain(..).enumerate().rev() {
             if row.len() < columns {
-                row.grow(columns);
+                // Background padding dropped by a narrower reflow reaches the new
+                // right edge again (story 2780-e44d). Not for alt-screen rows.
+                let fill = match reversed_idx.get(k) {
+                    Some(&i) if reflow_for(i) && row.edge_padding_trimmed => row
+                        .last()
+                        .filter(|c| c.is_blank() && !c.is_empty())
+                        .cloned(),
+                    _ => None,
+                };
+                match fill {
+                    Some(fill) => row.grow_with(columns, &fill),
+                    None => row.grow(columns),
+                }
+                row.edge_padding_trimmed = false;
             }
             new_raw.push(row);
         }
@@ -350,6 +363,13 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
                     row.append_front(buffered);
                 }
             }
+
+            // Background padding that reached the old right edge keeps reaching the
+            // right edge of the last row it wraps into (story 2780-e44d).
+            let edge_fill = row
+                .last()
+                .filter(|c| c.is_blank() && !c.is_empty())
+                .cloned();
 
             loop {
                 // Remove all cells which require reflowing.
@@ -447,9 +467,15 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
                     }
 
                     // Make sure new row is at least as long as new width.
-                    let occ = wrapped.len();
+                    let mut occ = wrapped.len();
                     if occ < columns {
-                        wrapped.resize_with(columns, T::default);
+                        match &edge_fill {
+                            Some(fill) => {
+                                wrapped.resize(columns, fill.clone());
+                                occ = columns;
+                            }
+                            None => wrapped.resize_with(columns, T::default),
+                        }
                     }
                     row = Row::from_vec(wrapped, occ);
 

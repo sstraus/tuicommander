@@ -1,0 +1,847 @@
+{
+  "version": 1,
+  "capabilities": [
+    {
+      "id": "A01",
+      "source_row": "| A01 | Start or resume an agent with a complete brief, parent identity and optional isolated worktree. | `tools/agents/tuic-spawn.sh`, `tools/agents/spawn-roles` | Manual, each assignment | In use: README; role admission, resume, brief validation and child registration are implemented; policy mismatch noted in I4. |",
+      "preservation_row": "| A01 | Complete brief, resume, parent and workspace | K Author + daemon launch/profile/workspace contract | WF04 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "A02",
+      "source_row": "| A02 | Deliver work to an idle agent, or send mail when it is busy; resolve its stable name. | `tools/agents/tuic-say.sh` | Each assignment or course change | In use: `operations/agent-work.md` requires this delivery path. |",
+      "preservation_row": "| A02 | Idle delivery/busy mail and stable name | K managed delivery effect + peer identity; payload receipt not idle inference | WF04 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "A03",
+      "source_row": "| A03 | Run a long command outside the turn and wake the caller with its exit result. | `tools/agents/tuic-bg.sh`, `tools/agents/bg_wakes.py` | Commands over one minute | In use: managed rules require it; wake receipts protect children from premature closure. |",
+      "preservation_row": "| A03 | Long command completion wake | K Run command async effect + cursor notification | WF05, WF12 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "A04",
+      "source_row": "| A04 | Serialize ownership changes and recover interrupted child closure or checkout renames. | `tools/agents/child_state.py` | Spawn, associate, reconcile, close | In use: spawn, cleanup and child wrappers call the locked atomic writer. |",
+      "preservation_row": "| A04 | Atomic ownership/close/rename recovery | K lifecycle transaction + canonical workspace identity | WF04 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "A05",
+      "source_row": "| A05 | Distinguish pre-existing checkout changes from work written by the child or a named other owner. | `tools/agents/checkout_baseline.py` | Before spawn; handover and shared-checkout edits | In use: spawn snapshots/binds entries; child and landing writers use the baseline. |",
+      "preservation_row": "| A05 | Checkout baseline attribution | K workspace baseline and named writer ownership | WF04, WF07 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "A06",
+      "source_row": "| A06 | Close an agent only after recording its successor; protect unsaved work and running test apps. | `tools/agents/child-close.sh` | After RESULT | In use: calls the durable close transaction and checks agent-test processes. |",
+      "preservation_row": "| A06 | Successor before close, protect dirt/test apps | K close transaction and owned-process gate | WF04 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "A07",
+      "source_row": "| A07 | Record a next action while reusing a child, without pretending the new brief was delivered. | `tools/agents/child-continue.sh` | After RESULT | In use: explicitly prints \u201cNOT delivered\u201d; A02 still sends the work. |",
+      "preservation_row": "| A07 | Continue without false delivery claim | K continuation intent and separate delivered receipt | WF04 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "A08",
+      "source_row": "| A08 | Close finished idle children but keep blocked children, protected sessions and live background work. | `tools/agents/close-idle.sh` | Pump housekeeping; default idle window 15 minutes | In use: `pump_housekeep.py` calls it. |",
+      "preservation_row": "| A08 | Idle child housekeeping with protections | K maintenance close policy; R shell idle sweeper as scheduler | WF04, WF16B |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "A09",
+      "source_row": "| A09 | Show live, missing and stalled sessions, including terminal tails and old background jobs. | `tools/agents/tuic-status.sh` | Resume, pump, manual diagnosis | In use: `--json`, `--dead`, `--stalled`; unknown inventory is not treated as a dead roster. |",
+      "preservation_row": "| A09 | Live/missing/stalled/background inventory | K run incident/attempt/session projection; unknown inventory preserved | WF12 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "A10",
+      "source_row": "| A10 | Find an ego child\u2019s saved conversation and the recorded reason for its last stop. | `tools/agents/ego-children.sh` | Restart recovery and idle diagnosis | In use: resume procedure and pump cause reporting select it. |",
+      "preservation_row": "| A10 | Ego conversation and stop recovery | K attempt conversation/stop references + resume inspector | WF04, WF12 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "A11",
+      "source_row": "| A11 | Ask one read-only advisor, or ask three independent advisors the same precise question. | `tools/agents/tuic-consult.sh`, `tools/agents/tuic-triumvirate.sh` | Manual, justified unresolved decisions | Partial: consult logging exists; global escalation restrictions still apply, and advisor availability was not checked. |",
+      "preservation_row": "| A11 | One or three independent advisors | K bounded Author Fork/all-Join consultation under global routing | WF02, WF06 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "A12",
+      "source_row": "| A12 | Audit Claude agent token use and elapsed time by agent and story. | `tools/agents/agent-cost.py` | Manual audit | Partial: parser covers Claude JSONL, not ego or Codex usage. |",
+      "preservation_row": "| A12 | Claude usage/time audit | K usage adapter retains JSONL audit, generic coverage added | WF12 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "E01",
+      "source_row": "| E01 | Batch mail and result files, retain delivery progress and route actionable events. | `tools/agents/coord-pump.sh` | Background while children work | In use: `orchestration.md` requires pump plus refresher; one pump per coordinator. |",
+      "preservation_row": "| E01 | Batch mail/results with delivery progress | K durable intake/disposition and cursors; R coordinator pump | WF10 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "E02",
+      "source_row": "| E02 | Offer an alternative watcher for mail, result files and child exits. | `tools/agents/mail-watch.sh` | Alternative background watcher | In use as a documented alternative, not an extra consumer of the same inbox; singleton and output guards are implemented. |",
+      "preservation_row": "| E02 | Alternative singleton watcher | K same durable event subscription; R second shell watcher implementation | WF10 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "E03",
+      "source_row": "| E03 | Refresh unfinished-work state without reading mail and wake on changed alarms. | `tools/agents/open-work-refresh.sh` | Beside the pump, refresh normally every ten minutes | In use: explicit two-loop rule in `orchestration.md`. |",
+      "preservation_row": "| E03 | Unfinished-work refresh/changed alarms | K portfolio projection + timer notifications; R refresher loop | WF10, WF16A |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "E04",
+      "source_row": "| E04 | Show owners, orphan work, pending landings, holds and publication debt in a bounded summary. | `tools/agents/pending.sh`, `tools/agents/open_work.py` | Refresh, terminal events, manual audit | In use: pending delegates to the computed snapshot; a full view is retained separately. |",
+      "preservation_row": "| E04 | Owners/orphans/holds/landings/publication debt | K portfolio open-work index and bounded/full views | WF10, WF12 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "E05",
+      "source_row": "| E05 | Read story stores, match ownership and collect state with bounded external commands. | `tools/agents/open_work_inventory.py`, `tools/agents/open_work_state.py` | During E04 | In use: imported by the snapshot collector. |",
+      "preservation_row": "| E05 | Bounded story/ownership collection | K story-store queries + bounded legacy inventory adapter | WF10 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "E06",
+      "source_row": "| E06 | Add coordinator queues, parked branches, dirty trunks and stashes that story status cannot show. | `tools/agents/open_work_sources.py`, `tools/agents/repo_key.py` | During refresh and parked-hold reads | In use: source collector and worktree tools share canonical repository keys. |",
+      "preservation_row": "| E06 | Parked queues, dirty trunks, stashes, repo keys | K canonical-key portfolio inventory/holds | WF10, WF16B |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "E07",
+      "source_row": "| E07 | Keep RESULT/BLOCKED reports open until a recorded disposition takes responsibility for them. | `tools/agents/open_work_lifecycle.py` | Refresh and hook-baseline installation | In use: joins durable pump events to close/continue dispositions. |",
+      "preservation_row": "| E07 | Reports remain open until disposition | K durable report lifecycle/successor transaction | WF04, WF10 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "E08",
+      "source_row": "| E08 | Retain Boss prompts and agent reports, then link each to a story or an explicit dismissal. | `tools/agents/intake.sh`, `tools/agents/open_work_intake.py`, `tools/agents/open_work_spool.py` | Prompt hooks, pump intake, manual classification | In use: both CLI hook files select intake; spool survives delivery bookkeeping. |",
+      "preservation_row": "| E08 | Boss prompt/report spool and classification | K durable intake \u2192 story/run/dismissal relation | WF10 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "E09",
+      "source_row": "| E09 | Select unseen result files and list unread results after a restart. | `tools/agents/pump_results.py`, `tools/agents/unread_results.py` | Pump scan and resume | In use: callers preserve delivery watermarks and report unknown reads. |",
+      "preservation_row": "| E09 | Unseen result/restart watermarks | K cursor replay + legacy result import; R filesystem scan authority | WF10, WF17 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "E10",
+      "source_row": "| E10 | Detect idle episodes, exclude live background runners and issue one scoped nudge per episode. | `tools/agents/idle_children.py` | Pump checks | In use: pump calls the candidate collector and tracks assignment generations. |",
+      "preservation_row": "| E10 | Idle episode scoped nudge, exclude background | K incident policy with episode/generation key | WF04, WF12 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "E11",
+      "source_row": "| E11 | Find free staffing capacity and eligible release items without a live owner. | `tools/agents/pump_staffing.py`, `tools/agents/pump_unassigned.py` | Pump checks | In use: pump calls both; the second reads only fresh cached alarms. |",
+      "preservation_row": "| E11 | Staffing capacity and unowned eligible work | K resource/dependency admission + ownerless alarm | WF05, WF10 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "E12",
+      "source_row": "| E12 | Run one locked maintenance pass for idle children, merged worktrees and gate dispatch. | `tools/agents/pump_housekeep.py` | Normally every ten minutes | In use: pump passes close-idle, sweep and gate tick commands. |",
+      "preservation_row": "| E12 | Locked maintenance sweep and gate tick | K timer maintenance Calls and resource locks | WF08, WF16A |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "E13",
+      "source_row": "| E13 | Apply only mechanical follow-up and testing-skill feedback edits with a restricted model worker. | `tools/agents/coord-pump-worker.sh` | Optional pump worker | Partial: narrow sandbox and escalation response exist; enabled use was not checked. |",
+      "preservation_row": "| E13 | Restricted mechanical follow-up worker | K optional scoped Author template with escalation receipt | WF04, WF16A |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "E14",
+      "source_row": "| E14 | Detect a ready batch that no integrator has taken. | `tools/agents/wave-idle.sh`, `tools/agents/wave_index.py` | Pump records events; Stop hook checks | In use: durable ready-wave index and Stop caller. |",
+      "preservation_row": "| E14 | Ready wave without integrator | K portfolio integration-queue alarm | WF07, WF10 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "E15",
+      "source_row": "| E15 | Find ownerless release stories and reject malformed claims that only Boss can unblock them. | `tools/agents/unowned-work.sh`, `tools/agents/waiting-boss-lint.sh` | Stop hook and parking checks | In use: syntax checks are implemented; the coordinator must still verify that the reason is genuinely Boss-only. |",
+      "preservation_row": "| E15 | Ownerless work and false Boss-only waits | K owner/hold classification Judge + reason evidence | WF10 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "S01",
+      "source_row": "| S01 | Avoid assigning a story already carried by an unmerged branch. | `tools/agents/story-claimed.sh` | Before spawn | In use: spawn invokes claim checks; gate-only and dead start branches have explicit rules. |",
+      "preservation_row": "| S01 | Prevent duplicate unmerged story assignment | K claim/branch/workspace admission invariant | WF04, WF10 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "S02",
+      "source_row": "| S02 | Find overdue story reviews and start an evidence-based classifier of real remaining work. | `tools/agents/triage-due.sh`, `tools/agents/story-triage.sh`, `tools/agents/briefs/story-triage.md` | Resume; manual dispatch when review is due | In use: dispatch ledger and three-day due check; implementation defaults to ego. |",
+      "preservation_row": "| S02 | Due review and evidence-based story triage | K Timer \u2192 bounded classifier Author \u2192 Judge | WF16C |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "S03",
+      "source_row": "| S03 | Show Boss requests without a non-documentation commit, including progress through child stories. | `tools/agents/boss-unbuilt.sh` | Resume | In use: resume caller and history scan. |",
+      "preservation_row": "| S03 | Boss requests still unbuilt, child progress | K intake-to-nondoc-artifact lineage projection | WF10, WF12 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "S04",
+      "source_row": "| S04 | Refuse story completion without acceptable criteria, named bug evidence and valid commit provenance. | `tools/agents/story-close.sh`, `tools/agents/story-close-preflight.cjs` | Read-only preflight before handoff; close after landing | In use: installed Wiz validators; Proof is not fabricated or filled with generic evidence. |",
+      "preservation_row": "| S04 | Criteria, bug proof and commit close preflight | K evidence Gate and story transition adapter | WF06 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "S05",
+      "source_row": "| S05 | Execute a repository\u2019s stories sequentially, with one combined gate and one owner of all failures. | `tools/agents/briefs/batch.md` | Coordinator prepares a batch | In use: `decisions.md`, 21 October; one critic covers the complete batch. |",
+      "preservation_row": "| S05 | Sequential stories, combined gate, one failure owner | K sequential delivery Call mode and pinned batch artifact | WF08, WF09, WF10 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "S06",
+      "source_row": "| S06 | Keep release membership separate from next work and valid waits on Boss. | `decisions.md`, `release-scope.tsv`, `tracker.md` | Manual decisions; derived status | In use: freeze rule updated 29 October; new Boss stories also go to next. Scope is not an automatic promise to publish. |",
+      "preservation_row": "| S06 | Release/next/Boss waits distinct | K portfolio release scope policy, never automatic publish promise | WF10, WF15 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "S07",
+      "source_row": "| S07 | Review external pull requests against local trunk, verify candidates and maintain a living PR map. | `.agents/skills/pr-intake/SKILL.md`, `.agents/skills/pr-intake/brief-triage.md` | On request | In use: skill separates code verdict, test proof and authorization for GitHub actions. |",
+      "preservation_row": "| S07 | External PR review/local trunk/living map | K PR review subflow and GitHub effect adapter | WF13 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "Q01",
+      "source_row": "| Q01 | Generate a bounded independent critic assignment from the actual story and branch. | `tools/agents/critic-brief.sh`, `tools/agents/critic-brief.template.md` | After implementer RESULT, rounds one and two | In use: current script takes repository, story, worktree and round; narrow production fixes are allowed in round two. |",
+      "preservation_row": "| Q01 | Independent bounded critic brief | K Author template from actual pinned story/artifact + review counter | WF04, WF06 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "Q02",
+      "source_row": "| Q02 | Convert scored findings into FIX, STORY or ACCEPT with a fixed rule. | `tools/agents/critic-triage.sh`, `tools/agents/critic-triage.md` | Each scored review | In use: verdict considers value, effort, risk and added machinery. |",
+      "preservation_row": "| Q02 | Fixed FIX/STORY/ACCEPT rule | K ordered deterministic triage policy | WF06 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "Q03",
+      "source_row": "| Q03 | Retain an older critic brief beside the active template. | `tools/agents/briefs/critic.md` | Legacy reference | Unused by the current generator: Q01 loads `critic-brief.template.md`; the two texts differ. See I1. |",
+      "preservation_row": "| Q03 | Unused older critic template | R obsolete alternate text, active policy/template retained; approval item R5 | WF01, WF06 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "Q04",
+      "source_row": "| Q04 | Run TUIC\u2019s pinned Rust batch and record each completed suite. | `tools/gates/tuic-batch.sh` | Once per integration batch, in background | In use: default/headless nextest, strict all-targets clippy and headless binary build; local frontend suite is separate. |",
+      "preservation_row": "| Q04 | Pinned Rust batch and completed suites | K proof batch Run commands on rb | WF05, WF08 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "Q05",
+      "source_row": "| Q05 | Record suite results by source tree and expose historical mutation pointers without claiming reuse. | `tools/gates/tested.sh`, `tested.tsv` | Before/after runs and status answers | In use: mutation check exits 3 and requires the registry; a historical row is not a pass for current inputs. |",
+      "preservation_row": "| Q05 | Source-bound tested ledger, no historical reuse claim | K typed check history; legacy rows imported as historical only | WF06, WF08 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "Q06",
+      "source_row": "| Q06 | Capture landing obligations, dispatch bounded gate batches and retain receipts and explicit recovery. | `tools/gates/gate-queue.py`, `tools/gates/queue.json`, `gate-queue.md` | Landing/result intake, pump tick, upkeep sweep | In use: one locked backlog; at most twelve rows per dispatch; a dead peer becomes blocked, not passed. |",
+      "preservation_row": "| Q06 | Landing obligations/bounded dispatch/recovery | K proof obligation store/cohort scheduler | WF08 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "Q07",
+      "source_row": "| Q07 | Store mutation artifacts atomically, query exact mutants, export evidence and compare current source context. | `tools/gates/mutation-registry.py`, `tools/gates/mutation_context.py`, `tools/gates/mutation_identity.py` | Collection and before reuse | In use: canonical-root SQLite store; source, tests, tools, configuration and target must match. The local ignored database is not transferred by Git. |",
+      "preservation_row": "| Q07 | Atomic mutation artifacts/query/export/context | K registry port + durable artifact references/backup | WF08 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "Q08",
+      "source_row": "| Q08 | Decide whether the complete requested mutation scope can skip execution. | `tools/gates/mutation_gate.py`, `tools/gates/MUTATION-GATE.md` | Registry gate command | In use: complete universe and independent evidence are required; observed old outcomes alone are insufficient. |",
+      "preservation_row": "| Q08 | Complete-universe mutation skip decision | K deterministic mutation reuse Gate | WF08 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "Q09",
+      "source_row": "| Q09 | Measure current remote source and environment without building or syncing. | `tools/remote/rb-current-measurements.py` | Before mutation reuse | Partial: implementation and fixture integration exist; no live probe was run in this audit. See I6. |",
+      "preservation_row": "| Q09 | Current remote source/environment measurement | K read-only rb measurement Tool, installed state verified separately | WF05, WF08 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "Q10",
+      "source_row": "| Q10 | List the exact requested cargo-mutants scope and bind byte-exact mutant identities to current inputs. | `tools/remote/rb-requested-universe.py`, `tools/remote/rb_mutation_universe.py`, `tools/remote/REQUESTED-UNIVERSE.md` | Before whole-scope reuse | Partial: read-only listing supports restricted arguments and explicit `--no-config`; it does not execute mutants. |",
+      "preservation_row": "| Q10 | Exact requested mutant scope/identity | K requested-universe Tool and identity schema | WF08 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "Q11",
+      "source_row": "| Q11 | Reduce an assigned test batch without changing production, using retained behavior and AWS mutation proof. | `.agents/skills/test-janitor/SKILL.md`, `.agents/skills/test-janitor/references/index.md` | On request only | In use as a skill; missing compatible evidence prevents acceptance of deletions, not permission for local mutations. |",
+      "preservation_row": "| Q11 | Test Janitor behavior-preserving reduction | K opt-in reduction subflow, no production writes, AWS-only mutation proof | WF08, WF16A, WF16E |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "Q12",
+      "source_row": "| Q12 | Compare complete AWS mutation runs and propose same-behavior test dominance candidates. | `.agents/skills/test-janitor/scripts/evidence.py` | Test Janitor evidence comparison | In use: skill reference selects it; it never deletes tests and rejects incompatible/incomplete runs. |",
+      "preservation_row": "| Q12 | Complete-run dominance comparison | K retained evidence comparison Tool, never auto-delete tests | WF08 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "L01",
+      "source_row": "| L01 | Serialize landings across repositories, recover a dead lock holder and run an optional precheck before any merge. | `tools/land/land-serial.sh`, `tools/land/landing-lock.sh` | Background, each queued landing | In use: direct landings share the same lock; ordering of waiters is not guaranteed. |",
+      "preservation_row": "| L01 | Serialized landing/dead lock/precheck | K Integrate canonical resource + recovery | WF07 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "L02",
+      "source_row": "| L02 | Check the merge, formatting, types, dependency notices and Rust test compilation before landing; retain gate obligations and refresh changed JS dependencies. | `tools/land/tuic-land.sh` | Every landing | In use: implementation calls checks and cleanup; distinct exit codes distinguish a merge from incomplete cleanup, dependency refresh or gate intake. |",
+      "preservation_row": "| L02 | Merge-format-types-notices-compile/debt/deps | K Integrate admission/merge/refresh/obligation phases | WF05, WF07, WF08 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "L03",
+      "source_row": "| L03 | Run one full frontend suite on an exported trunk snapshot and clear pending batch rows only on success. | `tools/land/batch-vitest.sh` | After a batch of landings | In use: landings defer full vitest by default; no pending rows means no test run, not fresh proof. |",
+      "preservation_row": "| L03 | Pinned full frontend batch, clear only success | K local JS cohort Run command and exact membership discharge | WF08 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "L04",
+      "source_row": "| L04 | Prove integration before removing worktrees and branches; preserve permitted managed-file dirt and refuse live owners. | `tools/land/tuic-land-cleanup.sh` | After landing or cleanup retry | In use: TUIC repository actions, ownership recovery and integration checks precede deletion. |",
+      "preservation_row": "| L04 | Proven integration/ownership before cleanup | K lifecycle cleanup Gate + TUIC worktree adapter | WF07 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "L05",
+      "source_row": "| L05 | Find the trunk, reconcile checkout renames and share worktree/integration/ownership checks. | `tools/land/trunk.sh` | Sourced by landing and worktree tools | In use: supports main or master and TUIC integration evidence. |",
+      "preservation_row": "| L05 | Trunk discovery/rename/shared identity | K canonical repository/workspace adapter | WF04, WF07 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "L06",
+      "source_row": "| L06 | List merged checkouts left behind and safely sweep those eligible for cleanup. | `tools/land/landed-worktrees.sh`, `tools/land/wt-sweep.sh` | Resume; pump sweep; manual retry | In use: live child registrations protect fresh work; apply calls cleanup. |",
+      "preservation_row": "| L06 | Safe merged-worktree sweep | K Timer maintenance cleanup Call with live-owner protection | WF07, WF16B |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "L07",
+      "source_row": "| L07 | Find committed or dirty worktrees with no live owner and show intentional holds. | `tools/land/wt-stranded.sh` | Resume, watcher and manual triage | In use: selects unmerged work or tracked dirt, with parked reasons. |",
+      "preservation_row": "| L07 | Stranded committed/dirty work and intentional holds | K portfolio inventory and hold evidence | WF10, WF16B |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "L08",
+      "source_row": "| L08 | Rescue and triage stranded personal work, send useful work through review/landing and ask Boss only about discards. | `.agents/skills/wt-triage/SKILL.md`, `.agents/skills/wt-triage/brief.md` | Request or hourly health procedure | In use as a skill; some instructions are stale, see I2 and I3. WORK repositories remain report-only without authority. |",
+      "preservation_row": "| L08 | Rescue/triage/review stranded personal work | K maintenance Author/Judge \u2192 normal delivery; Ask for discard, WORK report-only | WF07, WF16A, WF16E |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "L09",
+      "source_row": "| L09 | Archive a branch tip and prepare deletion commands for Boss without bypassing a deletion guard. | `tools/land/branch-retire.sh` | Manual, guarded branches | In use: verifies archive equals current tip; does not itself delete. |",
+      "preservation_row": "| L09 | Exact-tip branch archive and deletion preparation | K typed archive Tool + explicit deletion decision, no guard bypass | WF07, WF16A |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "L10",
+      "source_row": "| L10 | Resolve append-only documentation conflicts by retaining both blocks and staging only resolved files. | `tools/land/merge-union.py` | Manual conflict repair | In use: README selects CHANGELOG/to-test use; malformed conflicts refuse. Not a general code merge strategy. |",
+      "preservation_row": "| L10 | Append-only documentation conflict union | K narrow merge-union Tool; malformed/code conflicts refuse | WF07 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "L11",
+      "source_row": "| L11 | Advance a clean initialized submodule and attribute only its pointer change to the coordinator. | `tools/land/advance-submodule.sh` | Manual shared-root update | In use: explicit procedure in `orchestration.md`; records exact-entry attribution. |",
+      "preservation_row": "| L11 | Clean initialized submodule advance/attribution | K typed submodule Tool with baseline exact-entry attribution | WF04, WF07 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "L12",
+      "source_row": "| L12 | Wait for every GitHub Actions run of a full commit SHA and return success, failure or timeout. | `tools/land/ci-wait.sh` | Background after an authorized push | In use as the prescribed post-push check; no push performed here. |",
+      "preservation_row": "| L12 | Wait all GitHub CI for full SHA | K CI observation Tool/Timer with success/failure/timeout | WF13, WF15 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "L13",
+      "source_row": "| L13 | Read authoritative successful CI and required job results for release checks and validated tag-only publication. | `tools/land/ci_evidence.py`, `tools/hooks/validated_tags.py` | Release alarm and pre-push exception | In use: callers require exact commit and successful completed CI; this is not permission to publish. |",
+      "preservation_row": "| L13 | Authoritative CI and validated tag-only evidence | K CI evidence Gate and exact tag-only publication policy | WF15 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "L14",
+      "source_row": "| L14 | Enforce release decisions, including green CI on every platform and separate authorization for publication. | `decisions.md`, `decisions/tuicommander.md`, `decisions/other-projects.md` | Release preparation | In use as policy: plugins-first order, ego private/public history separation and version rules remain repository-specific manual steps, not one release script. |",
+      "preservation_row": "| L14 | Platform CI, version/order/private-public release rules | K pinned repository release subflow + separate approval | WF15 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "B01",
+      "source_row": "| B01 | Admit builds by memory, load, disk and configured concurrency; protect the running TUIC checkout and select remote execution. | `tools/build/build-slot.sh`, `tools/build/build-slot.conf` | Every managed build/test | In use: managed rules and wrappers select it; gates have a lower-priority lane. Automatic local fallback has restrictions. |",
+      "preservation_row": "| B01 | Memory/load/disk/concurrency/remote build admission | K resource adapter initially reusing build-slot/rb | WF05 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "B02",
+      "source_row": "| B02 | Freeze compilation machine-wide with a reason and an allow-list. | `tools/build/build-freeze.sh` | Explicit operational stop | In use: build-slot and rb honor BUILD_FREEZE; not a routine waiting mechanism. |",
+      "preservation_row": "| B02 | Machine freeze reason/allow-list | K durable admission freeze policy, existing bridge retained | WF05 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "B03",
+      "source_row": "| B03 | Check changed Rust and JS/TS files with their formatter, without formatting unrelated modules or vendor code. | `tools/build/fmt-changed.sh` | Before handoff and landing | In use: landing caller and managed rules. Markdown-only changes do not need a Rust or frontend suite. |",
+      "preservation_row": "| B03 | Changed-file formatting only | K positioned format Tool, no unrelated module/vendor formatting | WF05, WF07 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "B04",
+      "source_row": "| B04 | Audit stale Tauri build metadata in the owning mbx view and optionally quarantine it by rename. | `tools/build/mbx-tauri-quarantine.sh` | Diagnosed missing-permission build failure | In use: managed recovery procedure; requires builds for that worktree to stop first; no deletion. |",
+      "preservation_row": "| B04 | Diagnosed Tauri metadata quarantine, no deletion | K explicit maintenance recovery Tool, stop owning builds first | WF05, WF16A, WF16D |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "B05",
+      "source_row": "| B05 | Signal when an isolated desktop test instance answers, rather than waiting for its long-running launcher to exit. | `tools/build/agent-test-up.sh` | Background beside make agent-test | In use: managed rules specify unique instances; the application launcher belongs to TUIC, not this repository. |",
+      "preservation_row": "| B05 | Isolated app-up signal separate from launcher | K live-check Tool with readiness and owned launcher receipts | WF05, WF16B |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "B06",
+      "source_row": "| B06 | Verify an ego child can drive its required browser wrapper and retain a page capture and transcript. | `tools/agents/browser-wrapper-smoke.py` | Manual access check | In use: managed procedure cites the helper and retained live report; this audit did not launch a browser. |",
+      "preservation_row": "| B06 | Ego wrapper smoke/capture/transcript | K authorized browser access-check Tool and retained evidence | WF16A, WF16D |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "B07",
+      "source_row": "| B07 | Keep native GUI, browser and device checks away from Boss\u2019s daily app and protect his active screen. | `operations/agent-work.md`, `orchestration.md`, `tools/agents/managed-rules.md` | Live validation | In use as policy: isolated app/Vite, MacControl, scoped screenshots, shared simulator limits and process cleanup. External tools supply the actual interaction. |",
+      "preservation_row": "| B07 | Protect daily app/screen/device isolation | K native live-check policy/resource keys/scoped screenshots | WF05, WF16B |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "R01",
+      "source_row": "| R01 | Snapshot a worktree or pinned revision, run a command on rb and collect results and mutation evidence. | `tools/remote/rb` | Through build-slot --remote | In use: shared remote runner; validates transfer prerequisites, macOS-only changes and evidence preservation. mbx is not the normal remote command path. |",
+      "preservation_row": "| R01 | Pinned rb transfer/command/evidence | K rb execution port preserves manifests and results | WF05 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "R02",
+      "source_row": "| R02 | Admit normal, short and gate jobs fairly, bound their runtime, watch client loss and report changed source. | `tools/remote/rb-run` | Installed runner on rb | In use by R01/queue: source defines class slots, age rules and client-loss cleanup; live installed version was not checked. |",
+      "preservation_row": "| R02 | Fair remote classes/runtime/client-loss/source detection | K rb admission/runner adapter; verify installed version | WF05 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "R03",
+      "source_row": "| R03 | Queue long gates durably so they survive the Mac session, then list, cancel or collect them. | `tools/remote/rb-queue`, `tools/remote/rb-queue.service`, `tools/remote/rb-queue-install.py` | rb queue commands; remote service worker | In use: rb provisions missing queue infrastructure without overwriting existing policy; service health was not probed. |",
+      "preservation_row": "| R03 | Durable remote gates/list/cancel/collect | K remote job handle and reconciliation port | WF05, WF08 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "R04",
+      "source_row": "| R04 | Preserve exact transport environment and standard input, bound short SSH calls and protect active replica generations. | `tools/remote/rb-transport`, `tools/remote/rb-ssh.py`, `tools/remote/rb-reserve.py`, `tools/remote/rb-fingerprint.py` | Internal rb calls | In use: rb invokes these helpers for transport, leases and manifest identity. |",
+      "preservation_row": "| R04 | Env/stdin/bounded SSH/replica generation protection | K transport/lease/fingerprint port, no secret receipts | WF05 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "R05",
+      "source_row": "| R05 | Reclaim remote caches and old replicas safely, and prune old local pinned snapshots only when unlocked. | `tools/remote/rb-gc-box.sh`, `tools/remote/rb-refs-prune.sh` | rb execution and snapshot maintenance | In use: caller integrates GC; running/waiting jobs and reservations protect source. |",
+      "preservation_row": "| R05 | Safe remote caches/replicas and locked local snapshots | K explicit maintenance GC Tool preserving live reservations | WF05, WF16A, WF16D |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "R06",
+      "source_row": "| R06 | Provision the build user, runner, queue and analysis tools; retain an opt-in Linux cache experiment. | `tools/remote/rb-box-setup.sh`, `tools/remote/rb-crap-install.sh` | Box setup/deployment; explicit experiment | Partial: setup and CRAP installer exist; experimental mbx is separate from the default, and installation was not run. |",
+      "preservation_row": "| R06 | Build user/queue/tools and opt-in cache experiment | K explicit provisioning Tool; optional experiment remains opt-in | WF16A, WF16D |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "R07",
+      "source_row": "| R07 | Run an unmodified headless Claude CLI with a token scoped only to that wrapper. | `tools/remote/rb-claude` | Authorized box-side agent run | Partial: wrapper exits 78 without its token; token presence and installed CLI were not checked or read. |",
+      "preservation_row": "| R07 | Token-scoped headless remote Claude | K optional authorized executor template; missing token visible blocked | WF04, WF05 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "R08",
+      "source_row": "| R08 | Create or destroy an isolated Linux VM, install agent CLIs, transfer permitted keys and run agent marker scenarios. | `tools/vm/agent-vm.sh`, `tools/vm/agent-vm.yaml`, `tools/vm/guest/install-agents.sh` | Manual compatibility matrix | Partial: Lima configuration and per-agent installation report exist; VM availability and actual installs were not checked. Key values must not be printed. |",
+      "preservation_row": "| R08 | Isolated Linux VM/agent install/marker scenarios | K authorized VM compatibility maintenance subflow; credentials never printed | WF16A, WF16D |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "C01",
+      "source_row": "| C01 | Collect unresolved decisions, apply previous ticks/comments first and present plain-language choices with consequences and a recommendation. | `.agents/skills/open-asks/SKILL.md`, `boss-operating-rules.md` | Request; when a real Boss-only decision remains | In use as a skill; current skill output path is stale, see I2. Reversible choices are decided, not turned into blocking questions. |",
+      "preservation_row": "| C01 | Open decisions, apply ticks, recommend consequences | K durable inbox/digest Ask policy | WF03, WF12 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "C02",
+      "source_row": "| C02 | Keep investigation answers visible until Boss acknowledges them. | `followups.md`, `tools/reports/boss-unread.sh` | Every Boss prompt | In use: Claude and Codex UserPromptSubmit hooks inject the Da leggere section. |",
+      "preservation_row": "| C02 | Investigation answers retained until acknowledged | K unread report/answer acknowledgment projection | WF12, WF16C |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "C03",
+      "source_row": "| C03 | Give every release a separate remaining-work count, split into release work, Boss waits and next items. | `tools/reports/release-countdown.sh`, `tools/reports/release_story_states.py` | End of each Boss reply | In use: reads scoped story status; emits one-time NOTIFY at zero. Extra aggregate output conflicts with presentation policy, see I5. |",
+      "preservation_row": "| C03 | Separate release counts, waits/next, once-at-zero | K release countdown projection; D cross-release total, D2 below | WF15 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "C04",
+      "source_row": "| C04 | Alarm when a recorded release CI condition is satisfied and all scoped stories are complete. | `tools/reports/release_gate_alarm.py` | Countdown | In use: calls authoritative CI reader; does not publish or close the release gate. |",
+      "preservation_row": "| C04 | Scope complete plus recorded CI release alarm | K release readiness Gate + deduplicated Notify, no publish | WF15 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "C05",
+      "source_row": "| C05 | Find project reports made stale by source changes and generate a new evidence-based progress report. | `tools/reports/report-stale.sh`, `tools/agents/briefs/report.md` | Resume scan; manual report assignment | In use: Source revision, age and relevant commits drive the stale check. |",
+      "preservation_row": "| C05 | Source-stale progress reports regenerate | K Timer/source-change \u2192 scoped report Author | WF16C |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "C06",
+      "source_row": "| C06 | Find expired topic reports or reports without expiry dates. | `tools/reports/report-expired.sh` | Resume and tidyup | In use: lists candidates; tidyup handles deletion and preserves unread answers. |",
+      "preservation_row": "| C06 | Expired/missing-expiry report candidates | K upkeep inventory, unread-protection Gate | WF16C |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "C07",
+      "source_row": "| C07 | Embed local images in a digest so the document does not depend on inaccessible local assets. | `tools/reports/digest-inline-images.py` | Manual compatibility workaround | Partial: source says \u201cuntil TUIC 1335 ships\u201d; need for the workaround today was not checked. |",
+      "preservation_row": "| C07 | Accessible digest images | K retained embedding Tool until native assets proven equivalent; no assumed retirement | WF12, WF16C |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "C08",
+      "source_row": "| C08 | Deliver short chat answers with required markers and long bilingual material in persistent report tabs. | `boss-operating-rules.md`, `AGENTS.md`, `.claude/wiz-claude.md` | Each Boss interaction | In use as policy: \ud83d\udcac answers, intent markers, clickable links, progress record, no toasts or Mission Control iframe. |",
+      "preservation_row": "| C08 | Markers/short chat/bilingual persistent long reports | K communication adapter and pinned presentation policy, no Mission Control iframe | WF12, WF16C |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "C09",
+      "source_row": "| C09 | Explain a reported bug with evidence for cause, regression history and prevention; report what is tested and missing. | `boss-operating-rules.md` | Bug reply and status answer | In use as policy; not an automatic root-cause detector. |",
+      "preservation_row": "| C09 | Evidence-based cause/history/prevention/tests reply | K investigation/report Author output contract + evidence links | WF06, WF16C |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "H01",
+      "source_row": "| H01 | Recover coordinator identity and a bounded briefing of children, builds, results, reports, due triage, follow-ups and budgets. | `tools/coord-resume.sh`, `tools/coord-state.sh` | Restart, clear or compaction | In use: AGENTS requires it for coordinators; per-coordinator state separates children and delivery while selected locks remain shared. |",
+      "preservation_row": "| H01 | Identity/restart briefing of work/builds/results/budgets | K daemon resume snapshot and cursor replay; R coordinator-context reconstruction | WF12, WF16A |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "H02",
+      "source_row": "| H02 | Capture TUIC responsiveness, freeze signals, footprint and slow operations through its local socket. | `tools/health/tuic-health.sh` | Prescribed hourly check | Partial: source and hourly procedure exist; scheduler installation was not checked. |",
+      "preservation_row": "| H02 | TUIC responsiveness/freeze/footprint/slow health | K health observation Tool/Timer, report actual install/last run | WF16B |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "H03",
+      "source_row": "| H03 | Recover a sidecar whose executable bit or stale macOS signature prevents execution, with a bounded retry. | `tools/health/tuic-heal.sh` | Specific CLI failures | In use: spawn/bg/child/Stop callers; it does not rebuild or replace the app. |",
+      "preservation_row": "| H03 | Bounded sidecar exec/signature heal | K diagnosed recovery Tool, never app rebuild/replacement | WF16B |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "H04",
+      "source_row": "| H04 | Restart only an explicitly authorized dedicated make-dev process group and supervise its replacement. | `tools/health/tuic-dev-restart.py` | Boss-authorized restart | Partial: manual recovery helper with PID validation; not automatic permission to restart the daily app. |",
+      "preservation_row": "| H04 | Explicitly authorized dedicated dev restart | K typed owned-PID restart Tool with approval, never daily-app auto-retry | WF16B |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "H05",
+      "source_row": "| H05 | Reap orphan agent process trees while protecting live owners, recent work, main checkouts and shared daemons. | `tools/health/reap.sh`, `tools/health/reap.py` | Guard; manual dry-run/apply | In use: guard calls apply on Mac/rb; an unreadable TUIC roster refuses local reaping. |",
+      "preservation_row": "| H05 | Owned orphan process reap with protected roster | K maintenance process registry/reap policy; unknown roster refuses | WF04, WF16B |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "H06",
+      "source_row": "| H06 | Alarm on reaped processes, low free memory or newly failed enabled automations. | `tools/health/guard.sh`, `tools/health/it.straus.orch-guard.plist` | Configured launchd interval 15 minutes | Partial: tracked schedule calls the guard; loaded launchd state and current automation health were not queried. |",
+      "preservation_row": "| H06 | Reap/memory/failed-automation alarms | K Timer guard observations + deduplicated Notify | WF16B |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "H07",
+      "source_row": "| H07 | Show model, context, effort, directory and cost in the private Claude status line. | `tools/health/c2-statusline.sh` | Claude status rendering | Partial: README names external settings; those settings were not audited here. |",
+      "preservation_row": "| H07 | Private Claude status-line utility | K retained optional external utility, not authoritative workflow telemetry | WF16A |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "H08",
+      "source_row": "| H08 | Find old stashes using metadata only, without exposing their messages or contents. | `tools/agents/stash-stale.py` | Resume | In use: resume caller; selects stashes over seven days in recently active repositories. |",
+      "preservation_row": "| H08 | Old stash metadata only | K metadata-only maintenance inventory; never auto-drop stash | WF16B |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "H09",
+      "source_row": "| H09 | Diagnose machine/process load, thermal state and network activity through ProcessGuard. | `processguard.md` | Manual, before blaming a slow build | Partial: documented external socket API; daemon availability was not checked. |",
+      "preservation_row": "| H09 | ProcessGuard load/thermal/network diagnosis | K optional external diagnostics Tool, availability explicit | WF16A |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "M01",
+      "source_row": "| M01 | Search repository knowledge first, verify source and retain durable decisions and verified lessons. | `AGENTS.md`, `boss-operating-rules.md`, `orchestration.md`, `operations/agent-work.md` | Research, decisions and lessons during work | In use as policy: MDKB and topic files are separate from transient delivery state. |",
+      "preservation_row": "| M01 | MDKB first, source verification, durable lessons | K research/memory policy and scoped tools, not run-state storage | WF04, WF16C |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "M02",
+      "source_row": "| M02 | Audit root-file ownership and budgets, compact generated triage history and verify the generated gate view. | `tools/upkeep/root-upkeep.py` | Tidyup start/apply and final/check | In use: detects unresolved dirt without deleting Boss choices, evidence or mbx-owned targets. |",
+      "preservation_row": "| M02 | Root ownership/budgets/triage compaction/gate view | K upkeep Tool and final deterministic check | WF16A, WF16E |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "M03",
+      "source_row": "| M03 | Consolidate live decisions/lessons, remove eligible expired reports, reconcile memory and save the day\u2019s durable corrections. | `.agents/skills/tidyup/SKILL.md` | Nightly scheduler request, manual /tidyup or budget warning | In use as a skill: final check is mandatory; current nightly schedule health is not certified by this report. |",
+      "preservation_row": "| M03 | Consolidate lessons/reports/memory/nightly corrections | K maintenance subflow with unread/expiry protections and final Gate | WF16A, WF16E |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "M04",
+      "source_row": "| M04 | Keep model routing, delegation limits, escalation and managed handoff under one global authority. | `~/.codex/ORCHESTRATION.md`, `~/.codex/SUBAGENT.md`, `tools/agents/managed-rules.md` | Assignment, execution and final handoff | In use: current files read; repository routing duplicates and test-policy drift remain in I4. |",
+      "preservation_row": "| M04 | One global routing/delegation/handoff authority | K authoritative policy import; R competing local routing tables | WF01, WF04 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "M05",
+      "source_row": "| M05 | Repair a failed owned tool in its repository rather than silently working around it; retain one active home per lesson. | `orchestration.md`, `AGENTS.md` | Diagnosed tool failure | In use as policy: ownership table identifies TUIC, MDKB, Wiz, MacControl, ego and this repository. mbx is external. |",
+      "preservation_row": "| M05 | Fix failed owned tools at owner, one lesson home | K failure ownership/escalation policy + memory reconciliation | WF16A |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "G01",
+      "source_row": "| G01 | Refuse a coordinator stop when release work lacks owners, ready waves lack integration or staffing is below the justified floor. | `tools/hooks/stop-unowned.sh` | Claude Stop hook | In use: `.claude/settings.json`; repeated active Stop passes to avoid a hook loop. Not configured as a Codex Stop hook here. |",
+      "preservation_row": "| G01 | Stop guard for unowned work/waves/staffing | K ownerless/wave alarms and admission; D forced staffing floor as turn-stop prerequisite, D1 | WF10, WF17 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "G02",
+      "source_row": "| G02 | Require research briefs to say MDKB first, and require a recent repository-scoped knowledge lookup before recursive searches. | `tools/hooks/agent-mdkb-guard.sh`, `tools/hooks/mdkb-first.sh` | PreToolUse | In use: Claude wires both; Codex wires the research-agent guard but not mdkb-first in its local hook file. |",
+      "preservation_row": "| G02 | MDKB-before-research/recursive-search protection | K effective harness policy/tool injection audit across clients | WF04, WF16A |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "G03",
+      "source_row": "| G03 | Reject an invisible shell-backgrounded pump and interactive questions that would block Boss. | `tools/hooks/no-bg-pump.sh`, `tools/hooks/no-ask-user.sh` | PreToolUse; Claude permission deny | In use: Claude wires no-bg-pump and denies AskUserQuestion; Codex wires no-ask-user. |",
+      "preservation_row": "| G03 | No invisible pump/no blocking interactive question | K daemon ledger visibility and branch-local inbox; R pump-shell guard after pump removal | WF03, WF10 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "G04",
+      "source_row": "| G04 | Refuse pattern-wide process kills and zsh assignments that accidentally replace PATH. | `tools/hooks/no-pkill.sh`, `tools/hooks/no-zsh-path.sh` | When installed in tool hooks | Partial: implementations and fixtures exist; neither local CLI hook file selects these scripts. Global installation was not checked. |",
+      "preservation_row": "| G04 | No pattern-wide kills/PATH-clobber protection | K owned-process and executor-environment invariants plus effective hook audit | WF05, WF16A |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "G05",
+      "source_row": "| G05 | Reject newly added unowned deferrals while retaining legacy text and valid Boss decision options. | `tools/hooks/deferral-check.py`, `tools/hooks/install.sh`, `.githooks/pre-commit`, `tools/hooks/deferral-baseline.json` | Hook installation on resume; pre-commit | In use: tracked pre-commit refuses only proven invalid deferrals; checker infrastructure failures print UNKNOWN and pass. |",
+      "preservation_row": "| G05 | No new unowned deferrals, retain valid history | K proposal/hold owner validation and source commit guard; infra UNKNOWN explicit | WF06, WF16A |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "G06",
+      "source_row": "| G06 | Refuse publication while the repository still owes a full frontend batch, except a validated tag-only transaction. | `tools/hooks/batch-vitest-push.sh` | Global pre-push chain | In use by the tracked publication wrapper; checks pending rows without clearing them. Actual global Git configuration was not checked. |",
+      "preservation_row": "| G06 | No publication with frontend debt; tag exception | K proof-debt publication Gate with exact validated exception | WF08, WF15 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "G07",
+      "source_row": "| G07 | Scan outgoing messages, paths, additions and tags for denied publication material, while preserving repository hooks. | the orchestrator pre-push publication hook | Global pre-push, when installed | Partial: source and README installation procedure exist; external denylist and active global hook config were not read. Missing denylist refuses. |",
+      "preservation_row": "| G07 | Denied publication content scan, preserve repo hooks | K publication preflight Tool/policy, missing denylist refuses | WF15 |",
+      "state": "required_not_operationally_verified"
+    }
+  ],
+  "screenshot_features": [
+    {
+      "id": "F01",
+      "preservation_row": "| F01 | Brief input | K Start input schema + immutable requirement snapshot | WF01, WF10 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F02",
+      "preservation_row": "| F02 | Three parallel Research nodes, each width 1 | K Fork of three configurable Authors, per-node concurrency 1 | WF02, WF04 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F03",
+      "preservation_row": "| F03 | Compare using claude | K independent Author/decision with globally allowed exact profile, no fixed vendor | WF04, WF06 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F04",
+      "preservation_row": "| F04 | Check catalog shell command | K Run command with explicit shell only when published as argv | WF05 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F05",
+      "preservation_row": "| F05 | Approve catalog Gate without PTY | K deterministic policy Gate + asynchronous approval task where required | WF03, WF06 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F06",
+      "preservation_row": "| F06 | rejects 0/2 | K persisted visible reject counter separate from total-review/repair counters | WF06, WF11, WF12 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F07",
+      "preservation_row": "| F07 | Apply catalog shell command | K mutating command effect with intent/reconciliation, no blind retry | WF05 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F08",
+      "preservation_row": "| F08 | Done terminal | K End only after required current receipts/obligations | WF06, WF08 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F09",
+      "preservation_row": "| F09 | Dashed fail/reject edges | K typed explicit outcomes and canvas edge styling | WF02, WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F10",
+      "preservation_row": "| F10 | Apply refused \u2192 Pause | K named refusal branch and explicit resume target/reconciliation | WF05, WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F11",
+      "preservation_row": "| F11 | Author family: Planner | K editable Author preset | WF04, WF11, WF18 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F12",
+      "preservation_row": "| F12 | Author: Research | K editable Author preset | WF04, WF11, WF18 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F13",
+      "preservation_row": "| F13 | Author: Prompt draft | K editable Author preset with artifact output schema | WF04, WF11, WF18 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F14",
+      "preservation_row": "| F14 | Author: For each | K bounded collection expansion into correlated Author activations | WF02, WF11, WF18 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F15",
+      "preservation_row": "| F15 | Author: Mockup | K configurable Author preset, declared artifact/native evidence policy | WF04, WF11, WF18 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F16",
+      "preservation_row": "| F16 | Per-node role | K Author inspector and pinned role | WF04, WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F17",
+      "preservation_row": "| F17 | Per-node prompt | K template/editor/final launch receipt distinction | WF04, WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F18",
+      "preservation_row": "| F18 | Per-node model | K exact profile/model/effort checked against global authority | WF04, WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F19",
+      "preservation_row": "| F19 | Per-node tools | K declared capabilities and write/authority scope | WF04, WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F20",
+      "preservation_row": "| F20 | Build: Implement | K Author implementer preset | WF04, WF11, WF18 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F21",
+      "preservation_row": "| F21 | Build: Run command | K typed command node | WF05, WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F22",
+      "preservation_row": "| F22 | Build: Tool | K typed adapter/action node, same effect protocol | WF05, WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F23",
+      "preservation_row": "| F23 | Check: Validate | K configurable validator Author plus deterministic checks as applicable | WF04, WF06, WF11, WF18 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F24",
+      "preservation_row": "| F24 | Check: Judge | K current Judge extended with typed subject/evidence/uncertainty | WF06, WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F25",
+      "preservation_row": "| F25 | Review pack | D explicitly excluded by Boss; not a replacement requirement | WF01 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F26",
+      "preservation_row": "| F26 | Validate pack | D explicitly excluded by Boss; not a replacement requirement | WF01 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F27",
+      "preservation_row": "| F27 | Route: If/else | K deterministic typed predicate/outcome node, no arbitrary frontend expression engine | WF02, WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F28",
+      "preservation_row": "| F28 | Route: Splitter | K bounded Fork/collection routing preset | WF02, WF11, WF18 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F29",
+      "preservation_row": "| F29 | Route: Call | K pinned subflow with expansion | WF09, WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F30",
+      "preservation_row": "| F30 | Route: Loop | K existing bounded Loop retained, counters distinct | WF06, WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F31",
+      "preservation_row": "| F31 | Route: Notify | K durable existing Notify extended by delivery adapters | WF12, WF16C |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F32",
+      "preservation_row": "| F32 | Hold: Ask | K branch-local structured inbox question | WF03, WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F33",
+      "preservation_row": "| F33 | Hold: Gate | K policy/approval without blocking unrelated branches | WF03, WF06, WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F34",
+      "preservation_row": "| F34 | Hold: Pause | K explicit pause scope and pinned resume target | WF03, WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F35",
+      "preservation_row": "| F35 | Hold: Timer | K durable deadline/wake effect, restart-safe and no consent on expiry | WF19, WF03 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F36",
+      "preservation_row": "| F36 | Draft edited while published v3 runs | K immutable active/transitive pins, concurrent draft revision | WF01, WF09, WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F37",
+      "preservation_row": "| F37 | Run 104 paused | K inspect/resume explicit paused run independently of editor | WF03, WF12 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F38",
+      "preservation_row": "| F38 | Publish action | K validated expected-revision publication, already exists at core | WF01, WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F39",
+      "preservation_row": "| F39 | Discard draft action | K discard draft changes only, preserve publications and runs | WF11 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F40",
+      "preservation_row": "| F40 | Header token counter | K usage projection with coverage/unknown disclosure | WF12 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F41",
+      "preservation_row": "| F41 | Header cost counter | K estimated/settled amount and rate source, not fabricated money | WF12 |",
+      "state": "required_not_operationally_verified"
+    },
+    {
+      "id": "F42",
+      "preservation_row": "| F42 | Run queue | K durable ready/admitted/blocked/running view with resource reasons | WF05, WF10, WF12 |",
+      "state": "required_not_operationally_verified"
+    }
+  ]
+}

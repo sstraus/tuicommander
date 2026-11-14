@@ -1,0 +1,32 @@
+[
+  {
+    "hookEventName": "user_prompt_submit",
+    "hook_event_name": "UserPromptSubmit",
+    "sessionId": "recorded-id-1",
+    "promptId": "recorded-id-2"
+  },
+  {
+    "hookEventName": "session_start",
+    "hook_event_name": "SessionStart",
+    "sessionId": "recorded-id-1"
+  },
+  {
+    "hookEventName": "stop_cancelled",
+    "hook_event_name": "StopCancelled",
+    "sessionId": "recorded-id-1",
+    "promptId": "recorded-id-2",
+    "reason": "user_interrupt"
+  },
+  {
+    "hookEventName": "session_end",
+    "hook_event_name": "SessionEnd",
+    "sessionId": "recorded-id-1",
+    "reason": "shutdown"
+  },
+  {
+    "hookEventName": "stop",
+    "hook_event_name": "Stop",
+    "sessionId": "recorded-id-1",
+    "reason": "shutdown"
+  }
+]

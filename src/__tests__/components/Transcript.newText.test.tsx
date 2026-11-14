@@ -53,6 +53,33 @@ afterEach(() => {
 });
 
 describe("Transcript new text", () => {
+	// Catches: streaming output drags the viewport away while the user selects text.
+	it("holds the viewport through a mouse selection and follows after it ends", async () => {
+		const view = await setup();
+		acpTranscript.noteUserMessage("chat", "Keep this message selected.");
+		await Promise.resolve();
+		view.scroll(700);
+		view.setBusy(true);
+		const text = view.getByText("Keep this message selected.").firstChild!;
+		fireEvent.mouseDown(text.parentElement!, { button: 0 });
+		const range = document.createRange();
+		range.setStart(text, 0);
+		range.setEnd(text, 4);
+		window.getSelection()!.removeAllRanges();
+		window.getSelection()!.addRange(range);
+		fireEvent.mouseMove(text.parentElement!, { buttons: 1 });
+		append(" More output while selecting.");
+		await Promise.resolve();
+		expect(view.transcript.scrollTop).toBe(700);
+		fireEvent.mouseUp(document, { button: 0 });
+		append(" More output while selected.");
+		await Promise.resolve();
+		expect(view.transcript.scrollTop).toBe(700);
+		window.getSelection()!.removeAllRanges();
+		fireEvent(document, new Event("selectionchange"));
+		expect(view.transcript.scrollTop).toBe(900);
+	});
+
 	// Catches: unread output reserving a full-width layout row instead of floating above the composer.
 	it.each([false, true])(
 		"floats the new-text badge inside the transcript viewport without a layout row (mobile=%s)",

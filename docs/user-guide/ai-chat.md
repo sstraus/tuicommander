@@ -17,7 +17,7 @@ no tool loop and no sandbox of its own.
 
 1. Turn on **Experimental Features** in `Settings > General`. The panel is behind
    it and there is no separate AI Chat switch.
-2. Set **ego executable** in `Settings > General` (**Select…** opens a file picker). While it is empty, ACP is not
+2. Set **ego executable** in `Settings > General` (**Install latest** downloads and selects the latest ego release; **Select…** opens a file picker). While it is empty, ACP is not
    configured: the panel explains why it is inactive and offers **Configure ego**, which opens
    the ego section in General. Use `Settings > AI Chat` to log in to a provider and select
    the default model (`ego config set model`). Saving the executable enables the composer
@@ -42,7 +42,11 @@ Pasting an image starts ego when needed before checking image support. Finder im
 While ego waits to retry a provider request, AI Chat shows the cause, attempt
 number and a live countdown. The countdown starts when the update arrives and
 ends at **retrying now**. Recovery removes the line; a final failure replaces it
-with the error. The Copy action beside a user message stays on one line.
+with the error. The message actions button beside a user message stays on one line.
+
+With the transcript focused, Cmd/Ctrl+K clears only its local view. A notification confirms that saved history and agent context are unchanged; reopening the conversation restores its history. These clear actions are local and synchronous, not requests to erase an ego session.
+
+Click an empty part of AI Chat or its transcript to focus the message composer. Clicked controls keep their own focus. Selecting transcript text keeps the selection for copying; typing while a chat control or selection has focus does not send characters to a terminal.
 
 ## Slash commands
 
@@ -61,11 +65,11 @@ TUICommander handles these actions locally instead of sending them to the model:
 | Command | Action |
 |---|---|
 | `/new` | Start a new conversation with the existing New action. |
-| `/clear` | Clear this composer's text and attachments, not conversation history. |
+| `/clear` | Clear this composer's text and attachments. An inline status confirms that history and agent context are unchanged. |
 | `/quit`, `/q` | Stop the current AI Chat connection through the existing stop action. Saved history remains. Other tabs on that connection also disconnect. |
 | `/usage` | Show the context usage and cost already reported for this conversation. |
 | `/compact` | Run the same action as **Compact context**. Available only when advertised; wait for the turn to finish. |
-| `/fork` | Run **Fork conversation** without a message argument. Available only when advertised; wait for the turn to finish. |
+| `/fork` | Fork into a new tab. While busy, use the last successful completed turn observed on this connection; requires message-point fork support. |
 | `/pause`, `/resume` | Run the advertised pause/resume controls in their applicable turn state. |
 
 Host actions do not accept arguments or attachments, except `/clear`, which
@@ -80,7 +84,7 @@ Nothing is sent silently. Open a conversation with
 
 ## Automatic context compaction
 
-When ego reports an exhausted context and supports compaction, AI Chat shows **Compacting conversation**, opens the compacted continuation and sends the original prompt again once. Text, images, file references and repository context stay the same. **Conversation compacted** confirms that the continuation opened. A compaction or load failure stops recovery and shows the error. If the repeated prompt exhausts context again, AI Chat stops instead of compacting in a loop. The manual **Compact** action uses the same continuation path. Switching conversations while compaction is pending keeps your newer selection and prevents an automatic replay into it. A different conversation can still send while compaction is pending. Its own manual or automatic compaction waits for the first operation, then runs only if that conversation is still selected. In the compacting conversation, Send or Queue leaves your draft and attachments in the composer until compaction finishes; submit them again when ready.
+When ego reports an exhausted context and supports compaction, AI Chat shows **Compacting conversation**, opens the compacted continuation and sends the original prompt again once. Text, images, file references and repository context stay the same. **Conversation compacted** confirms that the continuation opened. A compaction or load failure stops recovery and shows the error. If the repeated prompt exhausts context again, AI Chat stops instead of compacting in a loop. The manual **Compact** action uses the same continuation path. The continuation replaces the compacted conversation in its own tab and keeps that tab's repository pin; compaction never opens a second tab. A phone or browser that follows the desktop selection replaces the same tab. Switching conversations while compaction is pending keeps your newer selection and prevents an automatic replay into it. A different conversation can still send while compaction is pending. Its own manual or automatic compaction waits for the first operation, then runs only if that conversation is still selected. In the compacting conversation, Send or Queue leaves your draft and attachments in the composer until compaction finishes; submit them again when ready.
 
 ## Compact panel controls
 
@@ -111,6 +115,9 @@ conversation. With no saved conversation, it opens a new one without sending a
 message. Terminal input remains available while it connects. Switching repositories
 does not start another agent. A failed connection stays visible for explicit Retry;
 Retry starts the connection and shows its connecting state without requiring Send.
+When ego reports `no model: pass --model …` (no provider or model configured), the failed turn shows
+**Set up provider and model**, which opens Settings > AI Chat for provider login and model selection.
+TUIC collects no credentials there.
 It does not retry in a loop. Stopping ego keeps the selected transcript visible.
 Reopening the panel, or sending another message, reconnects the same conversation.
 
@@ -198,10 +205,38 @@ wakes an idle ego with a short notice.
 ## During a turn
 
 Select text in user messages, answers, code blocks, and tool output and use
-`Cmd/Ctrl+C` to copy it. **Copy** appears when a message is hovered or has
-keyboard focus. It copies the whole raw message, including fenced code, through
-the same clipboard adapter as the terminal. Answers have no separate code-block
-Copy button. The compact Copy and **Fork** row stays below its answer
+`Cmd/Ctrl+C` to copy it. The **⋯** message actions button appears when a message is
+hovered or has keyboard focus, and always on touch screens. Its menu has **Copy message**
+(the whole raw message, including fenced code, through the same clipboard adapter as the
+terminal), **Show raw Markdown** / **Show formatted message** (answers only; a per-message
+view that does not change what Copy copies) and **Quote reply** (every chat surface, one shared
+flow: AI Chat and Terminal Chat on desktop and mobile append the message as a `>` quote to the
+composer draft and focus it; it never sends).
+
+AI Chat answers with a native source message ID also offer **Thumbs up**, **Thumbs down**,
+**Heart**, **Celebrate**, and **Comment on message** in the same menu. These are conversational
+reactions, not correct/wrong votes, model evaluations, or permission to execute actions.
+Adding a reaction sends an ordinary user turn to that conversation, with its exact message ID
+and a readable source excerpt (up to 4000 characters). Click its visible mark, or select the
+same item in the menu, to remove it; removal sends another conversational turn. You can use
+more than one reaction. The backend saves accepted marks, so they survive reopening and agree
+between desktop and phone. A mark means the host accepted the action, not that the model read
+or understood it. Busy conversations use their existing prompt queue without interruption.
+Cancelling a queued prompt does not undo a mark; send a removal separately. Removal cannot erase
+context that already reached the agent.
+
+Comments use a separate field and do not replace the composer draft. **Cancel** sends nothing.
+An unavailable/offline conversation shows an error and leaves the mark unchanged; reconnect
+before retrying. If the host accepted the action but could not save its mark, the error says
+**Do not resend**: the action already reached the conversation. Desktop and browser menus show
+the error message. The action never starts a replacement conversation or falls back to a terminal.
+Messages without a native ID have Copy and Quote reply but no reactions or comments. The current
+streaming answer cannot receive reactions. Terminal Chat keeps its existing **Approve response**
+and **Disapprove response** draft actions; these are not AI Chat reactions.
+
+Use Up/Down, Home/End, Enter or Space
+and Escape in the menu; focus returns to **⋯**. Answers have no separate code-block
+Copy button. **Fork** stays in the row below its answer
 and does not overlap the next message. Web links open in the
 system browser; file links and plain source paths are resolved by the backend.
 Files open in TUICommander's viewer or editor, while directories open in the
@@ -312,6 +347,13 @@ When AI Chat is hidden, its status-bar button shows the number of unanswered
 permissions and forms. The desktop sends one notification for each new question;
 answering it removes the badge and closes its notification.
 
+On a phone, the AI Chat title and conversation picker share one header row.
+Use the **+** button (**New conversation**) to start a chat.
+The composer uses one focus frame around the editor and microphone.
+The model, reasoning and mode summary wraps when needed. The conversation picker
+keeps the current conversation available even while the optional saved-conversation
+list is empty or still loading.
+
 ## When it misses something
 
 - **"Missed part of this conversation"** means the journal no longer holds the
@@ -352,7 +394,9 @@ The write-only command knowledge store was removed in #2115-1333. TUICommander n
 
 Pending permissions and ego notice cards can alert your phone when the desktop is away. Both share a 30-second limit per conversation; ordinary activity does not send a push.
 
-AI Chat offers **Fork** beside a reply when ego advertises message-point forks. The new tab keeps history through that reply’s completed turn; the parent remains open.
+AI Chat offers **Fork** beside a reply when ego advertises message-point forks. The new tab keeps history through that reply’s successful completed turn; the parent remains open and can keep running. An unfinished or failed turn is not a valid cutoff, and ego reports a refusal without creating a child.
+
+While a turn runs, **Fork conversation** and `/fork` use the last successful completed turn observed on the current connection, never partial output. If no verified cutoff is available (including after a fresh load), select an earlier reply or wait for completion. Agents without message-point fork support still require an idle conversation. Cancellation and failure do not advance the saved cutoff.
 
 Forked AI Chat tabs label inherited history. A separator marks where the child’s own conversation begins, including after loading saved history.
 
@@ -449,6 +493,12 @@ Settings → Voice → Hands-free conversation lists attached AI Chat sessions i
 
 Settings → AI → AI Chat → Chat behavior has a multiline **Master prompt** field.
 It adds instructions to new conversations without replacing TUIC launch rules. Empty
-means no extra instructions. The limit is 8192 UTF-8 bytes. Existing conversations
+means no extra user instructions. The limit is 8192 UTF-8 bytes. Existing conversations
 keep their saved instructions, also after reopening. Smart Prompts, PR reviews,
 changelog generation and story drafting do not use this field. Do not use it to store secrets.
+
+The host separately tells attended AI Chat sessions that fenced `mermaid` code blocks render as diagrams. When a diagram helps explain architecture, flows or relationships, the agent is asked to prefer Mermaid over ASCII. Diagrams are not required. This guidance applies with an empty or custom master prompt and when a saved conversation starts a new process. It does not consume the user prompt limit or reach unattended tasks.
+
+### Path-based image previews
+
+Messages with `[image: /absolute/path.png]` attachments show framed previews above the text in Pending bubbles, session Chat, AI Chat and queue lists. One image uses one frame. Two images sit side by side. Three or more use a two-column grid. The marker is hidden from the displayed text. If the image cannot be read, its frame shows **Image unavailable**. Copy and reply actions keep the original attachment paths. Native image placeholders without a file path keep their attachment labels.

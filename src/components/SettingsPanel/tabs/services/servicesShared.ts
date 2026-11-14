@@ -1,6 +1,7 @@
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { appLogger } from "../../../../stores/appLogger";
 import { rpc } from "../../../../transport";
+import { sameData } from "../../../../utils/reconcileById";
 import { updateAppConfig } from "../../../../utils/updateAppConfig";
 
 /** Config shapes shared by the MCP and Remote Access pages (both read/write
@@ -44,6 +45,7 @@ export interface AppConfig {
 	settings_mcp_enabled: boolean;
 	collapse_tools: boolean;
 	mcp_call_audit_enabled: boolean;
+	mcp_usage_rollup_enabled: boolean;
 }
 
 /** Save a single config field (load-modify-save pattern matching other tabs) */
@@ -107,7 +109,8 @@ interface RelayStatus {
  * its own interval.
  */
 export function useMcpStatusPoll() {
-	const [status, setStatus] = createSignal<McpStatus | null>(null);
+	// Each poll returns a fresh object; only a changed snapshot may notify readers.
+	const [status, setStatus] = createSignal<McpStatus | null>(null, { equals: sameData });
 	const [relayConnected, setRelayConnected] = createSignal(false);
 
 	const refresh = async () => {

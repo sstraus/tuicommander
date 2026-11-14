@@ -1,0 +1,20 @@
+{
+  "source": "https://core.telegram.org/bots/api",
+  "version": "Bot API 10.4 (2026-11-09)",
+  "provenance": "Synthetic examples derived from the official method and object schemas, retrieved 2026-11-11. These are not recorded account responses or proof of live service behavior.",
+  "send": {
+    "method": "sendMessage",
+    "request": {"chat_id": 1111111, "text": "exact text"},
+    "response": {"ok": true, "result": {"message_id": 17, "chat": {"id": 1111111, "type": "private"}}}
+  },
+  "update": {
+    "method": "editMessageText",
+    "request": {"chat_id": 1111111, "text": "exact text", "message_id": 17, "reply_markup": {"inline_keyboard": []}},
+    "response": {"ok": true, "result": {"message_id": 17, "chat": {"id": 1111111, "type": "private"}}}
+  },
+  "reply": {
+    "method": "sendMessage",
+    "request": {"chat_id": 1111111, "text": "exact text", "reply_parameters": {"message_id": 17, "allow_sending_without_reply": false}},
+    "response": {"ok": true, "result": {"message_id": 18, "chat": {"id": 1111111, "type": "private"}}}
+  }
+}

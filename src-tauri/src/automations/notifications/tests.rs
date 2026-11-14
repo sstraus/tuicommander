@@ -267,3 +267,81 @@ async fn failed_run_notifies_owner() {
         DeliveryStatus::Confirmed
     );
 }
+
+// Catches: unknown runs (agent idle after a provider error, evidence lost) never reaching the owner.
+#[tokio::test]
+async fn unknown_run_notifies_owner_once_with_error_line_and_session() {
+    let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let state = Arc::new(crate::state::tests_support::make_test_app_state_in(
+        dir.path(),
+    ));
+    state.peer_agents.insert(
+        "creator".into(),
+        crate::state::PeerAgent {
+            tuic_session: "creator".into(),
+            mcp_session_id: "creator-mcp".into(),
+            name: "Creator".into(),
+            project: None,
+            registered_at: 0,
+        },
+    );
+    let owner = RunOwner::acquire_at(&dir.path().join("runs.sqlite3"), 0).unwrap();
+    let mut definition: AutomationDefinition = serde_json::from_value(serde_json::json!({
+        "id":"daily", "name":"Daily", "prompt":"private prompt", "run_config":"claude",
+        "repository":"/repo", "workspace":{"mode":"existing"}, "cron":"0 9 * * *",
+        "timezone":"UTC", "enabled":true, "grace_secs":43200,
+        "overlap":"skip", "max_duration_secs":3600, "precheck":null
+    }))
+    .unwrap();
+    definition.created_by_session = Some("creator".into());
+    let reserved = owner
+        .store()
+        .reserve(&definition, RunTrigger::Manual, 1)
+        .unwrap()
+        .unwrap();
+    owner
+        .store()
+        .transition(
+            &reserved.id,
+            RunStatus::Running,
+            RunDetails {
+                session_id: Some("owned".into()),
+                ..Default::default()
+            },
+            2,
+        )
+        .unwrap();
+    let unknown = owner
+        .store()
+        .transition(
+            &reserved.id,
+            RunStatus::Unknown,
+            RunDetails {
+                stdout: Some("working\n⎿ API Error: Connection lost mid-response\n\n❯ \n".into()),
+                reason: Some("Completion evidence lost or unverifiable; not retried".into()),
+                ..Default::default()
+            },
+            3,
+        )
+        .unwrap();
+    let config = crate::config::NotificationConfig {
+        enabled: false,
+        ..Default::default()
+    };
+    assert!(!publish(&state, owner.store(), &config, &unknown));
+    publish(&state, owner.store(), &config, &unknown);
+    let inbox = state
+        .agent_inbox
+        .get("creator")
+        .expect("owner never notified");
+    assert_eq!(inbox.len(), 1, "duplicate publication resent the notice");
+    let notice: serde_json::Value = serde_json::from_str(&inbox[0].content).unwrap();
+    assert_eq!(notice["type"], "automation_run_unknown");
+    assert_eq!(notice["run_id"], unknown.id);
+    assert_eq!(notice["session_id"], "owned");
+    assert_eq!(
+        notice["last_error"],
+        "⎿ API Error: Connection lost mid-response"
+    );
+    assert!(!inbox[0].content.contains("private prompt"));
+}

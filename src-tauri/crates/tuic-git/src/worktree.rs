@@ -3,6 +3,7 @@ use crate::git_reads::git_reads;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -518,8 +519,15 @@ pub struct WorkspaceLifecycleStatus {
     pub dirty_fingerprint: Option<String>,
     pub submodule_unpushed_commits: Vec<SubmoduleUnpushedCommits>,
     pub commit_status: WorkspaceCommitStatus,
-    #[serde(skip)]
+    /// Which rule proved the verdict (`ancestry`, `github_pr`, ...). Absent when unproven.
+    #[serde(rename = "proof_source", skip_serializing_if = "Option::is_none")]
     merge_proof: Option<String>,
+    /// Exact branch tip the verdict was computed for.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tip: Option<String>,
+    /// Exact integration base commit the tip was compared against.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
     pub removal_safety: WorkspaceRemovalSafety,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -539,17 +547,74 @@ fn rev_at(path: &Path, spec: &str) -> Result<String, String> {
         .map_err(|e| format!("could not resolve {spec}: {e}"))
 }
 
+/// Resolve one revision inside this process. The merge classifier runs once per
+/// local branch, so a `git rev-parse` there costs one exec (and one Defender scan
+/// of the git binary) per branch and per restart (#3021-3a69).
+fn quick_id(repo: &Path, spec: &str) -> Result<gix::ObjectId, String> {
+    crate::git_reads::cached_repo(repo)?
+        .rev_parse_single(spec)
+        .map(|id| id.detach())
+        .map_err(|e| format!("could not resolve {spec}: {e}"))
+}
+
+fn quick_rev(repo: &Path, spec: &str) -> Result<String, String> {
+    quick_id(repo, spec).map(|id| id.to_string())
+}
+
+fn quick_commit(repo: &Path, spec: &str) -> Result<gix::ObjectId, String> {
+    quick_id(repo, &format!("{spec}^{{commit}}"))
+}
+
+/// Best merge base of two commits, `None` for unrelated histories.
+fn quick_merge_base(
+    repo: &Path,
+    one: gix::ObjectId,
+    two: gix::ObjectId,
+) -> Result<Option<gix::ObjectId>, String> {
+    crate::git_reads::cached_repo(repo)?
+        .merge_base(one, two)
+        .map(|base| base.map(|id| id.detach()))
+        .map_err(|error| format!("could not inspect branch merge base: {error}"))
+}
+
+/// Reflog messages of a local branch, oldest first (creation entry first).
+/// An absent or expired log is an empty list, as `git reflog show` prints nothing.
+fn branch_reflog_messages(repo: &Path, branch: &str) -> Result<Vec<String>, String> {
+    use gix::bstr::ByteSlice;
+    let grepo = crate::git_reads::cached_repo(repo)?;
+    let Some(reference) = grepo
+        .try_find_reference(format!("refs/heads/{branch}").as_str())
+        .map_err(|error| format!("could not inspect branch history: {error}"))?
+    else {
+        return Ok(Vec::new());
+    };
+    let mut platform = reference.log_iter();
+    let Some(lines) = platform
+        .all()
+        .map_err(|error| format!("could not inspect branch history: {error}"))?
+    else {
+        return Ok(Vec::new());
+    };
+    lines
+        .map(|line| {
+            line.map(|line| line.message.to_str_lossy().into_owned())
+                .map_err(|error| format!("could not inspect branch history: {error}"))
+        })
+        .collect()
+}
+
 pub(crate) fn dirty_files_at(path: &Path) -> Result<usize, String> {
-    git_cmd(path)
+    let status = git_cmd(path)
         .args([
             "status",
             "--porcelain",
+            "-z",
             "--untracked-files=all",
             "--ignore-submodules=none",
         ])
         .run()
-        .map(|out| out.stdout.lines().filter(|l| !l.trim().is_empty()).count())
-        .map_err(|e| format!("could not check the workspace for uncommitted changes: {e}"))
+        .map_err(|e| format!("could not check the workspace for uncommitted changes: {e}"))?;
+    crate::copy_provenance::inspect(path, &status.stdout).map(|(count, _)| count)
 }
 
 pub fn dirty_fingerprint_at(
@@ -567,6 +632,7 @@ fn workspace_safety_at(
         .args([
             "status",
             "--porcelain",
+            "-z",
             "--untracked-files=all",
             "--ignore-submodules=none",
         ])
@@ -600,7 +666,29 @@ fn workspace_safety_at(
             .borrow_mut()
             .push(("submodule status".into(), started.elapsed()))
     });
+    let (dirty_files, copies) = crate::copy_provenance::inspect(path, &status.stdout)?;
+    let ignored = git_cmd(path)
+        .args([
+            "status",
+            "--porcelain",
+            "-z",
+            "--ignored=matching",
+            "--untracked-files=normal",
+        ])
+        .run()
+        .map_err(|e| format!("could not fingerprint ignored paths: {e}"))?;
     let mut digest = Sha256::new();
+    // Git collapses ignored directories. New entries inside an already-ignored directory
+    // and edits to dirty contents are not detected; removal remains non-atomic.
+    for entry in ignored
+        .stdout
+        .split('\0')
+        .filter(|entry| entry.starts_with("!! "))
+    {
+        digest.update(entry.as_bytes());
+        digest.update([0]);
+    }
+    digest.update(serde_json::to_vec(&copies).map_err(|e| e.to_string())?);
     digest.update(status.stdout.as_bytes());
     digest.update([0]);
     let tip = rev_at(path, "HEAD")?;
@@ -639,16 +727,7 @@ fn workspace_safety_at(
             });
         }
     }
-    Ok((
-        status
-            .stdout
-            .lines()
-            .filter(|line| !line.trim().is_empty())
-            .count(),
-        hex::encode(digest.finalize()),
-        unpushed,
-        tip,
-    ))
+    Ok((dirty_files, hex::encode(digest.finalize()), unpushed, tip))
 }
 
 fn initialized_main_submodule(base_repo: &Path, destination: &Path) -> bool {
@@ -853,18 +932,12 @@ pub fn inspect_workspace_lifecycle(
 }
 
 fn is_ancestor(repo: &Path, ancestor: &str, descendant: &str) -> Result<bool, String> {
-    let result = git_cmd(repo)
-        .args(["merge-base", "--is-ancestor", ancestor, descendant])
-        .run_raw()
-        .map_err(|error| format!("could not compare commits: {error}"))?;
-    match result.status.code() {
-        Some(0) => Ok(true),
-        Some(1) => Ok(false),
-        code => Err(format!(
-            "could not compare commits (exit {code:?}): {}",
-            String::from_utf8_lossy(&result.stderr).trim()
-        )),
-    }
+    let compare = || -> Result<bool, String> {
+        let ancestor = quick_commit(repo, ancestor)?;
+        let descendant = quick_commit(repo, descendant)?;
+        Ok(quick_merge_base(repo, ancestor, descendant)? == Some(ancestor))
+    };
+    compare().map_err(|error| format!("could not compare commits: {error}"))
 }
 
 /// GitHub records the PR head even when squash merging did not preserve its
@@ -941,31 +1014,26 @@ fn integration_bases(repo: &Path, default_branch: &str) -> Vec<String> {
     // A fully qualified default (see `get_remote_default_branch`) is already exact.
     if default_branch.starts_with("refs/") {
         return Some(default_branch.to_string())
-            .filter(|base| rev_at(repo, &format!("{base}^{{commit}}")).is_ok())
+            .filter(|base| quick_commit(repo, base).is_ok())
             .into_iter()
             .collect();
     }
     let local_ref = format!("refs/heads/{default_branch}");
-    let upstream = git_cmd(repo)
-        .args([
-            "for-each-ref",
-            "--format=%(refname)%09%(upstream)",
-            &local_ref,
-        ])
-        .run_silent()
-        .and_then(|out| {
-            out.stdout.lines().find_map(|line| {
-                let (name, upstream) = line.split_once('\t')?;
-                (name == local_ref && !upstream.is_empty()).then(|| upstream.to_string())
-            })
-        });
+    let upstream = crate::git_reads::cached_repo(repo).ok().and_then(|grepo| {
+        use gix::bstr::ByteSlice;
+        let name = gix::refs::FullName::try_from(local_ref.as_str()).ok()?;
+        grepo
+            .branch_remote_tracking_ref_name(name.as_ref(), gix::remote::Direction::Fetch)?
+            .ok()
+            .map(|upstream| upstream.as_bstr().to_str_lossy().into_owned())
+    });
     let mut bases = Vec::new();
     for base in upstream.into_iter().chain([
         format!("refs/remotes/origin/{default_branch}"),
         format!("refs/heads/{default_branch}"),
         format!("refs/remotes/{default_branch}"),
     ]) {
-        if !bases.contains(&base) && rev_at(repo, &format!("{base}^{{commit}}")).is_ok() {
+        if !bases.contains(&base) && quick_commit(repo, &base).is_ok() {
             bases.push(base);
         }
     }
@@ -985,6 +1053,26 @@ fn describe_bases(bases: &[String]) -> String {
         .join(" and ")
 }
 
+/// Commits of `tip` that neither a default integration base nor the repository's
+/// checked-out HEAD holds. HEAD counts because `classify_branch_merge` calls a tip
+/// merged when HEAD contains it, so the badge and every checklist or archive record
+/// must read the same integration set (#2897-ebfc).
+fn commits_outside_integration(repo: &Path, tip: &str, bases: &[String]) -> Result<usize, String> {
+    if is_ancestor(repo, tip, "HEAD")? {
+        return Ok(0);
+    }
+    let mut args = vec!["rev-list", "--count", tip, "--not"];
+    args.extend(bases.iter().map(String::as_str));
+    git_cmd(repo)
+        .args(args)
+        .run()
+        .map_err(|error| error.to_string())?
+        .stdout
+        .trim()
+        .parse()
+        .map_err(|error: std::num::ParseIntError| error.to_string())
+}
+
 /// Count commits absent from the default integration refs, naming the exact refs checked.
 /// Unlike a merge verdict, this deliberately does not treat squash-equivalent commits
 /// as ancestors: the archive checklist promises that the commits themselves are kept.
@@ -999,22 +1087,7 @@ pub fn workspace_commits_outside_default(
         return Err(format!("default branch '{default}' was not found"));
     }
     let tip = rev_at(Path::new(&workspace.path), "HEAD")?;
-    let mut args = vec![
-        "rev-list".to_string(),
-        "--count".into(),
-        tip,
-        "--not".into(),
-    ];
-    args.extend(bases.iter().cloned());
-    let output = git_cmd(repo)
-        .args(args)
-        .run()
-        .map_err(|error| error.to_string())?;
-    let count = output
-        .stdout
-        .trim()
-        .parse::<usize>()
-        .map_err(|error| error.to_string())?;
+    let count = commits_outside_integration(repo, &tip, &bases)?;
     Ok((describe_bases(&bases), count))
 }
 
@@ -1027,18 +1100,534 @@ fn is_ancestor_of_any(repo: &Path, tip: &str, bases: &[String]) -> Result<bool, 
     Ok(false)
 }
 
-/// A concrete remote-tracking ref preserves every commit up to `tip`.
-fn containing_remote_ref(repo: &Path, tip: &str) -> Result<Option<String>, String> {
-    let refs = git_cmd(repo)
+/// Why a branch classification did not finish: a heuristic still waits for a
+/// Git fact, or a real failure.
+enum ClassifyError {
+    Pending,
+    Failed(String),
+}
+
+impl From<String> for ClassifyError {
+    fn from(error: String) -> Self {
+        Self::Failed(error)
+    }
+}
+
+type Classified<T> = Result<T, ClassifyError>;
+
+/// Remote-tracking refs by name with their commits, and every commit they reach.
+type RemoteRefs = (
+    Vec<(String, gix::ObjectId)>,
+    std::collections::HashSet<gix::ObjectId>,
+);
+
+/// A content heuristic that may wait for further Git facts.
+type ContentCheck = fn(&Path, &str, &str, &mut HeuristicFacts) -> Classified<bool>;
+
+/// Git facts that the content heuristics read from the git CLI (patch ids,
+/// merge-tree and zero-context patches). A heuristic first asks for every fact it
+/// needs; the classification driver then fetches each kind with one git process
+/// for all pending branches and classifies again. The process count therefore
+/// does not grow with the branch count (#3024-58fe). In-process reads that recur
+/// for many branches (changed paths, subjects) are kept here too.
+#[derive(Default)]
+struct HeuristicFacts {
+    /// `(target, tip)` to the merged tree of a clean `merge-tree`, `None` otherwise.
+    merge_trees: HashMap<(String, String), Option<String>>,
+    /// Stable patch id per commit; empty for a commit without changes, which
+    /// `git cherry` also counts as equivalent to another empty commit.
+    patch_ids: HashMap<gix::ObjectId, String>,
+    /// `(commit, from)` to its zero-context patch; `from` absent means its parent.
+    zero_context: HashMap<(String, Option<String>), String>,
+    wanted_merges: std::collections::BTreeSet<(String, String)>,
+    wanted_patch_ids: std::collections::BTreeSet<gix::ObjectId>,
+    wanted_zero_context: std::collections::BTreeSet<(String, Option<String>)>,
+    /// `(target, tip)` to the branch commits and whether `git cherry` marks them `-`.
+    cherries: HashMap<(String, String), Vec<(gix::ObjectId, bool)>>,
+    changed_paths: HashMap<gix::ObjectId, Vec<u8>>,
+    summaries: HashMap<gix::ObjectId, String>,
+    /// Remote-tracking refs by name with their commits, and every commit they reach.
+    remote_refs: Option<RemoteRefs>,
+}
+
+impl HeuristicFacts {
+    /// The merged tree of `(target, tip)`, `None` when the merge is not clean;
+    /// `Pending` until a fetch has answered for the pair.
+    fn merge_tree(&mut self, target: &str, tip: &str) -> Classified<Option<String>> {
+        let key = (target.to_owned(), tip.to_owned());
+        match self.merge_trees.get(&key) {
+            Some(tree) => Ok(tree.clone()),
+            None => {
+                self.wanted_merges.insert(key);
+                Err(ClassifyError::Pending)
+            }
+        }
+    }
+
+    fn zero_context(&mut self, commit: &str, from: Option<&str>) -> Option<String> {
+        let key = (commit.to_owned(), from.map(str::to_owned));
+        let known = self.zero_context.get(&key).cloned();
+        if known.is_none() {
+            self.wanted_zero_context.insert(key);
+        }
+        known
+    }
+
+    /// Paths a commit changes against its first parent, as one comparable key.
+    fn changed_paths(
+        &mut self,
+        grepo: &gix::Repository,
+        commit: gix::ObjectId,
+    ) -> Result<Vec<u8>, String> {
+        if let Some(paths) = self.changed_paths.get(&commit) {
+            return Ok(paths.clone());
+        }
+        let found = grepo.find_commit(commit).map_err(|e| e.to_string())?;
+        let parent = found.parent_ids().next().map(|id| id.detach());
+        let tree = found.tree_id().map_err(|e| e.to_string())?.detach();
+        let parent_tree = parent
+            .map(|parent| quick_tree_of(grepo, parent))
+            .transpose()?;
+        let mut paths: Vec<Vec<u8>> = tree_changes(grepo, parent_tree, tree)?
+            .into_iter()
+            .map(|change| change.path)
+            .collect();
+        paths.sort();
+        let key = paths.join(&0u8);
+        self.changed_paths.insert(commit, key.clone());
+        Ok(key)
+    }
+
+    fn summary(
+        &mut self,
+        grepo: &gix::Repository,
+        commit: gix::ObjectId,
+    ) -> Result<String, String> {
+        if let Some(summary) = self.summaries.get(&commit) {
+            return Ok(summary.clone());
+        }
+        let error = |e: &dyn std::fmt::Display| format!("could not inspect commit subject: {e}");
+        let found = grepo.find_commit(commit).map_err(|e| error(&e))?;
+        let summary = found
+            .message()
+            .map_err(|e| error(&e))?
+            .summary()
+            .to_string();
+        self.summaries.insert(commit, summary.clone());
+        Ok(summary)
+    }
+
+    /// `git cherry target tip`: the branch's non-merge commits, `true` where a
+    /// non-merge commit of `tip..target` has the same patch id. Patch ids are
+    /// compared only between commits that change the same paths, because a patch
+    /// id covers the file names (`None` while ids are missing).
+    fn cherry(
+        &mut self,
+        repo: &Path,
+        target: &str,
+        tip: &str,
+    ) -> Result<Option<Vec<(gix::ObjectId, bool)>>, String> {
+        let key = (target.to_owned(), tip.to_owned());
+        if let Some(cherry) = self.cherries.get(&key) {
+            return Ok(Some(cherry.clone()));
+        }
+        let grepo = crate::git_reads::cached_repo(repo)?;
+        let (target_id, tip_id) = (quick_commit(repo, target)?, quick_commit(repo, tip)?);
+        let own = commit_range(&grepo, tip_id, target_id)?;
+        let own: Vec<_> = own
+            .into_iter()
+            .filter(|(_, merge)| !merge)
+            .map(|(id, _)| id)
+            .collect();
+        let mut own_paths = std::collections::HashSet::new();
+        for commit in &own {
+            own_paths.insert(self.changed_paths(&grepo, *commit)?);
+        }
+        let mut upstream = Vec::new();
+        for (commit, merge) in commit_range(&grepo, target_id, tip_id)? {
+            if !merge && own_paths.contains(&self.changed_paths(&grepo, commit)?) {
+                upstream.push(commit);
+            }
+        }
+        let missing: Vec<_> = own
+            .iter()
+            .chain(&upstream)
+            .filter(|commit| !self.patch_ids.contains_key(*commit))
+            .copied()
+            .collect();
+        if !missing.is_empty() {
+            self.wanted_patch_ids.extend(missing);
+            return Ok(None);
+        }
+        let upstream_ids: std::collections::HashSet<&String> = upstream
+            .iter()
+            .map(|commit| &self.patch_ids[commit])
+            .collect();
+        let cherry: Vec<_> = own
+            .iter()
+            .map(|commit| (*commit, upstream_ids.contains(&self.patch_ids[commit])))
+            .collect();
+        self.cherries.insert(key, cherry.clone());
+        Ok(Some(cherry))
+    }
+
+    /// First remote-tracking ref (by name, as `for-each-ref --contains` lists
+    /// them) whose history holds `tip`.
+    fn containing_remote_ref(&mut self, repo: &Path, tip: &str) -> Result<Option<String>, String> {
+        use gix::bstr::ByteSlice;
+        let grepo = crate::git_reads::cached_repo(repo)?;
+        if self.remote_refs.is_none() {
+            let error =
+                |e: &dyn std::fmt::Display| format!("could not inspect remote containment: {e}");
+            let mut refs = Vec::new();
+            let platform = grepo.references().map_err(|e| error(&e))?;
+            for reference in platform.prefixed("refs/remotes/").map_err(|e| error(&e))? {
+                let mut reference = reference.map_err(|e| error(&e))?;
+                let name = reference.name().as_bstr().to_str_lossy().into_owned();
+                if let Ok(commit) = reference.peel_to_commit() {
+                    refs.push((name, commit.id));
+                }
+            }
+            refs.sort();
+            let mut reachable = std::collections::HashSet::new();
+            if !refs.is_empty() {
+                for info in grepo
+                    .rev_walk(refs.iter().map(|(_, id)| *id))
+                    .all()
+                    .map_err(|e| error(&e))?
+                {
+                    reachable.insert(info.map_err(|e| error(&e))?.id);
+                }
+            }
+            self.remote_refs = Some((refs, reachable));
+        }
+        let (refs, reachable) = self.remote_refs.as_ref().expect("remote refs loaded above");
+        let tip = quick_commit(repo, tip)?;
+        if !reachable.contains(&tip) {
+            return Ok(None);
+        }
+        for (name, id) in refs {
+            if quick_merge_base(repo, tip, *id)? == Some(tip) {
+                return Ok(Some(name.clone()));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Run one git process per wanted fact kind. `false` when nothing was wanted.
+    fn fetch(&mut self, repo: &Path) -> Result<bool, String> {
+        let merges = std::mem::take(&mut self.wanted_merges);
+        let patch_ids = std::mem::take(&mut self.wanted_patch_ids);
+        let patches = std::mem::take(&mut self.wanted_zero_context);
+        if merges.is_empty() && patch_ids.is_empty() && patches.is_empty() {
+            return Ok(false);
+        }
+        if !merges.is_empty() {
+            // `merge-tree --stdin` (git 2.54 and 2.56) segfaults on the merge after
+            // a submodule merge it has to resolve, and the crash loses every
+            // result. Such a pair runs alone; the others share one process.
+            let (alone, shared): (Vec<_>, Vec<_>) = merges
+                .into_iter()
+                .partition(|(target, tip)| merges_submodule(repo, target, tip).unwrap_or(true));
+            for group in alone.into_iter().map(|pair| vec![pair]).chain([shared]) {
+                // An unexpected failure costs one process per pair rather than
+                // proofs: a failed single merge-tree proves no merge, as before.
+                let trees = merge_tree_batch(repo, &group).unwrap_or_else(|| {
+                    group
+                        .iter()
+                        .map(|pair| {
+                            merge_tree_batch(repo, std::slice::from_ref(pair))
+                                .and_then(|trees| trees.into_iter().next())
+                                .flatten()
+                        })
+                        .collect()
+                });
+                for (key, tree) in group.into_iter().zip(trees) {
+                    self.merge_trees.insert(key, tree);
+                }
+            }
+        }
+        if !patch_ids.is_empty() {
+            let input = patch_ids.iter().fold(String::new(), |mut input, commit| {
+                let _ = writeln!(input, "{commit}");
+                input
+            });
+            let diff = git_cmd(repo)
+                .args([
+                    "diff-tree",
+                    "--stdin",
+                    "-r",
+                    "-p",
+                    "--root",
+                    "--no-renames",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--full-index",
+                ])
+                // Raw bytes: a lossy UTF-8 copy would give distinct Latin-1 or
+                // binary edits the same patch id.
+                .run_bytes_with_input(input.as_bytes())
+                .map_err(|error| format!("could not compare patches: {error}"))?;
+            let listed = git_cmd(repo)
+                .args(["patch-id", "--stable"])
+                .run_bytes_with_input(&diff)
+                .map_err(|error| format!("could not compare patches: {error}"))?;
+            let listed = String::from_utf8_lossy(&listed);
+            let ids: HashMap<&str, &str> = listed
+                .lines()
+                .filter_map(|line| line.split_once(' '))
+                .map(|(patch_id, commit)| (commit, patch_id))
+                .collect();
+            for commit in patch_ids {
+                let id = ids
+                    .get(commit.to_string().as_str())
+                    .copied()
+                    .unwrap_or_default();
+                self.patch_ids.insert(commit, id.to_owned());
+            }
+        }
+        if !patches.is_empty() {
+            let patches: Vec<_> = patches.into_iter().collect();
+            let input: String = patches
+                .iter()
+                .map(|(commit, from)| match from {
+                    Some(from) => format!("{commit} {from}\n"),
+                    None => format!("{commit}\n"),
+                })
+                .collect();
+            // A line "<commit> <from>" diffs <from> against <commit>. Each result
+            // starts with the line's first id; diff lines never are a bare id.
+            let output = git_cmd(repo)
+                .args([
+                    "-c",
+                    "core.quotePath=true",
+                    "diff-tree",
+                    "--stdin",
+                    "--always",
+                    "-r",
+                    "-p",
+                    "--root",
+                    "--no-renames",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--unified=0",
+                ])
+                .run_with_input(&input)
+                .map_err(|error| format!("could not inspect patches: {error}"))?
+                .stdout;
+            let mut lines = output.lines().peekable();
+            for (index, key) in patches.iter().enumerate() {
+                if lines.next() != Some(key.0.as_str()) {
+                    return Err(format!("could not inspect patches: no diff for {}", key.0));
+                }
+                let next = patches.get(index + 1).map(|next| next.0.as_str());
+                let mut text = String::new();
+                while let Some(line) = lines.next_if(|line| Some(*line) != next) {
+                    text.push_str(line);
+                    text.push('\n');
+                }
+                self.zero_context.insert(key.clone(), text);
+            }
+        }
+        Ok(true)
+    }
+}
+
+/// Merged trees of `(target, tip)` pairs from one `merge-tree --stdin` process,
+/// `None` when it fails or answers for fewer pairs.
+fn merge_tree_batch(repo: &Path, pairs: &[(String, String)]) -> Option<Vec<Option<String>>> {
+    if pairs.is_empty() {
+        return Some(Vec::new());
+    }
+    let input = pairs
+        .iter()
+        .fold(String::new(), |mut input, (target, tip)| {
+            let _ = writeln!(input, "{target} {tip}");
+            input
+        });
+    let trees = git_cmd(repo)
         .args([
-            "for-each-ref",
-            "--format=%(refname)",
-            &format!("--contains={tip}"),
-            "refs/remotes/",
+            "merge-tree",
+            "--write-tree",
+            "--no-messages",
+            "--name-only",
+            "--stdin",
         ])
-        .run()
-        .map_err(|error| format!("could not inspect remote containment: {error}"))?;
-    Ok(refs.stdout.lines().next().map(str::to_owned))
+        .run_with_input(&input)
+        .ok()
+        .map(|output| parse_merge_tree_batch(&output.stdout))?;
+    (trees.len() == pairs.len()).then_some(trees)
+}
+
+/// True when merging `tip` into `target` must merge a submodule pointer: the
+/// branch moved it and the target holds a third commit for it.
+fn merges_submodule(repo: &Path, target: &str, tip: &str) -> Result<bool, String> {
+    let grepo = crate::git_reads::cached_repo(repo)?;
+    let (target, tip) = (quick_commit(repo, target)?, quick_commit(repo, tip)?);
+    let Some(fork) = quick_merge_base(repo, target, tip)? else {
+        return Ok(false);
+    };
+    let target_tree = grepo
+        .find_tree(quick_tree_of(&grepo, target)?)
+        .map_err(|e| e.to_string())?;
+    for change in tree_changes(
+        &grepo,
+        Some(quick_tree_of(&grepo, fork)?),
+        quick_tree_of(&grepo, tip)?,
+    )? {
+        let gitlink =
+            |mode: gix::objs::tree::EntryMode| mode.kind() == gix::objs::tree::EntryKind::Commit;
+        if !gitlink(change.mode) && !change.previous.is_some_and(gitlink) {
+            continue;
+        }
+        let ours = target_tree
+            .lookup_entry(change.path.split(|byte| *byte == b'/'))
+            .map_err(|e| e.to_string())?
+            .map(|entry| entry.object_id());
+        if ours != change.previous_id && ours != change.id {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// `merge-tree --stdin` records: status, tree, conflicted names, empty field.
+/// Clean merges (status 1) yield their tree.
+fn parse_merge_tree_batch(stdout: &str) -> Vec<Option<String>> {
+    let mut fields = stdout.split('\0');
+    let mut trees = Vec::new();
+    while let Some(status) = fields.next().filter(|status| !status.is_empty()) {
+        let tree = fields.next().unwrap_or_default();
+        for name in fields.by_ref() {
+            if name.is_empty() {
+                break;
+            }
+        }
+        trees.push((status == "1").then(|| tree.to_owned()));
+    }
+    trees
+}
+
+fn quick_tree_of(grepo: &gix::Repository, commit: gix::ObjectId) -> Result<gix::ObjectId, String> {
+    grepo
+        .find_commit(commit)
+        .map_err(|e| e.to_string())?
+        .tree_id()
+        .map(|id| id.detach())
+        .map_err(|e| e.to_string())
+}
+
+/// Changed blobs, links and submodules between two trees, without renames.
+fn tree_changes(
+    grepo: &gix::Repository,
+    old: Option<gix::ObjectId>,
+    new: gix::ObjectId,
+) -> Result<Vec<TreeChange>, String> {
+    let tree = |id: Option<gix::ObjectId>| -> Result<gix::Tree<'_>, String> {
+        match id {
+            Some(id) => grepo.find_tree(id).map_err(|e| e.to_string()),
+            None => Ok(grepo.empty_tree()),
+        }
+    };
+    let (old, new) = (tree(old)?, tree(Some(new))?);
+    let mut recorder = gix::diff::tree::Recorder::default();
+    gix::diff::tree(
+        gix::objs::TreeRefIter::from_bytes(&old.data, old.id.kind()),
+        gix::objs::TreeRefIter::from_bytes(&new.data, new.id.kind()),
+        &mut gix::diff::tree::State::default(),
+        &grepo.objects,
+        &mut recorder,
+    )
+    .map_err(|e| format!("could not inspect changed paths: {e}"))?;
+    use gix::diff::tree::recorder::Change;
+    Ok(recorder
+        .records
+        .into_iter()
+        .filter_map(|change| match change {
+            Change::Addition {
+                entry_mode,
+                oid,
+                path,
+                ..
+            } => (!entry_mode.is_tree()).then_some(TreeChange {
+                status: 'A',
+                mode: entry_mode,
+                previous: None,
+                id: Some(oid),
+                previous_id: None,
+                path: path.into(),
+            }),
+            Change::Deletion {
+                entry_mode,
+                oid,
+                path,
+                ..
+            } => (!entry_mode.is_tree()).then_some(TreeChange {
+                status: 'D',
+                mode: entry_mode,
+                previous: None,
+                id: None,
+                previous_id: Some(oid),
+                path: path.into(),
+            }),
+            Change::Modification {
+                previous_entry_mode,
+                previous_oid,
+                entry_mode,
+                oid,
+                path,
+                ..
+            } => (!entry_mode.is_tree() || !previous_entry_mode.is_tree()).then_some(TreeChange {
+                status: 'M',
+                mode: entry_mode,
+                previous: Some(previous_entry_mode),
+                id: Some(oid),
+                previous_id: Some(previous_oid),
+                path: path.into(),
+            }),
+        })
+        .collect())
+}
+
+struct TreeChange {
+    status: char,
+    mode: gix::objs::tree::EntryMode,
+    previous: Option<gix::objs::tree::EntryMode>,
+    /// Entry after the change, `None` when deleted.
+    id: Option<gix::ObjectId>,
+    /// Entry before the change, `None` when added.
+    previous_id: Option<gix::ObjectId>,
+    path: Vec<u8>,
+}
+
+/// Commits reachable from `tip` but not from `hidden` (`git rev-list hidden..tip`),
+/// each with whether it is a merge.
+fn commit_range(
+    grepo: &gix::Repository,
+    tip: gix::ObjectId,
+    hidden: gix::ObjectId,
+) -> Result<Vec<(gix::ObjectId, bool)>, String> {
+    grepo
+        .rev_walk([tip])
+        .with_hidden([hidden])
+        .all()
+        .map_err(|e| format!("could not walk commits: {e}"))?
+        .map(|info| {
+            info.map(|info| (info.id, info.parent_ids.len() > 1))
+                .map_err(|e| format!("could not walk commits: {e}"))
+        })
+        .collect()
+}
+
+fn has_merges(repo: &Path, target: &str, tip: &str) -> Result<bool, String> {
+    let grepo = crate::git_reads::cached_repo(repo)?;
+    Ok(commit_range(
+        &grepo,
+        quick_commit(repo, tip)?,
+        quick_commit(repo, target)?,
+    )?
+    .iter()
+    .any(|(_, merge)| *merge))
 }
 
 fn classify_branch_merge(
@@ -1048,81 +1637,134 @@ fn classify_branch_merge(
     default_branch: &str,
     pr_proves_tip: impl Fn(&Path, &str, &str) -> bool,
 ) -> Result<MonitoringMerge, String> {
+    classify_branch_merges(
+        repo,
+        &[(branch.to_owned(), tip.to_owned())],
+        default_branch,
+        pr_proves_tip,
+    )
+    .pop()
+    .expect("one verdict per branch")
+}
+
+/// Classify `(branch, tip)` pairs together: every round lets each pending branch
+/// ask for the Git facts its heuristics need, then fetches them all at once.
+fn classify_branch_merges(
+    repo: &Path,
+    branches: &[(String, String)],
+    default_branch: &str,
+    pr_proves_tip: impl Fn(&Path, &str, &str) -> bool,
+) -> Vec<Result<MonitoringMerge, String>> {
     let bases = integration_bases(repo, default_branch);
-    if bases.is_empty() {
-        return Err(format!("default branch '{default_branch}' was not found"));
-    }
-    let merged = is_ancestor_of_any(repo, tip, &bases)?;
-    // An unrelated root is a known graph state, even when reflogs expired.
-    // Reuse this scan's proof below instead of running merge-base twice.
-    let integration = if merged {
-        None
-    } else {
-        match integrated_in_defaults(repo, &bases, tip)? {
-            DefaultIntegration::Unrelated => {
-                return Ok((WorkspaceCommitStatus::UnrelatedHistory, None));
+    let mut facts = HeuristicFacts::default();
+    let mut verdicts: Vec<Option<Result<MonitoringMerge, String>>> =
+        branches.iter().map(|_| None).collect();
+    loop {
+        for ((branch, tip), verdict) in branches.iter().zip(verdicts.iter_mut()) {
+            if verdict.is_some() {
+                continue;
             }
-            DefaultIntegration::Related(proof) => proof,
+            match decide_branch_merge(
+                repo,
+                branch,
+                tip,
+                default_branch,
+                &bases,
+                &mut facts,
+                &pr_proves_tip,
+            ) {
+                Ok(merge) => *verdict = Some(Ok(merge)),
+                Err(ClassifyError::Failed(error)) => *verdict = Some(Err(error)),
+                Err(ClassifyError::Pending) => {}
+            }
         }
-    };
+        if verdicts.iter().all(Option::is_some) {
+            break;
+        }
+        let error = match facts.fetch(repo) {
+            Ok(true) => continue,
+            Ok(false) => "merge classification waits for no Git fact".to_owned(),
+            Err(error) => error,
+        };
+        for verdict in verdicts.iter_mut().filter(|verdict| verdict.is_none()) {
+            *verdict = Some(Err(error.clone()));
+        }
+    }
+    verdicts.into_iter().flatten().collect()
+}
+
+fn decide_branch_merge(
+    repo: &Path,
+    branch: &str,
+    tip: &str,
+    default_branch: &str,
+    bases: &[String],
+    facts: &mut HeuristicFacts,
+    pr_proves_tip: &impl Fn(&Path, &str, &str) -> bool,
+) -> Classified<MonitoringMerge> {
+    if bases.is_empty() {
+        return Err(format!("default branch '{default_branch}' was not found").into());
+    }
+    let merged = is_ancestor_of_any(repo, tip, bases)?;
+    // An unrelated root is a known graph state, even when reflogs expired.
+    if !merged && !shares_history_with_any(repo, bases, tip)? {
+        return Ok((WorkspaceCommitStatus::UnrelatedHistory, None));
+    }
     // Ancestry alone cannot distinguish own commits from a branch that merely
     // followed the default branch. The branch reflog records both its source
     // and how its ref moved after creation.
-    let reflog = git_cmd(repo)
-        .args([
-            "reflog",
-            "show",
-            "--format=%H%x09%gs",
-            &format!("refs/heads/{branch}"),
-        ])
-        .run()
-        .map_err(|error| format!("could not inspect branch history: {error}"))?
-        .stdout;
-    let mut entries = reflog.lines().collect::<Vec<_>>();
+    let messages = branch_reflog_messages(repo, branch)?;
     // Reflogs can expire or be disabled. Without origin history, neither an
     // untouched branch nor completed work can be inferred from ancestry alone.
-    let Some(creation) = entries.pop() else {
+    let Some((creation_message, entries)) = messages.split_first() else {
         return Ok((WorkspaceCommitStatus::Unknown, None));
     };
-    let (_, creation_message) = creation
-        .split_once('\t')
-        .ok_or("branch creation has no reflog message")?;
     let source = creation_message.strip_prefix("branch: Created from ");
     let from_default = source.is_some_and(|source| {
         source == "HEAD"
             || source == default_branch
             || source == format!("refs/heads/{default_branch}")
     });
-    let pull_upstream_is_default = entries
-        .iter()
-        .any(|entry| entry.ends_with("\tpull: Fast-forward"))
-        && git_cmd(repo)
-            .args(["config", "--get", &format!("branch.{branch}.merge")])
-            .run()
+    let pull_upstream_is_default = entries.iter().any(|entry| entry == "pull: Fast-forward")
+        && crate::git_reads::cached_repo(repo)
             .ok()
-            .is_some_and(|output| output.stdout.trim() == format!("refs/heads/{default_branch}"));
-    let follows_default = entries.iter().all(|entry| {
-        let message = entry.split_once('\t').map(|(_, message)| message);
-        message.is_some_and(|message| {
-            message == format!("merge {default_branch}: Fast-forward")
-                || message == format!("reset: moving to {default_branch}")
-                || (message.starts_with("pull ")
-                    && message.ends_with(&format!(" {default_branch}: Fast-forward")))
-                || (message == "pull: Fast-forward" && pull_upstream_is_default)
-                || (message.starts_with("rebase (finish): refs/heads/")
-                    && message.contains(&format!("refs/heads/{branch} onto ")))
-        })
+            .and_then(|grepo| {
+                grepo
+                    .config_snapshot()
+                    .string(&format!("branch.{branch}.merge"))
+                    .map(|value| value.to_string())
+            })
+            .is_some_and(|merge| merge.trim() == format!("refs/heads/{default_branch}"));
+    let follows_default = entries.iter().all(|message| {
+        message == &format!("merge {default_branch}: Fast-forward")
+            || message == &format!("reset: moving to {default_branch}")
+            || (message.starts_with("pull ")
+                && message.ends_with(&format!(" {default_branch}: Fast-forward")))
+            || (message == "pull: Fast-forward" && pull_upstream_is_default)
+            || (message.starts_with("rebase (finish): refs/heads/")
+                && message.contains(&format!("refs/heads/{branch} onto ")))
     });
     if merged && from_default && follows_default {
-        Ok((WorkspaceCommitStatus::InSync, None))
-    } else if merged {
-        Ok((WorkspaceCommitStatus::Merged, Some("ancestry".into())))
-    } else if is_ancestor(repo, tip, &rev_at(repo, "HEAD")?)? {
-        Ok((
+        return Ok((WorkspaceCommitStatus::InSync, None));
+    }
+    if merged {
+        return Ok((WorkspaceCommitStatus::Merged, Some("ancestry".into())));
+    }
+    if is_ancestor(repo, tip, "HEAD")? {
+        return Ok((
             WorkspaceCommitStatus::Merged,
             Some("integration_ancestry".into()),
-        ))
-    } else if let Some(proof) = integration {
+        ));
+    }
+    // Only a branch that no cheap ancestry proof settles needs the content
+    // heuristics, which read Git facts fetched for all branches at once.
+    let integration = match integrated_in_defaults(repo, bases, tip, facts)? {
+        DefaultIntegration::Unrelated => {
+            return Ok((WorkspaceCommitStatus::UnrelatedHistory, None));
+        }
+        DefaultIntegration::Related(proof) => proof,
+    };
+    if let Some(proof) = integration {
         let proof = if proof == "content_superset" && pr_proves_tip(repo, branch, tip) {
             "github_pr"
         } else {
@@ -1131,11 +1773,22 @@ fn classify_branch_merge(
         Ok((WorkspaceCommitStatus::Merged, Some(proof.into())))
     } else if pr_proves_tip(repo, branch, tip) {
         Ok((WorkspaceCommitStatus::Merged, Some("github_pr".into())))
-    } else if let Some(remote) = containing_remote_ref(repo, tip)? {
+    } else if let Some(remote) = facts.containing_remote_ref(repo, tip)? {
         Ok((WorkspaceCommitStatus::PushedUnmerged, Some(remote)))
     } else {
         Ok((WorkspaceCommitStatus::Unmerged, None))
     }
+}
+
+/// True when the tip shares a commit with at least one integration base.
+fn shares_history_with_any(repo: &Path, bases: &[String], tip: &str) -> Result<bool, String> {
+    let tip = quick_commit(repo, tip)?;
+    for base in bases {
+        if quick_merge_base(repo, quick_commit(repo, base)?, tip)?.is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 enum DefaultIntegration {
@@ -1149,58 +1802,64 @@ fn integrated_in_defaults(
     repo: &Path,
     bases: &[String],
     tip: &str,
-) -> Result<DefaultIntegration, String> {
+    facts: &mut HeuristicFacts,
+) -> Classified<DefaultIntegration> {
+    let tip_id = quick_commit(repo, tip)?;
+    let tip_tree = quick_id(repo, &format!("{tip_id}^{{tree}}"))?;
     let mut content_targets = Vec::new();
     let mut related = false;
     for base in bases {
-        let target = rev_at(repo, base)?;
+        let target = quick_rev(repo, &format!("{base}^{{commit}}"))?;
         // Unrelated histories have no fork delta and cannot prove content
-        // integration. Exit 1 means no common ancestor; other Git failures
-        // must still reach the caller rather than becoming unmerged evidence.
-        let fork = match git_cmd(repo).args(["merge-base", &target, tip]).run() {
-            Ok(output) => output.stdout,
-            Err(crate::git_cli::GitError::NonZeroExit { code: Some(1), .. }) => continue,
-            Err(error) => return Err(format!("could not inspect branch merge base: {error}")),
+        // integration. A fresh empty start commit also produces a no-op merge,
+        // but nothing was integrated: content heuristics require a delta from
+        // the fork. Ancestry and verified PR evidence are handled by the caller.
+        let Some(fork) = quick_merge_base(repo, quick_commit(repo, &target)?, tip_id)? else {
+            continue;
         };
         related = true;
-        // A fresh empty start commit also produces a no-op merge, but nothing
-        // was integrated. Content heuristics require a delta from the fork;
-        // ancestry and verified PR evidence are handled by the caller.
-        let changes = git_cmd(repo)
-            .args([
-                "diff",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--name-only",
-                &format!("{}..{tip}", fork.trim()),
-            ])
-            .run()
-            .map_err(|error| format!("could not inspect branch changes: {error}"))?;
-        if changes.stdout.is_empty() {
-            continue;
+        if quick_id(repo, &format!("{fork}^{{tree}}"))? != tip_tree {
+            content_targets.push(target);
         }
-        content_targets.push(target.clone());
-        if patches_integrated_in(repo, &target, tip)? {
+    }
+    // Ask for the patch ids and merges of every target before deciding, so one
+    // fetch serves the whole first round.
+    let mut pending = false;
+    for target in &content_targets {
+        if !has_merges(repo, target, tip)? {
+            pending |= facts.cherry(repo, target, tip)?.is_none();
+        }
+        pending |= facts.merge_tree(target, tip).is_err();
+    }
+    if pending {
+        return Err(ClassifyError::Pending);
+    }
+    for target in &content_targets {
+        if patches_integrated_in(repo, target, tip, facts)? {
             return Ok(DefaultIntegration::Related(Some("patch_equivalence")));
         }
-        let merged = git_cmd(repo)
-            .args(["merge-tree", "--write-tree", &target, tip])
-            .run();
-        let target_tree = rev_at(repo, &format!("{target}^{{tree}}"))?;
-        if merged.is_ok_and(|output| output.stdout.trim() == target_tree) {
-            let subjects = git_cmd(repo)
-                .args(["log", "--format=%s", &format!("{target}..{tip}")])
-                .run()
-                .map_err(|error| format!("could not inspect branch subjects: {error}"))?
-                .stdout;
-            let messages = git_cmd(repo)
-                .args(["log", "--format=%B%x00", &format!("{tip}..{target}")])
-                .run()
-                .map_err(|error| format!("could not inspect squash messages: {error}"))?
-                .stdout;
-            let squash = !subjects.trim().is_empty()
-                && messages.split('\0').any(|message| {
-                    subjects.lines().all(|subject| {
+        let merged = facts.merge_tree(target, tip)?;
+        let target_tree = quick_rev(repo, &format!("{target}^{{tree}}"))?;
+        if merged.as_deref() == Some(target_tree.as_str()) {
+            let grepo = crate::git_reads::cached_repo(repo)?;
+            let (target_id, own) = (quick_commit(repo, target)?, tip_id);
+            let mut subjects = Vec::new();
+            for (commit, _) in commit_range(&grepo, own, target_id)? {
+                subjects.push(facts.summary(&grepo, commit)?);
+            }
+            let mut messages = Vec::new();
+            for (commit, _) in commit_range(&grepo, target_id, own)? {
+                let message = grepo
+                    .find_commit(commit)
+                    .map_err(|e| format!("could not inspect squash messages: {e}"))?;
+                let raw = message
+                    .message_raw()
+                    .map_err(|e| format!("could not inspect squash messages: {e}"))?;
+                messages.push(String::from_utf8_lossy(raw).into_owned());
+            }
+            let squash = subjects.iter().any(|subject| !subject.trim().is_empty())
+                && messages.iter().any(|message| {
+                    subjects.iter().all(|subject| {
                         message.lines().any(|line| {
                             line.trim().strip_prefix("* ").unwrap_or(line.trim()) == subject
                         })
@@ -1213,10 +1872,26 @@ fn integrated_in_defaults(
             })));
         }
     }
-    for target in content_targets {
-        if same_subject_twins(repo, &target, tip)? || content_superset(repo, &target, tip)? {
-            return Ok(DefaultIntegration::Related(Some("content_superset")));
+    // Twins and content superset read further facts. Ask for all of them before
+    // settling; a later check's answer counts only once every earlier one is known.
+    let mut pending = false;
+    for target in &content_targets {
+        let checks: [ContentCheck; 2] = [same_subject_twins, content_superset];
+        for check in checks {
+            match check(repo, target, tip, facts) {
+                Ok(true) if !pending => {
+                    return Ok(DefaultIntegration::Related(Some("content_superset")));
+                }
+                Err(ClassifyError::Failed(error)) if !pending => {
+                    return Err(ClassifyError::Failed(error));
+                }
+                Err(ClassifyError::Pending) => pending = true,
+                _ => {}
+            }
         }
+    }
+    if pending {
+        return Err(ClassifyError::Pending);
     }
     Ok(if related {
         DefaultIntegration::Related(None)
@@ -1229,44 +1904,60 @@ fn integrated_in_defaults(
 /// same-subject twin with exactly the same path, mode, added and removed lines.
 /// Only hunk coordinates and unchanged context are ignored. This is still a
 /// content heuristic, and must never authorize deletion without an archive.
-fn same_subject_twins(repo: &Path, target: &str, tip: &str) -> Result<bool, String> {
-    let merges = git_cmd(repo)
-        .args(["rev-list", "--merges", &format!("{target}..{tip}")])
-        .run()
-        .map_err(|error| format!("could not inspect merge commits: {error}"))?;
-    if !merges.stdout.trim().is_empty() {
+fn same_subject_twins(
+    repo: &Path,
+    target: &str,
+    tip: &str,
+    facts: &mut HeuristicFacts,
+) -> Classified<bool> {
+    if has_merges(repo, target, tip)? {
         return Ok(false);
     }
-    let cherry = git_cmd(repo)
-        .args(["cherry", target, tip])
-        .run()
-        .map_err(|error| format!("could not compare patches: {error}"))?;
-    let twins = git_cmd(repo)
-        .args([
-            "log",
-            "--no-merges",
-            "--format=%H%x09%s",
-            &format!("{tip}..{target}"),
-        ])
-        .run()
-        .map_err(|error| format!("could not inspect twin subjects: {error}"))?
-        .stdout;
+    let cherry = facts
+        .cherry(repo, target, tip)?
+        .ok_or(ClassifyError::Pending)?;
+    let grepo = crate::git_reads::cached_repo(repo)?;
+    let (target_id, tip_id) = (quick_commit(repo, target)?, quick_commit(repo, tip)?);
+    let mut twins = Vec::new();
+    for (commit, merge) in commit_range(&grepo, target_id, tip_id)? {
+        if !merge {
+            twins.push((commit, facts.summary(&grepo, commit)?));
+        }
+    }
+    // Ask for every patch the rule compares before comparing any.
+    let mut unique = Vec::new();
+    let mut pending = false;
+    for (commit, _) in cherry.iter().filter(|(_, equivalent)| !equivalent) {
+        let subject = facts.summary(&grepo, *commit)?;
+        let subject = subject.trim().to_owned();
+        let candidates: Vec<String> = twins
+            .iter()
+            .filter(|(_, twin_subject)| *twin_subject == subject)
+            .map(|(twin, _)| twin.to_string())
+            .collect();
+        pending |= facts.zero_context(&commit.to_string(), None).is_none();
+        for twin in &candidates {
+            pending |= facts.zero_context(twin, None).is_none();
+        }
+        unique.push((commit.to_string(), candidates));
+    }
+    if pending {
+        return Err(ClassifyError::Pending);
+    }
     let mut found = false;
-    for line in cherry.stdout.lines().filter(|line| line.starts_with("+ ")) {
-        let sha = &line[2..];
-        let subject = git_cmd(repo)
-            .args(["show", "--no-patch", "--format=%s", sha])
-            .run()
-            .map_err(|error| format!("could not inspect commit subject: {error}"))?
-            .stdout;
-        let Some(patch) = context_free_patch(repo, sha)? else {
+    for (commit, candidates) in unique {
+        let patch = facts
+            .zero_context(&commit, None)
+            .ok_or(ClassifyError::Pending)?;
+        let Some(patch) = context_free_patch(&patch) else {
             return Ok(false);
         };
         let mut matched = false;
-        for (twin, twin_subject) in twins.lines().filter_map(|line| line.split_once('\t')) {
-            if twin_subject == subject.trim()
-                && context_free_patch(repo, twin)?.as_ref() == Some(&patch)
-            {
+        for twin in candidates {
+            let twin = facts
+                .zero_context(&twin, None)
+                .ok_or(ClassifyError::Pending)?;
+            if context_free_patch(&twin).as_ref() == Some(&patch) {
                 matched = true;
                 break;
             }
@@ -1279,24 +1970,13 @@ fn same_subject_twins(repo: &Path, target: &str, tip: &str) -> Result<bool, Stri
     Ok(found)
 }
 
-fn context_free_patch(repo: &Path, sha: &str) -> Result<Option<Vec<String>>, String> {
-    let output = git_cmd(repo)
-        .args([
-            "show",
-            "--format=",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--no-renames",
-            "--unified=0",
-            sha,
-        ])
-        .run()
-        .map_err(|error| format!("could not inspect twin patch: {error}"))?;
+/// Path, mode and changed lines of a zero-context patch, `None` for binary files.
+fn context_free_patch(diff: &str) -> Option<Vec<String>> {
     let mut patch = Vec::new();
     let mut in_hunk = false;
-    for line in output.stdout.lines() {
+    for line in diff.lines() {
         if line.starts_with("Binary files ") {
-            return Ok(None);
+            return None;
         }
         if line.starts_with("diff --git ") {
             in_hunk = false;
@@ -1312,99 +1992,73 @@ fn context_free_patch(repo: &Path, sha: &str) -> Result<Option<Vec<String>>, Str
             patch.push(line.to_owned());
         }
     }
-    Ok(Some(patch))
+    Some(patch)
 }
 
 /// A conservative heuristic for revised twins from the branch audit. Require
 /// 100% of added lines, with multiplicity, in the same regular file on target.
 /// Deletions, mode changes, binary files and unrelated histories are not guessed.
-fn content_superset(repo: &Path, target: &str, tip: &str) -> Result<bool, String> {
-    let Ok(base) = git_cmd(repo).args(["merge-base", target, tip]).run() else {
+fn content_superset(
+    repo: &Path,
+    target: &str,
+    tip: &str,
+    facts: &mut HeuristicFacts,
+) -> Classified<bool> {
+    use gix::objs::tree::EntryKind;
+    let grepo = crate::git_reads::cached_repo(repo)?;
+    let (target_id, tip_id) = (quick_commit(repo, target)?, quick_commit(repo, tip)?);
+    let Some(base) = quick_merge_base(repo, target_id, tip_id)? else {
         return Ok(false);
     };
-    let base = base.stdout.trim();
-    let changes = git_cmd(repo)
-        .args([
-            "diff",
-            "--name-status",
-            "--no-renames",
-            "-z",
-            base,
-            tip,
-            "--",
-        ])
-        .run()
-        .map_err(|error| format!("could not inspect changed paths: {error}"))?
-        .stdout;
-    let mut fields = changes.split('\0').filter(|field| !field.is_empty());
-    let mut found = false;
-    while let Some(status) = fields.next() {
-        let Some(path) = fields.next() else {
-            return Ok(false);
-        };
-        if !matches!(status, "A" | "M") {
-            return Ok(false);
-        }
-        let mode = |revision: &str| -> Option<String> {
-            let output = git_cmd(repo)
-                .args(["--literal-pathspecs", "ls-tree", revision, "--", path])
-                .run()
-                .ok()?;
-            output.stdout.split_whitespace().next().map(str::to_owned)
-        };
-        let tip_mode = mode(tip);
-        if !matches!(tip_mode.as_deref(), Some("100644" | "100755"))
-            || mode(target) != tip_mode
-            || (status == "M" && mode(base) != tip_mode)
+    let changes = tree_changes(
+        &grepo,
+        Some(quick_tree_of(&grepo, base)?),
+        quick_tree_of(&grepo, tip_id)?,
+    )?;
+    let target_tree = grepo
+        .find_tree(quick_tree_of(&grepo, target_id)?)
+        .map_err(|e| e.to_string())?;
+    let mut targets = Vec::new();
+    for change in &changes {
+        let regular = matches!(
+            change.mode.kind(),
+            EntryKind::Blob | EntryKind::BlobExecutable
+        );
+        let entry = target_tree
+            .lookup_entry(change.path.split(|byte| *byte == b'/'))
+            .map_err(|e| format!("could not read integrated content: {e}"))?;
+        let target_kind = entry.as_ref().map(|entry| entry.mode().kind());
+        if !matches!(change.status, 'A' | 'M')
+            || !regular
+            || target_kind != Some(change.mode.kind())
+            || change
+                .previous
+                .is_some_and(|previous| previous.kind() != change.mode.kind())
         {
             return Ok(false);
         }
-        let diff = git_cmd(repo)
-            .args([
-                "--literal-pathspecs",
-                "diff",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--no-renames",
-                "--unified=0",
-                base,
-                tip,
-                "--",
-                path,
-            ])
-            .run()
-            .map_err(|error| format!("could not compare file changes: {error}"))?
-            .stdout;
-        let mut in_hunk = false;
-        let mut additions = Vec::new();
-        for line in diff.lines() {
-            if line.starts_with("Binary files ") || line.starts_with("\\ No newline") {
-                return Ok(false);
-            }
-            if line.starts_with("@@ ") {
-                in_hunk = true;
-                continue;
-            }
-            if !in_hunk {
-                continue;
-            }
-            if line.starts_with('-') {
-                return Ok(false);
-            }
-            if let Some(added) = line.strip_prefix('+') {
-                additions.push(added);
-            }
-        }
-        let content = git_cmd(repo)
-            .args(["show", &format!("{target}:{path}")])
-            .run()
-            .map_err(|error| format!("could not read integrated content: {error}"))?
-            .stdout;
+        let entry = entry.expect("kind compared above");
+        let content = entry
+            .object()
+            .map_err(|e| format!("could not read integrated content: {e}"))?;
+        targets.push((
+            change.path.clone(),
+            String::from_utf8_lossy(&content.data).into_owned(),
+        ));
+    }
+    let diff = facts
+        .zero_context(&tip_id.to_string(), Some(&base.to_string()))
+        .ok_or(ClassifyError::Pending)?;
+    let Some(additions) = added_lines_by_path(&diff) else {
+        return Ok(false);
+    };
+    let mut found = false;
+    for (path, content) in &targets {
         let mut remaining = HashMap::<&str, usize>::new();
         for line in content.lines() {
             *remaining.entry(line).or_default() += 1;
         }
-        for added in additions {
+        for added in additions.get(path).into_iter().flatten() {
             let count = remaining.entry(added).or_default();
             if *count == 0 {
                 return Ok(false);
@@ -1416,20 +2070,87 @@ fn content_superset(repo: &Path, target: &str, tip: &str) -> Result<bool, String
     Ok(found)
 }
 
-fn patches_integrated_in(repo: &Path, target: &str, tip: &str) -> Result<bool, String> {
-    // `git cherry` omits merge commits and their resolution changes.
-    let merges = git_cmd(repo)
-        .args(["rev-list", "--merges", &format!("{target}..{tip}")])
-        .run()
-        .map_err(|error| format!("could not inspect merge commits: {error}"))?;
-    if !merges.stdout.trim().is_empty() {
+/// Added lines of a zero-context patch per file path. `None` when any file is
+/// binary, lacks a final newline or loses a line.
+fn added_lines_by_path(diff: &str) -> Option<HashMap<Vec<u8>, Vec<&str>>> {
+    let mut files: HashMap<Vec<u8>, Vec<&str>> = HashMap::new();
+    let mut path: Option<Vec<u8>> = None;
+    let mut in_hunk = false;
+    for line in diff.lines() {
+        if line.starts_with("diff --git ") {
+            (path, in_hunk) = (None, false);
+        } else if line.starts_with("Binary files ") || line.starts_with("\\ No newline") {
+            return None;
+        } else if line.starts_with("@@ ") {
+            in_hunk = true;
+        } else if !in_hunk {
+            if let Some(name) = line.strip_prefix("+++ ") {
+                let name = unquote_diff_path(name.strip_suffix('\t').unwrap_or(name));
+                path = Some(name.strip_prefix(b"b/").unwrap_or(&name).to_vec());
+            }
+        } else if line.starts_with('-') {
+            return None;
+        } else if let Some(added) = line.strip_prefix('+') {
+            files.entry(path.clone()?).or_default().push(added);
+        }
+    }
+    Some(files)
+}
+
+/// Undo Git's C-style quoting of a path in a patch header.
+fn unquote_diff_path(name: &str) -> Vec<u8> {
+    let Some(quoted) = name
+        .strip_prefix('"')
+        .and_then(|name| name.strip_suffix('"'))
+    else {
+        return name.as_bytes().to_vec();
+    };
+    let bytes = quoted.as_bytes();
+    let mut path = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        index += 1;
+        if byte != b'\\' || index == bytes.len() {
+            path.push(byte);
+            continue;
+        }
+        let escaped = bytes[index];
+        index += 1;
+        path.push(match escaped {
+            b'a' => 7,
+            b'b' => 8,
+            b't' => b'\t',
+            b'n' => b'\n',
+            b'v' => 11,
+            b'f' => 12,
+            b'r' => b'\r',
+            b'0'..=b'7' if index + 1 < bytes.len() => {
+                let octal = &quoted[index - 1..index + 2];
+                index += 2;
+                u8::from_str_radix(octal, 8).unwrap_or(escaped)
+            }
+            other => other,
+        });
+    }
+    path
+}
+
+/// `git cherry` marks every branch commit `-`: an upstream commit carries the
+/// same patch. Merge commits and their resolution changes are not covered.
+fn patches_integrated_in(
+    repo: &Path,
+    target: &str,
+    tip: &str,
+    facts: &mut HeuristicFacts,
+) -> Classified<bool> {
+    if has_merges(repo, target, tip)? {
         return Ok(false);
     }
-    let cherry = git_cmd(repo)
-        .args(["cherry", target, tip])
-        .run()
-        .map_err(|error| format!("could not compare patches: {error}"))?;
-    Ok(cherry.stdout.lines().all(|line| line.starts_with("- ")))
+    let cherry = facts
+        .cherry(repo, target, tip)?
+        .ok_or(ClassifyError::Pending)?;
+    Ok(cherry.iter().all(|(_, equivalent)| *equivalent))
 }
 
 type MonitoringSignature = Option<(std::time::SystemTime, u64)>;
@@ -1806,10 +2527,74 @@ pub fn monitoring_ref_key(repo: &Path, branch: &str) -> Result<String, String> {
 }
 
 type MonitoringMerge = (WorkspaceCommitStatus, Option<String>);
-type MonitoringLocalMerge = (MonitoringMerge, String);
+/// Merge verdict, branch tip and integration base it was computed against.
+type MonitoringVerdict = (MonitoringMerge, String, Option<String>);
+type MonitoringLocalMerge = MonitoringVerdict;
 static MONITORING_MERGES: LazyLock<
     moka::sync::Cache<(PathBuf, String, String), MonitoringLocalMerge>,
-> = LazyLock::new(|| moka::sync::Cache::builder().max_capacity(1024).build());
+> = LazyLock::new(|| {
+    // One entry per local branch of every monitored repository. Below the branch
+    // count, LRU eviction recomputes branches whose refs never moved (about 1170
+    // branches in three repositories on 2026-11-04, each miss 8+ git processes).
+    moka::sync::Cache::builder().max_capacity(16_384).build()
+});
+
+/// Default branch per repository for monitoring reads only. Resolving it starts
+/// several git processes (`worktree list`, `rev-parse` per candidate), and a
+/// monitoring refresh used to repeat that once per branch. The default branch
+/// changes only when a remote HEAD moves, so a short reuse window is enough.
+/// Destructive preflights call `get_remote_default_branch` directly.
+static MONITORING_DEFAULTS: LazyLock<moka::sync::Cache<PathBuf, String>> = LazyLock::new(|| {
+    moka::sync::Cache::builder()
+        .max_capacity(256)
+        .time_to_live(std::time::Duration::from_secs(10))
+        .build()
+});
+
+/// Monitoring verdicts of `(branch, ref key)` pairs without PR proof. Cache
+/// misses are classified together, so their content heuristics share one set of
+/// git processes (#3024-58fe).
+pub(crate) fn monitoring_branch_merges(
+    repo: &Path,
+    branches: &[(String, String)],
+) -> Result<Vec<MonitoringVerdict>, String> {
+    let key = |(branch, ref_key): &(String, String)| {
+        (repo.to_path_buf(), branch.clone(), ref_key.clone())
+    };
+    let mut verdicts: Vec<_> = branches
+        .iter()
+        .map(|branch| MONITORING_MERGES.get(&key(branch)))
+        .collect();
+    let missing: Vec<usize> = (0..branches.len())
+        .filter(|&i| verdicts[i].is_none())
+        .collect();
+    if !missing.is_empty() {
+        let default = MONITORING_DEFAULTS
+            .try_get_with(repo.to_path_buf(), || {
+                get_remote_default_branch(&repo.to_string_lossy())
+            })
+            .map_err(|e: Arc<String>| (*e).clone())?;
+        let tips = missing
+            .iter()
+            .map(|&i| {
+                let branch = &branches[i].0;
+                Ok((
+                    branch.clone(),
+                    quick_rev(repo, &format!("refs/heads/{branch}"))?,
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let merges = classify_branch_merges(repo, &tips, &default, |_, _, _| false);
+        // The base moves with the same refs the key covers, so it is cached with the verdict.
+        let base = integration_base_oid(repo, &default);
+        for ((index, (_, tip)), merge) in missing.into_iter().zip(tips).zip(merges) {
+            let verdict = (merge?, tip, base.clone());
+            MONITORING_MERGES.insert(key(&branches[index]), verdict.clone());
+            verdicts[index] = Some(verdict);
+        }
+    }
+    Ok(verdicts.into_iter().flatten().collect())
+}
 
 /// Cache only monitoring reads. Destructive preflights still classify freshly.
 /// A semantic ref key rather than TTL means file saves never run cherry/merge-tree.
@@ -1819,15 +2604,11 @@ pub(crate) fn monitoring_branch_merge(
     ref_key: &str,
     with_pr: bool,
     pr_proves_tip: impl Fn(&Path, &str, &str) -> bool,
-) -> Result<MonitoringMerge, String> {
-    let (local, tip) = MONITORING_MERGES
-        .try_get_with((repo.to_path_buf(), branch.into(), ref_key.into()), || {
-            let default = get_remote_default_branch(&repo.to_string_lossy())?;
-            let tip = rev_at(repo, &format!("refs/heads/{branch}"))?;
-            let local = classify_branch_merge(repo, branch, &tip, &default, |_, _, _| false)?;
-            Ok::<_, String>((local, tip))
-        })
-        .map_err(|e: Arc<String>| (*e).clone())?;
+) -> Result<MonitoringVerdict, String> {
+    let (local, tip, base) =
+        monitoring_branch_merges(repo, &[(branch.to_owned(), ref_key.to_owned())])?
+            .pop()
+            .expect("one verdict per branch");
     // PR state changes independently of local refs. Reapply its current proof
     // on the caller's existing refresh lifecycle, never cache it with local Git.
     if with_pr
@@ -1837,9 +2618,13 @@ pub(crate) fn monitoring_branch_merge(
         ) || local.1.as_deref() == Some("content_superset"))
         && pr_proves_tip(repo, branch, &tip)
     {
-        Ok((WorkspaceCommitStatus::Merged, Some("github_pr".into())))
+        Ok((
+            (WorkspaceCommitStatus::Merged, Some("github_pr".into())),
+            tip,
+            base,
+        ))
     } else {
-        Ok(local)
+        Ok((local, tip, base))
     }
 }
 
@@ -1885,7 +2670,7 @@ pub fn inspect_workspace_monitoring_with_status(
     let result = (|| -> Result<WorkspaceLifecycleStatus, String> {
         let dirty_files = dirty?;
         let ref_key = ref_key.map_err(str::to_owned)?;
-        let (commit_status, merge_proof) =
+        let ((commit_status, merge_proof), tip, base) =
             monitoring_branch_merge(base_repo, &workspace.branch, ref_key, true, pr_proves_tip)?;
         Ok(WorkspaceLifecycleStatus {
             dirty_files: Some(dirty_files),
@@ -1894,6 +2679,8 @@ pub fn inspect_workspace_monitoring_with_status(
             submodule_unpushed_commits: Vec::new(),
             commit_status,
             merge_proof,
+            tip: Some(tip),
+            base,
             removal_safety: if dirty_files > 0 {
                 WorkspaceRemovalSafety::RequiresForce
             } else {
@@ -1909,6 +2696,8 @@ pub fn inspect_workspace_monitoring_with_status(
         submodule_unpushed_commits: Vec::new(),
         commit_status: WorkspaceCommitStatus::Unknown,
         merge_proof: None,
+        tip: None,
+        base: None,
         removal_safety: WorkspaceRemovalSafety::Unknown,
         error: Some(error),
     })
@@ -1942,13 +2731,20 @@ pub fn inspect_workspace_listing_with_pr(
     )
 }
 
+/// Commit the default branch's integration base resolves to now, recorded next
+/// to the verdict so a consumer can tell which base the proof was computed against.
+fn integration_base_oid(base_repo: &Path, default: &str) -> Option<String> {
+    let base = integration_bases(base_repo, default).into_iter().next()?;
+    quick_rev(base_repo, &format!("{base}^{{commit}}")).ok()
+}
+
 fn lifecycle_branch_merge(
     base_repo: &Path,
     branch: &str,
     tip: &str,
     monitoring: bool,
     pr_proves_tip: impl Fn(&Path, &str, &str) -> bool,
-) -> Result<MonitoringMerge, String> {
+) -> Result<MonitoringVerdict, String> {
     // During rebase the checkout HEAD may differ from its branch ref. The
     // monitoring cache classifies the ref, so retain fresh HEAD classification
     // in that case rather than changing the lifecycle verdict.
@@ -1966,7 +2762,12 @@ fn lifecycle_branch_merge(
         monitoring_branch_merge(base_repo, branch, &ref_key, true, pr_proves_tip)
     } else {
         let default = get_remote_default_branch(&base_repo.to_string_lossy())?;
-        classify_branch_merge(base_repo, branch, tip, &default, pr_proves_tip)
+        let merge = classify_branch_merge(base_repo, branch, tip, &default, pr_proves_tip)?;
+        Ok((
+            merge,
+            tip.to_owned(),
+            integration_base_oid(base_repo, &default),
+        ))
     }
 }
 
@@ -1990,7 +2791,7 @@ fn inspect_workspace_lifecycle_resolved_with_pr(
         let workspace = workspace?;
         if !Path::new(&workspace.path).exists() {
             let tip = rev_at(base_repo, &format!("refs/heads/{}", workspace.branch))?;
-            let (commit_status, merge_proof) = lifecycle_branch_merge(
+            let ((commit_status, merge_proof), tip, base) = lifecycle_branch_merge(
                 base_repo,
                 &workspace.branch,
                 &tip,
@@ -2004,6 +2805,8 @@ fn inspect_workspace_lifecycle_resolved_with_pr(
                 submodule_unpushed_commits: Vec::new(),
                 commit_status,
                 merge_proof,
+                tip: Some(tip),
+                base,
                 removal_safety: WorkspaceRemovalSafety::RequiresForce,
                 error: None,
             });
@@ -2011,7 +2814,7 @@ fn inspect_workspace_lifecycle_resolved_with_pr(
         let (dirty_files, dirty_fingerprint, submodule_unpushed_commits, tip) =
             workspace_safety_at(Path::new(&workspace.path))?;
         let dirty = dirty_files > 0;
-        let (commit_status, merge_proof) = lifecycle_branch_merge(
+        let ((commit_status, merge_proof), _, base) = lifecycle_branch_merge(
             base_repo,
             &workspace.branch,
             &tip,
@@ -2025,6 +2828,8 @@ fn inspect_workspace_lifecycle_resolved_with_pr(
             submodule_unpushed_commits,
             commit_status,
             merge_proof,
+            tip: Some(tip),
+            base,
             removal_safety: if dirty {
                 WorkspaceRemovalSafety::RequiresForce
             } else {
@@ -2041,6 +2846,8 @@ fn inspect_workspace_lifecycle_resolved_with_pr(
         submodule_unpushed_commits: Vec::new(),
         commit_status: WorkspaceCommitStatus::Unknown,
         merge_proof: None,
+        tip: None,
+        base: None,
         removal_safety: WorkspaceRemovalSafety::Unknown,
         error: Some(error),
     })
@@ -2110,6 +2917,7 @@ fn resolve_missing_registered_workspace(
                 branch,
                 path: entry.path,
                 kind: WorkspaceKind::Worktree,
+                creator_session: worktree_creator_session(&path),
                 warm_artifacts: None,
                 lifecycle_status: None,
             });
@@ -2245,7 +3053,7 @@ pub fn finish_worktree(base_repo: &Path, checkout: &Path) -> Result<(), String> 
 }
 
 /// Serialize create/recycle across processes; dropping the file releases the lock.
-fn allocation_guard(base_repo: &Path) -> Result<std::fs::File, String> {
+pub fn allocation_guard(base_repo: &Path) -> Result<std::fs::File, String> {
     let common = rev_at(base_repo, "--git-common-dir")?;
     let lock = base_repo.join(common).join("tuic-allocation-lock");
     let file = std::fs::OpenOptions::new()
@@ -2272,14 +3080,58 @@ pub fn create_workspace_recycling(
     base_ref: Option<&str>,
     available: impl Fn(&Path) -> bool,
 ) -> Result<(CreatedWorkspace, Option<WorkspaceWorktree>), String> {
+    create_workspace_recycling_with_creator(worktrees_dir, config, base_ref, available, None)
+}
+
+/// Persist provenance under the same lock that publishes an allocation to API inventory.
+pub fn create_workspace_recycling_with_creator(
+    worktrees_dir: &Path,
+    config: &WorktreeConfig,
+    base_ref: Option<&str>,
+    available: impl Fn(&Path) -> bool,
+    creator_session: Option<&str>,
+) -> Result<(CreatedWorkspace, Option<WorkspaceWorktree>), String> {
     let repo = Path::new(&config.base_repo);
     let _allocation = allocation_guard(repo)?;
+    let result = create_workspace_recycling_locked(worktrees_dir, config, base_ref, available)?;
+    let admin = registered_worktree_admin_dir(repo, &result.0.path)?
+        .ok_or("Cannot record creator for unregistered checkout")?;
+    let marker = admin.join("tuic-creator-session.json");
+    let mut file = tempfile::NamedTempFile::new_in(&admin)
+        .map_err(|error| format!("Cannot create creator marker: {error}"))?;
+    use std::io::Write;
+    file.write_all(serde_json::to_string(&creator_session).unwrap().as_bytes())
+        .and_then(|()| file.as_file().sync_all())
+        .map_err(|error| format!("Cannot write creator marker: {error}"))?;
+    file.persist(marker)
+        .map_err(|error| format!("Cannot publish creator marker: {error}"))?;
+    Ok(result)
+}
+
+/// Missing markers identify legacy or externally created worktrees explicitly.
+pub fn worktree_creator_session(checkout: &Path) -> Option<String> {
+    let admin = crate::git::resolve_git_dir(checkout)?;
+    serde_json::from_slice(&std::fs::read(admin.join("tuic-creator-session.json")).ok()?).ok()?
+}
+
+fn create_workspace_recycling_locked(
+    worktrees_dir: &Path,
+    config: &WorktreeConfig,
+    base_ref: Option<&str>,
+    available: impl Fn(&Path) -> bool,
+) -> Result<(CreatedWorkspace, Option<WorkspaceWorktree>), String> {
+    let repo = Path::new(&config.base_repo);
     let branch = config
         .branch
         .clone()
         .unwrap_or_else(|| sanitize_name(&config.task_name));
     ensure_branch_has_no_workspace(repo, &branch)?;
     let destination = worktrees_dir.join(sanitize_name(&config.task_name));
+    if let Some(restored) =
+        restore_archived_checkout(repo, &branch, &destination, worktrees_dir, &available)?
+    {
+        return Ok((restored, None));
+    }
     // An existing destination or ref keeps the established creation semantics.
     if config.create_branch
         && !destination.exists()
@@ -2305,7 +3157,18 @@ pub fn create_workspace_recycling(
             {
                 continue;
             }
-            let clean = dirty_files_at(&old_path).ok() == Some(0);
+            // Copy proof permits cleanup, not reuse: recycling keeps the admin
+            // directory and would carry the old allocation's receipt forward.
+            let clean = git_cmd(&old_path)
+                .args([
+                    "status",
+                    "--porcelain",
+                    "-z",
+                    "--untracked-files=all",
+                    "--ignore-submodules=none",
+                ])
+                .run()
+                .is_ok_and(|status| status.stdout.is_empty());
             let submodules_safe =
                 dirty_fingerprint_at(&old_path).is_ok_and(|(_, modules)| modules.is_empty());
             // The explicit finished marker permits recycling an empty checkout;
@@ -2330,12 +3193,21 @@ pub fn create_workspace_recycling(
             std::fs::create_dir_all(worktrees_dir)
                 .map_err(|error| format!("Cannot create checkout parent: {error}"))?;
             reserve_worktree(repo, &old_path)?;
+            let mut detached = false;
             let mut switched = false;
             let previous_base = get_branch_base(&config.base_repo, &branch);
             let recycled = (|| -> Result<(), String> {
                 move_registered_checkout(repo, &old_path, &destination)?;
+                // Create the branch from HEAD, as a plain checkout does: a SHA start point
+                // records "Created from <sha>", which the merge classifier cannot tell from
+                // a branch that carries its own work, so the sweep would archive it.
                 git_cmd(&destination)
-                    .args(["switch", "-c", &branch, &start_point])
+                    .args(["switch", "--detach", &start_point])
+                    .run()
+                    .map_err(|error| format!("Cannot detach recycled checkout: {error}"))?;
+                detached = true;
+                git_cmd(&destination)
+                    .args(["switch", "-c", &branch])
                     .run()
                     .map_err(|error| format!("Cannot switch recycled checkout: {error}"))?;
                 switched = true;
@@ -2353,11 +3225,13 @@ pub fn create_workspace_recycling(
                     if destination.exists() {
                         move_registered_checkout(repo, &destination, &old_path)?;
                     }
-                    if switched {
+                    if detached {
                         git_cmd(&old_path)
                             .args(["switch", &old_branch])
                             .run()
                             .map_err(|error| format!("Cannot restore recycled branch: {error}"))?;
+                    }
+                    if switched {
                         git_cmd(repo)
                             .args(["branch", "-D", &branch])
                             .run()
@@ -2376,10 +3250,20 @@ pub fn create_workspace_recycling(
                 branch: old_branch,
                 path: entry.path,
                 kind: WorkspaceKind::Worktree,
+                creator_session: worktree_creator_session(&old_path),
                 warm_artifacts: None,
                 lifecycle_status: None,
             };
             clear_warm(&old_path);
+            // The slot no longer holds the old branch. Drop it through the same proof
+            // as branch deletion; a refused proof keeps the branch. A branch that is
+            // the new branch's recorded base stays, so the base remains resolvable.
+            if base_ref.map(|base| base.strip_prefix("refs/heads/").unwrap_or(base))
+                != Some(old.branch.as_str())
+                && let Err(error) = delete_integrated_local_branch(&config.base_repo, &old.branch)
+            {
+                tracing::info!(source = "worktree", branch = %old.branch, "recycled branch kept: {error}");
+            }
             let warnings = initialize_submodules(repo, &destination);
             return Ok((
                 CreatedWorkspace {
@@ -2396,6 +3280,67 @@ pub fn create_workspace_recycling(
     }
     let workspace = create_workspace_unwarmed(worktrees_dir, config, base_ref)?;
     Ok((workspace, None))
+}
+
+/// A branch archived under `__archived/` still has its checkout in the pool, so
+/// `git worktree add` refuses the branch ("already used by worktree"). Move that
+/// slot back to a normal destination instead: the branch keeps its commits and
+/// working files, and the archive record no longer describes it.
+fn restore_archived_checkout(
+    repo: &Path,
+    branch: &str,
+    destination: &Path,
+    worktrees_dir: &Path,
+    available: &impl Fn(&Path) -> bool,
+) -> Result<Option<CreatedWorkspace>, String> {
+    if destination.exists() {
+        return Ok(None);
+    }
+    let listed = git_cmd(repo)
+        .args(["worktree", "list", "--porcelain"])
+        .run()
+        .map_err(|error| format!("Cannot list archived checkouts: {error}"))?;
+    let Some(entry) = parse_worktree_entries(&listed.stdout)
+        .into_iter()
+        .find(|entry| {
+            entry.branch.as_deref() == Some(branch) && is_archived_checkout(Path::new(&entry.path))
+        })
+    else {
+        return Ok(None);
+    };
+    let archived = PathBuf::from(&entry.path);
+    let Some(admin) = registered_worktree_admin_dir(repo, &archived)? else {
+        return Ok(None);
+    };
+    if !archived.exists()
+        || admin.join("locked").exists()
+        || has_operation_in_progress(&entry.path)
+        || !available(&archived)
+    {
+        return Ok(None);
+    }
+    std::fs::create_dir_all(worktrees_dir)
+        .map_err(|error| format!("Cannot create checkout parent: {error}"))?;
+    move_registered_checkout(repo, &archived, destination)?;
+    // The slot is live again: a stale record would let the retention sweep see it as an archive.
+    match std::fs::remove_file(admin.join("tuic-archive.json")) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+            return Err(format!("Cannot clear archive record: {error}"));
+        }
+        _ => {}
+    }
+    reserve_worktree(repo, destination)?;
+    record_worktree_rename(repo, &entry.path, &destination.to_string_lossy())?;
+    clear_warm(&archived);
+    let warnings = initialize_submodules(repo, destination);
+    Ok(Some(CreatedWorkspace {
+        workspace_id: workspace_id_of_worktree(branch),
+        path: destination.to_path_buf(),
+        branch: branch.to_string(),
+        kind: WorkspaceKind::Worktree,
+        warnings,
+        warmed_directories: 0,
+    }))
 }
 
 fn record_worktree_rename(repo: &Path, old: &str, new: &str) -> Result<(), String> {
@@ -2602,9 +3547,19 @@ fn ensure_branch_has_no_workspace(base_repo: &Path, branch: &str) -> Result<(), 
 }
 /// Remove a detached orphan after the caller's removal guard. Missing checkout
 /// registrations require explicit confirmation; automatic safety rejects them.
-pub fn remove_orphan_worktree_internal(worktree: &WorktreeInfo) -> Result<(), String> {
+pub fn remove_orphan_worktree_internal(
+    worktree: &WorktreeInfo,
+    expected_fingerprint: Option<&str>,
+) -> Result<(), String> {
     refuse_temporary_orphan(&worktree.path)?;
-    remove_worktree_internal(worktree, !path_entry_exists(&worktree.path)?)
+    let missing = !path_entry_exists(&worktree.path)?;
+    remove_worktree_internal_with_lock(
+        worktree,
+        missing || expected_fingerprint.is_some(),
+        false,
+        expected_fingerprint,
+        None,
+    )
 }
 
 pub fn remove_worktree_internal(worktree: &WorktreeInfo, force: bool) -> Result<(), String> {
@@ -2612,7 +3567,9 @@ pub fn remove_worktree_internal(worktree: &WorktreeInfo, force: bool) -> Result<
 }
 
 fn registered_worktree_admin_dir(base_repo: &Path, path: &Path) -> Result<Option<PathBuf>, String> {
-    let admin_root = PathBuf::from(rev_at(base_repo, "--absolute-git-dir")?).join("worktrees");
+    let admin_root = base_repo
+        .join(rev_at(base_repo, "--git-common-dir")?)
+        .join("worktrees");
     let entries = match std::fs::read_dir(&admin_root) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -2969,6 +3926,9 @@ fn remove_worktree_internal_with_lock(
     if !force && dirty_files_at(&worktree.path)? != 0 {
         return Err("Cannot remove worktree: the worktree has uncommitted changes".into());
     }
+    if !force {
+        reject_index_flagged_files(&worktree.path)?;
+    }
     if admin.is_some() {
         verify_submodules_at(&worktree.path, &worktree.base_repo, force)?;
     }
@@ -3193,6 +4153,7 @@ pub fn ipc_worktree_response(workspace: &CreatedWorkspace, base_repo: &str) -> s
         "branch": workspace.branch,
         "base_repo": base_repo,
         "kind": workspace.kind,
+        "creator_session": worktree_creator_session(&workspace.path),
         "instructions": workspace.instruction_payload_pending(),
     })
 }
@@ -4100,6 +5061,9 @@ pub struct WorkspaceWorktree {
     pub branch: String,
     pub path: String,
     pub kind: WorkspaceKind,
+    /// Stable TUIC peer identity; null for legacy or unbound allocations.
+    #[serde(default)]
+    pub creator_session: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub warm_artifacts: Option<serde_json::Value>,
     /// Merge/dirty/removal verdict, attached by callers that already paid for
@@ -4125,6 +5089,10 @@ pub struct WorktreeDiagnostic {
     pub branch: Option<String>,
     pub state: WorktreeDiagnosticState,
     pub guidance: String,
+    /// The checkout folder still exists, so `git worktree repair` can relink it.
+    /// False means only the stale registration is left, which can be pruned.
+    #[serde(default)]
+    pub checkout_present: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -4188,11 +5156,13 @@ pub(crate) fn checkout_inventory(
         {
             continue;
         }
-        if !path.is_dir() || crate::git::resolve_git_dir(path).is_none() {
+        let checkout_present = path.is_dir();
+        if !checkout_present || crate::git::resolve_git_dir(path).is_none() {
             inventory.worktree_diagnostics.push(WorktreeDiagnostic {
                 path: entry.path,
                 branch: entry.branch,
                 state: WorktreeDiagnosticState::Missing,
+                checkout_present,
                 guidance: "Checkout unavailable or registration broken. Restore the checkout or run git worktree repair from its new location. Review git worktree list --porcelain before manually pruning a deleted registration.".to_string(),
             });
             continue;
@@ -4206,6 +5176,7 @@ pub(crate) fn checkout_inventory(
                     path: entry.path,
                     branch: Some(branch),
                     state: WorktreeDiagnosticState::DuplicateBranch,
+                    checkout_present: true,
                     guidance: "Another checkout uses this branch workspace. Use a distinct branch to select this checkout independently; no checkout was removed.".to_string(),
                 });
                 continue;
@@ -4214,6 +5185,7 @@ pub(crate) fn checkout_inventory(
                 workspace_id_of_worktree(&branch),
                 WorkspaceWorktree {
                     branch,
+                    creator_session: worktree_creator_session(Path::new(&entry.path)),
                     path: entry.path,
                     kind: WorkspaceKind::Worktree,
                     warm_artifacts: None,
@@ -4255,6 +5227,75 @@ pub fn get_worktree_inventory_raw(
         parse_worktree_entries(&output.stdout),
         archive_pool,
     ))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorktreeDiagnosticAction {
+    /// Relink a present checkout with `git worktree repair <path>`.
+    Repair,
+    /// Drop the registration of a checkout folder that is gone. Never deletes files.
+    Prune,
+}
+
+/// Fix one `Missing` worktree diagnostic. The path must be a current diagnostic of
+/// the repository, so a crafted path cannot reach another checkout.
+pub fn resolve_worktree_diagnostic(
+    repo_path: &str,
+    worktree_path: &str,
+    action: WorktreeDiagnosticAction,
+) -> Result<(), String> {
+    let find = || -> Result<Option<WorktreeDiagnostic>, String> {
+        Ok(get_worktree_inventory_raw(repo_path, None)?
+            .worktree_diagnostics
+            .into_iter()
+            .find(|d| {
+                d.state == WorktreeDiagnosticState::Missing
+                    && tuic_core::path_spelling::portable_spelling(&d.path)
+                        == tuic_core::path_spelling::portable_spelling(worktree_path)
+            }))
+    };
+    let diagnostic = find()?.ok_or_else(|| {
+        format!("'{worktree_path}' is not an unavailable worktree registration of '{repo_path}'")
+    })?;
+    let path = PathBuf::from(&diagnostic.path);
+    match action {
+        WorktreeDiagnosticAction::Repair => {
+            if !diagnostic.checkout_present {
+                return Err(
+                    "The checkout folder is missing; prune the registration instead".into(),
+                );
+            }
+            git_cmd(Path::new(repo_path))
+                .args(["worktree", "repair", &diagnostic.path])
+                .run()
+                .map_err(|e| format!("git worktree repair failed: {e}"))?;
+            if find()?.is_some() {
+                return Err(format!(
+                    "git worktree repair could not restore '{}'",
+                    diagnostic.path
+                ));
+            }
+            Ok(())
+        }
+        WorktreeDiagnosticAction::Prune => {
+            if path_entry_exists(&path)? {
+                return Err("The checkout folder exists; repair it instead of pruning".into());
+            }
+            remove_worktree_internal(
+                &WorktreeInfo {
+                    name: path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| diagnostic.path.clone()),
+                    path,
+                    branch: diagnostic.branch,
+                    base_repo: PathBuf::from(repo_path),
+                },
+                true,
+            )
+        }
+    }
 }
 
 /// The workspace id a freshly created **git worktree** gets.
@@ -4307,6 +5348,7 @@ fn map_checkouts(porcelain: &str, archived: bool) -> HashMap<String, WorkspaceWo
                     branch,
                     path: entry.path.clone(),
                     kind: WorkspaceKind::Worktree,
+                    creator_session: worktree_creator_session(Path::new(&entry.path)),
                     warm_artifacts: None,
                     lifecycle_status: None,
                 });
@@ -5021,6 +6063,10 @@ fn move_registered_checkout(
         .args(["submodule", "status", "--recursive"])
         .run()
         .map_err(|error| format!("Cannot inspect submodules before archive: {error}"))?;
+    // A module repository inside the checkout (an embedded clone) moves with it and
+    // needs no repair; only gitdirs outside it hold the old path.
+    let checkout = std::fs::canonicalize(old)
+        .map_err(|error| format!("Cannot resolve checkout before archive: {error}"))?;
     let mut module_gitdirs = Vec::new();
     for line in submodules.stdout.lines() {
         if line.starts_with('-') {
@@ -5032,8 +6078,12 @@ fn move_registered_checkout(
         let relative = description
             .rsplit_once(" (")
             .map_or(description, |(path, _)| path);
-        let module = old.join(relative);
-        module_gitdirs.push((relative.to_string(), rev_at(&module, "--absolute-git-dir")?));
+        let gitdir = rev_at(&old.join(relative), "--absolute-git-dir")?;
+        // Both sides canonical: git prints `C:/…` where canonicalize gives `\\?\C:\…`.
+        let inside = std::fs::canonicalize(&gitdir).is_ok_and(|dir| dir.starts_with(&checkout));
+        if !inside {
+            module_gitdirs.push((relative.to_string(), gitdir));
+        }
     }
     std::fs::rename(old, destination)
         .map_err(|e| format!("Failed to move worktree to archive: {e}"))?;
@@ -5087,6 +6137,67 @@ struct ArchiveRecord {
     path: PathBuf,
     branch: String,
     tip: String,
+    /// Why the checkout was parked with work the default branch lacks. Absent for merged branches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    unmerged_commits: Option<usize>,
+}
+
+/// Commits of `tip` that no default-branch base holds. `None` when the default branch
+/// or the count cannot be read: the record then simply says nothing.
+fn unmerged_commit_count(repo: &Path, tip: &str) -> Option<usize> {
+    let default_branch = get_remote_default_branch(&repo.to_string_lossy()).ok()?;
+    let bases = integration_bases(repo, &default_branch);
+    if bases.is_empty() {
+        return None;
+    }
+    commits_outside_integration(repo, tip, &bases).ok()
+}
+
+/// After a merged, clean checkout was archived, drop its branch so the sidebar and
+/// branch lists stop carrying finished work. The archive recovery ref at the exact
+/// tip is the safety net; without it, or with any other checkout still on the
+/// branch, nothing is deleted. The parked checkout is detached first because Git
+/// cannot leave a deleted branch checked out.
+pub fn retire_archived_branch(
+    repo: &Path,
+    archived_path: &Path,
+    branch: &str,
+) -> Result<(), String> {
+    if !is_archived_checkout(archived_path) {
+        return Err("checkout is not archived".into());
+    }
+    let tip = rev_at(repo, &format!("refs/heads/{branch}"))?;
+    if rev_at(archived_path, "HEAD")? != tip || !archived_at_tip(repo, branch, &tip) {
+        return Err(format!("'{branch}' has no recovery ref at its current tip"));
+    }
+    let listed = git_cmd(repo)
+        .args(["worktree", "list", "--porcelain"])
+        .run()
+        .map_err(|error| format!("Cannot list branch checkouts: {error}"))?;
+    let archived = std::fs::canonicalize(archived_path).map_err(|error| error.to_string())?;
+    if parse_worktree_entries(&listed.stdout).iter().any(|entry| {
+        entry.branch.as_deref() == Some(branch)
+            && std::fs::canonicalize(&entry.path).ok().as_deref() != Some(archived.as_path())
+    }) {
+        return Err(format!("'{branch}' is checked out elsewhere"));
+    }
+    git_cmd(archived_path)
+        .args(["checkout", "--detach", &tip])
+        .run()
+        .map_err(|error| format!("Cannot detach archived checkout: {error}"))?;
+    git_cmd(repo)
+        .args([
+            "update-ref",
+            "--no-deref",
+            "-d",
+            &format!("refs/heads/{branch}"),
+            &tip,
+        ])
+        .run()
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 fn archive_worktree_at(
@@ -5135,11 +6246,14 @@ fn archive_worktree_at(
     let archived = (|| -> Result<(), String> {
         let tip = rev_at(&archive_dest, "HEAD")?;
         preserve_archive_tip(base_repo, &workspace.branch, &tip)?;
+        let unmerged_commits = unmerged_commit_count(base_repo, &tip).filter(|count| *count > 0);
         let record = ArchiveRecord {
             archived_at: clock()?,
             path: std::fs::canonicalize(&archive_dest).map_err(|error| error.to_string())?,
             branch: workspace.branch.clone(),
             tip,
+            reason: unmerged_commits.map(|_| "recycled with unmerged commits".to_string()),
+            unmerged_commits,
         };
         std::fs::write(
             admin.join("tuic-archive.json"),
@@ -5168,6 +6282,31 @@ fn archive_worktree_at(
     clear_warm(&wt_path);
 
     Ok(archive_dest.to_string_lossy().to_string())
+}
+
+/// Status and non-force removal both overlook local edits hidden by skip-worktree
+/// or assume-unchanged, so every removal guard asks the index directly.
+fn reject_index_flagged_files(path: &Path) -> Result<(), String> {
+    let index = git_cmd(path)
+        .args(["ls-files", "-v", "-z"])
+        .run()
+        .map_err(|error| format!("Cannot inspect checkout index: {error}"))?;
+    // A flagged path absent from disk (sparse checkout) hides nothing to lose.
+    if index.stdout.split('\0').any(|entry| {
+        entry
+            .as_bytes()
+            .first()
+            .is_some_and(|tag| *tag == b'S' || tag.is_ascii_lowercase())
+            && entry
+                .get(2..)
+                .is_some_and(|file| path.join(file).symlink_metadata().is_ok())
+    }) {
+        return Err(
+            "index flags hide possible uncommitted files (skip-worktree or assume-unchanged)"
+                .into(),
+        );
+    }
+    Ok(())
 }
 
 /// Presentation-ready outcome shared by IPC and HTTP, including each retained reason.
@@ -5233,19 +6372,7 @@ pub fn sweep_archived_worktrees(
             if !available(path) {
                 return Err("live session uses this archive".into());
             }
-            // Status and non-force removal both overlook files hidden by index flags.
-            let index = git_cmd(path)
-                .args(["ls-files", "-v", "-z"])
-                .run()
-                .map_err(|error| format!("Cannot inspect archived index: {error}"))?;
-            if index.stdout.split('\0').any(|entry| {
-                entry
-                    .as_bytes()
-                    .first()
-                    .is_some_and(|tag| *tag == b'S' || tag.is_ascii_lowercase())
-            }) {
-                return Err("index flags hide possible uncommitted files (skip-worktree or assume-unchanged)".into());
-            }
+            reject_index_flagged_files(path)?;
             let status = git_cmd(path)
                 .args([
                     "status",
@@ -5689,7 +6816,15 @@ mod tests {
     #[test]
     fn unrelated_history_handling_preserves_invalid_ref_errors_2569() {
         let (_temp, repo, _) = workspace_fixture();
-        assert!(integrated_in_defaults(&repo, &["HEAD".into()], "not-a-ref").is_err());
+        assert!(matches!(
+            integrated_in_defaults(
+                &repo,
+                &["HEAD".into()],
+                "not-a-ref",
+                &mut HeuristicFacts::default()
+            ),
+            Err(ClassifyError::Failed(_))
+        ));
     }
 
     // Catches: protecting empty-start branches also hides real ancestry/PR proof.
@@ -6387,6 +7522,75 @@ mod tests {
         });
     }
 
+    // Catches: reservations scan a linked base's private admin dir instead of common registrations.
+    #[test]
+    fn allocation_registration_2692_reserves_from_normal_bare_and_linked_bases() {
+        let root = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
+        let repo =
+            crate::test_fixtures::setup_test_repo_at(tempfile::tempdir_in(root.path()).unwrap());
+        let bare = root.path().join("bare.git");
+        git_cmd(root.path())
+            .args([
+                "clone",
+                "--bare",
+                &repo.path().to_string_lossy(),
+                &bare.to_string_lossy(),
+            ])
+            .run()
+            .unwrap();
+        let linked = worktree_with(repo.path(), "linked-base", false);
+        for (kind, base) in [
+            ("normal", repo.path()),
+            ("bare", bare.as_path()),
+            ("linked", linked.as_path()),
+        ] {
+            let workspace = create_workspace_unwarmed(
+                &root.path().join(kind),
+                &recycle_config(base, &format!("task-{kind}")),
+                None,
+            )
+            .unwrap_or_else(|error| panic!("{kind} base: {error}"));
+            // Ask the created checkout itself, independently of the registration scanner.
+            let admin = PathBuf::from(rev_at(&workspace.path, "--absolute-git-dir").unwrap());
+            assert_eq!(
+                fs::read_to_string(admin.join("tuic-allocation")).unwrap(),
+                "reserved",
+                "{kind}"
+            );
+            finish_worktree(base, &workspace.path).unwrap();
+            assert_eq!(
+                fs::read_to_string(admin.join("tuic-allocation")).unwrap(),
+                "finished",
+                "{kind}"
+            );
+        }
+    }
+
+    // Catches: common-dir discovery accepts a checkout owned by another repository or no repository.
+    #[test]
+    fn allocation_registration_2692_rejects_foreign_and_unregistered_checkouts() {
+        let root = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
+        let repo =
+            crate::test_fixtures::setup_test_repo_at(tempfile::tempdir_in(root.path()).unwrap());
+        let foreign_repo =
+            crate::test_fixtures::setup_test_repo_at(tempfile::tempdir_in(root.path()).unwrap());
+        let linked = worktree_with(repo.path(), "linked-base", false);
+        let foreign = worktree_with(foreign_repo.path(), "foreign", false);
+        let unregistered = root.path().join("unregistered");
+        fs::create_dir(&unregistered).unwrap();
+        for base in [repo.path(), linked.as_path()] {
+            for checkout in [&foreign, &unregistered] {
+                assert_eq!(
+                    reserve_worktree(base, checkout).unwrap_err(),
+                    "Cannot reserve an unregistered checkout"
+                );
+            }
+        }
+        let foreign_admin = PathBuf::from(rev_at(&foreign, "--absolute-git-dir").unwrap());
+        assert!(!foreign_admin.join("tuic-allocation").exists());
+        assert!(fs::read_dir(&unregistered).unwrap().next().is_none());
+    }
+
     fn recycle_config(repo: &Path, branch: &str) -> WorktreeConfig {
         WorktreeConfig {
             task_name: branch.into(),
@@ -6423,6 +7627,98 @@ mod tests {
             std::fs::read_to_string(allocation_marker(repo.path(), &first.path).unwrap()).unwrap(),
             "reserved"
         );
+    }
+
+    // Catches: an unmerged branch parked in __archived keeps the branch checked out,
+    // so a new worktree for it fails with git 128 "already used by worktree".
+    #[test]
+    fn unmerged_branch_archived_slot_is_reused_for_its_branch() {
+        for create_branch in [true, false] {
+            let repo = setup_test_repo();
+            let directory = tempfile::tempdir().unwrap();
+            let mut config = recycle_config(repo.path(), "feat-parked");
+            let (first, _) =
+                create_workspace_recycling(directory.path(), &config, None, |_| true).unwrap();
+            std::fs::write(first.path.join("work"), "keep").unwrap();
+            git_cmd(&first.path).args(["add", "work"]).run().unwrap();
+            git_cmd(&first.path)
+                .args(["commit", "-m", "work"])
+                .run()
+                .unwrap();
+            let tip = rev_at(&first.path, "HEAD").unwrap();
+            let archived =
+                PathBuf::from(archive_worktree(repo.path(), &first.workspace_id, None).unwrap());
+            assert!(is_archived_checkout(&archived));
+
+            config.create_branch = create_branch;
+            let (again, old) =
+                create_workspace_recycling(directory.path(), &config, None, |_| true).unwrap();
+
+            assert!(old.is_none());
+            assert_eq!(again.branch, "feat-parked");
+            assert!(!is_archived_checkout(&again.path));
+            assert!(!archived.exists(), "the archive slot moved out");
+            assert_eq!(rev_at(&again.path, "HEAD").unwrap(), tip);
+            assert_eq!(
+                get_worktree_paths_raw(&config.base_repo)
+                    .unwrap()
+                    .get(&again.workspace_id)
+                    .map(|workspace| workspace.path.clone()),
+                Some(again.path.to_string_lossy().into_owned())
+            );
+            assert_eq!(
+                std::fs::read_to_string(allocation_marker(repo.path(), &again.path).unwrap())
+                    .unwrap(),
+                "reserved"
+            );
+        }
+    }
+
+    // Catches: archiving a branch with commits beyond the default branch leaves no
+    // record of why, and a merged branch wrongly gets an unmerged reason.
+    #[test]
+    fn archive_record_says_why_when_branch_has_unmerged_commits() {
+        let repo = setup_test_repo();
+        let directory = tempfile::tempdir().unwrap();
+        let record_of = |archived: &Path| -> serde_json::Value {
+            let admin = registered_worktree_admin_dir(repo.path(), archived)
+                .unwrap()
+                .unwrap();
+            serde_json::from_slice(&std::fs::read(admin.join("tuic-archive.json")).unwrap())
+                .unwrap()
+        };
+        let (merged, _) = create_workspace_recycling(
+            directory.path(),
+            &recycle_config(repo.path(), "feat-merged"),
+            None,
+            |_| true,
+        )
+        .unwrap();
+        let archived =
+            PathBuf::from(archive_worktree(repo.path(), &merged.workspace_id, None).unwrap());
+        assert!(record_of(&archived).get("reason").is_none());
+
+        let (parked, _) = create_workspace_recycling(
+            directory.path(),
+            &recycle_config(repo.path(), "feat-unmerged"),
+            None,
+            |_| true,
+        )
+        .unwrap();
+        for name in ["one", "two"] {
+            std::fs::write(parked.path.join(name), name).unwrap();
+            git_cmd(&parked.path).args(["add", name]).run().unwrap();
+            git_cmd(&parked.path)
+                .args(["commit", "-m", name])
+                .run()
+                .unwrap();
+        }
+        let archived =
+            PathBuf::from(archive_worktree(repo.path(), &parked.workspace_id, None).unwrap());
+        let record = record_of(&archived);
+        assert_eq!(record["reason"], "recycled with unmerged commits");
+        assert_eq!(record["unmerged_commits"], 2);
+        assert_eq!(record["branch"], "feat-unmerged");
     }
 
     // Catches: dirty, unmerged, locked or live finished worktrees recycled despite safety evidence.
@@ -6528,6 +7824,87 @@ mod tests {
         )
         .unwrap();
         assert!(reused_again.is_none());
+    }
+
+    // Catches: recycle creates the branch from a SHA, so the reflog says "Created from <sha>"
+    // and the classifier reads the fresh branch as Merged and the auto-archive sweep drops it.
+    #[test]
+    fn recycled_branch_at_default_tip_is_in_sync() {
+        let repo = setup_test_repo();
+        let directory = tempfile::tempdir().unwrap();
+        let (first, _) = create_workspace_recycling(
+            directory.path(),
+            &recycle_config(repo.path(), "first"),
+            None,
+            |_| true,
+        )
+        .unwrap();
+        finish_worktree(repo.path(), &first.path).unwrap();
+        archive_worktree(repo.path(), "first", None).unwrap();
+        let (second, reused) = create_workspace_recycling(
+            directory.path(),
+            &recycle_config(repo.path(), "second"),
+            None,
+            |_| true,
+        )
+        .unwrap();
+        assert!(reused.is_some(), "slot was not recycled");
+        let proof = branch_integration_with_pr(repo.path(), "second", |_, _, _| false).unwrap();
+        assert_eq!(proof.commit_status, WorkspaceCommitStatus::InSync);
+        assert!(!proof.integrated);
+        assert!(second.path.exists());
+    }
+
+    // Catches: recycling switches the slot with `switch -c` and leaves the integrated old
+    // branch behind (merged branches pile up), or deletes a branch the recycle still needs.
+    #[test]
+    fn recycling_deletes_the_old_branch_only_when_proven_integrated() {
+        // (how the work reaches the default branch, empty for never; base_ref; old branch survives)
+        let cases: [(&[&str], Option<&str>, bool); 4] = [
+            (&["merge", "--no-ff", "--no-edit", "first"], None, false),
+            (&["cherry-pick", "first"], None, false),
+            (
+                &["merge", "--no-ff", "--no-edit", "first"],
+                Some("first"),
+                true,
+            ),
+            (&[], None, true),
+        ];
+        for (integrate, base_ref, kept) in cases {
+            let repo = setup_test_repo();
+            let directory = tempfile::tempdir().unwrap();
+            let (first, _) = create_workspace_recycling(
+                directory.path(),
+                &recycle_config(repo.path(), "first"),
+                None,
+                |_| true,
+            )
+            .unwrap();
+            std::fs::write(first.path.join("work"), "done").unwrap();
+            git_cmd(&first.path).args(["add", "work"]).run().unwrap();
+            git_cmd(&first.path)
+                .args(["commit", "-m", "work"])
+                .run()
+                .unwrap();
+            let tip = rev_at(&first.path, "HEAD").unwrap();
+            if !integrate.is_empty() {
+                git_cmd(repo.path()).args(integrate).run().unwrap();
+            }
+            finish_worktree(repo.path(), &first.path).unwrap();
+            let (_, reused) = create_workspace_recycling(
+                directory.path(),
+                &recycle_config(repo.path(), "second"),
+                base_ref,
+                |_| true,
+            )
+            .unwrap();
+            assert_eq!(reused.is_some(), !integrate.is_empty(), "{integrate:?}");
+            assert_eq!(
+                rev_at(repo.path(), "refs/heads/first").ok(),
+                kept.then(|| tip.clone()),
+                "{integrate:?} base={base_ref:?}"
+            );
+        }
     }
 
     /// Recycle an integrated, finished checkout while the repository HEAD has moved on.
@@ -7101,6 +8478,36 @@ mod tests {
             "branch should fall back to config.branch on detached HEAD, got {:?}",
             returned.branch
         );
+    }
+
+    // Catches (2867-4336): the index-flag guard treating sparse-checkout's skip-worktree
+    // entries (files absent from disk, nothing to lose) as hidden edits, so every
+    // clean worktree of a sparse repo is refused non-force removal forever.
+    #[test]
+    fn non_force_removal_accepts_a_clean_sparse_checkout() {
+        let repo = setup_test_repo();
+        let worktrees_dir = repo.path().join("worktrees");
+        let config = WorktreeConfig {
+            task_name: "sparse-clean".to_string(),
+            base_repo: repo.path().to_string_lossy().to_string(),
+            branch: None,
+            create_branch: false,
+        };
+        let worktree = create_worktree_internal(&worktrees_dir, &config, None).unwrap();
+        git_cmd(&worktree.path)
+            .args([
+                "sparse-checkout",
+                "set",
+                "--no-cone",
+                "/nothing-matches-this",
+            ])
+            .run()
+            .unwrap();
+        assert!(!worktree.path.join("README.md").exists());
+
+        let result = remove_worktree_internal(&worktree, false);
+        assert!(result.is_ok(), "{result:?}");
+        assert!(!worktree.path.exists());
     }
 
     #[test]
@@ -8875,6 +10282,40 @@ mod tests {
                 .next()
                 .is_some()
         );
+    }
+
+    #[test]
+    fn archive_moves_a_submodule_whose_repository_is_embedded_in_the_checkout() {
+        let (_temp, repo, _workspaces) = workspace_fixture();
+        add_populated_submodule(&repo);
+        let path = add_worktree(&repo, "embedded-module");
+        let module = path.join("modules/local");
+        let _ = fs::remove_dir_all(&module);
+        git_cmd(&path)
+            .args([
+                "clone",
+                "--quiet",
+                &repo
+                    .parent()
+                    .unwrap()
+                    .join("module-source")
+                    .to_string_lossy(),
+                "modules/local",
+            ])
+            .run()
+            .unwrap();
+        assert!(
+            module.join(".git").is_dir(),
+            "fixture needs an embedded repository"
+        );
+        let oid = rev_at(&module, "HEAD").unwrap();
+
+        let archived = PathBuf::from(archive_worktree(&repo, "embedded-module", None).unwrap());
+
+        assert!(!path.exists(), "archive left the checkout in place");
+        let archived_module = archived.join("modules/local");
+        assert!(archived_module.join(".git").is_dir());
+        assert_eq!(rev_at(&archived_module, "HEAD").unwrap(), oid);
     }
 
     #[test]
@@ -12187,6 +13628,82 @@ branch refs/heads/feat
         assert!(!inspect_workspace_lifecycle(&repo, "not-registered").missing_checkout);
     }
 
+    // Catches: repair run in the wrong directory, or a stale diagnostic left after repair.
+    #[test]
+    fn repair_relinks_a_checkout_whose_gitdir_pointer_is_dead() {
+        let (_temp, repo, _workspaces) = workspace_fixture();
+        let broken = add_worktree(&repo, "broken-link");
+        let neighbor = add_worktree(&repo, "healthy-neighbor");
+        fs::write(
+            broken.join(".git"),
+            "gitdir: /nonexistent/.git/worktrees/broken-link\n",
+        )
+        .unwrap();
+        let repo_name = repo.to_string_lossy();
+        let diagnostics = || {
+            get_worktree_inventory_raw(&repo_name, None)
+                .unwrap()
+                .worktree_diagnostics
+        };
+        assert_eq!(diagnostics().len(), 1);
+        assert!(diagnostics()[0].checkout_present);
+
+        let refused = resolve_worktree_diagnostic(
+            &repo_name,
+            &neighbor.to_string_lossy(),
+            WorktreeDiagnosticAction::Repair,
+        );
+        assert!(refused.is_err(), "a healthy checkout is not a diagnostic");
+        let wrong_action = resolve_worktree_diagnostic(
+            &repo_name,
+            &broken.to_string_lossy(),
+            WorktreeDiagnosticAction::Prune,
+        );
+        assert!(wrong_action.is_err() && broken.exists());
+
+        resolve_worktree_diagnostic(
+            &repo_name,
+            &broken.to_string_lossy(),
+            WorktreeDiagnosticAction::Repair,
+        )
+        .unwrap();
+        assert!(diagnostics().is_empty(), "{:?}", diagnostics());
+        assert!(broken.join("README.md").exists());
+    }
+
+    // Catches: prune that deletes files, or that drops a neighbor's registration.
+    #[test]
+    fn prune_drops_only_the_registration_of_a_deleted_checkout() {
+        let (_temp, repo, _workspaces) = workspace_fixture();
+        let gone = add_worktree(&repo, "gone-folder");
+        let live = add_worktree(&repo, "live-neighbor-2");
+        fs::remove_dir_all(&gone).unwrap();
+        let repo_name = repo.to_string_lossy();
+        assert!(
+            !get_worktree_inventory_raw(&repo_name, None)
+                .unwrap()
+                .worktree_diagnostics[0]
+                .checkout_present
+        );
+        assert!(
+            resolve_worktree_diagnostic(
+                &repo_name,
+                &gone.to_string_lossy(),
+                WorktreeDiagnosticAction::Repair
+            )
+            .is_err()
+        );
+        resolve_worktree_diagnostic(
+            &repo_name,
+            &gone.to_string_lossy(),
+            WorktreeDiagnosticAction::Prune,
+        )
+        .unwrap();
+        let inventory = get_worktree_inventory_raw(&repo_name, None).unwrap();
+        assert_eq!(inventory.worktree_diagnostics, vec![]);
+        assert!(live.exists() && inventory.worktree_paths.contains_key("live-neighbor-2"));
+    }
+
     #[test]
     fn missing_checkout_confirmation_prunes_only_the_confirmed_registration() {
         let (_temp, repo, _workspaces) = workspace_fixture();
@@ -12551,15 +14068,22 @@ branch refs/heads/feat
     fn git_panel_still_reports_a_pooled_merged_branch_as_merged() {
         let (_temp, repo, _) = archived_merged_branch("feat-pooled-panel");
 
+        // The panel lists the branch from `branches_detail` and marks it from
+        // the separately loaded merged set (#2777-1579).
         let branches = crate::git_reads::git_reads()
             .branches_detail(&repo)
             .unwrap();
-
-        let pooled = branches
-            .iter()
-            .find(|b| b.name == "feat-pooled-panel" && !b.is_remote)
-            .expect("pooled branch listed");
-        assert!(pooled.is_merged, "{branches:#?}");
+        assert!(
+            branches
+                .iter()
+                .any(|b| b.name == "feat-pooled-panel" && !b.is_remote),
+            "{branches:#?}"
+        );
+        let merged = crate::git::get_merged_branches_impl(&repo).unwrap();
+        assert!(
+            merged.iter().any(|b| b == "feat-pooled-panel"),
+            "{merged:?}"
+        );
     }
 
     fn commit_file(dir: &Path, name: &str, body: &str) {
@@ -12589,6 +14113,288 @@ branch refs/heads/feat
         let after = inspect_workspace_listing_with_pr(&repo, &workspace, |_, _, _| false);
         assert_eq!(after.commit_status, WorkspaceCommitStatus::Merged);
         assert_ne!(before.dirty_fingerprint, after.dirty_fingerprint);
+    }
+
+    /// Repository with `count` local branches of each class, built by Git itself.
+    /// Returns the default branch and the names the proof classifier must call
+    /// merged. `heuristic` adds the classes that need content evidence
+    /// (unmerged, pushed-unmerged, squash-merged, revised twin on default).
+    fn repo_with_branch_classes(count: usize, heuristic: bool) -> (TempDir, PathBuf, Vec<String>) {
+        let (temp, repo, _) = workspace_fixture();
+        let default = git_cmd(&repo)
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .run()
+            .unwrap()
+            .stdout
+            .trim()
+            .to_owned();
+        let git = |args: &[&str]| {
+            git_cmd(&repo).args(args).run().expect("git fixture step");
+        };
+        let mut merged = Vec::new();
+        for i in 0..count {
+            let name = format!("merged-{i}");
+            git(&["checkout", "-q", "-b", &name]);
+            commit_file(
+                &repo,
+                &format!("{name}.txt"),
+                "integrated by fast-forward\n",
+            );
+            git(&["checkout", "-q", &default]);
+            git(&["merge", "-q", "--ff-only", &name]);
+            merged.push(name);
+
+            git(&["branch", &format!("insync-{i}")]);
+
+            let name = format!("unrelated-{i}");
+            git(&["checkout", "-q", "--orphan", &name]);
+            git(&["rm", "-rf", "-q", "."]);
+            commit_file(&repo, &format!("{name}.txt"), "separate root\n");
+            git(&["checkout", "-q", "-f", &default]);
+
+            if !heuristic {
+                continue;
+            }
+            let name = format!("unmerged-{i}");
+            git(&["checkout", "-q", "-b", &name, &default]);
+            commit_file(&repo, &format!("{name}.txt"), "own work\n");
+            git(&["checkout", "-q", &default]);
+
+            let name = format!("pushed-{i}");
+            git(&["checkout", "-q", "-b", &name, &default]);
+            commit_file(&repo, &format!("{name}.txt"), "pushed work\n");
+            git(&["update-ref", &format!("refs/remotes/origin/{name}"), "HEAD"]);
+            git(&["checkout", "-q", &default]);
+
+            let name = format!("squash-{i}");
+            git(&["checkout", "-q", "-b", &name, &default]);
+            commit_file(&repo, &format!("{name}.txt"), "squashed work\n");
+            git(&["checkout", "-q", &default]);
+            git(&["merge", "-q", "--squash", &name]);
+            git(&["commit", "-q", "-m", &format!("{name} (squash)")]);
+            merged.push(name);
+
+            let name = format!("superset-{i}");
+            git(&["checkout", "-q", "-b", &name, &default]);
+            commit_file(&repo, &format!("{name}.txt"), "revised twin\n");
+            git(&["checkout", "-q", &default]);
+            commit_file(&repo, &format!("{name}.txt"), "revised twin\n");
+            merged.push(name);
+        }
+        commit_file(&repo, "later.txt", "advance default\n");
+        merged.sort();
+        (temp, repo, merged)
+    }
+
+    fn sorted(mut names: Vec<String>) -> Vec<String> {
+        names.sort();
+        names
+    }
+
+    fn cold_merged_listing_spawns(count: usize, heuristic: bool) -> usize {
+        let (_temp, repo, expected) = repo_with_branch_classes(count, heuristic);
+        crate::git_cli::take_command_counts();
+        let merged = sorted(crate::git::get_merged_branches_impl(&repo).unwrap());
+        let spawns = crate::git_cli::take_command_counts();
+        assert_eq!(merged, expected);
+        spawns.values().sum()
+    }
+
+    // Catches: the cold merged-branch listing running one or more git processes per
+    // local branch for ancestry, reflog and base resolution. Defender scanned the
+    // git binary 9,898 times in 95 s after a restart over 1,450 branches (#3021-3a69).
+    #[test]
+    fn cold_merged_listing_spawns_do_not_grow_with_the_branch_count() {
+        let few = cold_merged_listing_spawns(2, false);
+        let many = cold_merged_listing_spawns(8, false);
+        assert_eq!(
+            few, many,
+            "git spawns grew from {few} (6 branches) to {many} (24 branches)"
+        );
+    }
+
+    // Catches: the content heuristics (cherry, merge-tree, twin patches, content
+    // superset, remote containment) running git once or more per unmerged, pushed,
+    // squash or superset branch: about 10 processes each, 1,850 for the Git panel
+    // listing of a repository with 189 such branches (#3024-58fe).
+    #[test]
+    fn heuristic_merged_listing_spawns_do_not_grow_with_the_branch_count() {
+        let few = cold_merged_listing_spawns(2, true);
+        let many = cold_merged_listing_spawns(8, true);
+        assert_eq!(
+            few, many,
+            "git spawns grew from {few} (14 branches) to {many} (56 branches)"
+        );
+    }
+
+    // Catches: one failing pair in the shared merge-tree process (here an unrelated
+    // history, which Git refuses to merge) dropping the proofs of every other pair.
+    #[test]
+    fn merge_tree_batch_failure_keeps_the_other_merges() {
+        let (_temp, repo, _) = repo_with_branch_classes(1, true);
+        let rev = |spec: &str| quick_rev(&repo, spec).unwrap();
+        let target = rev("HEAD");
+        let superset = rev("refs/heads/superset-0");
+        let unrelated = rev("refs/heads/unrelated-0");
+        let mut facts = HeuristicFacts::default();
+        assert!(matches!(
+            facts.merge_tree(&target, &unrelated),
+            Err(ClassifyError::Pending)
+        ));
+        assert!(matches!(
+            facts.merge_tree(&target, &superset),
+            Err(ClassifyError::Pending)
+        ));
+        assert!(facts.fetch(&repo).unwrap());
+        assert!(matches!(
+            facts.merge_tree(&target, &superset),
+            Ok(Some(tree)) if tree == rev("HEAD^{tree}")
+        ));
+        assert!(matches!(facts.merge_tree(&target, &unrelated), Ok(None)));
+    }
+
+    // Catches: the patch-id comparison reading the diff through a lossy UTF-8
+    // string, so two Latin-1 edits that differ only in a non-UTF-8 byte get the
+    // same patch id and the branch reads as merged, where `git cherry` says `+`.
+    #[test]
+    fn merged_listing_keeps_a_branch_whose_patch_differs_only_in_non_utf8_bytes() {
+        let (_temp, repo, _) = repo_with_branch_classes(0, true);
+        let git = |args: &[&str]| {
+            git_cmd(&repo).args(args).run().expect("git fixture step");
+        };
+        let default = git_cmd(&repo)
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .run()
+            .unwrap()
+            .stdout
+            .trim()
+            .to_owned();
+        let commit_bytes = |body: &[u8], message: &str| {
+            fs::write(repo.join("latin.txt"), body).unwrap();
+            git(&["add", "latin.txt"]);
+            git(&["commit", "-q", "-m", message]);
+        };
+        // Both sides replace a line, so only the patch comparison can decide.
+        commit_bytes(b"caf\xe0\n", "latin base");
+        git(&["checkout", "-q", "-b", "latin", &default]);
+        commit_bytes(b"caf\xe8\n", "branch edit");
+        git(&["checkout", "-q", &default]);
+        commit_bytes(b"caf\xe9\n", "default edit");
+        let cherry = git_cmd(&repo)
+            .args(["cherry", &default, "latin"])
+            .run()
+            .unwrap()
+            .stdout;
+        assert!(cherry.starts_with("+ "), "git cherry: {cherry}");
+        let merged = crate::git::get_merged_branches_impl(&repo).unwrap();
+        assert!(
+            !merged.contains(&"latin".to_owned()),
+            "branch with a distinct Latin-1 patch listed as merged: {merged:?}"
+        );
+    }
+
+    // Catches: a verdict change in any proof class while the classifier moves to
+    // in-process reads. The expected set comes from how Git built each branch,
+    // not from the classifier.
+    #[test]
+    fn merged_listing_verdicts_match_the_branch_construction() {
+        let (_temp, repo, expected) = repo_with_branch_classes(2, true);
+        let merged = sorted(crate::git::get_merged_branches_impl(&repo).unwrap());
+        assert_eq!(merged, expected);
+    }
+
+    fn cold_workspace_listing_spawns(count: usize) -> usize {
+        let (_temp, repo, _) = repo_with_branch_classes(count, true);
+        // One workspace needs the content heuristics, one is plainly unmerged.
+        let workspaces = ["squash-0".to_owned(), "unmerged-0".to_owned()];
+        crate::git_cli::take_command_counts();
+        let merged = crate::git::get_merged_workspace_branches_impl(&repo, &workspaces).unwrap();
+        let spawns = crate::git_cli::take_command_counts();
+        assert_eq!(merged, vec!["squash-0"]);
+        spawns.values().sum()
+    }
+
+    // Catches: the startup structure snapshot classifying branches that have no
+    // workspace; their content heuristics (cherry, merge-tree, log, diff) cost
+    // several git processes each and ran for every local branch (#3021-3a69).
+    #[test]
+    fn cold_workspace_merge_listing_spawns_do_not_grow_with_the_branch_count() {
+        let few = cold_workspace_listing_spawns(2);
+        let many = cold_workspace_listing_spawns(8);
+        assert_eq!(
+            few, many,
+            "git spawns grew from {few} (14 branches) to {many} (56 branches)"
+        );
+    }
+
+    // Catches: the in-process upstream lookup naming a different base than Git's
+    // `%(upstream)` when the fetch refspec maps to a non-default remote name.
+    #[test]
+    fn integration_bases_use_the_upstream_git_reports() {
+        let (_temp, repo, _) = workspace_fixture();
+        let default = git_cmd(&repo)
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .run()
+            .unwrap()
+            .stdout
+            .trim()
+            .to_owned();
+        let git = |args: &[&str]| {
+            git_cmd(&repo).args(args).run().unwrap();
+        };
+        git(&["remote", "add", "up", "https://example.invalid/repo.git"]);
+        git(&["config", &format!("branch.{default}.remote"), "up"]);
+        git(&[
+            "config",
+            &format!("branch.{default}.merge"),
+            &format!("refs/heads/{default}"),
+        ]);
+        git(&["update-ref", &format!("refs/remotes/up/{default}"), "HEAD"]);
+        let expected = git_cmd(&repo)
+            .args([
+                "for-each-ref",
+                "--format=%(upstream)",
+                &format!("refs/heads/{default}"),
+            ])
+            .run()
+            .unwrap()
+            .stdout
+            .trim()
+            .to_owned();
+        assert_eq!(expected, format!("refs/remotes/up/{default}"));
+        assert_eq!(
+            integration_bases(&repo, &default),
+            vec![expected, format!("refs/heads/{default}")]
+        );
+    }
+
+    // Catches: the in-process ancestry check disagreeing with `git merge-base
+    // --is-ancestor` on equal commits, a descendant, a diverged tip and a bad revision.
+    #[test]
+    fn ancestry_checks_agree_with_git() {
+        let (_temp, repo, _) = repo_with_branch_classes(1, true);
+        for (ancestor, descendant) in [
+            ("merged-0", "merged-0"),
+            ("merged-0", "HEAD"),
+            ("HEAD", "merged-0"),
+            ("unmerged-0", "HEAD"),
+            ("unrelated-0", "HEAD"),
+            ("HEAD", "unrelated-0"),
+        ] {
+            let expected = git_cmd(&repo)
+                .args(["merge-base", "--is-ancestor", ancestor, descendant])
+                .run_raw()
+                .unwrap()
+                .status
+                .code()
+                == Some(0);
+            assert_eq!(
+                is_ancestor(&repo, ancestor, descendant),
+                Ok(expected),
+                "{ancestor} -> {descendant}"
+            );
+        }
+        assert!(is_ancestor(&repo, "no-such-branch", "HEAD").is_err());
     }
 
     // Catches: one expired branch reflog aborts the repository's merged-branch
@@ -12942,6 +14748,7 @@ branch refs/heads/feat
                 branch,
                 path: path.to_string_lossy().into_owned(),
                 kind: WorkspaceKind::Worktree,
+                creator_session: None,
                 warm_artifacts: None,
                 lifecycle_status: None,
             });
@@ -12996,8 +14803,10 @@ branch refs/heads/feat
         }
         let after = crate::git_cli::take_command_counts();
         eprintln!("1491: 11 writers x 3 refreshes; before={before:?}; after={after:?}");
-        assert!(before.get("cherry").copied().unwrap_or_default() > 0);
-        assert_eq!(before.get("status"), Some(&33));
+        // The uncached check ran the patch-id comparison, so `after` proves the cache.
+        assert!(before.get("patch-id").copied().unwrap_or_default() > 0);
+        // Two porcelain reads per lifecycle check since #2926-2a6b added the ignored-path fingerprint.
+        assert_eq!(before.get("status"), Some(&66));
         assert!(
             after.is_empty(),
             "file saves must spawn no Git CLI reads: {after:?}"
@@ -13127,6 +14936,30 @@ branch refs/heads/feat
             remove_worktree_by_workspace_id(&repo.to_string_lossy(), "trails", true, None, false)
                 .unwrap();
         assert_eq!(outcome.removal_rule, "in_sync");
+    }
+
+    // RED: lifecycle_status_names_exact_tip_base_and_proof_source — catches: a merged verdict
+    // that carries no tip/base, so a consumer cannot tell which commits the proof covered.
+    #[test]
+    fn lifecycle_status_names_exact_tip_base_and_proof_source() {
+        let (_temp, repo, _workspaces) = workspace_fixture();
+        let worktree = add_worktree(&repo, "proof-ids");
+        commit_file(&worktree, "feature.txt", "completed work\n");
+        git_cmd(&repo)
+            .args(["merge", "proof-ids", "--no-edit"])
+            .run()
+            .unwrap();
+        let tip = rev_at(&worktree, "HEAD").unwrap();
+        let base = rev_at(&repo, "HEAD").unwrap();
+
+        let status = inspect_workspace_lifecycle(&repo, "proof-ids");
+        let wire = serde_json::to_value(&status).unwrap();
+
+        assert_eq!(status.tip.as_deref(), Some(tip.as_str()));
+        assert_eq!(status.base.as_deref(), Some(base.as_str()));
+        assert_eq!(wire["proof_source"], "ancestry");
+        assert_eq!(wire["tip"], tip);
+        assert_eq!(wire["base"], base);
     }
 
     #[test]
@@ -14611,7 +16444,7 @@ branch refs/heads/feat
                     .is_empty(),
                 "{state}"
             );
-            let error = remove_orphan_worktree_internal(&worktree).unwrap_err();
+            let error = remove_orphan_worktree_internal(&worktree, None).unwrap_err();
             assert!(error.contains("temporary directory"), "{state}: {error}");
             let error = validate_worktree_path(&repo.to_string_lossy(), &path.to_string_lossy())
                 .unwrap_err();
@@ -14824,7 +16657,7 @@ branch refs/heads/feat
             branch: None,
             base_repo: repo.clone(),
         };
-        remove_orphan_worktree_internal(&worktree).unwrap();
+        remove_orphan_worktree_internal(&worktree, None).unwrap();
         let listed = git_cmd(&repo)
             .args(["worktree", "list", "--porcelain"])
             .run()
@@ -15931,6 +17764,37 @@ branch refs/heads/feat
         assert!(orphan_entry(&repo, "orphan-clean").safe);
     }
 
+    // Catches (2867-4336): local edits hidden by skip-worktree/assume-unchanged being
+    // invisible to `git status`, so an orphan holding them is judged safe and removed
+    // by `git worktree remove --force` (the archive sweep already guards this).
+    #[test]
+    fn orphan_with_edits_hidden_by_index_flags_is_unsafe_and_never_removed() {
+        for flag in ["--skip-worktree", "--assume-unchanged"] {
+            let (_temp, repo, _workspaces) = orphan_workspace_fixture();
+            let path = detached_orphan(&repo, "orphan-hidden");
+            git_cmd(&path)
+                .args(["update-index", flag, "README.md"])
+                .run()
+                .unwrap();
+            fs::write(path.join("README.md"), "precious local configuration").unwrap();
+
+            let entry = orphan_entry(&repo, "orphan-hidden");
+            assert!(!entry.safe, "{flag}: {entry:?}");
+            let worktree = WorktreeInfo {
+                name: "orphan-hidden".into(),
+                path: path.clone(),
+                branch: None,
+                base_repo: repo.clone(),
+            };
+            let error = remove_orphan_worktree_internal(&worktree, None).unwrap_err();
+            assert!(error.contains("index flags"), "{flag}: {error}");
+            assert_eq!(
+                fs::read_to_string(path.join("README.md")).unwrap(),
+                "precious local configuration"
+            );
+        }
+    }
+
     // Catches (critic-1367): a fingerprint built from `status` alone, so a Keep on a
     // clean checkout survives it being moved to another commit.
     #[test]
@@ -16162,6 +18026,8 @@ pub fn orphan_cleanup_safety(repo_path: &str, worktree_path: &str) -> Result<(),
     if !status.stdout.trim().is_empty() {
         return Err("uncommitted changes".into());
     }
+
+    reject_index_flagged_files(worktree)?;
 
     let head = rev_at(worktree, "HEAD")?;
     let default_branch = get_remote_default_branch(repo_path)?;

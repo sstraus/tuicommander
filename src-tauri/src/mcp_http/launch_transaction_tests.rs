@@ -11,6 +11,7 @@ fn state() -> Arc<AppState> {
         }),
         Some("launch-tests"),
     );
+    state.orchestrator_peers.insert(PARENT.into());
     state
 }
 fn addr() -> SocketAddr {
@@ -56,7 +57,7 @@ async fn launch_transaction_retries_after_worktree_checkpoint_without_fallback()
     let mut request = request();
     request["workspace"] = json!({"repo_path":repo, "branch":"feat/launch-fixture"});
     assert!(
-        execute_inner(&state, addr(), &request, Fault::AfterWorktree)
+        execute_inner(&state, addr().into(), &request, Fault::AfterWorktree)
             .await
             .unwrap_err()
             .contains("injected")
@@ -68,7 +69,7 @@ async fn launch_transaction_retries_after_worktree_checkpoint_without_fallback()
         .values()
         .find(|workspace| workspace.branch == "feat/launch-fixture")
         .unwrap();
-    let result = execute(&state, addr(), &request).await;
+    let result = execute(&state, addr().into(), &request).await;
     assert!(result.get("error").is_none(), "{result}");
     assert_eq!(result["workspace_path"], selected.path);
     assert_ne!(result["workspace_path"], repo.to_string_lossy().as_ref());
@@ -84,7 +85,7 @@ async fn launch_transaction_recovers_child_before_receipt_checkpoint() {
     let state = state();
     let request = request();
     assert!(
-        execute_inner(&state, addr(), &request, Fault::AfterChild)
+        execute_inner(&state, addr().into(), &request, Fault::AfterChild)
             .await
             .unwrap_err()
             .contains("injected")
@@ -97,7 +98,7 @@ async fn launch_transaction_recovers_child_before_receipt_checkpoint() {
         .unwrap()
         .key()
         .clone();
-    let result = execute(&state, addr(), &request).await;
+    let result = execute(&state, addr().into(), &request).await;
     assert_eq!(result["session_id"], child);
     assert_eq!(result["status"], "prompt_delivered");
     assert_eq!(
@@ -124,7 +125,7 @@ async fn launch_transaction_delivery_failure_keeps_one_queued_prompt() {
     request["spawn"]["agent_type"] = json!("codex");
     request["spawn"]["binary_path"] = json!(binary);
     request["spawn"]["args"] = json!(["--profile", "fixture"]);
-    let result = execute_inner(&state, addr(), &request, Fault::DuringDelivery)
+    let result = execute_inner(&state, addr().into(), &request, Fault::DuringDelivery)
         .await
         .unwrap();
     assert_eq!(result["status"], "blocked");
@@ -132,7 +133,7 @@ async fn launch_transaction_delivery_failure_keeps_one_queued_prompt() {
     assert_eq!(result["ready"], false);
     let child = result["session_id"].as_str().unwrap();
     let before = state.pending_injections.get(child).unwrap().len();
-    let again = execute(&state, addr(), &request).await;
+    let again = execute(&state, addr().into(), &request).await;
     assert_eq!(again["launch_id"], result["launch_id"]);
     assert_eq!(state.pending_injections.get(child).unwrap().len(), before);
     assert_eq!(before, 1);
@@ -156,7 +157,7 @@ async fn launch_transaction_owned_prompt_timeout_reports_blocked_without_requeue
     request["spawn"]["agent_type"] = json!("codex");
     request["spawn"]["binary_path"] = json!(binary);
     request["spawn"]["args"] = json!(["--profile", "fixture"]);
-    let first = execute_owned(&state, addr(), &request).await;
+    let first = execute_owned(&state, addr().into(), &request).await;
     assert_eq!(first["status"], "created", "{first}");
     assert_eq!(first["prompt_delivery"], "queued");
     let child = first["session_id"].as_str().unwrap();
@@ -165,7 +166,7 @@ async fn launch_transaction_owned_prompt_timeout_reports_blocked_without_requeue
     tokio::task::yield_now().await;
     tokio::time::advance(std::time::Duration::from_secs(31)).await;
     tokio::task::yield_now().await;
-    let after = execute_owned(&state, addr(), &request).await;
+    let after = execute_owned(&state, addr().into(), &request).await;
     let queued = state.pending_injections.get(child).unwrap().len();
     let children = state.session_maps.sessions.len();
     close(&state, child);
@@ -187,7 +188,7 @@ async fn launch_transaction_owned_prompt_timeout_reports_blocked_without_requeue
 async fn launch_transaction_conflicting_key_never_spawns_or_falls_back() {
     let state = state();
     let request = request();
-    let first = execute(&state, addr(), &request).await;
+    let first = execute(&state, addr().into(), &request).await;
     assert!(first.get("error").is_none(), "{first}");
     for field in ["name", "keep_open", "workspace", "spawn"] {
         let mut conflict = request.clone();
@@ -197,7 +198,7 @@ async fn launch_transaction_conflicting_key_never_spawns_or_falls_back() {
             "spawn" => json!({"prompt":"another task"}),
             _ => json!("different-child"),
         };
-        let result = execute(&state, addr(), &conflict).await;
+        let result = execute(&state, addr().into(), &conflict).await;
         assert!(
             result["error"]
                 .as_str()
@@ -216,13 +217,18 @@ async fn launch_transaction_deterministic_refusal_is_retained() {
     let state = state();
     let mut request = request();
     request["spawn"]["binary_path"] = json!("not-absolute");
-    let first = execute(&state, addr(), &request).await;
+    let first = execute(&state, addr().into(), &request).await;
     assert_eq!(first["status"], "blocked");
     assert!(first["reason"].as_str().unwrap().contains("absolute"));
-    let again = execute(&state, addr(), &request).await;
+    let again = execute(&state, addr().into(), &request).await;
     assert_eq!(first, again);
     assert!(state.session_maps.sessions.is_empty());
-    let read = execute(&state, addr(), &json!({"launch_id":first["launch_id"]})).await;
+    let read = execute(
+        &state,
+        addr().into(),
+        &json!({"launch_id":first["launch_id"]}),
+    )
+    .await;
     assert_eq!(read, first);
 }
 
@@ -239,20 +245,13 @@ async fn launch_transaction_interrupted_side_effect_blocks_without_retry() {
         let record = Record {
             launch_id: uuid::Uuid::new_v4().to_string(),
             owner_scope: Some(PARENT.into()),
-            acp_connection: None,
-            acp_process_id: None,
-            acp_generation: None,
-            acp_conversation: None,
-            acp_turn: None,
-            acp_prompt_sha256: None,
-            acp_prompt: None,
+            pty_process_id: None,
             digest: hash(
                 &serde_json::to_vec(&canonical(serde_json::to_value(parsed).unwrap())).unwrap(),
             ),
             session_id: uuid::Uuid::new_v4().to_string(),
             stage: stage.into(),
             workspace_path: None,
-            workspace_baseline: None,
             child: None,
             prompt_handoff: false,
             reason: None,
@@ -261,7 +260,7 @@ async fn launch_transaction_interrupted_side_effect_blocks_without_retry() {
         let journal = Journal(state.data_dir.join("managed-launches.sqlite"));
         journal.reserve(&key, record.clone()).unwrap();
         drop(journal);
-        let result = execute(&state, addr(), &request).await;
+        let result = execute(&state, addr().into(), &request).await;
         assert_eq!(result["status"], "blocked");
         assert_eq!(result["session_id"], record.session_id);
         assert_eq!(result["launch_id"], record.launch_id);
@@ -276,8 +275,8 @@ async fn launch_transaction_overlapping_requests_create_one_child() {
     let state = state();
     let request = request();
     let (first, second) = tokio::join!(
-        execute(&state, addr(), &request),
-        execute(&state, addr(), &request),
+        execute(&state, addr().into(), &request),
+        execute(&state, addr().into(), &request),
     );
     assert!(first.get("error").is_none(), "{first}");
     assert!(second.get("error").is_none(), "{second}");
@@ -297,7 +296,7 @@ async fn launch_transaction_overlapping_requests_create_one_child() {
 #[tokio::test]
 async fn launch_transaction_output_alone_never_proves_ready() {
     let state = state();
-    let result = execute(&state, addr(), &request()).await;
+    let result = execute(&state, addr().into(), &request()).await;
     assert_eq!(result["status"], "prompt_delivered");
     assert_eq!(result["ready"], false);
     close(&state, result["session_id"].as_str().unwrap());
@@ -316,7 +315,7 @@ async fn launch_transaction_retry_measurement_reduces_two_children_to_one() {
     for _ in 0..2 {
         let result = super::super::mcp_transport_session_agent::handle_agent_with_parent_cwd(
             &state,
-            addr(),
+            addr().into(),
             &legacy,
             Some("launch-tests"),
             None,
@@ -330,8 +329,8 @@ async fn launch_transaction_retry_measurement_reduces_two_children_to_one() {
         close(&state, &child);
     }
     assert!(state.session_maps.sessions.is_empty());
-    let first = execute(&state, addr(), &request).await;
-    let again = execute(&state, addr(), &request).await;
+    let first = execute(&state, addr().into(), &request).await;
+    let again = execute(&state, addr().into(), &request).await;
     assert_eq!(first["session_id"], again["session_id"]);
     assert_eq!(state.session_maps.sessions.len(), 1);
     close(&state, first["session_id"].as_str().unwrap());
@@ -344,7 +343,7 @@ async fn launch_transaction_missing_brief_receipt_stays_unknown() {
     let state = state();
     let request = request();
     assert!(
-        execute_inner(&state, addr(), &request, Fault::AfterChild)
+        execute_inner(&state, addr().into(), &request, Fault::AfterChild)
             .await
             .is_err()
     );
@@ -364,7 +363,7 @@ async fn launch_transaction_missing_brief_receipt_stays_unknown() {
         .unwrap()
         .lock()
         .launch_receipt = None;
-    let result = execute(&state, addr(), &request).await;
+    let result = execute(&state, addr().into(), &request).await;
     assert_eq!(result["session_id"], child);
     assert_eq!(result["prompt_delivery"], "unknown");
     assert_eq!(result["status"], "created");
@@ -384,7 +383,7 @@ async fn launch_transaction_partial_worktree_creation_never_retries_or_uses_pare
     let mut request = request();
     request["workspace"] = json!({"repo_path":repo, "branch":"feat/partial-launch-fixture"});
     assert!(
-        execute_inner(&state, addr(), &request, Fault::AfterWorktreeEffect)
+        execute_inner(&state, addr().into(), &request, Fault::AfterWorktreeEffect)
             .await
             .unwrap_err()
             .contains("injected")
@@ -398,7 +397,7 @@ async fn launch_transaction_partial_worktree_creation_never_retries_or_uses_pare
             .count(),
         1
     );
-    let result = execute(&state, addr(), &request).await;
+    let result = execute(&state, addr().into(), &request).await;
     assert_eq!(result["status"], "blocked");
     assert!(
         result["reason"]
@@ -424,13 +423,14 @@ async fn launch_transaction_http_and_mcp_read_the_same_durable_refusal() {
     let Json(first) = http(
         State(state.clone()),
         ConnectInfo(addr()),
+        None,
         Json(request.clone()),
     )
     .await;
     request["action"] = json!("launch");
     let mcp = super::super::mcp_transport::handle_mcp_tool_call_with_context(
         &state,
-        addr(),
+        addr().into(),
         "agent",
         &request,
         Some("launch-tests"),
@@ -442,6 +442,7 @@ async fn launch_transaction_http_and_mcp_read_the_same_durable_refusal() {
     let Json(read) = http(
         State(state.clone()),
         ConnectInfo(addr()),
+        None,
         Json(json!({"launch_id":first["launch_id"]})),
     )
     .await;
@@ -453,7 +454,15 @@ async fn launch_transaction_http_and_mcp_read_the_same_durable_refusal() {
 #[tokio::test]
 async fn launch_transaction_remote_refusal_has_no_side_effects() {
     let state = state();
-    let result = execute(&state, "192.168.1.2:1".parse().unwrap(), &request()).await;
+    let result = execute(
+        &state,
+        "192.168.1.2:1"
+            .parse::<std::net::SocketAddr>()
+            .unwrap()
+            .into(),
+        &request(),
+    )
+    .await;
     assert!(result["error"].as_str().unwrap().contains("localhost"));
     assert!(!state.data_dir.join("managed-launches.sqlite").exists());
     assert!(state.session_maps.sessions.is_empty());
@@ -488,7 +497,7 @@ async fn automation_and_mcp_launch_share_name_hold_and_retry_policy() {
     request["action"] = json!("launch");
     let mcp = super::super::mcp_transport::handle_mcp_tool_call_with_context(
         &state,
-        addr(),
+        addr().into(),
         "agent",
         &request,
         Some("launch-tests"),
@@ -529,177 +538,33 @@ async fn automation_and_mcp_launch_share_name_hold_and_retry_policy() {
     close(&state, child);
 }
 
-// Catches: daemon-owned launch needs a live parent PTY or loses its original
-// attribution baseline when a branch is renamed and the response is lost.
-#[cfg(unix)]
-#[tokio::test]
-async fn daemon_delivery_launches_with_no_coordinator_session() {
-    let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-    let repo = repo(root.path()).canonicalize().unwrap();
-    std::fs::write(repo.join("pre-existing.txt"), "Boss work before launch\n").unwrap();
-    let state = Arc::new(crate::state::tests_support::make_test_app_state());
-    let mut request = request();
-    request["parent_session_id"] = json!("workflow:baseline-fixture");
-    request["workspace"] = json!({"existing_path":repo});
-    assert!(state.peer_agents.is_empty());
-    assert!(
-        execute_scoped(&state, addr(), &request, Fault::AfterBaseline, false)
-            .await
-            .unwrap_err()
-            .contains("injected")
-    );
-    assert!(state.session_maps.sessions.is_empty());
-    let db = Journal(state.data_dir.join("managed-launches.sqlite"))
-        .open()
-        .unwrap();
-    let text: String = db
-        .query_row("SELECT record FROM launches", [], |row| row.get(0))
-        .unwrap();
-    drop(db);
-    let before: Record = serde_json::from_str(&text).unwrap();
-    let baseline = before.workspace_baseline.as_ref().unwrap();
-    assert_eq!(baseline.untracked.len(), 1);
-    assert_eq!(baseline.untracked[0].path, "pre-existing.txt");
-    assert_eq!(
-        baseline.untracked[0].sha256,
-        hex::encode(Sha256::digest(b"Boss work before launch\n"))
-    );
-    crate::git_cli::git_cmd(&repo)
-        .args(["branch", "-m", "renamed-before-retry"])
-        .run()
-        .unwrap();
-    std::fs::write(repo.join("pre-existing.txt"), "changed after baseline\n").unwrap();
-    let result = execute_owned(&state, addr(), &request).await;
-    assert!(result.get("error").is_none(), "{result}");
-    let child = result["session_id"].as_str().unwrap();
-    let child_count = state.session_maps.sessions.len();
-    let parent_bound = state.session_maps.session_parent.contains_key(child);
-    close(&state, child);
-    assert_eq!(child_count, 1);
-    assert!(
-        !parent_bound,
-        "run authority is not a fabricated parent terminal"
-    );
-    assert_eq!(
-        result["workspace_baseline"],
-        serde_json::to_value(baseline).unwrap()
-    );
-    let current = super::super::launch_baseline::capture(&repo).unwrap();
-    assert_eq!(current.repository_key, baseline.repository_key);
-    assert_eq!(current.workspace_key, baseline.workspace_key);
-    assert_ne!(current.untracked, baseline.untracked);
-    assert_eq!(
-        std::fs::read_to_string(repo.join("pre-existing.txt")).unwrap(),
-        "changed after baseline\n"
-    );
-    // A new daemon has no live process inventory. Retain evidence and refuse a
-    // replacement; absence here is not a successful attempt or stop proof.
-    let mut restarted = crate::state::tests_support::make_test_app_state();
-    restarted.data_dir = state.data_dir.clone();
-    let restarted = Arc::new(restarted);
-    let retry = execute_owned(&restarted, addr(), &request).await;
-    assert_eq!(retry["session_id"], result["session_id"]);
-    assert_eq!(retry["workspace_baseline"], result["workspace_baseline"]);
-    assert_eq!(retry["ready"], false);
-    assert_eq!(retry["inventory"], "unknown");
-    assert!(
-        retry["reason"]
-            .as_str()
-            .unwrap()
-            .contains("inventory is unknown")
-    );
-    assert!(restarted.session_maps.sessions.is_empty());
-}
-
-// Catches: two linked checkouts get one workspace owner, or repository aliases
-// get separate canonical owners; dirt with unchanged porcelain is missed.
+// Catches: a child whose turn was refused (ego `state=error`) is reported as
+// prompt_delivered, so its parent waits on a child that waits on it (#3013-b714).
 #[cfg(unix)]
 #[test]
-fn workflow_baseline_distinguishes_checkouts_and_hashes_dirty_bytes() {
-    let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-    let repo = repo(root.path()).canonicalize().unwrap();
-    std::fs::write(repo.join("tracked"), "base\n").unwrap();
-    crate::git_cli::git_cmd(&repo)
-        .args(["add", "tracked"])
-        .run()
-        .unwrap();
-    crate::git_cli::git_cmd(&repo)
-        .args(["commit", "-m", "baseline fixture"])
-        .run()
-        .unwrap();
-    let checkout = root.path().join("linked");
-    crate::git_cli::git_cmd(&repo)
-        .args([
-            "worktree",
-            "add",
-            "-b",
-            "linked",
-            checkout.to_str().unwrap(),
-        ])
-        .run()
-        .unwrap();
-    let first = super::super::launch_baseline::capture(&repo).unwrap();
-    let linked = super::super::launch_baseline::capture(&checkout).unwrap();
-    assert_eq!(first.repository_key, linked.repository_key);
-    assert_ne!(first.workspace_key, linked.workspace_key);
-    let alias = root.path().join("alias");
-    std::os::unix::fs::symlink(&repo, &alias).unwrap();
-    assert_eq!(
-        super::super::launch_baseline::capture(&alias).unwrap(),
-        first
-    );
-    std::fs::write(repo.join("tracked"), "staged\n").unwrap();
-    crate::git_cli::git_cmd(&repo)
-        .args(["add", "tracked"])
-        .run()
-        .unwrap();
-    std::fs::write(repo.join("tracked"), "unstaged one\n").unwrap();
-    let dirty = super::super::launch_baseline::capture(&repo).unwrap();
-    assert_ne!(first.staged_sha256, dirty.staged_sha256);
-    assert_ne!(first.unstaged_sha256, dirty.unstaged_sha256);
-    std::fs::write(repo.join("tracked"), "unstaged two\n").unwrap();
-    let edited = super::super::launch_baseline::capture(&repo).unwrap();
-    assert_eq!(dirty.status_hex, edited.status_hex);
-    assert_eq!(dirty.staged_sha256, edited.staged_sha256);
-    assert_ne!(dirty.unstaged_sha256, edited.unstaged_sha256);
-    assert_eq!(
-        std::fs::read_to_string(repo.join("tracked")).unwrap(),
-        "unstaged two\n"
-    );
-}
-
-// Catches: hashing a pre-existing symlink follows its target, or invalid Git
-// state is treated as a clean baseline and a worker is started anyway.
-#[cfg(unix)]
-#[tokio::test]
-async fn workflow_baseline_preserves_symlinks_and_refuses_missing_head() {
-    let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-    let repo = repo(root.path()).canonicalize().unwrap();
-    std::os::unix::fs::symlink("missing target", repo.join("link")).unwrap();
-    let baseline = super::super::launch_baseline::capture(&repo).unwrap();
-    assert_eq!(baseline.untracked[0].kind, "symlink");
-    assert_eq!(
-        baseline.untracked[0].sha256,
-        hex::encode(Sha256::digest(b"missing target"))
-    );
-    let empty = root.path().join("empty");
-    std::fs::create_dir(&empty).unwrap();
-    crate::git_cli::git_cmd(&empty)
-        .args(["init"])
-        .run()
-        .unwrap();
+fn launch_receipt_reports_a_refused_child_as_blocked_with_its_error() {
     let state = Arc::new(crate::state::tests_support::make_test_app_state());
-    let mut request = request();
-    request["parent_session_id"] = json!("workflow:no-base-fixture");
-    request["workspace"] = json!({"existing_path":empty});
-    let result = execute_owned(&state, addr(), &request).await;
+    let child = "launch-refused-child";
+    let _bytes = crate::test_support::insert_recording_session(&state, child);
+    crate::test_support::agent_session(&state, child, crate::pty::SHELL_IDLE);
+    {
+        let mut session = state.session_maps.session_states.get_mut(child).unwrap();
+        session.agent_type = Some("ego".into());
+        session.agent_error = true;
+        session.last_error = Some("this model refuses the history".into());
+    }
+    let record: Record = serde_json::from_value(json!({
+        "launch_id": "launch-refused", "digest": "d", "session_id": child,
+        "stage": "created", "prompt_handoff": true, "revision": 1,
+    }))
+    .unwrap();
+    let result = receipt(&state, &record);
+    assert_eq!(result["status"], "blocked", "{result}");
+    assert_eq!(result["last_error"], "this model refuses the history");
     assert!(
-        result["error"].as_str().unwrap().contains("baseline"),
+        result["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("this model refuses the history")),
         "{result}"
-    );
-    assert!(state.session_maps.sessions.is_empty());
-    assert_eq!(
-        std::fs::read_link(repo.join("link")).unwrap(),
-        PathBuf::from("missing target")
     );
 }

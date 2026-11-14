@@ -25,4 +25,15 @@ ignore = [
     "RUSTSEC-2026-0367", # ZIP extraction preserves SUID/SGID bits.
     "RUSTSEC-2026-0368", # ZIP extraction creates escaping symlinks.
     "RUSTSEC-2026-0369", # ZIP extraction applies permissions through symlinks.
+    # DEFERRED (2026-11-14) — crypto-bigint 0.5.5 comes only through p256 0.13
+    # (elliptic-curve 0.13). The fix needs crypto-bigint >=0.7.6, which only the
+    # p256 0.14 line uses; 0.13.2 is the latest compatible p256. Production code
+    # (src/push.rs) uses p256 only for the VAPID key: generate it, load the stored
+    # scalar, derive its public point for ring. It also parses the SEC1 public
+    # key of a subscriber. ring does the ECDH and the ES256 signature. This runs
+    # locally on a key of the user and is not a constant-time boundary: no
+    # attacker measures its timing in the TUIC threat model. The secret-key
+    # p256 calls in tests are dev-only. Remove this entry with the p256 0.14
+    # migration. Reviewed 2026-11-14 (story 3052-2728, GitHub #127).
+    "RUSTSEC-2026-0387", # crypto-bigint timing variability in constant-time ops.
 ]

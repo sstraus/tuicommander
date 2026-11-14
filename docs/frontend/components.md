@@ -1,5 +1,21 @@
 # Components
 
+### Catalog workflow authoring
+
+`WorkflowDesigner` preserves the legacy editor and lazily mounts `NeutralDesigner`
+through **Catalog authoring**. Both views retain unsaved state while switching.
+`neutralClient.ts` owns the proposed `workflow_neutral_action` wire types;
+`useNeutralDraft` reads project catalog/draft metadata on repository revisions,
+without replacing unsaved definitions. `CatalogInspector` and `SchemaFields`
+render configuration and ports from `ActivityDescriptor`, including custom scripts.
+`MappingFields` edits the Rust data-source representation. `NeutralGraphEditor`
+edits neutral control nodes and outcome links. Structured conditions, scopes and
+subflows use the complete JSON editor, with backend validation before applying.
+`NeutralInspection` requests pure preview or retained inspection independently
+from publication. Preview distinguishes present, unknown and absent sample data and shows pure
+effect preparation. Retained inspection groups path events, outputs, waits,
+failures, effect uncertainty and subflow boundaries, with cursor paging. `TriggerBindings` selects exact publications, fetches installed source schemas and previews normalized payload mappings. Save stores a disabled binding; enable requires a fresh preview and explicit acknowledgement of returned overlapping binding revisions. Mutation errors re-read durable metadata. Authoring uses the shared desktop/HTTP action contract. Catalog errors remain visible while independent saved drafts load; a successful refresh clears them. Native activities require the installed backend catalog/provider.
+
 The selected plan has an **Edit plan** control in the Plans column. It edits title and document/link with Save and Cancel. Save sends only changed fields using the revision captured when editing started. A conflict keeps the draft and requires Cancel and reopening Edit plan to load the latest version; an active-coordinator refusal keeps the source draft and displays the backend remedy. Successful saves refresh the plan list.
 
 Repository Settings uses scoped cards and responsive labelled rows. The existing repository update callbacks and export command remain authoritative. Reset is presented with its repository scope and consequences rather than as an unscoped footer action.
@@ -9,7 +25,6 @@ Agents Settings uses page and section primitives while its machine context still
 Workspace Settings pages use `SettingPageHeader`, `SectionCard`, and opt-in row fields. `WorkspaceTabs.module.css` scopes shortcut action-first layout without changing capture handlers or global Settings styles.
 
 Application Settings tabs opt into `SettingFields` row presentation. The default stacked layout remains available to unchanged consumers. Row controls use `SettingRow` for label and hint association; slider input and commit events remain separate.
-
 
 `ui/Select`, `ui/Input` and `ui/Textarea` forward native form attributes and events.
 `ui/SegmentedControl` provides a keyboard-accessible single-choice view switch.
@@ -83,7 +98,7 @@ App.tsx (central orchestrator)
 │   │   ├── CommitGraph       # Visual commit graph with lane assignments
 │   │   └── SyncRow           # Push/pull/fetch action bar
 │   ├── DiffTab/              # Individual file diff tab (with Cmd+F search)
-│   │   └── BranchDiffScrollView  # All-files scroll view (scroll mode)
+│   │   └── AllChangesView  # All-files scroll view (scroll mode): Uncommitted, Branch vs base, Commit / range
 │   ├── PrDiffTab/            # PR diff viewer tab
 │   ├── CodeEditorPanel/      # CodeMirror 6 code editor tab
 │   ├── MarkdownPanel/        # Markdown file browser
@@ -138,8 +153,11 @@ App.tsx (central orchestrator)
 ├── WorktreeManager/          # Overlay panel for worktree management
 ├── MergePostActionDialog/    # Dialog for post-merge actions (keep/delete branch)
 ├── ContextMenu/              # Shared right-click menu (all panels). `separator:true` on an item = trailing divider AFTER it; empty-label item = standalone divider; a trailing separator on the LAST item is suppressed
-└── IdeLauncher/              # Open repository in IDE
+
+└── IdeLauncher/              # Open repository in an IDE or a TUICommander shell
 ```
+
+The new-tab `AgentLaunchMenu` opts into the large ContextMenu variant (44 px rows, `--font-lg` labels), supplies AgentIcon/terminal glyphs and separates agent/config names. Other context menus keep their normal sizing.
 
 ## Application Controllers
 
@@ -299,12 +317,12 @@ load through the authenticated `/fs/markdown-image` route.
 
 Desktop Markdown list comment actions use a shared gutter outside the outermost list, independent of item depth. Paragraph and heading actions retain their block-relative position.
 
-`QueuedPrompts` reads the host PTY FIFO for both mobile terminal modes. A 404 read
+`QueuedPrompts` reads the host PTY FIFO and shows only in the mobile CLI view; the chat view shows each queued prompt inline with Send now and Cancel. A 404 read
 without a pending count or accepted local enqueue leaves the optional queue view
 hidden, so older hosts do not add an error to every empty session. Other read
 failures, and 404 responses with known pending work, remain visible and retryable.
 
-`FilesScreen` receives the existing mobile session list and the originating session ID from `MobileApp`. Its Markdown review controls prefer the document opener from published desktop metadata, resolve the stable TUIC identity to a live repository agent, and preserve an explicit user choice. Without an opener, the originating mobile session remains the default; an unavailable opener falls back to the first eligible repository agent. The controls call `enqueue_agent_command` over HTTP. Desktop and mobile use `buildMarkdownReviewPrompt` for the same path, checkbox, and tweak-comment contract. Successful sends clear only the acknowledged review state; failed sends remain retryable.
+`FilesScreen` receives the existing mobile session list and the originating session ID from `MobileApp`. Its Markdown review controls prefer the document opener from published desktop metadata, resolve the stable TUIC identity to a live repository agent, and preserve an explicit user choice. Without an opener, the originating mobile session remains the default; an unavailable opener falls back to the first eligible repository agent. The controls call `enqueue_agent_command` over HTTP. Desktop and mobile use `buildMarkdownReviewPrompt` for the same path, checkbox, and tweak-comment contract. Both views retain the pre-save review baseline across local saves and invalidate it on external reload. Before sending, `markdown_review_changed_lines` checks the captured content against disk and computes current-file ranges in Rust; the shared one-sentence prompt requests those ranges with their enclosing sections. Missing, unchanged, or stale snapshots retain whole-file reading. Successful sends acknowledge only the captured review window; failed sends retain it and later edits remain sendable.
 
 The embedded Progress list clamps long messages to four lines until More is
 pressed. Activity presents local 24-hour times, minute durations, and singular
@@ -371,7 +389,6 @@ mouse interactions keep their existing behavior.
 
 Branch rows keep the status icon separate from the always-visible agents disclosure button. Clicking status selects the workspace; the chevron toggles its agents.
 
-
 **Features:**
 - Expandable/collapsible repository entries
 - Icon-only collapsed mode
@@ -385,7 +402,7 @@ Branch rows keep the status icon separate from the always-visible agents disclos
   consequence in a WebView-compatible hover/focus tooltip. Branch-name tooltips include each
   diagnostic once and omit removal warnings for main checkouts
 - Context menu (right-click) for repo/branch operations
-- Resizable width via drag handle (200-500px)
+- Resizable width via drag handle (300-500px); branch hover/focus actions overlay the row end, and the list clips horizontal overflow without allowing focus to shift row starts
 - Keyboard redirect to active terminal
 
 Shared PR presentation (`PrStateBadge`) and merge eligibility are leaf modules
@@ -583,10 +600,15 @@ Status messages, agent badge, CWD display, ticker, and panel toggles.
 1. **ZoomIndicator** — font size display
 2. **Status info** — notification text with pendulum ticker for overflow
 3. **CWD** — current working directory (click to copy, shortened with `~/`)
-4. **Agent badge** — unified agent + usage display (see below)
-5. **Ticker** — rotating plugin messages (hidden when absorbed by agent badge)
-6. **GitHub badges** — PR badge + CI badge with popover (center area)
-7. **Toggle buttons** — Notes (with badge count), File Browser, Markdown, Diff, Dictation mic
+The remaining items form one right-aligned group. Free space is before this group, not between the cwd and an absorbed usage widget.
+
+4. **Agent badge** — unified agent + plugin usage display (see below); provider recovery replaces it while active
+5. **Ticker** — plugin messages in priority order, then creation order; side by side when they fit, with overflow rotating in the last slot. Absorbed usage is excluded before rotation.
+6. **Offline machines** — disconnected machines with registered repositories
+7. **GitHub badges** — PR badge + CI badge with popover
+8. **Toggle buttons** — Notes (with badge count), File Browser, Markdown, Diff, Dictation mic
+
+The right group uses at most 75% of the bar. The ticker uses its measured natural pool width, capped at 45% of the viewport. At narrow widths, status labels truncate and the ticker rotates before fixed controls can overlap.
 
 **Agent Badge — display priority:**
 
@@ -606,6 +628,8 @@ The agent badge appears when the active terminal has a recognized agent type. It
 - **Agent name (priority 4):** Fallback — just shows the agent type name.
 
 **Usage blink threshold:** API ticker priorities and PTY percentages apply the critical animation only from 96% usage. Usage from 70% to below 96% stays warning-coloured. Dashboard critical colours remain at 90%.
+
+**Usage throttling:** Claude usage HTTP 429 is displayed immediately as `rate-limited, retry HH:MM` (host local time) over IPC and HTTP. The backend records a bounded account-profile cooldown instead of sleeping inside the request.
 
 **Ticker integration:** When the active agent is `claude` and the Claude Usage ticker is active, the ticker message is absorbed into the agent badge (priority 2) and hidden from the separate ticker area. Other ticker messages (from plugins, etc.) display normally.
 
@@ -642,15 +666,6 @@ The project-scoped plan and story dialog creates manual plans and stories, prese
 The Plans and Stories toolbar button (`StoriesButton.tsx`) widens into a pill while the project has an active plan: active plans, stories in progress and a done/total bar, with the breakdown in its tooltip and `aria-label`. Counts come from the Rust `summary` story action. Nothing signals story changes, so it re-reads on repo change, window focus or visibility, dialog close, and every 60 s while the window is visible; a failed call leaves the plain icon.
 
 The dialog probes `story_capabilities` before loading. A missing capability receives the restart message; action failures retain their own error details.
-
-The project-scoped Plans and Stories dialog supports manual plan/story actions
-and a separate Run history view. Run history reads persisted run snapshots and
-ordered events through `workflow_run_action`; `workflowRunSignals` is a wake hint
-that causes a cursor-based read, so missed or duplicate notifications cannot
-replace the backend's durable sequence. The view pages events and stays usable
-without starting a workflow.
-The review view offers Approve in both the desktop app and browser. The backend
-rejects approval from the managed session that claimed the story.
 
 ### ProgressDialog (`ProgressDialog/`)
 
@@ -706,11 +721,15 @@ Reusable in-app confirmation dialog that replaces native Tauri `ask()` dialogs (
 
 Native SolidJS component (not a plugin) showing Claude API usage data. Displayed as a tab in the markdown/editor area. Features rate bucket gauges, per-model token breakdown, daily usage chart, and project stats. Clicking the Claude Usage ticker opens it for that terminal session's credential profile. The rate-limit API follows `CLAUDE_CONFIG_DIR`; transcript statistics still use the default Claude projects directory.
 
+Quota presentation is fed by `providerQuotaStore`: the initial `get_provider_quotas` response includes each key's `session_ids`. The store subscribes to quota and binding events before it applies that response. Session changes select cached entries; they do not start a provider read. Claude plan and extra-usage sections use the optional typed `detail` response, while quota bars use the registry windows. The local session statistics and timeline still refresh separately.
+
 ### CodexUsageDashboard (`CodexUsageDashboard/`)
 
 Native dashboard for the official Codex App Server account snapshot. Shows rate
 windows, reset times, daily token buckets, and the lifetime metrics that the
 documented surface actually supplies. Unsupported legacy metrics are omitted.
+
+Codex quota bars and typed provider detail come from the same registry store. Without a session-specific dashboard tab, the view selects an owner only when its bound subscription is unambiguous. Local usage statistics keep their separate refresh path. Grok retains its billing dashboard path until the recorded billing-response integration in story 2999-998f.
 
 ### GrokUsageDashboard (`GrokUsageDashboard/`)
 
@@ -891,7 +910,7 @@ Confirmations. It uses the shared setting toggle and persists
 
 The mobile AI Chat composer uses the same device-local keyboard correction preference as the terminal composer; toggling it updates autocorrect, spellcheck and sentence capitalization on the open textarea. Desktop Chat retains its existing input attributes.
 
-Answer highlights in the terminal grid, AnswersPanel, AI Chat markdown and terminal Chat cards use a green left rule without an answer background layer. Paragraph spacing and each content block's own background stay unchanged. User-question styling is separate. Terminal Chat draws its rule on the blocks selected by `answerBlockRanges` and `answerExtent`, never on the final-message wrapper; desktop and mobile use the same selection.
+Answer highlights in the terminal grid, AnswersPanel, AI Chat markdown and terminal Chat cards use a green left rule without an answer background layer. Paragraph spacing and each content block's own background stay unchanged. User-question styling is separate. Terminal Chat keeps semantic answer scope on the blocks selected by `answerBlockRanges` and on marked list items. Only an outer `data-tuic-answer-region` container draws the rail, never a paragraph, list or list item. A list with any marked descendant stays intact inside the region as visual context; unmarked items do not acquire answer ownership. Adjacent Markdown streaming segments keep renderer-owned DOM and draw adjoining rail fragments with padding instead of margin gaps. Desktop and mobile use the same selection.
 
 The shared `--answer-rule` token preserves the dark-theme rule and uses `--success` in Paper to keep the rule visible on the light page. Terminal Chat cards already use `--success`.
 
@@ -1002,6 +1021,8 @@ scrolling. It recalculates after native input, controlled value updates and
 width changes. Remove caller height caps and auto-resize handlers when adopting
 it; the shared CSS is the single owner of the bounds. Default Textarea keeps
 its existing three-control-height minimum and manual vertical resize.
+`Textarea embedded` keeps the native ref and event handling without standalone
+field styling, for a composer whose surrounding shell owns the focus frame.
 
 Shared fields style native `aria-invalid="true"` with the error border token
 without replacing the focus outline. `Button variant="removalToggle"` supports
@@ -1039,13 +1060,28 @@ Input, and Switch controls. Feature styles only format the chat-list heading.
 Keyboard Shortcuts uses shared Button for the built-in Rebind actions and the
 global-hotkey Clear action. Workspace styles retain binding-column layout only.
 
-
 ### Ego terminal usage (#2386-6f7c)
 
-Ego terminal usage uses the exact live pid lease and `ego usage --json` v3 or v4. The shared badge shows observed context tokens, the observed context capacity when present, complete monetary spend, and complete subscription API-price equivalents. Spend and equivalents remain separate. Version 4 also shows explicitly reported remaining requests, tokens, input tokens, output tokens, or USD. Session observations must match the exact provider/model; a current OpenRouter credential balance is labelled `openrouter key`, not session spend. The hover text includes each limit's observation time, source, and reported reset. Unknown fields stay hidden; TUIC does not calculate remaining balances from limit minus usage or borrow another provider account. The executable comes from the live terminal, not the AI Chat setting.
+Ego terminal usage uses the exact live pid lease and `ego usage --json --session <id>` reports v3–v5. The badge shows the short model name and observed context tokens/capacity. Its tooltip shows the full provider/model. Anthropic models use the existing Claude usage endpoint and ticker; openai-codex models use the existing Codex usage endpoint and ticker. Other providers show model/context only. Ego ledger costs and provider-limit observations do not supply badge quotas; session details still show ledger accounting. Unsupported report versions return an error and log one warning per process, rather than silently emptying the badge. The executable comes from the live terminal, not the AI Chat setting.
 
 ### Chat working indicator
 
 The shared `Transcript` renders `WorkingIndicator` from its existing busy and retry props on desktop and mobile. The indicator uses the theme accent for a dot and breathing ring, preserves the host working label through its status role, and hides the decorative orb from assistive technology. Reduced motion removes the ring animation and leaves the static dot. Provider retry status takes precedence; no effect selector or setting exists.
 
 Terminal Chat sends use a session-scoped, presentation-only pending projection. Desktop Compose and mobile CommandInput show the submitted text immediately as muted **Pending** user bubbles, in send order. New matching native user messages replace that feedback atomically; activity and idle updates do not clear it. A failed send removes only its own bubble. The CLI owns delivery and cancellation: these bubbles are not the server-owned command queue or the ACP queue. Closing Chat or replacing its transcript clears this local feedback.
+
+`WorkflowDesigner` uses `ReviewPolicy` for bounded review/repair controls and `NodeFields` for exact role, prompt, profile and tools plus typed contracts. `RunDefinitionPins` renders backend-derived counters and immutable live/replay definitions; it clears stale requests on run or sequence changes. Shared UI primitives own control geometry.
+
+### RunInspectionPanel / RunInspectionContent
+
+The Stories dialog run history expands **Inspect delivery and cost** on demand. The panel refreshes on durable run wake hints and reconnect revisions, rejects old selection responses, pages cursor deltas and retains the last committed outcome during a disconnected refresh. Content renders backend projections for pinned nested delivery, reports, questions, integration/proof journals, evidence links, owned sessions and usage coverage. It performs no scheduling or cost arithmetic. Existing recovery controls remain in the run view.
+
+### Waiting items and AgentHealthView
+
+`waitingItemsStore` (`src/stores/waitingItems.ts`) holds the Rust `boss_attention` projection while a holder retains it. It refreshes on attention, workflow, repository-set and remote-connection events, repository revisions and browser SSE resync. Session events refresh it only while a health view (`retain({ health: true })`) is open. Invalidations are debounced by 250 ms and serialized, so an overtaken response cannot restore a resolved item. Each reply is reconciled with `reconcileById` (`src/utils/reconcileById.ts`): unchanged rows keep their objects, and an unchanged reply keeps the previous snapshot, so no row is rebuilt. A failed read clears the cached snapshot.
+
+- `useWaitingItems` (App) syncs the projection into the activity bell section `waiting`: one entry per item id, never re-added while present (dismissed included), removed when the item leaves a complete snapshot. A snapshot with warnings only adds. It starts after `activityStore.whenHydrated()`, so persisted dismissals stay.
+- `WaitingOnYou` (Plans and Stories) lists the current project's items. A selection calls the dialog's reveal: select the story, or open Run history on the item's run. A bell click on a workflow question opens the run in the Workflows space (`workflowsUi.reveal`); a manual check opens its planning item. A report item opens its typed report path instead: the inline dialog closes and opens the file; a detached dialog sends `open-report` to the main window, which focuses and opens it. Bell entries use `storiesUi.reveal`, consumed by the dialog through `storiesUi.takeTarget`; a report entry opens the report file.
+- `AgentHealthView` (Activity Dashboard, including detached windows) renders health entries only: Failed, Stalled, Input stalled and Blocked. A missing live stage alone is not a health warning, even for a managed agent. Detached navigation is routed back to the main window.
+
+The bounded correction-region section renders the backend-generated criteria, selected activity, correction limit and full input/output/control/loop/subflow contract. It opens the exact selected child publication read only and validates before adopting the generated definition. Retained inspection displays consumed corrections from the durable correction loop iteration, excluding the initial attempt; there is no independent UI budget counter.

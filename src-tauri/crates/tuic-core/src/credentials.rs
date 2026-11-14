@@ -361,6 +361,31 @@ pub fn get(cred: Credential<'_>) -> Result<Option<String>, String> {
     Ok(None)
 }
 
+/// Like `get`, but reads the keyring entry itself so a change written by another
+/// process (`tuic-remote --relay-pair`, an operator's delete) is seen. The shared
+/// cache stays as it is: a failed read must not take every other credential with
+/// it, and a poll must not repeat the legacy sweep. The credential-file vault has
+/// no other writer to follow, so it answers as `get`.
+pub fn get_fresh(cred: Credential<'_>) -> Result<Option<String>, String> {
+    if FILE_VAULT.get().is_some() {
+        return get(cred);
+    }
+
+    #[cfg(all(debug_assertions, not(test)))]
+    dev_store::init();
+
+    #[cfg(any(test, feature = "test-support"))]
+    ensure_test_keyring();
+
+    let instance = crate::app_instance::current_app_instance();
+    let Some(json) = read_keyring_entry(instance.vault_service(), instance.vault_user())? else {
+        return Ok(None);
+    };
+    let vault: Vault =
+        serde_json::from_str(&json).map_err(|e| format!("Vault JSON corrupt ({e})"))?;
+    Ok(vault.get(&cred.vault_key()).cloned())
+}
+
 pub fn set(cred: Credential<'_>, value: &str) -> Result<(), String> {
     let key = cred.vault_key();
     let trimmed = value.trim().to_string();

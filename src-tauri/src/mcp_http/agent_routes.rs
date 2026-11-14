@@ -16,6 +16,44 @@ use uuid::Uuid;
 use super::guards::{Authenticated, require_local_or_auth};
 use super::types::*;
 
+pub(super) async fn boss_attention(State(state): State<Arc<AppState>>) -> Response {
+    match tokio::task::spawn_blocking(move || crate::boss_attention::snapshot(&state)).await {
+        Ok(snapshot) => Json(snapshot).into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": error.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct OutsideRequestAnswer {
+    request_id: String,
+    decision: String,
+}
+
+pub(super) async fn answer_outside_request(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<OutsideRequestAnswer>,
+) -> Response {
+    match crate::fabbrica_attention::answer_outside_request(
+        &state,
+        &body.request_id,
+        &body.decision,
+    )
+    .await
+    {
+        Ok(()) => Json(serde_json::json!({"ok": true})).into_response(),
+        Err(error) => (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({"error": error})),
+        )
+            .into_response(),
+    }
+}
+
 pub(super) async fn detect_agents() -> impl IntoResponse {
     let mut results = Vec::new();
     for name in crate::agent::KNOWN_AGENT_BINARIES {
@@ -301,6 +339,13 @@ pub(super) async fn spawn_agent_session(
             .into_response();
     }
     let session_id = Uuid::new_v4().to_string();
+    if let Err(error) = crate::agent_capabilities::save_root(&state.data_dir, &session_id) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error":error})),
+        )
+            .into_response();
+    }
 
     let attachment_dir =
         match crate::attachments::prepare_session_directory(&state.data_dir, "pty", &session_id) {

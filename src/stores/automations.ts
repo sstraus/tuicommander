@@ -190,6 +190,8 @@ export function createAutomationsStore(adapter: AutomationAdapter) {
 	}
 	return {
 		profiles: adapter.profiles,
+		/** History rows carry an output excerpt; the whole saved record comes from `run`. */
+		run: adapter.run,
 		async openDefinition(id: string) {
 			const epoch = ++selectionEpoch;
 			historyEpoch++;

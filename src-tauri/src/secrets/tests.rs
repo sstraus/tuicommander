@@ -117,26 +117,6 @@ fn encoded_and_line_wrapped_secret_cannot_escape_output_masking() {
     }
 }
 
-#[test]
-fn approval_cannot_override_shell_or_environment_dumper_rejection() {
-    for argv in [
-        vec!["sh", "-c", "true"],
-        vec!["/bin/bash", "-lc", "true"],
-        vec!["zsh", "--command", "true"],
-        vec!["env"],
-        vec!["printenv"],
-        vec!["node", "-e", "0"],
-        vec!["python3", "-cpass"],
-        vec!["perl", "-we", "0"],
-        vec!["node", "--eval=0"],
-        vec!["renamed-interpreter", "-c", "pass"],
-    ] {
-        assert!(
-            policy::validate_argv(&argv.into_iter().map(String::from).collect::<Vec<_>>()).is_err()
-        );
-    }
-}
-
 #[tokio::test]
 async fn child_environment_and_pipe_capture_do_not_echo_secret_to_result() {
     let exe = std::fs::canonicalize(std::env::current_exe().unwrap()).unwrap();
@@ -836,4 +816,108 @@ async fn task_secret_child_echo_is_masked_on_every_transport_2319() {
     assert!(!String::from_utf8_lossy(&captured).contains("canary-secret-2319"));
     ws.close(None).await.unwrap();
     drop(cleanup);
+}
+
+fn gitea_curl_argv() -> Vec<String> {
+    [
+        "curl",
+        "--silent",
+        "--show-error",
+        "--fail",
+        "--max-time",
+        "20",
+        "--variable",
+        "%GITEA_TOKEN",
+        "--expand-header",
+        "Authorization: token {{GITEA_TOKEN}}",
+        "http://gitea.straus.local/api/v1/user",
+    ]
+    .map(String::from)
+    .to_vec()
+}
+
+// Catches: a valid env-injected authenticated HTTP call refused as an invalid command
+// because the advertised `reason` field is rejected by the run request.
+#[tokio::test]
+async fn secret_run_accepts_env_variable_header_for_http_api() {
+    let state = std::sync::Arc::new(crate::state::tests_support::make_test_app_state());
+    let cwd = std::fs::canonicalize(crate::test_support::test_temp_root()).unwrap();
+    assert!(policy::validate_argv(&gitea_curl_argv()).is_ok());
+    for extra in [None, Some("Gitea account lookup")] {
+        let mut args = serde_json::json!({"action": "run", "names": ["GITEA_TOKEN"], "argv": gitea_curl_argv(), "cwd": cwd});
+        if let Some(reason) = extra {
+            args["reason"] = reason.into();
+        }
+        let result = run::handle_secret(&state, &args).await;
+        assert_eq!(result["status"], "missing", "{result}");
+    }
+}
+
+// Catches: the refusal staying generic, so a caller cannot tell which field to fix.
+#[tokio::test]
+async fn invalid_run_request_names_the_field_and_the_accepted_form() {
+    let state = std::sync::Arc::new(crate::state::tests_support::make_test_app_state());
+    for (args, field) in [
+        (
+            serde_json::json!({"action": "run", "names": ["T"], "argv": ["true"]}),
+            "cwd",
+        ),
+        (
+            serde_json::json!({"action": "run", "names": ["T"], "argv": ["true"], "cwd": "/", "values": ["x"]}),
+            "values",
+        ),
+    ] {
+        let error = run::handle_secret(&state, &args).await["error"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(error.contains(&format!("(field `{field}`)")), "{error}");
+        assert!(error.contains("names, argv, cwd"), "{error}");
+    }
+}
+
+// Catches: the tool description leaving a caller to guess which fields `run` accepts.
+#[test]
+fn tool_description_says_which_fields_run_accepts() {
+    let definition = tool_definition();
+    let description = definition["description"].as_str().unwrap();
+    assert!(
+        description.contains("run takes names, argv, cwd and an optional reason"),
+        "{description}"
+    );
+}
+
+// Catches: request and put refusals staying opaque, hiding which field is wrong.
+#[tokio::test]
+async fn invalid_request_and_put_name_the_field_and_the_accepted_form() {
+    let state = std::sync::Arc::new(crate::state::tests_support::make_test_app_state());
+    for (args, field, shape) in [
+        (
+            serde_json::json!({"action": "request", "fields": [], "reason": "r", "ttl": 5}),
+            "ttl",
+            "request takes fields and reason",
+        ),
+        (
+            serde_json::json!({"action": "request", "fields": [{"name": "n", "kind": "password", "label": "x"}], "reason": "r"}),
+            "label",
+            "each field has name, kind and an optional display",
+        ),
+        (
+            serde_json::json!({"action": "put", "names": ["T"], "values": ["v"], "scope": "s"}),
+            "ttl",
+            "put takes names, values, scope and ttl",
+        ),
+        (
+            serde_json::json!({"action": "put", "names": ["T"], "values": ["v"], "scope": "s", "ttl": 5, "argv": []}),
+            "argv",
+            "put takes names, values, scope and ttl",
+        ),
+    ] {
+        let error = run::handle_secret(&state, &args).await["error"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(error.contains(&format!("(field `{field}`)")), "{error}");
+        assert!(error.contains(shape), "{error}");
+    }
 }

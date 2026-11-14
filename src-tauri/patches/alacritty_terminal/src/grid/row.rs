@@ -33,6 +33,12 @@ pub struct Row<T> {
     /// starts new content and restores a known origin.
     #[cfg_attr(feature = "serde", serde(default))]
     pub copy_origin_unknown: bool,
+
+    /// Set by `shrink` when it dropped background-coloured padding that reached
+    /// the old right edge. Only such a row is coloured to the edge again on
+    /// widen; a block that ended on the narrow edge stays as drawn (#2783-9c6e).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub edge_padding_trimmed: bool,
 }
 
 impl<T: PartialEq> PartialEq for Row<T> {
@@ -51,6 +57,7 @@ impl<T: Default> Row<T> {
             occ: 0,
             reflow_wrap: false,
             copy_origin_unknown: false,
+            edge_padding_trimmed: false,
         }
     }
 
@@ -64,6 +71,16 @@ impl<T: Default> Row<T> {
         // Avoid geometric over-allocation on every terminal width increase.
         self.inner.reserve_exact(columns - self.inner.len());
         self.inner.resize_with(columns, T::default);
+    }
+
+    /// Increase the number of columns in the row, filling the new cells with `fill`.
+    pub fn grow_with(&mut self, columns: usize, fill: &T)
+    where
+        T: Clone,
+    {
+        if self.inner.len() < columns {
+            self.inner.resize(columns, fill.clone());
+        }
     }
 
     /// Reduce the number of columns in the row.
@@ -81,9 +98,14 @@ impl<T: Default> Row<T> {
         let mut new_row = self.inner.split_off(columns);
         // split_off leaves the original allocation behind, even after a large resize.
         self.inner.shrink_to_fit();
+        // Trailing blanks are padding to the old width, even with a background
+        // colour: wrapping them would add coloured rows the program never drew.
+        self.edge_padding_trimmed |= new_row
+            .last()
+            .is_some_and(|c| c.is_blank() && !c.is_empty());
         let index = new_row
             .iter()
-            .rposition(|c| !c.is_empty())
+            .rposition(|c| !c.is_blank())
             .map_or(0, |i| i + 1);
         new_row.truncate(index);
         new_row.shrink_to_fit();
@@ -120,6 +142,7 @@ impl<T: Default> Row<T> {
         self.occ = 0;
         self.reflow_wrap = false;
         self.copy_origin_unknown = false;
+        self.edge_padding_trimmed = false;
     }
 }
 
@@ -132,6 +155,7 @@ impl<T> Row<T> {
             occ,
             reflow_wrap: false,
             copy_origin_unknown: false,
+            edge_padding_trimmed: false,
         }
     }
 
@@ -175,6 +199,15 @@ impl<T> Row<T> {
         T: GridCell,
     {
         self.inner.iter().all(GridCell::is_empty)
+    }
+
+    /// Check if every cell in the row draws nothing but its background colour.
+    #[inline]
+    pub fn is_blank(&self) -> bool
+    where
+        T: GridCell,
+    {
+        self.inner.iter().all(GridCell::is_blank)
     }
 
     #[inline]

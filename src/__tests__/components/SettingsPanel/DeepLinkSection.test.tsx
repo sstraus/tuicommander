@@ -7,7 +7,8 @@ import "../../mocks/tauri";
 // `LocalMcpPanel` and `UpstreamMcpPanel` — both call several `rpc()` commands
 // on mount. Stub the transport instead of each resource: the fetches are
 // incidental to the scroll assertions, but load_config still needs the real
-// config shape so the mounted MCP page can adopt it without a reload failure.
+// config shape so the mounted MCP page can adopt it without a reload failure,
+// and get_mcp_usage needs the report object the usage panel reads `.roles` from.
 vi.mock("../../../transport", async (importOriginal) => {
 	const { default: defaults } = await import("../../fixtures/settings-concurrency/app-defaults.json");
 	const config = {
@@ -17,7 +18,11 @@ vi.mock("../../../transport", async (importOriginal) => {
 	};
 	return {
 		...(await importOriginal<typeof import("../../../transport")>()),
-		rpc: vi.fn(async (command: string) => (command === "load_config" ? structuredClone(config) : [])),
+		rpc: vi.fn(async (command: string) => {
+			if (command === "load_config") return structuredClone(config);
+			if (command === "get_mcp_usage") return { enabled: true, days: 7, roles: [] };
+			return [];
+		}),
 	};
 });
 

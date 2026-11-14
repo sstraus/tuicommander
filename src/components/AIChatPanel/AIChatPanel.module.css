@@ -198,6 +198,51 @@
   margin: 0 6px 0 0;
 }
 
+.messageMenu {
+  --control-icon-height: 28px;
+  position: relative;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.messageMenuList {
+  min-width: 200px;
+  white-space: nowrap;
+}
+
+.userMsg .messageMenu {
+  position: absolute;
+  right: 100%;
+  bottom: 6px;
+  margin-right: 6px;
+}
+
+.userMsg .messageMenu .copyAction {
+  position: static;
+  margin: 0;
+}
+
+.messageMenu[data-open] .copyAction,
+.copyAction[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.rawMarkdown {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+}
+
+/* No hover on touch: the trigger stays visible. */
+@media (hover: none) {
+  .copyAction {
+    opacity: 1;
+  }
+}
+
 .userMsg:hover .copyAction,
 .userMsg:focus-within .copyAction,
 .assistantMsg:hover .copyAction,
@@ -1210,26 +1255,32 @@
   color: var(--fg-secondary);
 }
 
-/* Scope the rule to the CLI planner's answer blocks, never the whole message. */
-.messageList[data-terminal-chat] .assistantMsg :global(#markdown-content [data-tuic-answer]) {
+/* Only an outer region draws the rail. Semantic answer items never own borders. */
+.messageList[data-terminal-chat] .assistantMsg :global(#markdown-content [data-tuic-answer-region]) {
+  display: flow-root;
   border-left: 3px solid var(--answer-rule);
   margin-left: -16px;
+  padding-left: 13px;
+  padding-bottom: 8px;
 }
 
-/* Fenced code keeps its own inset, including room for the Copy control. */
-.messageList[data-terminal-chat] .assistantMsg :global(#markdown-content [data-tuic-answer]:not(pre)) {
-  padding: 0 0 0 13px;
+/* Segment fragments of one answer join through their padding, not a margin gap. */
+.messageList[data-terminal-chat] .assistantMsg :global(#markdown-content [data-tuic-answer-region="end"]) {
+  padding-bottom: 0;
+  margin-bottom: 8px;
+}
+
+/* Lists and fenced code retain their own native insets inside the outer rail. */
+.messageList[data-terminal-chat] .assistantMsg :global(#markdown-content [data-tuic-answer-region] > *) {
   margin-top: 0;
   margin-bottom: 8px;
 }
 
-/* Outside list markers need Markdown's normal gutter in addition to the answer inset. */
-.messageList[data-terminal-chat] .assistantMsg :global(#markdown-content :is(ul, ol)[data-tuic-answer]) {
-  padding-left: calc(13px + 2em);
+.messageList[data-terminal-chat] .assistantMsg :global(#markdown-content [data-tuic-answer-region] > :last-child) {
+  margin-bottom: 0;
 }
 
-/* Only the last block of the last segment ends the card; every earlier segment's last block keeps its gap. */
-.messageList[data-terminal-chat] .assistantMsg :global(#markdown-content > div:last-child > [data-tuic-answer]:last-child) {
+.messageList[data-terminal-chat] .assistantMsg :global(#markdown-content > div:last-child > [data-tuic-answer-region]:last-child) {
   margin-bottom: 0;
 }
 
@@ -1322,6 +1373,12 @@
 .actionsMenuItems .conversationRows { position: static; box-shadow: none; border: none; }
 .composerMeta { composes: toolbar from "../ui/FormControls.module.css"; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-size: 11px; color: var(--fg-secondary); min-width: 0; }
 .composerMeta .sessionSettingsSummary { margin-left: auto; font-size: inherit; }
+.composerMeta .mobileSessionSummary {
+  max-width: 100%;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+}
 .stepTitle { color: var(--accent); font-weight: 600; white-space: nowrap; max-width: 35%; overflow: hidden; text-overflow: ellipsis; }
 .stepDescription { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-secondary); }
 .toolActivitySummary { white-space: nowrap; }
@@ -1461,9 +1518,23 @@ button[data-control-layout="row"].slashCommand:hover {
 
 .pendingActions {
   composes: toolbar from "../ui/FormControls.module.css";
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  vertical-align: middle;
+  justify-content: flex-end;
   gap: 4px;
-  margin-inline-start: 8px;
+  margin-top: 4px;
 }
+
+.messageComment {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  width: min(400px, calc(100vw - 64px));
+  max-width: 100%;
+  flex-basis: 100%;
+}
+.messageComment textarea, .messageComment small { flex-basis: 100%; }

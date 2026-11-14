@@ -4,8 +4,10 @@ mod acp_routes;
 mod agent_routes;
 pub(crate) mod auth;
 mod automation_routes;
+mod caller_role;
+mod capability_gate;
 mod claude_routes;
-mod config_routes;
+pub(crate) mod config_routes;
 #[cfg(feature = "dictation")]
 mod dictation_routes;
 mod ego_routes;
@@ -15,18 +17,22 @@ mod github_pr_action_routes;
 mod github_review_routes;
 mod github_routes;
 mod guards;
-mod launch_baseline;
+mod heap_profile_routes;
 pub(crate) mod launch_transaction;
 mod log_routes;
 pub(crate) mod managed_launch;
-mod managed_launch_acp;
 pub(crate) mod mcp_call_audit;
 mod mcp_input_contract;
+mod mcp_repo_settings;
 pub(crate) mod mcp_transport;
 mod mcp_transport_ancillary;
+pub(crate) mod mcp_usage_rollup;
+mod provider_quota_routes;
 #[cfg(test)]
 mod settings_policy_confirm_tests;
 mod settings_routes;
+pub(crate) mod tool_usage;
+mod workflow_neutral_routes;
 pub(crate) use mcp_transport_ancillary::confirm_settings;
 mod mcp_transport_catalogue;
 mod mcp_transport_peer;
@@ -38,6 +44,8 @@ mod mail_routes;
 mod mcp_work_item;
 mod plugin_docs;
 mod plugin_routes;
+#[cfg(test)]
+mod remote_diagnostics_tests;
 mod remote_mcp_sessions;
 pub(crate) mod remote_peer;
 mod remote_session_proxy;
@@ -247,9 +255,11 @@ fn cleanup_stale_sockets() {
     }
 }
 
-/// Named pipe name for Windows IPC (without the \\.\pipe\ prefix for display).
+/// Named pipe of this app instance for Windows IPC.
 #[cfg(windows)]
-const PIPE_NAME: &str = tuic_ipc::PIPE_NAME;
+pub(crate) fn pipe_name() -> String {
+    tuic_ipc::pipe_name(crate::app_instance::current_app_instance())
+}
 
 /// axum::serve::Listener implementation for Windows named pipes.
 /// Uses the tokio reconnect pattern: pre-creates the next pipe instance before
@@ -266,7 +276,7 @@ impl NamedPipeListener {
         let server = ServerOptions::new()
             .first_pipe_instance(true)
             .reject_remote_clients(true)
-            .create(PIPE_NAME)?;
+            .create(pipe_name())?;
         Ok(Self { server })
     }
 }
@@ -285,7 +295,7 @@ impl axum::serve::Listener for NamedPipeListener {
                         &mut self.server,
                         match ServerOptions::new()
                             .reject_remote_clients(true)
-                            .create(PIPE_NAME)
+                            .create(pipe_name())
                         {
                             Ok(s) => s,
                             Err(e) => {
@@ -299,7 +309,7 @@ impl axum::serve::Listener for NamedPipeListener {
                             }
                         },
                     );
-                    return (connected, PIPE_NAME.to_string());
+                    return (connected, pipe_name());
                 }
                 Err(e) => {
                     tracing::error!(source = "mcp_http", "Named pipe accept error: {e}");
@@ -310,7 +320,7 @@ impl axum::serve::Listener for NamedPipeListener {
     }
 
     fn local_addr(&self) -> tokio::io::Result<Self::Addr> {
-        Ok(PIPE_NAME.to_string())
+        Ok(pipe_name())
     }
 }
 
@@ -329,6 +339,13 @@ async fn save_mcp_upstreams_http(
     State(state): State<Arc<AppState>>,
     Json(request): Json<crate::mcp_upstream_config::UpstreamMcpSaveRequest>,
 ) -> Response {
+    // This route bypasses the settings facade: refuse stdio changes before anything is written.
+    if crate::settings::policy::stdio_added(
+        &serde_json::json!(request.base),
+        &serde_json::json!(request.config),
+    ) {
+        return config_routes::confirmation_required().into_response();
+    }
     match crate::mcp_upstream_config::save_mcp_upstreams_with_credentials_inner(
         request.base,
         request.config,
@@ -620,52 +637,26 @@ async fn post_story_action(
     user_error_result(result, crate::stories::is_user_error)
 }
 
-async fn get_story_capabilities() -> Json<bool> {
-    Json(true)
+#[derive(serde::Deserialize)]
+struct StoryCapabilitiesQuery {
+    path: Option<String>,
 }
 
-async fn post_workflow_definition_action(
-    caller: Option<Extension<ConnectInfo<SocketAddr>>>,
-    auth: Option<Extension<guards::Authenticated>>,
-    Query(q): Query<types::PathQuery>,
-    Json(action): Json<crate::workflows::WorkflowAction>,
-) -> Response {
-    let addr = caller.map_or(
-        SocketAddr::from(([127, 0, 0, 1], 0)),
-        |Extension(ConnectInfo(addr))| addr,
-    );
-    if let Some(response) = progress_auth(&addr, auth.is_some()) {
-        return response;
+async fn get_story_capabilities(Query(q): Query<StoryCapabilitiesQuery>) -> Response {
+    let Some(project) = q.path else {
+        return Json(crate::stories::NATIVE_CAPABILITIES).into_response();
+    };
+    // Reading an external backend's capabilities can start its adapter process.
+    match tokio::task::spawn_blocking(move || crate::stories::story_capabilities_for(&project))
+        .await
+        .map_err(|error| error.to_string())
+        .and_then(|result| result)
+    {
+        Ok(capabilities) => Json(capabilities).into_response(),
+        Err(error) => (axum::http::StatusCode::SERVICE_UNAVAILABLE, error).into_response(),
     }
-    let result =
-        tokio::task::spawn_blocking(move || crate::workflows::definition_action(&q.path, action))
-            .await
-            .map_err(|error| format!("workflow definition task failed: {error}"))
-            .and_then(|result| result);
-    user_error_result(result, crate::workflows::is_user_error)
 }
-async fn post_workflow_run_action(
-    State(state): State<Arc<AppState>>,
-    caller: Option<Extension<ConnectInfo<SocketAddr>>>,
-    auth: Option<Extension<guards::Authenticated>>,
-    Query(q): Query<types::PathQuery>,
-    Json(action): Json<crate::workflows::RunAction>,
-) -> Response {
-    let addr = caller.map_or(
-        SocketAddr::from(([127, 0, 0, 1], 0)),
-        |Extension(ConnectInfo(addr))| addr,
-    );
-    if let Some(response) = progress_auth(&addr, auth.is_some()) {
-        return response;
-    }
-    let result = tokio::task::spawn_blocking(move || {
-        crate::workflows::run_action_with_events(&state, &q.path, action)
-    })
-    .await
-    .map_err(|error| format!("workflow run task failed: {error}"))
-    .and_then(|result| result);
-    json_result(result)
-}
+
 async fn post_progress_delete(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     auth: Option<Extension<guards::Authenticated>>,
@@ -742,8 +733,7 @@ struct PluginDataWriteBody {
     content: String,
 }
 
-/// Persist plugin data over HTTP (browser/PWA parity for the credential-consent flow,
-/// which calls `write_plugin_data`). Reuses the same sandboxed write logic as the Tauri
+/// Persist plugin data over HTTP (browser/PWA parity for `write_plugin_data`). Reuses the same sandboxed write logic as the Tauri
 /// command. (`delete_plugin_data` has no frontend caller, so no route is added for it.)
 async fn plugin_data_write_http(
     AxumPath((plugin_id, path)): AxumPath<(String, String)>,
@@ -774,12 +764,13 @@ async fn push_vapid_key(State(state): State<Arc<AppState>>) -> Response {
 
 /// Register a push subscription from a browser.
 /// No loopback restriction — push subscriptions come from remote mobile devices.
-/// The endpoint URL is validated against a known push service allowlist.
+/// The endpoint must use HTTPS and a built-in or owner-added push provider host.
 async fn push_subscribe(
     State(state): State<Arc<AppState>>,
     Json(sub): Json<crate::push::PushSubscription>,
 ) -> Response {
-    if let Err(e) = crate::push::validate_push_endpoint(&sub.endpoint) {
+    let push = state.config.read().services.push.clone();
+    if let Err(e) = crate::push::validate_push_endpoint(&sub.endpoint, &push) {
         return (StatusCode::BAD_REQUEST, e).into_response();
     }
     state.push_store.upsert(sub);
@@ -935,6 +926,7 @@ const API_PREFIXES: &[&str] = &[
     "process",
     "progress",
     "prompt",
+    "provider-quotas",
     "registry",
     "remote",
     "repo",
@@ -1028,8 +1020,14 @@ fn tunnel_routes() -> Router<Arc<AppState>> {
 /// the per-router `/fs/read-editor*` handler down-scope (SECURITY).
 fn shared_routes() -> Router<Arc<AppState>> {
     Router::new()
+        .route("/agents/attention", get(agent_routes::boss_attention))
+        .route(
+            "/agents/attention/outside-request",
+            post(agent_routes::answer_outside_request),
+        )
         .route("/mcp/peer", get(remote_peer::endpoint))
         .route("/mcp/audit", get(mcp_call_audit::endpoint))
+        .route("/mcp/usage", get(mcp_usage_rollup::endpoint))
         .route("/settings/action", post(settings_routes::settings_action))
         // Browser Settings hydration and refresh read the same redacted owner snapshot.
         .route(
@@ -1113,12 +1111,11 @@ fn shared_routes() -> Router<Arc<AppState>> {
         .route("/progress/flow/detail", post(post_progress_flow_detail))
         .route("/stories/action", post(post_story_action))
         .route("/stories/capabilities", get(get_story_capabilities))
-        .route(
-            "/workflows/definition/action",
-            post(post_workflow_definition_action),
-        )
         .route("/automations/action", post(automation_routes::post_action))
-        .route("/workflows/run/action", post(post_workflow_run_action))
+        .route(
+            "/workflows/neutral/action",
+            post(workflow_neutral_routes::post_action),
+        )
         // Session lifecycle
         .route(
             "/sessions",
@@ -1251,6 +1248,10 @@ fn shared_routes() -> Router<Arc<AppState>> {
             get(session::chat_view).post(session::chat_view_with_pending),
         )
         .route(
+            "/sessions/{id}/chat-view/messages/{message_id}/full-text",
+            get(session::chat_view_full_text),
+        )
+        .route(
             "/sessions/{id}/terminal/styled-rows",
             get(session::terminal_styled_rows),
         )
@@ -1349,6 +1350,10 @@ fn shared_routes() -> Router<Arc<AppState>> {
             get(log_routes::capture_get).post(log_routes::capture_set),
         )
         .route("/diagnostics/memory", get(log_routes::memory_report_get))
+        .route(
+            "/diagnostics/heap",
+            get(heap_profile_routes::status).post(heap_profile_routes::control),
+        )
         // Worktrees
         .route(
             "/worktrees",
@@ -1430,6 +1435,10 @@ fn shared_routes() -> Router<Arc<AppState>> {
             "/repo/remove-orphan",
             post(worktree_routes::remove_orphan_worktree_http),
         )
+        .route(
+            "/repo/worktree-diagnostic/resolve",
+            post(worktree_routes::resolve_worktree_diagnostic_http),
+        )
         .route("/repo/branch/rename", post(git_routes::rename_branch_http))
         .route("/repo/initials", get(git_routes::get_initials_http))
         .route(
@@ -1484,10 +1493,17 @@ fn shared_routes() -> Router<Arc<AppState>> {
         )
         .route("/fs/markdown-image", get(fs_routes::markdown_image_http))
         .route("/fs/read-external", get(fs_routes::read_external_file_http))
-        .route("/fs/write", post(fs_routes::write_file_http))
+        .route(
+            "/fs/write",
+            post(fs_routes::write_file_http).layer(editor_write_body_limit()),
+        )
         .route(
             "/fs/write-if-unchanged",
             post(fs_routes::write_file_if_unchanged_http),
+        )
+        .route(
+            "/fs/markdown-review-lines",
+            post(fs_routes::markdown_review_changed_lines_http),
         )
         .route("/fs/mkdir", post(fs_routes::create_directory_http))
         .route("/fs/delete", post(fs_routes::delete_path_http))
@@ -1510,13 +1526,22 @@ fn shared_routes() -> Router<Arc<AppState>> {
         .route("/fs/warm-index", post(fs_routes::warm_content_index_http))
         .route(
             "/fs/write-external",
-            post(fs_routes::write_external_file_http),
+            post(fs_routes::write_external_file_http).layer(editor_write_body_limit()),
         )
         .route("/fs/copy-abs", post(fs_routes::copy_path_abs_http))
         .route("/fs/move-abs", post(fs_routes::move_path_abs_http))
         .route("/fs/transfer", post(fs_routes::fs_transfer_paths_http))
         .route("/fs/upload-copy", post(fs_routes::upload_copy_http))
         // Claude Usage dashboard
+        .route("/provider-quotas", get(provider_quota_routes::all))
+        .route(
+            "/provider-quotas/refresh",
+            post(provider_quota_routes::refresh),
+        )
+        .route(
+            "/sessions/{id}/quota-binding",
+            get(provider_quota_routes::binding),
+        )
         .route("/claude/usage", get(claude_routes::claude_usage_api))
         .route(
             "/claude/timeline",
@@ -1556,6 +1581,11 @@ fn shared_routes() -> Router<Arc<AppState>> {
         .route("/repo/stash/pop", post(git_routes::stash_pop_http))
         .route("/repo/stash/drop", post(git_routes::stash_drop_http))
         .route("/repo/stash/show", get(git_routes::stash_show_http))
+        .route("/repo/stash/facts", get(git_routes::stash_facts_http))
+        .route(
+            "/repo/stash/check-drop",
+            post(git_routes::stash_check_drop_http),
+        )
         .route("/repo/file-history", get(git_routes::file_history_http))
         .route("/repo/file-blame", get(git_routes::file_blame_http))
         // Git panel (story 064)
@@ -1691,6 +1721,17 @@ pub(crate) const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::fro
 /// `server_limits_reject_a_body_over_the_cap` fails if anyone raises it without
 /// meaning to.
 pub(crate) const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
+
+/// The editor saves a file as one JSON body, so its two save routes (`/fs/write`,
+/// `/fs/write-external`) must take any file the editor can open: up to
+/// `MAX_EDITOR_LARGE_FILE_SIZE` as JSON text, where escaping doubles every newline, quote,
+/// backslash and tab (twice the raw size is the bound), plus room for the JSON around it. Only these routes
+/// get it; `/fs/write-if-unchanged` also carries the whole old text and compares
+/// through the 10 MB read cap, so it stays at [`MAX_BODY_BYTES`]. Memory bound: one
+/// body of at most this size is buffered per request, for an authenticated caller (up to ~500 MiB).
+pub(crate) fn editor_write_body_limit() -> axum::extract::DefaultBodyLimit {
+    axum::extract::DefaultBodyLimit::max(2 * crate::MAX_EDITOR_LARGE_FILE_SIZE as usize + 64 * 1024)
+}
 
 /// The client image cap is shared with the browser draft. Base64 expands each
 /// three bytes to four; allow JSON framing and text alongside the image.
@@ -1964,6 +2005,12 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/agent/subscriptions/action", post(mail_routes::action))
         .route("/agent/subscriptions/{id}/events", get(mail_routes::events))
         .route(
+            "/agent/webhook/{to}",
+            post(mail_routes::webhook).layer(axum::extract::DefaultBodyLimit::max(
+                crate::state::AGENT_MESSAGE_MAX_BYTES,
+            )),
+        )
+        .route(
             "/agent/discover-session",
             post(config_routes::discover_agent_session_http),
         )
@@ -2044,8 +2091,9 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
             post(config_routes::post_remote_connection_install)
                 .delete(config_routes::delete_remote_connection_install),
         )
-        // Debug: execute JS in the main WebView (loopback-only, enforced in handler).
-        // Local router only — never the remote router (this is an RCE surface).
+        // Debug: execute JS in the main WebView (local or authenticated callers,
+        // enforced in handler). Desktop router only — never the headless remote
+        // router, which has no WebView.
         .route("/debug/invoke_js", post(log_routes::invoke_js_http))
         .route(
             "/debug/frame-workload",
@@ -2054,8 +2102,8 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         )
         .route("/secrets/forms/{nonce}", get(crate::secrets::form_http))
         .route("/secrets/forms/submit", post(crate::secrets::submit_http))
-        // Debug: reload the main WebView natively (loopback-only, enforced in
-        // handler). Local router only — the remote client reloads its own tab.
+        // Debug: put the main WebView back on the app natively (local or
+        // authenticated callers, enforced in handler). Desktop router only.
         .route(
             "/debug/reload_webview",
             post(log_routes::reload_webview_http),
@@ -2122,6 +2170,14 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route(
             "/api/plugins/{plugin_id}/data/{*path}",
             get(plugin_data_http).post(plugin_data_write_http),
+        )
+        .route(
+            "/api/plugins/{plugin_id}/fs/size",
+            get(plugin_routes::plugin_fs_size),
+        )
+        .route(
+            "/api/plugins/{plugin_id}/fs/range",
+            get(plugin_routes::plugin_fs_range),
         )
         // Plugin RPC commands (story 071)
         .route(
@@ -2439,6 +2495,19 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
             get(|| async { static_files::serve_static(AxumPath("settings".into())).await }),
         );
 
+    // Agent hooks post here instead of writing the agent tty (#2749-bee7).
+    // Only the local IPC socket serves it: the OS user owns that socket.
+    let routes = if remote_auth {
+        routes
+    } else {
+        routes
+            .route("/sessions/{id}/hook", post(session::post_hook_frames))
+            .route(
+                "/sessions/{id}/claude-status-line",
+                post(provider_quota_routes::status_line),
+            )
+    };
+
     let routes = routes
         .fallback(spa_or_api_404)
         .with_state(state.clone())
@@ -2501,15 +2570,18 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
         // Routes common to the desktop/loopback router live in shared_routes().
         .merge(shared_routes())
         .route("/remote/update", post(crate::remote_update::upload))
-        // SECURITY: remote clients get the standard (10 MB) cap, NOT the large
-        // editor cap. The 250 MB editor read is a desktop-local feature; serving
-        // it over a (possibly metered/slow) remote link risks OOM/latency since
-        // the whole file is read into a String→JSON with no streaming. Route the
-        // editor paths through the standard-cap handlers remotely.
-        .route("/fs/read-editor", get(fs_routes::fs_read_file_http))
+        // SECURITY: remote whole-file editor reads get the standard (10 MB) cap,
+        // NOT the large editor cap: a 250 MB whole read would be buffered into
+        // one String→JSON over a (possibly metered/slow) link. Files up to the
+        // editor ceiling are reachable on explicit request as bounded 1 MiB pages
+        // (`offset`/`length`), so memory per reply stays bounded.
+        .route(
+            "/fs/read-editor",
+            get(fs_routes::remote_read_editor_file_http),
+        )
         .route(
             "/fs/read-editor-external",
-            get(fs_routes::read_external_file_http),
+            get(fs_routes::remote_read_editor_file_external_http),
         )
         // SSH tunnel management
         .nest("/tunnels", tunnel_routes())
@@ -2778,6 +2850,16 @@ pub(crate) async fn spawn_ipc_listener(state: &Arc<AppState>, mcp_enabled: bool)
             Ok(initial_uds) => {
                 tracing::info!(source = "mcp_http", path = %sock.display(), "Unix socket listening");
                 *state.bound_socket_path.write() = sock.clone();
+                // A named socket sits in this process's TMPDIR, which a client
+                // shell cannot know; publish it in the instance config dir.
+                if crate::app_instance::current_app_instance()
+                    .named_id()
+                    .is_some()
+                    && let Err(e) =
+                        tuic_ipc::publish_socket_path(&crate::config::config_dir(), &sock)
+                {
+                    tracing::warn!(source = "mcp_http", path = %sock.display(), "Failed to publish the socket path: {e}");
+                }
                 // Watchdog task: if axum::serve() returns unexpectedly, rebind
                 // and restart. No shutdown signal — this task runs until the
                 // process exits.
@@ -2824,7 +2906,7 @@ pub(crate) async fn spawn_ipc_listener(state: &Arc<AppState>, mcp_enabled: bool)
             Ok(pipe) => {
                 tracing::info!(
                     source = "mcp_http",
-                    pipe = PIPE_NAME,
+                    pipe = %pipe_name(),
                     "Named pipe listening"
                 );
                 let app = build_router(state.clone(), false, mcp_enabled);
@@ -2844,7 +2926,7 @@ pub(crate) async fn spawn_ipc_listener(state: &Arc<AppState>, mcp_enabled: bool)
             Err(e) => {
                 tracing::error!(
                     source = "mcp_http",
-                    pipe = PIPE_NAME,
+                    pipe = %pipe_name(),
                     "Failed to create named pipe: {e}"
                 );
             }
@@ -2899,6 +2981,7 @@ pub async fn start_server(
         crate::mcp_proxy::registry::UpstreamRegistry::spawn_health_checker(Arc::clone(
             &state.mcp.upstream_registry,
         ));
+        crate::fabbrica_attention::spawn_poller(Arc::clone(&state));
 
         // Spawn standby checker: SIGSTOP idle+unfocused sessions after timeout
         #[cfg(unix)]
@@ -3149,107 +3232,6 @@ mod tests {
     use axum::http::{Request, StatusCode};
     use tower::ServiceExt;
 
-    // Catches: seeded Pause targets missing from otherwise publishable story drafts.
-    #[tokio::test]
-    async fn seeded_story_draft_publishes() {
-        workflow_pause_publish_case(crate::workflows::WorkflowKind::Story, false, false).await;
-    }
-
-    // Catches: a user validation failure being returned as HTTP 500.
-    #[tokio::test]
-    async fn invalid_pause_publish_is_a_client_error() {
-        workflow_pause_publish_case(crate::workflows::WorkflowKind::Story, true, false).await;
-    }
-
-    // Catches: Resolve plan seeds lacking checks and therefore refusing HTTP publication.
-    #[tokio::test]
-    async fn seeded_plan_draft_publishes() {
-        workflow_pause_publish_case(crate::workflows::WorkflowKind::Plan, false, false).await;
-    }
-
-    // Catches: adding seed checks accidentally allowing edited plans with no final check.
-    #[tokio::test]
-    async fn plan_without_final_checks_publish_is_a_client_error() {
-        workflow_pause_publish_case(crate::workflows::WorkflowKind::Plan, false, true).await;
-    }
-
-    async fn workflow_pause_publish_case(
-        kind: crate::workflows::WorkflowKind,
-        invalid: bool,
-        missing_checks: bool,
-    ) {
-        use crate::workflows::{NodeKind, WorkflowStore};
-        let config = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-        let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
-        let project = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-        let owner = crate::progress::resolve_owning_project(Some(project.path().to_str().unwrap()))
-            .unwrap();
-        let project = owner.to_str().unwrap();
-        let store = WorkflowStore::open().unwrap();
-        let draft = store
-            .seed_templates(project)
-            .unwrap()
-            .into_iter()
-            .find(|draft| draft.kind == kind)
-            .unwrap();
-        let mut graph = draft.graph;
-        if invalid {
-            for node in &mut graph.nodes {
-                if let NodeKind::Pause { resume_to } = &mut node.kind {
-                    *resume_to = None;
-                }
-            }
-        }
-        let edited = store
-            .update_draft(&draft.id, draft.draft_revision, graph)
-            .unwrap();
-        let edited = if missing_checks {
-            store
-                .update_checks(&draft.id, edited.draft_revision, vec![])
-                .unwrap()
-        } else {
-            edited
-        };
-        let response = post_workflow_definition_action(
-            None,
-            None,
-            Query(types::PathQuery {
-                path: project.into(),
-            }),
-            Json(crate::workflows::WorkflowAction::Publish {
-                id: draft.id.clone(),
-                expected_revision: edited.draft_revision,
-            }),
-        )
-        .await;
-        let status = response.status();
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let body = String::from_utf8(body.to_vec()).unwrap();
-        if invalid || missing_checks {
-            assert!(status.is_client_error(), "{status}: {body}");
-            assert!(
-                body.contains(if missing_checks {
-                    "deterministic final checks"
-                } else {
-                    "resume_to"
-                }),
-                "{body}"
-            );
-            assert_eq!(
-                store
-                    .get_draft(&draft.id)
-                    .unwrap()
-                    .latest_published_revision,
-                1
-            );
-        } else {
-            assert_eq!(status, StatusCode::OK, "{body}");
-            assert_eq!(store.get_published(&draft.id, 2).unwrap().revision, 2);
-        }
-    }
-
     /// Build a POST request with ConnectInfo from the given address.
     fn mcp_post_from(
         url: &str,
@@ -3310,6 +3292,109 @@ mod tests {
         state.config.write().settings_mcp_enabled = true;
         mcp_transport::rebuild_tool_search_index(&state);
         state
+    }
+
+    /// Catches a registered route that discards the session key or bypasses refresh throttling.
+    #[tokio::test]
+    async fn quota_routes_preserve_binding_and_throttle_refresh() {
+        let state = test_state();
+        let key = crate::provider_quota::SubscriptionKey::new("ego", "openai", "/credential");
+        state.provider_quota.bind("session-a", key.clone());
+        let app = build_router(state, false, true);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::get("/sessions/session-a/quota-binding")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+            serde_json::json!({"owner":"ego", "provider":"openai", "credential":"/credential"})
+        );
+        let request = serde_json::json!({"key": key});
+        let first = app
+            .clone()
+            .oneshot(mcp_post("/provider-quotas/refresh", &request))
+            .await
+            .unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+        let second = app
+            .oneshot(mcp_post("/provider-quotas/refresh", &request))
+            .await
+            .unwrap();
+        assert_eq!(second.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = axum::body::to_bytes(second.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert!(String::from_utf8_lossy(&body).contains("retry at"));
+    }
+
+    /// Catches a live binding change being absent or reshaped on the browser transport.
+    #[tokio::test]
+    async fn quota_binding_changes_reach_sse_without_a_query() {
+        let state = test_state();
+        let mut events = state.event_bus.subscribe();
+        crate::provider_quota_transport::spawn(state.clone());
+        let key = crate::provider_quota::SubscriptionKey::new("ego", "openai", "/credential");
+        state.provider_quota.bind("session", key);
+        state.provider_quota.unbind("session");
+        for expected_key in [
+            serde_json::json!({"owner":"ego","provider":"openai","credential":"/credential"}),
+            serde_json::Value::Null,
+        ] {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(5), events.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                super::sse_routes::event_type_name_for_test(&event),
+                "provider-quota-binding-changed"
+            );
+            let payload = super::sse_routes::event_payload_for_test(&event);
+            assert_eq!(payload["session_id"], "session");
+            assert_eq!(payload["key"], expected_key);
+        }
+    }
+
+    /// Catches a quota change missing from the event bus or reshaped for SSE.
+    #[tokio::test]
+    async fn quota_changes_reach_sse_with_the_registry_view() {
+        let state = test_state();
+        let mut events = state.event_bus.subscribe();
+        crate::provider_quota_transport::spawn(state.clone());
+        let key = crate::provider_quota::SubscriptionKey::new("ego", "openai", "/credential");
+        let snapshot = crate::provider_quota::QuotaSnapshot {
+            windows: vec![],
+            detail: None,
+            plan: Some("pro".into()),
+            credits: None,
+            account: None,
+            observed_at_ms: 1,
+            source: crate::provider_quota::QuotaSource::Passive,
+        };
+        assert!(state.provider_quota.observe(&key, snapshot));
+        let event = tokio::time::timeout(std::time::Duration::from_secs(5), events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            super::sse_routes::event_type_name_for_test(&event),
+            "provider-quota-changed"
+        );
+        let payload = super::sse_routes::event_payload_for_test(&event);
+        assert_eq!(payload["key"]["owner"], "ego");
+        assert_eq!(payload["snapshot"]["plan"], "pro");
+        assert!(matches!(
+            event,
+            crate::state::AppEvent::ProviderQuotaChanged(_)
+        ));
     }
 
     /// Catches CertDomains being mistaken for a successfully loaded TLS listener.
@@ -3387,6 +3472,109 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(body["sent"], 0);
         assert_eq!(body["failed"], 1);
+    }
+
+    /// The JSON shape `PushSubscription.toJSON()` posts from the mobile PWA.
+    fn browser_subscription(endpoint: &str) -> serde_json::Value {
+        use base64ct::Encoding;
+        use p256::elliptic_curve::sec1::ToEncodedPoint;
+        let key = p256::SecretKey::random(&mut rand_core::OsRng);
+        serde_json::json!({
+            "endpoint": endpoint,
+            "expirationTime": null,
+            "keys": {
+                "p256dh": base64ct::Base64UrlUnpadded::encode_string(
+                    key.public_key().to_encoded_point(false).as_bytes(),
+                ),
+                "auth": base64ct::Base64UrlUnpadded::encode_string(&[7u8; 16]),
+            },
+        })
+    }
+
+    async fn subscribe_status(state: &Arc<AppState>, body: &serde_json::Value) -> StatusCode {
+        build_router(state.clone(), false, true)
+            .oneshot(mcp_post("/api/push/subscribe", body))
+            .await
+            .expect("push subscribe response")
+            .status()
+    }
+
+    /// Catches: the owner cannot use a new browser push provider without a patch.
+    #[tokio::test]
+    async fn owner_added_push_provider_accepts_verified_subscription() {
+        let state = test_state();
+        state.config.write().services.push.enabled = true;
+        let endpoint = "https://updates.push.example.net/wpush/v2/abc";
+        assert_eq!(
+            subscribe_status(&state, &browser_subscription(endpoint)).await,
+            StatusCode::BAD_REQUEST,
+            "an unknown provider stays refused until the owner adds it"
+        );
+        state.config.write().services.push.added_providers = vec!["Push.Example.NET".into()];
+        let accepted = [
+            endpoint,
+            "https://push.example.net/w/exact-host",
+            "https://fcm.googleapis.com/fcm/send/built-in",
+        ];
+        for endpoint in accepted {
+            assert_eq!(
+                subscribe_status(&state, &browser_subscription(endpoint)).await,
+                StatusCode::CREATED,
+                "{endpoint}"
+            );
+        }
+        for lookalike in [
+            "https://evilpush.example.net/w",
+            "https://push.example.net.evil.test/w",
+            "https://push.example.co/w",
+            "https://example.net/w",
+            "https://push.example.net@evil.test/w",
+        ] {
+            assert_eq!(
+                subscribe_status(&state, &browser_subscription(lookalike)).await,
+                StatusCode::BAD_REQUEST,
+                "{lookalike}"
+            );
+        }
+        let stored: Vec<_> = state
+            .push_store
+            .list()
+            .into_iter()
+            .map(|sub| sub.endpoint)
+            .collect();
+        assert_eq!(stored, accepted);
+    }
+
+    /// Catches: an untrusted subscription chooses arbitrary outbound destinations or
+    /// bypasses HTTPS.
+    #[tokio::test]
+    async fn push_endpoint_cannot_self_enroll_or_use_plain_http() {
+        let state = test_state();
+        state.config.write().services.push.enabled = true;
+        let mut body = browser_subscription("https://push.attacker.test/w");
+        body["added_providers"] = serde_json::json!(["push.attacker.test"]);
+        body["services"] = serde_json::json!({"push": {"added_providers": ["push.attacker.test"]}});
+        assert_eq!(
+            subscribe_status(&state, &body).await,
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            state.config.read().services.push.added_providers,
+            [] as [String; 0]
+        );
+
+        state.config.write().services.push.added_providers = vec!["push.example.net".into()];
+        for endpoint in [
+            "http://push.example.net/w",
+            "http://fcm.googleapis.com/fcm/send/abc",
+        ] {
+            assert_eq!(
+                subscribe_status(&state, &browser_subscription(endpoint)).await,
+                StatusCode::BAD_REQUEST,
+                "{endpoint}"
+            );
+        }
+        assert!(state.push_store.is_empty());
     }
 
     #[tokio::test]
@@ -4038,6 +4226,42 @@ mod tests {
         req
     }
 
+    /// Catches: HTTP losing provenance or looking up a failed backend before status dispatch.
+    #[tokio::test]
+    async fn story_backend_status_http_matches_shared_action_even_for_invalid_config() {
+        let root = tempfile::TempDir::new_in(crate::test_support::test_temp_root()).unwrap();
+        let config = root.path().join("config");
+        let project = root.path().join("project");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        let _guard = crate::config::set_config_dir_override(config.clone());
+        std::fs::write(config.join("story-backends.json"), "invalid JSON").unwrap();
+        let action = serde_json::json!({"action":"backend_status"});
+        let expected = crate::stories::story_action(
+            project.to_str().unwrap(),
+            serde_json::from_value(action.clone()).unwrap(),
+            None,
+        )
+        .unwrap();
+        let path = format!("/stories/action?path={}", project.display());
+        let response = build_router(test_state(), false, true)
+            .oneshot(mcp_post_from(
+                &path,
+                &serde_json::json!({"action":action}),
+                std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let actual: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(actual, serde_json::to_value(expected).unwrap());
+        assert_eq!(actual["value"]["availability"], "unavailable");
+        assert_eq!(actual["value"]["provenance"], "explicit");
+    }
+
     #[tokio::test]
     async fn story_action_route_enforces_auth_and_returns_a_created_plan() {
         let config = tempfile::tempdir().expect("config directory");
@@ -4294,85 +4518,8 @@ mod tests {
         assert!(error.starts_with("criteria are incomplete"), "{error}");
     }
 
-    // Catches: publishing an unchanged draft answered as HTTP 500.
     #[tokio::test]
-    async fn publishing_an_unchanged_draft_is_a_client_error() {
-        use crate::workflows::{WorkflowAction, WorkflowKind, WorkflowStore};
-        let config = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-        let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
-        let project = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-        let owner = crate::progress::resolve_owning_project(Some(project.path().to_str().unwrap()))
-            .unwrap();
-        let project = owner.to_str().unwrap();
-        let draft = WorkflowStore::open()
-            .unwrap()
-            .seed_templates(project)
-            .unwrap()
-            .into_iter()
-            .find(|draft| draft.kind == WorkflowKind::Story)
-            .unwrap();
-        // The seeded draft is already published, so publishing it again changes nothing.
-        let response = post_workflow_definition_action(
-            None,
-            None,
-            Query(types::PathQuery {
-                path: project.into(),
-            }),
-            Json(WorkflowAction::Publish {
-                id: draft.id,
-                expected_revision: draft.draft_revision,
-            }),
-        )
-        .await;
-        let status = response.status();
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let body = String::from_utf8(body.to_vec()).unwrap();
-        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
-        assert!(body.contains("already been published"), "{body}");
-    }
-
-    // Catches: a caller selecting another project's workflow being reported as HTTP 500.
-    #[tokio::test]
-    async fn workflow_project_scope_refusal_is_a_client_error() {
-        use crate::workflows::{WorkflowAction, WorkflowReply};
-        let config = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-        let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
-        let first = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-        let second = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-        let WorkflowReply::Drafts(drafts) = crate::workflows::definition_action(
-            first.path().to_str().unwrap(),
-            WorkflowAction::SeedTemplates,
-        )
-        .unwrap() else {
-            panic!("templates");
-        };
-        let response = post_workflow_definition_action(
-            None,
-            None,
-            Query(types::PathQuery {
-                path: second.path().to_string_lossy().into_owned(),
-            }),
-            Json(WorkflowAction::GetDraft {
-                id: drafts[0].id.clone(),
-            }),
-        )
-        .await;
-        let status = response.status();
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let body = String::from_utf8(body.to_vec()).unwrap();
-        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
-        assert!(
-            body.contains("workflow does not belong to project"),
-            "{body}"
-        );
-    }
-
-    #[tokio::test]
-    async fn markdown_image_route_serves_nested_images_and_rejects_escapes_and_unauthenticated_peers()
+    async fn markdown_image_route_serves_nested_and_linked_images_and_rejects_escapes_and_unauthenticated_peers()
      {
         let parent = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
         let root = parent.path().join("repo");
@@ -4478,38 +4625,226 @@ mod tests {
                 .oneshot(request(uri("docs/images/link.png", Some(&token)), local))
                 .await
                 .unwrap();
-            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+            assert_eq!(response.status(), StatusCode::OK);
         }
     }
 
-    // Catches: a local browser cannot read a Markdown/HTML target outside registered repos;
-    // the same path must remain forbidden to an authenticated network client.
+    // Catches: an owner-linked shared file, image or create path on another volume is refused.
+    #[cfg(unix)]
     #[tokio::test]
-    async fn local_link_external_text_reads_keep_the_network_repository_boundary() {
-        let fixture = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-        let target = fixture.path().join("target.md");
-        std::fs::write(&target, "# Local link target").unwrap();
+    async fn repo_external_symlink_and_image_are_followed() {
+        let parent = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let root = parent.path().join("repo");
+        let shared = parent.path().join("shared");
+        std::fs::create_dir_all(root.join("docs")).unwrap();
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::write(shared.join("notes.md"), "shared notes").unwrap();
+        std::fs::write(shared.join("chart.png"), [137, 80, 78, 71]).unwrap();
+        std::os::unix::fs::symlink(&shared, root.join("shared")).unwrap();
+        std::os::unix::fs::symlink(shared.join("notes.md"), root.join("docs/notes.md")).unwrap();
+        std::os::unix::fs::symlink(shared.join("chart.png"), root.join("docs/chart.png")).unwrap();
+        let repo = root.to_string_lossy().into_owned();
+
+        assert_eq!(
+            crate::read_file_impl(repo.clone(), "docs/notes.md".into()).unwrap(),
+            "shared notes"
+        );
+        assert_eq!(
+            crate::fs::fs_read_file(repo.clone(), "shared/notes.md".into())
+                .await
+                .unwrap(),
+            "shared notes"
+        );
+        assert!(
+            crate::fs::list_directory_impl(repo.clone(), "shared".into())
+                .unwrap()
+                .iter()
+                .any(|e| e.name == "notes.md")
+        );
+        crate::fs::create_directory(repo.clone(), "shared/new-dir".into())
+            .await
+            .unwrap();
+        crate::fs::write_file(
+            repo.clone(),
+            "shared/new-dir/created.md".into(),
+            "created".into(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(shared.join("new-dir/created.md")).unwrap(),
+            "created"
+        );
+        crate::fs::write_file(repo.clone(), "docs/notes.md".into(), "edited".into())
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(shared.join("notes.md")).unwrap(),
+            "edited"
+        );
+        assert!(
+            root.join("docs/notes.md")
+                .symlink_metadata()
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "writing through a file link edits the target and keeps the link"
+        );
+
         let state = test_state();
         let token = state.session_token.read().clone();
         let app = build_router(state, true, true);
-        let mut params = url::form_urlencoded::Serializer::new(String::new());
-        params
-            .append_pair("path", target.to_str().unwrap())
-            .append_pair("token", &token);
-        let uri = format!("/fs/read-external?{}", params.finish());
-        for (address, expected) in [
-            (([127, 0, 0, 1], 0), StatusCode::OK),
-            (([203, 0, 113, 1], 4444), StatusCode::FORBIDDEN),
-        ] {
-            let mut request = Request::get(&uri)
+        for file in ["docs/chart.png", "shared/chart.png"] {
+            let mut params = url::form_urlencoded::Serializer::new(String::new());
+            params
+                .append_pair("repoPath", &repo)
+                .append_pair("file", file)
+                .append_pair("token", &token);
+            let mut req = Request::get(format!("/fs/markdown-image?{}", params.finish()))
                 .header(header::HOST, "127.0.0.1:9876")
                 .body(Body::empty())
                 .unwrap();
-            request
-                .extensions_mut()
-                .insert(ConnectInfo(std::net::SocketAddr::from(address)));
-            let response = app.clone().oneshot(request).await.unwrap();
-            assert_eq!(response.status(), expected, "{address:?}");
+            req.extensions_mut()
+                .insert(ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 0))));
+            let response = app.clone().oneshot(req).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{file}");
+            assert_eq!(response.headers()[header::CONTENT_TYPE], "image/png");
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            assert_eq!(bytes.as_ref(), &[137, 80, 78, 71], "{file}");
+        }
+    }
+
+    /// GET `path` with the session token from a network address, so only
+    /// `basic_auth_middleware` and the request boundary stand between the
+    /// caller and the handler.
+    fn network_get(uri: &str, origin: Option<&str>) -> Request<Body> {
+        let mut builder = Request::get(uri).header(header::HOST, "127.0.0.1:9876");
+        if let Some(origin) = origin {
+            builder = builder.header(header::ORIGIN, origin);
+        }
+        let mut request = builder.body(Body::empty()).unwrap();
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(std::net::SocketAddr::from((
+                [203, 0, 113, 1],
+                4444,
+            ))));
+        request
+    }
+
+    fn external_read_uri(route: &str, path: &str, token: Option<&str>) -> String {
+        let mut params = url::form_urlencoded::Serializer::new(String::new());
+        params.append_pair("path", path);
+        if let Some(token) = token {
+            params.append_pair("token", token);
+        }
+        format!("{route}?{}", params.finish())
+    }
+
+    // Catches: the phone cannot read an accessible absolute file outside registered
+    // repos, although the same authenticated phone can `cat` it in the terminal.
+    #[tokio::test]
+    async fn authenticated_remote_reads_external_owner_file() {
+        let fixture = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let target = fixture.path().join("target.md");
+        std::fs::write(&target, "# Owner file outside every repo").unwrap();
+        let target = target.to_str().unwrap();
+        for (name, app, token) in [
+            {
+                let state = test_state();
+                let token = state.session_token.read().clone();
+                ("desktop", build_router(state, true, true), token)
+            },
+            {
+                let state = test_state();
+                let token = state.session_token.read().clone();
+                ("headless", build_remote_router(state), token)
+            },
+        ] {
+            for route in ["/fs/read-external", "/fs/read-editor-external"] {
+                let uri = external_read_uri(route, target, Some(&token));
+                let response = app.clone().oneshot(network_get(&uri, None)).await.unwrap();
+                assert_eq!(response.status(), StatusCode::OK, "{name} {route}");
+                let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                let text: String = serde_json::from_slice(&body).unwrap();
+                assert_eq!(text, "# Owner file outside every repo", "{name} {route}");
+            }
+        }
+    }
+
+    // Catches: a foreign website or an unauthenticated caller obtains arbitrary file
+    // contents, or a traversal/NUL/relative path reaches the reader once the
+    // repository boundary is gone.
+    #[tokio::test]
+    async fn external_file_rejects_unauthenticated_or_malformed_request() {
+        let fixture = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let target = fixture.path().join("secret.md");
+        std::fs::write(&target, "owner secret").unwrap();
+        let target = target.to_str().unwrap().to_string();
+        std::fs::create_dir(fixture.path().join("sub")).unwrap();
+        // Resolves to the real file, so only path validation stops it.
+        let traversal = format!("{}/../secret.md", fixture.path().join("sub").display());
+        let state = test_state();
+        let token = state.session_token.read().clone();
+        let app = build_router(state, true, true);
+        for route in ["/fs/read-external", "/fs/read-editor-external"] {
+            let cases = [
+                (
+                    "unauthenticated",
+                    external_read_uri(route, &target, None),
+                    None,
+                    StatusCode::UNAUTHORIZED,
+                ),
+                (
+                    "wrong token",
+                    external_read_uri(route, &target, Some("not-the-token")),
+                    None,
+                    StatusCode::UNAUTHORIZED,
+                ),
+                (
+                    "foreign origin",
+                    external_read_uri(route, &target, Some(&token)),
+                    Some("https://evil.example"),
+                    StatusCode::FORBIDDEN,
+                ),
+                (
+                    "traversal",
+                    external_read_uri(route, &traversal, Some(&token)),
+                    None,
+                    StatusCode::BAD_REQUEST,
+                ),
+                (
+                    "relative",
+                    external_read_uri(route, "secret.md", Some(&token)),
+                    None,
+                    StatusCode::BAD_REQUEST,
+                ),
+                (
+                    "nul",
+                    external_read_uri(route, &format!("{target}\0"), Some(&token)),
+                    None,
+                    StatusCode::BAD_REQUEST,
+                ),
+            ];
+            for (case, uri, origin, expected) in cases {
+                let response = app
+                    .clone()
+                    .oneshot(network_get(&uri, origin))
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), expected, "{route} {case}");
+                let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                assert!(
+                    !String::from_utf8_lossy(&body).contains("owner secret"),
+                    "{route} {case} leaked the file"
+                );
+            }
         }
     }
 
@@ -4631,63 +4966,6 @@ mod tests {
         let history = store.transition_history(&other.id).unwrap();
         assert_eq!(history.len(), 2);
         assert_eq!(history[1].actor, StoryTransitionActor::Human);
-    }
-
-    #[tokio::test]
-    async fn workflow_actor_metadata_does_not_block_local_actions() {
-        // Catches: local requests failing actor authorization instead of normal missing-record validation.
-        let config = tempfile::tempdir().expect("config");
-        let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
-        let project = tempfile::tempdir().expect("project");
-        let state = test_state();
-        // The operator API needs the daemon owner, independently of caller metadata.
-        crate::workflows::WorkflowRuntime::spawn(&state);
-        tokio::time::timeout(std::time::Duration::from_secs(60), async {
-            while state.workflow_runtime.require_owner().is_err() {
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("daemon startup must acquire the run owner lock");
-        let token = state.session_token.read().clone();
-        let app = build_router(state, false, true);
-        let local = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
-        for (route, body) in [
-            (
-                "/workflows/definition/action",
-                serde_json::json!({
-                    "action": "publish", "id": "missing", "expected_revision": 1
-                }),
-            ),
-            (
-                "/workflows/run/action",
-                serde_json::json!({
-                    "action": "command", "run_id": "missing", "command_id": "decision",
-                    "expected_sequence": 1, "command": {"action": "resume"}
-                }),
-            ),
-        ] {
-            let path = format!("{route}?path={}", project.path().display());
-            let response = app
-                .clone()
-                .oneshot(mcp_post_from(&path, &body, local))
-                .await
-                .unwrap();
-            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-                .await
-                .unwrap();
-            assert!(String::from_utf8_lossy(&bytes).contains("not found"));
-            let path = format!("{path}&token={token}");
-            let response = app
-                .clone()
-                .oneshot(mcp_post_from(&path, &body, local))
-                .await
-                .unwrap();
-            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-                .await
-                .unwrap();
-            assert!(String::from_utf8_lossy(&bytes).contains("not found"));
-        }
     }
 
     /// `edd69ea7` moved the Progress routes into `shared_routes()` so a
@@ -5873,43 +6151,6 @@ mod tests {
         assert!(!state.agent_inbox.contains_key("orphan"));
     }
 
-    // Catches: workflow route handlers return an empty default response instead of backend errors.
-    #[tokio::test]
-    async fn workflow_action_routes_preserve_project_validation_errors() {
-        let app = build_router(test_state(), false, true);
-        for (path, body) in [
-            (
-                "/workflows/definition/action?path=relative",
-                r#"{"action":"list_drafts"}"#,
-            ),
-            (
-                "/workflows/run/action?path=relative",
-                r#"{"action":"get","run_id":"missing"}"#,
-            ),
-        ] {
-            let mut req = Request::builder()
-                .method("POST")
-                .uri(path)
-                .header(header::HOST, "127.0.0.1:9876")
-                .header("content-type", "application/json")
-                .body(Body::from(body))
-                .unwrap();
-            req.extensions_mut()
-                .insert(ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 0))));
-            let response = app.clone().oneshot(req).await.unwrap();
-            assert_eq!(
-                response.status(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "{path}"
-            );
-            let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-                .await
-                .unwrap();
-            let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-            assert_eq!(body["error"], "project must be an absolute path");
-        }
-    }
-
     // Catches: removing the tunnel subrouter turns an implemented route into HTTP 404.
     #[tokio::test]
     async fn tunnel_subrouter_keeps_session_listing_available() {
@@ -6283,28 +6524,6 @@ mod tests {
             resp.status(),
             StatusCode::FORBIDDEN,
             "Notes save from non-loopback should be rejected"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_read_external_rejects_path_outside_repos() {
-        let state = test_state();
-        let app = build_router(state, false, true);
-        // Network reads still require a registered root; loopback file tabs do not.
-        let mut request = Request::get("/fs/read-external?path=/etc/passwd")
-            .body(Body::empty())
-            .unwrap();
-        request
-            .extensions_mut()
-            .insert(ConnectInfo(std::net::SocketAddr::from((
-                [192, 168, 0, 1],
-                5000,
-            ))));
-        let resp = app.oneshot(request).await.unwrap();
-        assert_eq!(
-            resp.status(),
-            StatusCode::FORBIDDEN,
-            "read-external should reject paths outside registered repos"
         );
     }
 
@@ -7048,14 +7267,15 @@ mod tests {
     }
 
     // Exact discovery contract for an unbound caller with no optional owner
-    // configuration, all ordinary tools enabled, and expanded discovery.
+    // configuration, all ordinary tools enabled, and expanded discovery. It has
+    // no project and no automation exists, so `workflow` and `automations` are
+    // not listed (#2807-f698).
     const UNCONFIGURED_NATIVE_TOOL_NAMES: &[&str] = &[
-        "automations",
         "secret",
         "session",
         "agent",
         "repo",
-        "workflow",
+        "story",
         "progress",
         "ui",
         "plugin_dev_guide",
@@ -7089,6 +7309,8 @@ mod tests {
                 let mut cfg = state.config.write();
                 cfg.mcp_capabilities =
                     crate::mcp_capabilities::McpCapabilities::from_legacy(&[name.to_owned()]);
+                // Settings has one switch, the host-only opt-in, not a capability denial.
+                cfg.settings_mcp_enabled = name != "settings";
                 cfg.collapse_tools = true;
                 cfg.progress_tracking = false;
             }
@@ -8260,6 +8482,32 @@ mod tests {
         assert_eq!(rows[0]["live_sessions"][0]["session_id"], "agent-1");
     }
 
+    // Catches: HTTP callers using a fingerprint as proof of owner confirmation.
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn http_cannot_force_dirty_orphan_2926() {
+        let repo = create_orphan_git_repo();
+        let linked = repo.path().join("http-dirty");
+        crate::git_cli::git_cmd(repo.path())
+            .args([
+                "worktree",
+                "add",
+                "--detach",
+                linked.to_str().unwrap(),
+                "HEAD",
+            ])
+            .run()
+            .unwrap();
+        std::fs::write(linked.join("untracked"), "keep").unwrap();
+        let fingerprint = tuic_git::worktree::dirty_fingerprint_at(&linked).unwrap().0;
+        let response = build_router(test_state(), false, true).oneshot(mcp_post("/repo/remove-orphan", &serde_json::json!({"repoPath":repo.path().display().to_string(), "worktreePath":linked.display().to_string(), "safeOnly":false, "expectedFingerprint":fingerprint}))).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            std::fs::read_to_string(linked.join("untracked")).unwrap(),
+            "keep"
+        );
+    }
+
     // Catches: the agent/MCP "remove" answer and the safe-only HTTP removal
     // skipping the session registry that the assessment consults.
     #[tokio::test]
@@ -8882,6 +9130,60 @@ mod tests {
             );
             assert_eq!(git().args(["show-ref"]).run().unwrap().stdout, refs);
         }
+    }
+
+    // Catches: ACP peers have no PTY, so PTY-derived creator lookup loses their identity.
+    #[tokio::test]
+    async fn worktree_creator_receipt_and_inventory_survive_peer_disconnect() {
+        let root = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
+        let repo = create_git_repo_at(tempfile::tempdir_in(root.path()).unwrap());
+        let config = tempfile::tempdir_in(root.path()).unwrap();
+        let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+        let state = test_state();
+        let sid = mcp_initialize(&state).await;
+        state
+            .mcp
+            .to_session
+            .insert(sid.clone(), "acp-creator".into());
+        // An existing, un-checked-out branch must receive provenance as well.
+        crate::git_cli::git_cmd(repo.path())
+            .args(["branch", "owned"])
+            .run()
+            .unwrap();
+        let created = call_mcp_tool_with_session(
+            &state,
+            "repo",
+            serde_json::json!({"action":"worktree_create", "path":repo.path(), "branch":"owned"}),
+            &sid,
+        )
+        .await;
+        assert_eq!(created["creator_session"], "acp-creator", "{created}");
+        state.mcp.to_session.remove(&sid);
+        let reloaded = test_state();
+        let listed = call_mcp_tool(
+            &reloaded,
+            "repo",
+            serde_json::json!({
+                "action":"worktree_list", "path":repo.path()
+            }),
+        )
+        .await;
+        assert_eq!(
+            listed["owned"]["creator_session"], "acp-creator",
+            "{listed}"
+        );
+        let branch = crate::git_cli::git_cmd(repo.path())
+            .args(["branch", "--show-current"])
+            .run()
+            .unwrap()
+            .stdout;
+        let legacy = &listed[branch.trim()];
+        assert!(
+            legacy
+                .get("creator_session")
+                .is_some_and(serde_json::Value::is_null),
+            "{legacy}"
+        );
     }
 
     #[tokio::test]
@@ -11114,6 +11416,7 @@ mod tests {
             let response = mcp_transport::mcp_post(
                 State(state.clone()),
                 ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 0))),
+                None,
                 headers,
                 Json(serde_json::json!({
                     "jsonrpc": "2.0", "id": 1, "method": "initialize",
@@ -11320,6 +11623,56 @@ mod tests {
             .await,
             StatusCode::PAYLOAD_TOO_LARGE,
             "the import route is still capped"
+        );
+    }
+
+    /// The remote editor saves a whole file as one JSON body, so the save routes must take
+    /// a file the editor can open (up to `MAX_EDITOR_LARGE_FILE_SIZE`) — and only they.
+    // Catches: a 3 MB save from the remote editor refused with 413 by the router-wide cap.
+    #[tokio::test]
+    async fn editor_save_routes_accept_a_file_over_the_default_cap_and_no_other_route_does() {
+        async fn post(path: &str, payload: String) -> StatusCode {
+            build_router(test_state(), false, true)
+                .oneshot(
+                    Request::post(path)
+                        .header(CONTENT_TYPE, "application/json")
+                        .body(Body::from(payload))
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+                .status()
+        }
+        let repo = create_temp_git_repo();
+        let size = MAX_BODY_BYTES + 1024 * 1024;
+        let payload = serde_json::json!({
+            "repoPath": repo.path().to_str().unwrap(),
+            "file": "big.txt",
+            "content": "a".repeat(size),
+        })
+        .to_string();
+        assert_eq!(
+            post("/fs/write", payload).await,
+            StatusCode::OK,
+            "a 3 MB save must reach the handler and succeed"
+        );
+        assert_eq!(
+            std::fs::metadata(repo.path().join("big.txt"))
+                .unwrap()
+                .len() as usize,
+            size,
+            "the whole file must be on disk, not truncated"
+        );
+        let padded = serde_json::json!({
+            "repoPath": repo.path().to_str().unwrap(),
+            "dir": "d",
+            "padding": "a".repeat(size),
+        })
+        .to_string();
+        assert_eq!(
+            post("/fs/mkdir", padded).await,
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "the larger cap must not leak to the route beside it"
         );
     }
 
@@ -11850,3 +12203,6 @@ mod workflow_authority_critic_tests {
 
 #[cfg(test)]
 mod remote_settings_tests;
+
+#[cfg(test)]
+mod remote_settings_confirm_tests;

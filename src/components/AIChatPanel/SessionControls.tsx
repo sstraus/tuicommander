@@ -324,7 +324,7 @@ export const SessionControls: Component<{
 							class={s.headerBtn}
 							aria-label="Fork the conversation"
 							title="Fork the conversation"
-							disabled={props.chat.busy()}
+							disabled={props.chat.busy() && !props.chat.capabilities()?.forkAtMessage}
 							onClick={() => void props.chat.fork()}
 						>
 							Fork conversation

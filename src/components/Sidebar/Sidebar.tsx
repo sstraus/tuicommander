@@ -6,19 +6,11 @@ import { remoteConnectionsStore } from "../../stores/remoteConnections";
 import type { RepositoryState } from "../../stores/repositories";
 import { repositoriesStore } from "../../stores/repositories";
 import { settingsStore } from "../../stores/settings";
-import { sidebarPluginStore } from "../../stores/sidebarPluginStore";
 import { tunnelPanelStore } from "../../stores/tunnelPanel";
 import { tunnelsStore } from "../../stores/tunnels";
 import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, uiStore } from "../../stores/ui";
 import { getRepoTextColor } from "../../utils/repoColor";
-import {
-	countSidebarRows,
-	createCoarsePointer,
-	createViewportHeight,
-	roomyMaxRows,
-	SidebarDensityContext,
-	sidebarDensity,
-} from "../../utils/sidebarDensity";
+import { SidebarDensityContext, sidebarDensity } from "../../utils/sidebarDensity";
 import { ContextMenu, type ContextMenuItem, createContextMenu } from "../ContextMenu";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { PromptDialog } from "../PromptDialog";
@@ -27,6 +19,7 @@ import { Button } from "../ui/Button";
 import { CountBadge } from "../ui/CountBadge";
 import { GlobalWorkspaceEntry } from "./GlobalWorkspaceEntry";
 import { GroupSection } from "./GroupSection";
+import { hasLiveHarness } from "./liveHarness";
 import { ParkedReposPopover } from "./ParkedReposPopover";
 import { RepoSection } from "./RepoSection";
 import s from "./Sidebar.module.css";
@@ -90,19 +83,26 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 
 	// Layout after applying the repo filter. In "active" mode, empty groups are
 	// dropped entirely so no orphaned group header is left behind.
+	const repoHasHarness = (repo: RepositoryState) =>
+		Object.values(repo.workspaces).some((b) => hasLiveHarness(b.terminals));
 	const filteredLayout = createMemo(() => {
 		const layout = groupedLayout();
-		if (!uiStore.state.repoFilterActiveOnly) return layout;
+		const keep = uiStore.state.repoFilterHarnessOnly
+			? repoHasHarness
+			: uiStore.state.repoFilterActiveOnly
+				? repoIsActive
+				: null;
+		if (!keep) return layout;
 		// Re-spreading unconditionally would throw away the wrapper identity
 		// getGroupedLayout works to preserve, rebuilding every row the filter
 		// did not actually touch.
 		const groups = layout.groups
 			.map((entry) => {
-				const repos = entry.repos.filter(repoIsActive);
+				const repos = entry.repos.filter(keep);
 				return repos.length === entry.repos.length ? entry : { ...entry, repos };
 			})
 			.filter((entry) => entry.repos.length > 0);
-		const ungrouped = layout.ungrouped.filter(repoIsActive);
+		const ungrouped = layout.ungrouped.filter(keep);
 		return { groups, ungrouped };
 	});
 
@@ -113,32 +113,17 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 		return layout.ungrouped.length > 0 || layout.groups.some((g) => g.repos.length > 0);
 	});
 
+	const clearRepoFilters = () => {
+		uiStore.setRepoFilterActiveOnly(false);
+		uiStore.setRepoFilterHarnessOnly(false);
+	};
+
 	const countRepos = (layout: { groups: Array<{ repos: unknown[] }>; ungrouped: unknown[] }) =>
 		layout.ungrouped.length + layout.groups.reduce((n, g) => n + g.repos.length, 0);
 	const totalRepoCount = createMemo(() => countRepos(groupedLayout()));
 	const shownRepoCount = createMemo(() => countRepos(filteredLayout()));
 
-	// Density follows how much is on screen and how the user points: a short list
-	// or a finger gets roomier rows (CSS vars only; no handler is touched).
-	const coarsePointer = createCoarsePointer();
-	const viewportHeight = createViewportHeight();
-	const density = createMemo(() => {
-		const layout = filteredLayout();
-		// A collapsed group keeps its header row (counted below) but renders no repos.
-		const repos = [...layout.ungrouped, ...layout.groups.filter((g) => !g.group.collapsed).flatMap((g) => g.repos)];
-		// RepoSection renders each panel with items under every open repo: a header
-		// row, plus one row per item unless the panel is collapsed.
-		const pluginRows = sidebarPluginStore
-			.getPanels()
-			.filter((p) => p.items.length > 0)
-			.reduce((n, p) => n + 1 + (p.collapsed ? 0 : p.items.length), 0);
-		return sidebarDensity(
-			countSidebarRows(repos, settingsStore.state.tabTreeEnabled, pluginRows) + layout.groups.length,
-			coarsePointer(),
-			uiStore.state.sidebarDensityMode,
-			roomyMaxRows(viewportHeight()),
-		);
-	});
+	const density = () => sidebarDensity(uiStore.state.sidebarDensityMode);
 
 	const drag = useSidebarDragDrop();
 
@@ -406,12 +391,13 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 					{/* Repo filter status — only rendered while the "active only" filter is
 				    engaged (toggled from the toolbar icon). Keeps it unmistakable that
 				    repos are hidden, so nobody panics, while taking zero space at rest. */}
-					<Show when={hasVisibleRepos() && uiStore.state.repoFilterActiveOnly}>
+					<Show when={hasVisibleRepos() && (uiStore.state.repoFilterActiveOnly || uiStore.state.repoFilterHarnessOnly)}>
 						<Button
 							size="compact"
 							variant="ghost"
 							class={s.filterStatus}
-							onClick={() => uiStore.setRepoFilterActiveOnly(false)}
+							data-testid="sidebar-filter-status"
+							onClick={clearRepoFilters}
 							data-tooltip={t("sidebar.filterShowAll", "Show all")}
 							data-tooltip-pos="bottom"
 						>
@@ -424,7 +410,10 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 								/>
 							</svg>
 							<span>
-								{t("sidebar.filterActiveOnly", "Active only")} · {shownRepoCount()}/{totalRepoCount()}
+								{uiStore.state.repoFilterHarnessOnly
+									? t("sidebar.filterHarnessOnly", "H · live harness")
+									: t("sidebar.filterActiveOnly", "Active only")}{" "}
+								· {shownRepoCount()}/{totalRepoCount()}
 							</span>
 							<span class={s.filterStatusClear}>{t("sidebar.filterShowAll", "Show all")}</span>
 						</Button>
@@ -467,8 +456,12 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 							{/* Filter hides every repo — offer a way back to "all" */}
 							<Show when={hasVisibleRepos() && !hasFilteredRepos()}>
 								<div class={s.empty}>
-									<p>{t("sidebar.noActiveRepos", "No repositories with open terminals")}</p>
-									<Button size="compact" variant="ghost" onClick={() => uiStore.setRepoFilterActiveOnly(false)}>
+									<p>
+										{uiStore.state.repoFilterHarnessOnly
+											? t("sidebar.noHarnessRepos", "No live harness sessions")
+											: t("sidebar.noActiveRepos", "No repositories with open terminals")}
+									</p>
+									<Button size="compact" variant="ghost" onClick={clearRepoFilters}>
 										{t("sidebar.filterShowAll", "Show all")}
 									</Button>
 								</div>

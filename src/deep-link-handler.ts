@@ -54,6 +54,20 @@ const SAFE_COMMANDS = new Set([
 /** Commands that are blocked entirely via deep link, even with confirmation. */
 const BLOCKED_COMMANDS = new Set(["config/save", "debug/invoke_js"]);
 
+/** HTTPS anywhere; plain HTTP only for `localhost` and loopback addresses. */
+export function isAllowedPluginUrl(value: string): boolean {
+	let parsed: URL;
+	try {
+		parsed = new URL(value);
+	} catch {
+		return false;
+	}
+	if (parsed.protocol === "https:") return true;
+	if (parsed.protocol !== "http:") return false;
+	const host = parsed.hostname.toLowerCase();
+	return host === "localhost" || host === "[::1]" || /^127(\.\d{1,3}){3}$/.test(host);
+}
+
 /** Handle a single deep link URL. Exported for tests. */
 export async function handleDeepLink(urlString: string, callbacks: DeepLinkCallbacks): Promise<void> {
 	const parsed = parseDeepLink(urlString);
@@ -71,9 +85,10 @@ export async function handleDeepLink(urlString: string, callbacks: DeepLinkCallb
 				appLogger.warn("app", "Deep link install-plugin: missing url parameter");
 				return;
 			}
-			// Security: HTTPS only
-			if (!url.startsWith("https://")) {
-				appLogger.warn("app", "Deep link install-plugin: only HTTPS URLs are allowed");
+			// Security: HTTPS, or plain HTTP from this machine. The backend repeats
+			// the check (and vets every redirect); this one spares a pointless dialog.
+			if (!isAllowedPluginUrl(url)) {
+				appLogger.warn("app", "Deep link install-plugin: only HTTPS or http://localhost URLs are allowed");
 				return;
 			}
 			// Confirmation dialog before downloading

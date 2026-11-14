@@ -1,0 +1,5218 @@
+{
+  "project": "/workflow-fixture/native",
+  "catalog": {
+    "type": "catalog",
+    "value": {
+      "activities": [
+        {
+          "id": {
+            "namespace": "agent",
+            "name": "role",
+            "version": 1
+          },
+          "purpose": "Run a scoped role with an exact mediated profile, tools and typed report",
+          "handler": {
+            "name": "host.agent.role",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "policy": {
+                "value_type": "object",
+                "required": false,
+                "default": null
+              },
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              },
+              "role": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              },
+              "runtime": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "executable": "//workflow-fixture/bin/model",
+                  "profile": "fixture-profile"
+                }
+              },
+              "tools": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "tools": {},
+                  "max_calls": 1,
+                  "max_concurrency": 1
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "data": {
+                "value_type": "object",
+                "required": false,
+                "default": null
+              },
+              "source": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "report": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "custom",
+            "name": "calculate",
+            "version": 1
+          },
+          "purpose": "Calculate a structured value",
+          "handler": {
+            "name": "host.script",
+            "version": 1
+          },
+          "target": {
+            "type": "script",
+            "invocation": {
+              "type": "shell",
+              "program": "python3",
+              "script": "import json,sys; q=json.load(sys.stdin)",
+              "version": 1
+            }
+          },
+          "config": {
+            "fields": {
+              "script": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "version": 1,
+                  "timeout_secs": 10,
+                  "input_bytes": 65536,
+                  "stdout_bytes": 16384,
+                  "stderr_bytes": 16384,
+                  "artifact_limit": 4,
+                  "resources": [],
+                  "environment_refs": {},
+                  "secret_refs": {},
+                  "mutation": false,
+                  "retry": "never",
+                  "reconciliation": {
+                    "type": "read_only"
+                  },
+                  "output": {
+                    "type": "structured"
+                  }
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "value": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "next": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "custom",
+            "name": "calculate-subflow",
+            "version": 1
+          },
+          "purpose": "Call an exact pinned calculation publication",
+          "handler": {
+            "name": "host.subflow",
+            "version": 1
+          },
+          "target": {
+            "type": "subflow",
+            "publication": {
+              "reference": {
+                "project": "/workflow-fixture/native",
+                "id": "calculate-child",
+                "revision": 1
+              },
+              "sha256": "2ace00bf08b5dfdbc534fb4b079b6101471a0e35bdc27a10ecd747d6cdbf1ad4"
+            }
+          },
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "value": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "next": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "done"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "github",
+            "name": "pull_request.review",
+            "version": 1
+          },
+          "purpose": "Publish one GitHub pull request review pinned to the exact head commit",
+          "handler": {
+            "name": "installed.github.pull_request.review",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "base": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              },
+              "body": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              },
+              "event": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              },
+              "head": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              },
+              "number": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              },
+              "repository": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "review_id": {
+                "value_type": "integer",
+                "required": false,
+                "default": null
+              },
+              "url": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "published",
+            "stale"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "github",
+            "name": "pull_request.snapshot",
+            "version": 1
+          },
+          "purpose": "Read one open GitHub pull request at its exact head/base, with the base...head patch",
+          "handler": {
+            "name": "installed.github.pull_request.snapshot",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "base": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              },
+              "head": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              },
+              "number": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              },
+              "repository": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "text": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "title": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok",
+            "stale"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "gitlab",
+            "name": "diff_version.764a150ab59febf59537ebdd7f4b1d6608cfbcf4782fdd0cd06f71d209f0840a",
+            "version": 1
+          },
+          "purpose": "GitLab REST v4 diff_version for an installed project",
+          "handler": {
+            "name": "installed.gitlab.diff_version.764a150ab59febf59537ebdd7f4b1d6608cfbcf4782fdd0cd06f71d209f0840a",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "installed": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "base": "https://gitlab.example.invalid/api/v4/",
+                  "project": 42,
+                  "connector": {
+                    "id": "gitlab:fixture-gitlab:42",
+                    "authentication": {
+                      "reference": "credential",
+                      "id": "fixture-gitlab"
+                    },
+                    "resources": {
+                      "fields": {
+                        "project": {
+                          "value_type": "integer",
+                          "required": true,
+                          "default": null
+                        }
+                      }
+                    },
+                    "pagination": null,
+                    "rate_limit": "fail_with_retry_after",
+                    "callback": null,
+                    "reconciliation": "unavailable"
+                  }
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "base": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              },
+              "head": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              },
+              "mr": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              },
+              "start": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              },
+              "version": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "base": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "effect": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "head": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "instance": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "mr": {
+                "value_type": "integer",
+                "required": false,
+                "default": null
+              },
+              "project": {
+                "value_type": "integer",
+                "required": false,
+                "default": null
+              },
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              },
+              "start": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "version": {
+                "value_type": "integer",
+                "required": false,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete",
+            "failed",
+            "incomplete",
+            "pending",
+            "stale"
+          ],
+          "required_capabilities": [
+            "gitlab:read"
+          ],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "gitlab",
+            "name": "issue.764a150ab59febf59537ebdd7f4b1d6608cfbcf4782fdd0cd06f71d209f0840a",
+            "version": 1
+          },
+          "purpose": "GitLab REST v4 issue for an installed project",
+          "handler": {
+            "name": "installed.gitlab.issue.764a150ab59febf59537ebdd7f4b1d6608cfbcf4782fdd0cd06f71d209f0840a",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "installed": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "base": "https://gitlab.example.invalid/api/v4/",
+                  "project": 42,
+                  "connector": {
+                    "id": "gitlab:fixture-gitlab:42",
+                    "authentication": {
+                      "reference": "credential",
+                      "id": "fixture-gitlab"
+                    },
+                    "resources": {
+                      "fields": {
+                        "project": {
+                          "value_type": "integer",
+                          "required": true,
+                          "default": null
+                        }
+                      }
+                    },
+                    "pagination": null,
+                    "rate_limit": "fail_with_retry_after",
+                    "callback": null,
+                    "reconciliation": "unavailable"
+                  }
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "issue": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "effect": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "instance": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "issue": {
+                "value_type": "integer",
+                "required": false,
+                "default": null
+              },
+              "project": {
+                "value_type": "integer",
+                "required": false,
+                "default": null
+              },
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete",
+            "failed",
+            "incomplete",
+            "pending",
+            "stale"
+          ],
+          "required_capabilities": [
+            "gitlab:read"
+          ],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "gitlab",
+            "name": "merge_request.764a150ab59febf59537ebdd7f4b1d6608cfbcf4782fdd0cd06f71d209f0840a",
+            "version": 1
+          },
+          "purpose": "GitLab REST v4 merge_request for an installed project",
+          "handler": {
+            "name": "installed.gitlab.merge_request.764a150ab59febf59537ebdd7f4b1d6608cfbcf4782fdd0cd06f71d209f0840a",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "installed": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "base": "https://gitlab.example.invalid/api/v4/",
+                  "project": 42,
+                  "connector": {
+                    "id": "gitlab:fixture-gitlab:42",
+                    "authentication": {
+                      "reference": "credential",
+                      "id": "fixture-gitlab"
+                    },
+                    "resources": {
+                      "fields": {
+                        "project": {
+                          "value_type": "integer",
+                          "required": true,
+                          "default": null
+                        }
+                      }
+                    },
+                    "pagination": null,
+                    "rate_limit": "fail_with_retry_after",
+                    "callback": null,
+                    "reconciliation": "unavailable"
+                  }
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "mr": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "base": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "effect": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "head": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "instance": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "mr": {
+                "value_type": "integer",
+                "required": false,
+                "default": null
+              },
+              "project": {
+                "value_type": "integer",
+                "required": false,
+                "default": null
+              },
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete",
+            "failed",
+            "incomplete",
+            "pending",
+            "stale"
+          ],
+          "required_capabilities": [
+            "gitlab:read"
+          ],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "gitlab",
+            "name": "pipeline.764a150ab59febf59537ebdd7f4b1d6608cfbcf4782fdd0cd06f71d209f0840a",
+            "version": 1
+          },
+          "purpose": "GitLab REST v4 pipeline for an installed project",
+          "handler": {
+            "name": "installed.gitlab.pipeline.764a150ab59febf59537ebdd7f4b1d6608cfbcf4782fdd0cd06f71d209f0840a",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "installed": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "base": "https://gitlab.example.invalid/api/v4/",
+                  "project": 42,
+                  "connector": {
+                    "id": "gitlab:fixture-gitlab:42",
+                    "authentication": {
+                      "reference": "credential",
+                      "id": "fixture-gitlab"
+                    },
+                    "resources": {
+                      "fields": {
+                        "project": {
+                          "value_type": "integer",
+                          "required": true,
+                          "default": null
+                        }
+                      }
+                    },
+                    "pagination": null,
+                    "rate_limit": "fail_with_retry_after",
+                    "callback": null,
+                    "reconciliation": "unavailable"
+                  }
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "base": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              },
+              "head": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              },
+              "mr": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              },
+              "pipeline": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "base": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "effect": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "head": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "instance": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "mr": {
+                "value_type": "integer",
+                "required": false,
+                "default": null
+              },
+              "pipeline": {
+                "value_type": "integer",
+                "required": false,
+                "default": null
+              },
+              "project": {
+                "value_type": "integer",
+                "required": false,
+                "default": null
+              },
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              },
+              "status": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete",
+            "failed",
+            "incomplete",
+            "pending",
+            "stale"
+          ],
+          "required_capabilities": [
+            "gitlab:read"
+          ],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "gitlab",
+            "name": "review_note.764a150ab59febf59537ebdd7f4b1d6608cfbcf4782fdd0cd06f71d209f0840a",
+            "version": 1
+          },
+          "purpose": "GitLab REST v4 review_note for an installed project",
+          "handler": {
+            "name": "installed.gitlab.review_note.764a150ab59febf59537ebdd7f4b1d6608cfbcf4782fdd0cd06f71d209f0840a",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "installed": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "base": "https://gitlab.example.invalid/api/v4/",
+                  "project": 42,
+                  "connector": {
+                    "id": "gitlab:fixture-gitlab:42",
+                    "authentication": {
+                      "reference": "credential",
+                      "id": "fixture-gitlab"
+                    },
+                    "resources": {
+                      "fields": {
+                        "project": {
+                          "value_type": "integer",
+                          "required": true,
+                          "default": null
+                        }
+                      }
+                    },
+                    "pagination": null,
+                    "rate_limit": "fail_with_retry_after",
+                    "callback": null,
+                    "reconciliation": "unavailable"
+                  }
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "base": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              },
+              "body": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              },
+              "head": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              },
+              "mr": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "base": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "effect": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "head": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "instance": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              },
+              "mr": {
+                "value_type": "integer",
+                "required": false,
+                "default": null
+              },
+              "note": {
+                "value_type": "integer",
+                "required": false,
+                "default": null
+              },
+              "project": {
+                "value_type": "integer",
+                "required": false,
+                "default": null
+              },
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete",
+            "failed",
+            "incomplete",
+            "pending",
+            "stale"
+          ],
+          "required_capabilities": [
+            "gitlab:write"
+          ],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "inbox",
+            "name": "approval",
+            "version": 1
+          },
+          "purpose": "Request an exact local approval in the workflow inbox",
+          "handler": {
+            "name": "host.approval",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "details": {
+                "value_type": "string",
+                "required": false,
+                "default": ""
+              },
+              "text": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "approved": {
+                "value_type": "boolean",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "jira",
+            "name": "comment.fixture-jira.FIXTURE",
+            "version": 1
+          },
+          "purpose": "comment a Jira Cloud issue through the installed account",
+          "handler": {
+            "name": "jira.fixture-jira.FIXTURE.comment",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "connector": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "contract": {
+                    "id": "jira:fixture-jira:FIXTURE",
+                    "authentication": {
+                      "reference": "credential",
+                      "id": "fixture-jira"
+                    },
+                    "resources": {
+                      "fields": {
+                        "project_id": {
+                          "value_type": "string",
+                          "required": true,
+                          "default": "FIXTURE"
+                        }
+                      }
+                    },
+                    "pagination": null,
+                    "rate_limit": "fail_with_retry_after",
+                    "callback": null,
+                    "reconciliation": "read_only_service_observation"
+                  },
+                  "base": "https://jira.example.invalid/",
+                  "plugin": "jira",
+                  "account": "fixture-jira",
+                  "project_id": "FIXTURE",
+                  "operation": "comment"
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "result": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete"
+          ],
+          "required_capabilities": [
+            "jira.network"
+          ],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "jira",
+            "name": "create.fixture-jira.FIXTURE",
+            "version": 1
+          },
+          "purpose": "create a Jira Cloud issue through the installed account",
+          "handler": {
+            "name": "jira.fixture-jira.FIXTURE.create",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "connector": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "contract": {
+                    "id": "jira:fixture-jira:FIXTURE",
+                    "authentication": {
+                      "reference": "credential",
+                      "id": "fixture-jira"
+                    },
+                    "resources": {
+                      "fields": {
+                        "project_id": {
+                          "value_type": "string",
+                          "required": true,
+                          "default": "FIXTURE"
+                        }
+                      }
+                    },
+                    "pagination": null,
+                    "rate_limit": "fail_with_retry_after",
+                    "callback": null,
+                    "reconciliation": "read_only_service_observation"
+                  },
+                  "base": "https://jira.example.invalid/",
+                  "plugin": "jira",
+                  "account": "fixture-jira",
+                  "project_id": "FIXTURE",
+                  "operation": "create"
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "result": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete"
+          ],
+          "required_capabilities": [
+            "jira.network"
+          ],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "jira",
+            "name": "lookup.fixture-jira.FIXTURE",
+            "version": 1
+          },
+          "purpose": "lookup a Jira Cloud issue through the installed account",
+          "handler": {
+            "name": "jira.fixture-jira.FIXTURE.lookup",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "connector": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "contract": {
+                    "id": "jira:fixture-jira:FIXTURE",
+                    "authentication": {
+                      "reference": "credential",
+                      "id": "fixture-jira"
+                    },
+                    "resources": {
+                      "fields": {
+                        "project_id": {
+                          "value_type": "string",
+                          "required": true,
+                          "default": "FIXTURE"
+                        }
+                      }
+                    },
+                    "pagination": null,
+                    "rate_limit": "fail_with_retry_after",
+                    "callback": null,
+                    "reconciliation": "read_only_service_observation"
+                  },
+                  "base": "https://jira.example.invalid/",
+                  "plugin": "jira",
+                  "account": "fixture-jira",
+                  "project_id": "FIXTURE",
+                  "operation": "lookup"
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "result": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete"
+          ],
+          "required_capabilities": [
+            "jira.network"
+          ],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "jira",
+            "name": "search.fixture-jira.FIXTURE",
+            "version": 1
+          },
+          "purpose": "search a Jira Cloud issue through the installed account",
+          "handler": {
+            "name": "jira.fixture-jira.FIXTURE.search",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "connector": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "contract": {
+                    "id": "jira:fixture-jira:FIXTURE",
+                    "authentication": {
+                      "reference": "credential",
+                      "id": "fixture-jira"
+                    },
+                    "resources": {
+                      "fields": {
+                        "project_id": {
+                          "value_type": "string",
+                          "required": true,
+                          "default": "FIXTURE"
+                        }
+                      }
+                    },
+                    "pagination": {
+                      "query_parameter": "nextPageToken",
+                      "items_pointer": "/issues",
+                      "cursor_pointer": "/nextPageToken",
+                      "output": "issues",
+                      "max_pages": 1,
+                      "max_items": 100
+                    },
+                    "rate_limit": "fail_with_retry_after",
+                    "callback": null,
+                    "reconciliation": "read_only_service_observation"
+                  },
+                  "base": "https://jira.example.invalid/",
+                  "plugin": "jira",
+                  "account": "fixture-jira",
+                  "project_id": "FIXTURE",
+                  "operation": "search"
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "result": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete"
+          ],
+          "required_capabilities": [
+            "jira.network"
+          ],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "jira",
+            "name": "transition.fixture-jira.FIXTURE",
+            "version": 1
+          },
+          "purpose": "transition a Jira Cloud issue through the installed account",
+          "handler": {
+            "name": "jira.fixture-jira.FIXTURE.transition",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "connector": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "contract": {
+                    "id": "jira:fixture-jira:FIXTURE",
+                    "authentication": {
+                      "reference": "credential",
+                      "id": "fixture-jira"
+                    },
+                    "resources": {
+                      "fields": {
+                        "project_id": {
+                          "value_type": "string",
+                          "required": true,
+                          "default": "FIXTURE"
+                        }
+                      }
+                    },
+                    "pagination": null,
+                    "rate_limit": "fail_with_retry_after",
+                    "callback": null,
+                    "reconciliation": "read_only_service_observation"
+                  },
+                  "base": "https://jira.example.invalid/",
+                  "plugin": "jira",
+                  "account": "fixture-jira",
+                  "project_id": "FIXTURE",
+                  "operation": "transition"
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "result": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete"
+          ],
+          "required_capabilities": [
+            "jira.network"
+          ],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "jira",
+            "name": "transitions.fixture-jira.FIXTURE",
+            "version": 1
+          },
+          "purpose": "transitions a Jira Cloud issue through the installed account",
+          "handler": {
+            "name": "jira.fixture-jira.FIXTURE.transitions",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "connector": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "contract": {
+                    "id": "jira:fixture-jira:FIXTURE",
+                    "authentication": {
+                      "reference": "credential",
+                      "id": "fixture-jira"
+                    },
+                    "resources": {
+                      "fields": {
+                        "project_id": {
+                          "value_type": "string",
+                          "required": true,
+                          "default": "FIXTURE"
+                        }
+                      }
+                    },
+                    "pagination": null,
+                    "rate_limit": "fail_with_retry_after",
+                    "callback": null,
+                    "reconciliation": "read_only_service_observation"
+                  },
+                  "base": "https://jira.example.invalid/",
+                  "plugin": "jira",
+                  "account": "fixture-jira",
+                  "project_id": "FIXTURE",
+                  "operation": "transitions"
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "result": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete"
+          ],
+          "required_capabilities": [
+            "jira.network"
+          ],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "jira",
+            "name": "update.fixture-jira.FIXTURE",
+            "version": 1
+          },
+          "purpose": "update a Jira Cloud issue through the installed account",
+          "handler": {
+            "name": "jira.fixture-jira.FIXTURE.update",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "connector": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "contract": {
+                    "id": "jira:fixture-jira:FIXTURE",
+                    "authentication": {
+                      "reference": "credential",
+                      "id": "fixture-jira"
+                    },
+                    "resources": {
+                      "fields": {
+                        "project_id": {
+                          "value_type": "string",
+                          "required": true,
+                          "default": "FIXTURE"
+                        }
+                      }
+                    },
+                    "pagination": null,
+                    "rate_limit": "fail_with_retry_after",
+                    "callback": null,
+                    "reconciliation": "read_only_service_observation"
+                  },
+                  "base": "https://jira.example.invalid/",
+                  "plugin": "jira",
+                  "account": "fixture-jira",
+                  "project_id": "FIXTURE",
+                  "operation": "update"
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "result": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete"
+          ],
+          "required_capabilities": [
+            "jira.network"
+          ],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "model",
+            "name": "request",
+            "version": 1
+          },
+          "purpose": "Run an exact model request through the configured mediated profile",
+          "handler": {
+            "name": "host.model",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              },
+              "runtime": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "executable": "//workflow-fixture/bin/model",
+                  "profile": "fixture-profile"
+                }
+              },
+              "tools": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "tools": {},
+                  "max_calls": 1,
+                  "max_concurrency": 1
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "text": {
+                "value_type": "string",
+                "required": false,
+                "default": ""
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "result": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "agent.context.read",
+            "version": 1
+          },
+          "purpose": "Read bounded source-bound plan, story, member and artifact material without tool authority",
+          "handler": {
+            "name": "native.agent.context.read",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "agent.report.read",
+            "version": 1
+          },
+          "purpose": "Resolve a current source-bound role report from its original effect",
+          "handler": {
+            "name": "native.agent.report.read",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "artifact.pin",
+            "version": 1
+          },
+          "purpose": "Pin committed regular-file artifacts in that checkout",
+          "handler": {
+            "name": "native.artifact.pin",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "commit.create",
+            "version": 1
+          },
+          "purpose": "Commit the exact approved index through the native Git service",
+          "handler": {
+            "name": "native.commit.create",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "correction.assess",
+            "version": 1
+          },
+          "purpose": "Assess current independent review and every captured verification check",
+          "handler": {
+            "name": "native.correction.assess",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "context": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              },
+              "criteria": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              },
+              "repeat": {
+                "value_type": "boolean",
+                "required": false,
+                "default": null
+              },
+              "state": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "repeat": {
+                "value_type": "boolean",
+                "required": false,
+                "default": null
+              },
+              "state": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "assessed"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "correction.policy.assess",
+            "version": 1
+          },
+          "purpose": "Assess source role findings and proposal receipts under separate review/correction budgets",
+          "handler": {
+            "name": "native.correction.policy.assess",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "policy": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "context": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              },
+              "criteria": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              },
+              "proposals": {
+                "value_type": "array",
+                "required": true,
+                "default": []
+              },
+              "repeat": {
+                "value_type": "boolean",
+                "required": false,
+                "default": null
+              },
+              "report": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              },
+              "state": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "accounting": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              },
+              "repeat": {
+                "value_type": "boolean",
+                "required": false,
+                "default": null
+              },
+              "state": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "assessed"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "issue.effect",
+            "version": 1
+          },
+          "purpose": "Comment or add a label on the exact admitted issue generation",
+          "handler": {
+            "name": "native.issue.effect",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "issue.graph.receipt",
+            "version": 1
+          },
+          "purpose": "Compose source-bound issue receipts from the exact graph-owned returned story child",
+          "handler": {
+            "name": "native.issue.graph.receipt",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "issue.handoff",
+            "version": 1
+          },
+          "purpose": "Dispatch an accepted issue to its retained exact child publication",
+          "handler": {
+            "name": "native.issue.handoff",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "issue.prepare",
+            "version": 1
+          },
+          "purpose": "Prepare one accepted issue plan and problem-preserving graph story proposal",
+          "handler": {
+            "name": "native.issue.prepare",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "issue.publication",
+            "version": 1
+          },
+          "purpose": "Publish one exact issue-bound artifact with separate stopped disposition evidence",
+          "handler": {
+            "name": "native.issue.publication",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "published",
+            "refused",
+            "uncertain"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "issue.read",
+            "version": 1
+          },
+          "purpose": "Read the exact admitted issue and its backend source pin",
+          "handler": {
+            "name": "native.issue.read",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "issue.triage",
+            "version": 1
+          },
+          "purpose": "Evaluate the exact admitted issue through an installed scoped report owner",
+          "handler": {
+            "name": "native.issue.triage",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "operator.automatic_close",
+            "version": 1
+          },
+          "purpose": "Close through native story authority after independent current proof",
+          "handler": {
+            "name": "native.operator.automatic_close",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "declined",
+            "resumed"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "operator.wait",
+            "version": 1
+          },
+          "purpose": "Retain an exact typed operator decision and fixed continuation",
+          "handler": {
+            "name": "native.operator.wait",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "declined",
+            "resumed"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "publication.github",
+            "version": 1
+          },
+          "purpose": "Publish exact approved artifacts through native account-bound GitHub actions",
+          "handler": {
+            "name": "native.publication.github",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "publication.push",
+            "version": 1
+          },
+          "purpose": "Push the exact approved ref to a local bare repository through the native Git service",
+          "handler": {
+            "name": "native.publication.push",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "review.bounded",
+            "version": 1
+          },
+          "purpose": "Review an exact native artifact under an immutable run-wide reviewer admission budget",
+          "handler": {
+            "name": "native.review.bounded",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "policy": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "exhausted",
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "review.change",
+            "version": 1
+          },
+          "purpose": "Review the exact staged artifact through the native reviewer",
+          "handler": {
+            "name": "native.review.change",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "story.batch.admit",
+            "version": 1
+          },
+          "purpose": "Admit the next ordered cohort member into the single sequential batch slot",
+          "handler": {
+            "name": "native.story.batch.admit",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "story.batch.land",
+            "version": 1
+          },
+          "purpose": "Credit the slot holder with an owned native push made after its admission",
+          "handler": {
+            "name": "native.story.batch.land",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "story.batch.pending",
+            "version": 1
+          },
+          "purpose": "Select the next bounded ordered batch or its armed FIX owner with current child revisions",
+          "handler": {
+            "name": "native.story.batch.pending",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "story.batch.pin",
+            "version": 1
+          },
+          "purpose": "Pin the landed unbatched members at the clean artifact that contains them",
+          "handler": {
+            "name": "native.story.batch.pin",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "story.batch.verdict",
+            "version": 1
+          },
+          "purpose": "Retain the single critic verdict of the latest batch and arm a FIX re-entry",
+          "handler": {
+            "name": "native.story.batch.verdict",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "completed",
+            "continue",
+            "fix"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "story.cohort.created",
+            "version": 1
+          },
+          "purpose": "Return the cohort of stories this run created under one review, in order",
+          "handler": {
+            "name": "native.story.cohort.created",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "story.cohort.observe",
+            "version": 1
+          },
+          "purpose": "Observe every selected native story and retain owned completion evidence",
+          "handler": {
+            "name": "native.story.cohort.observe",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "blocked",
+            "completed"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "story.create",
+            "version": 1
+          },
+          "purpose": "Create owned story proposals with durable review caps and receipts",
+          "handler": {
+            "name": "native.story.create",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "story.read",
+            "version": 1
+          },
+          "purpose": "Read one story of this project: revision, criteria count and status",
+          "handler": {
+            "name": "native.story.read",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "story.transition",
+            "version": 1
+          },
+          "purpose": "Apply a native revision-checked story transition",
+          "handler": {
+            "name": "native.story.transition",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "verification.run",
+            "version": 1
+          },
+          "purpose": "Run one host-pinned native verification definition",
+          "handler": {
+            "name": "native.verification.run",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "workspace.pin",
+            "version": 1
+          },
+          "purpose": "Observe the exact native checkout identity",
+          "handler": {
+            "name": "native.workspace.pin",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "native",
+            "name": "workspace.stage",
+            "version": 1
+          },
+          "purpose": "Write and stage listed workspace files for the controlled implementer",
+          "handler": {
+            "name": "native.workspace.stage",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "receipt": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "telegram",
+            "name": "reply",
+            "version": 1
+          },
+          "purpose": "Telegram reply through the installed bot",
+          "handler": {
+            "name": "telegram.reply",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "connector": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "contract": {
+                    "id": "telegram:fixture-bot",
+                    "authentication": {
+                      "reference": "credential",
+                      "id": "telegram:fixture-bot"
+                    },
+                    "resources": {
+                      "fields": {
+                        "chat": {
+                          "value_type": "integer",
+                          "required": true,
+                          "default": null
+                        }
+                      }
+                    },
+                    "pagination": null,
+                    "rate_limit": "fail_with_retry_after",
+                    "callback": null,
+                    "reconciliation": "unavailable"
+                  },
+                  "bot": "fixture-bot",
+                  "operation": "reply"
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "actions": {
+                "value_type": "array",
+                "required": false,
+                "default": []
+              },
+              "chat": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              },
+              "message": {
+                "value_type": "object",
+                "required": false,
+                "default": null
+              },
+              "text": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "notification": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "telegram",
+            "name": "send",
+            "version": 1
+          },
+          "purpose": "Telegram send through the installed bot",
+          "handler": {
+            "name": "telegram.send",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "connector": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "contract": {
+                    "id": "telegram:fixture-bot",
+                    "authentication": {
+                      "reference": "credential",
+                      "id": "telegram:fixture-bot"
+                    },
+                    "resources": {
+                      "fields": {
+                        "chat": {
+                          "value_type": "integer",
+                          "required": true,
+                          "default": null
+                        }
+                      }
+                    },
+                    "pagination": null,
+                    "rate_limit": "fail_with_retry_after",
+                    "callback": null,
+                    "reconciliation": "unavailable"
+                  },
+                  "bot": "fixture-bot",
+                  "operation": "send"
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "actions": {
+                "value_type": "array",
+                "required": false,
+                "default": []
+              },
+              "chat": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              },
+              "message": {
+                "value_type": "object",
+                "required": false,
+                "default": null
+              },
+              "text": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "notification": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "telegram",
+            "name": "update",
+            "version": 1
+          },
+          "purpose": "Telegram update through the installed bot",
+          "handler": {
+            "name": "telegram.update",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {
+              "connector": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "contract": {
+                    "id": "telegram:fixture-bot",
+                    "authentication": {
+                      "reference": "credential",
+                      "id": "telegram:fixture-bot"
+                    },
+                    "resources": {
+                      "fields": {
+                        "chat": {
+                          "value_type": "integer",
+                          "required": true,
+                          "default": null
+                        }
+                      }
+                    },
+                    "pagination": null,
+                    "rate_limit": "fail_with_retry_after",
+                    "callback": null,
+                    "reconciliation": "unavailable"
+                  },
+                  "bot": "fixture-bot",
+                  "operation": "update"
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {
+              "actions": {
+                "value_type": "array",
+                "required": false,
+                "default": []
+              },
+              "chat": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              },
+              "message": {
+                "value_type": "object",
+                "required": false,
+                "default": null
+              },
+              "text": {
+                "value_type": "string",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "notification": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "complete"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "user",
+            "name": "saved-http",
+            "version": 1
+          },
+          "purpose": "Write through an explicitly saved connector",
+          "handler": {
+            "name": "host.http",
+            "version": 1
+          },
+          "target": {
+            "type": "http",
+            "connector": {
+              "id": "saved-http",
+              "authentication": null,
+              "resources": {
+                "fields": {}
+              },
+              "pagination": null,
+              "rate_limit": "fail_with_retry_after",
+              "callback": null,
+              "reconciliation": "unavailable"
+            },
+            "plugin": "workflow-http-test",
+            "base": "https://example.invalid/"
+          },
+          "config": {
+            "fields": {
+              "request": {
+                "value_type": "object",
+                "required": true,
+                "default": {
+                  "method": "POST",
+                  "endpoint": "https://example.invalid/items",
+                  "path": [],
+                  "query": {},
+                  "headers": {},
+                  "body": null,
+                  "response": {},
+                  "max_response_bytes": 4096
+                }
+              }
+            }
+          },
+          "inputs": {
+            "fields": {}
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {}
+          },
+          "outcomes": [
+            "complete"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "local"
+          ]
+        },
+        {
+          "id": {
+            "namespace": "user",
+            "name": "selected-correction",
+            "version": 1
+          },
+          "purpose": "Inspect an exact selected correction publication",
+          "handler": {
+            "name": "host.subflow",
+            "version": 1
+          },
+          "target": {
+            "type": "subflow",
+            "publication": {
+              "reference": {
+                "project": "/workflow-fixture/native",
+                "id": "selected-correction",
+                "revision": 1
+              },
+              "sha256": "dc5c5bb7c4edce7bd9d3b25edb8d940456bfa82021ac28bc5a2880c77d14a570"
+            }
+          },
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "context": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              },
+              "criteria": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              },
+              "repeat": {
+                "value_type": "boolean",
+                "required": false,
+                "default": null
+              },
+              "state": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "repeat": {
+                "value_type": "boolean",
+                "required": false,
+                "default": null
+              },
+              "state": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "assessed"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "native"
+          ]
+        }
+      ],
+      "metanodes": [
+        {
+          "format_version": 11,
+          "id": "bounded-correction",
+          "project": "/workflow-fixture/native",
+          "revision": 1,
+          "definition": {
+            "control": {
+              "nodes": {
+                "correction": {
+                  "type": "loop",
+                  "scope": "correction",
+                  "condition": "requires-correction"
+                },
+                "entry": {
+                  "type": "start"
+                },
+                "operator": {
+                  "type": "end",
+                  "outcome": "operator"
+                },
+                "success": {
+                  "type": "end",
+                  "outcome": "success"
+                },
+                "technical-failure": {
+                  "type": "end",
+                  "outcome": "technical_failure"
+                }
+              },
+              "edges": {
+                "correction": {
+                  "complete": "success",
+                  "exhausted": "operator",
+                  "failed": "technical-failure",
+                  "unknown": "operator"
+                },
+                "entry": {
+                  "next": "correction"
+                }
+              }
+            },
+            "outputs": {
+              "fields": {
+                "repeat": {
+                  "value_type": "boolean",
+                  "required": false,
+                  "default": null
+                },
+                "state": {
+                  "value_type": "object",
+                  "required": true,
+                  "default": null
+                }
+              }
+            },
+            "outcomes": [
+              "operator",
+              "success",
+              "technical_failure"
+            ],
+            "inputs": {
+              "fields": {
+                "context": {
+                  "value_type": "object",
+                  "required": true,
+                  "default": null
+                },
+                "repeat": {
+                  "value_type": "boolean",
+                  "required": false,
+                  "default": null
+                },
+                "state": {
+                  "value_type": "object",
+                  "required": true,
+                  "default": null
+                }
+              }
+            },
+            "subject": {
+              "required": true,
+              "fields": {
+                "fields": {
+                  "workspace": {
+                    "value_type": "workspace_reference",
+                    "required": true,
+                    "default": null
+                  }
+                }
+              }
+            },
+            "instances": [
+              {
+                "descriptor": {
+                  "namespace": "user",
+                  "name": "selected-correction",
+                  "version": 1
+                },
+                "config": {},
+                "execution_policy": "native"
+              }
+            ],
+            "input_bindings": {
+              "0": {
+                "context": {
+                  "source": "workflow_input",
+                  "field": "context"
+                },
+                "criteria": {
+                  "source": "constant",
+                  "value": {
+                    "criteria": [
+                      "independent_review"
+                    ]
+                  }
+                }
+              }
+            },
+            "conditions": {
+              "requires-correction": {
+                "operator": "compare",
+                "comparison": "equal",
+                "left": {
+                  "source": "scope_output",
+                  "scope": "correction",
+                  "field": "repeat"
+                },
+                "right": {
+                  "source": "constant",
+                  "value": true
+                }
+              }
+            },
+            "collections": {},
+            "loops": {
+              "correction": {
+                "body": 0,
+                "max_iterations": 3,
+                "carried": {
+                  "fields": {
+                    "repeat": {
+                      "value_type": "boolean",
+                      "required": false,
+                      "default": null
+                    },
+                    "state": {
+                      "value_type": "object",
+                      "required": true,
+                      "default": null
+                    }
+                  }
+                },
+                "initial": {
+                  "state": {
+                    "source": "workflow_input",
+                    "field": "state"
+                  }
+                },
+                "result": {
+                  "repeat": {
+                    "source": "activity_output",
+                    "activity": 0,
+                    "field": "repeat"
+                  },
+                  "state": {
+                    "source": "activity_output",
+                    "activity": 0,
+                    "field": "state"
+                  }
+                }
+              }
+            },
+            "forks": {},
+            "output_bindings": {
+              "repeat": {
+                "source": "scope_output",
+                "scope": "correction",
+                "field": "repeat"
+              },
+              "state": {
+                "source": "scope_output",
+                "scope": "correction",
+                "field": "state"
+              }
+            },
+            "subflows": [
+              {
+                "project": "/workflow-fixture/native",
+                "id": "selected-correction",
+                "revision": 1
+              }
+            ]
+          },
+          "pins": {
+            "pins": [
+              {
+                "id": {
+                  "namespace": "user",
+                  "name": "selected-correction",
+                  "version": 1
+                },
+                "sha256": "6c4018aab40d4644e8ca2a0851df082664e44adf0f380124f4a7ae38b9d5e2b9"
+              }
+            ]
+          },
+          "subflow_pins": [
+            {
+              "reference": {
+                "project": "/workflow-fixture/native",
+                "id": "selected-correction",
+                "revision": 1
+              },
+              "sha256": "dc5c5bb7c4edce7bd9d3b25edb8d940456bfa82021ac28bc5a2880c77d14a570"
+            }
+          ],
+          "editor": {
+            "labels": {},
+            "presets": {}
+          }
+        },
+        {
+          "format_version": 11,
+          "id": "calculate-child",
+          "project": "/workflow-fixture/native",
+          "revision": 1,
+          "definition": {
+            "control": {
+              "nodes": {
+                "end": {
+                  "type": "end",
+                  "outcome": "done"
+                },
+                "start": {
+                  "type": "start"
+                },
+                "work": {
+                  "type": "activity",
+                  "activity": 0
+                }
+              },
+              "edges": {
+                "start": {
+                  "next": "work"
+                },
+                "work": {
+                  "ok": "end"
+                }
+              }
+            },
+            "outputs": {
+              "fields": {
+                "next": {
+                  "value_type": "integer",
+                  "required": true,
+                  "default": null
+                }
+              }
+            },
+            "outcomes": [
+              "done"
+            ],
+            "inputs": {
+              "fields": {
+                "value": {
+                  "value_type": "integer",
+                  "required": true,
+                  "default": null
+                }
+              }
+            },
+            "subject": null,
+            "instances": [
+              {
+                "descriptor": {
+                  "namespace": "custom",
+                  "name": "calculate",
+                  "version": 1
+                },
+                "config": {},
+                "execution_policy": "local"
+              }
+            ],
+            "input_bindings": {
+              "0": {
+                "value": {
+                  "source": "workflow_input",
+                  "field": "value"
+                }
+              }
+            },
+            "conditions": {},
+            "collections": {},
+            "loops": {},
+            "forks": {},
+            "output_bindings": {
+              "next": {
+                "source": "activity_output",
+                "activity": 0,
+                "field": "next"
+              }
+            },
+            "subflows": []
+          },
+          "pins": {
+            "pins": [
+              {
+                "id": {
+                  "namespace": "custom",
+                  "name": "calculate",
+                  "version": 1
+                },
+                "sha256": "437063cd44898d84189c4e7f71265299bf4e83c0ad7fc9c85466a35d2360fbb1"
+              }
+            ]
+          },
+          "subflow_pins": [],
+          "editor": {
+            "labels": {},
+            "presets": {}
+          }
+        },
+        {
+          "format_version": 11,
+          "id": "calculate-parent",
+          "project": "/workflow-fixture/native",
+          "revision": 1,
+          "definition": {
+            "control": {
+              "nodes": {
+                "end": {
+                  "type": "end",
+                  "outcome": "done"
+                },
+                "start": {
+                  "type": "start"
+                },
+                "work": {
+                  "type": "activity",
+                  "activity": 0
+                }
+              },
+              "edges": {
+                "start": {
+                  "next": "work"
+                },
+                "work": {
+                  "done": "end"
+                }
+              }
+            },
+            "outputs": {
+              "fields": {
+                "next": {
+                  "value_type": "integer",
+                  "required": true,
+                  "default": null
+                }
+              }
+            },
+            "outcomes": [
+              "done"
+            ],
+            "inputs": {
+              "fields": {
+                "value": {
+                  "value_type": "integer",
+                  "required": true,
+                  "default": null
+                }
+              }
+            },
+            "subject": null,
+            "instances": [
+              {
+                "descriptor": {
+                  "namespace": "custom",
+                  "name": "calculate-subflow",
+                  "version": 1
+                },
+                "config": {},
+                "execution_policy": "local"
+              }
+            ],
+            "input_bindings": {
+              "0": {
+                "value": {
+                  "source": "workflow_input",
+                  "field": "value"
+                }
+              }
+            },
+            "conditions": {},
+            "collections": {},
+            "loops": {},
+            "forks": {},
+            "output_bindings": {
+              "next": {
+                "source": "activity_output",
+                "activity": 0,
+                "field": "next"
+              }
+            },
+            "subflows": []
+          },
+          "pins": {
+            "pins": [
+              {
+                "id": {
+                  "namespace": "custom",
+                  "name": "calculate-subflow",
+                  "version": 1
+                },
+                "sha256": "68096084abd3b18d165c8cf9b853835a6859d0e9850f95db20345ac1de0ae2fa"
+              }
+            ]
+          },
+          "subflow_pins": [
+            {
+              "reference": {
+                "project": "/workflow-fixture/native",
+                "id": "calculate-child",
+                "revision": 1
+              },
+              "sha256": "2ace00bf08b5dfdbc534fb4b079b6101471a0e35bdc27a10ecd747d6cdbf1ad4"
+            }
+          ],
+          "editor": {
+            "labels": {},
+            "presets": {}
+          }
+        },
+        {
+          "format_version": 11,
+          "id": "selected-correction",
+          "project": "/workflow-fixture/native",
+          "revision": 1,
+          "definition": {
+            "control": {
+              "nodes": {
+                "end": {
+                  "type": "end",
+                  "outcome": "assessed"
+                },
+                "start": {
+                  "type": "start"
+                },
+                "work": {
+                  "type": "activity",
+                  "activity": 0
+                }
+              },
+              "edges": {
+                "start": {
+                  "next": "work"
+                },
+                "work": {
+                  "assessed": "end"
+                }
+              }
+            },
+            "outputs": {
+              "fields": {
+                "repeat": {
+                  "value_type": "boolean",
+                  "required": false,
+                  "default": null
+                },
+                "state": {
+                  "value_type": "object",
+                  "required": true,
+                  "default": null
+                }
+              }
+            },
+            "outcomes": [
+              "assessed"
+            ],
+            "inputs": {
+              "fields": {
+                "context": {
+                  "value_type": "object",
+                  "required": true,
+                  "default": null
+                },
+                "criteria": {
+                  "value_type": "object",
+                  "required": true,
+                  "default": null
+                },
+                "repeat": {
+                  "value_type": "boolean",
+                  "required": false,
+                  "default": null
+                },
+                "state": {
+                  "value_type": "object",
+                  "required": true,
+                  "default": null
+                }
+              }
+            },
+            "subject": {
+              "required": true,
+              "fields": {
+                "fields": {
+                  "workspace": {
+                    "value_type": "workspace_reference",
+                    "required": true,
+                    "default": null
+                  }
+                }
+              }
+            },
+            "instances": [
+              {
+                "descriptor": {
+                  "namespace": "native",
+                  "name": "correction.assess",
+                  "version": 1
+                },
+                "config": {},
+                "execution_policy": "native"
+              }
+            ],
+            "input_bindings": {
+              "0": {
+                "context": {
+                  "source": "workflow_input",
+                  "field": "context"
+                },
+                "criteria": {
+                  "source": "workflow_input",
+                  "field": "criteria"
+                },
+                "repeat": {
+                  "source": "workflow_input",
+                  "field": "repeat"
+                },
+                "state": {
+                  "source": "workflow_input",
+                  "field": "state"
+                }
+              }
+            },
+            "conditions": {},
+            "collections": {},
+            "loops": {},
+            "forks": {},
+            "output_bindings": {
+              "repeat": {
+                "source": "activity_output",
+                "activity": 0,
+                "field": "repeat"
+              },
+              "state": {
+                "source": "activity_output",
+                "activity": 0,
+                "field": "state"
+              }
+            },
+            "subflows": []
+          },
+          "pins": {
+            "pins": [
+              {
+                "id": {
+                  "namespace": "native",
+                  "name": "correction.assess",
+                  "version": 1
+                },
+                "sha256": "96beec830942dfe7b3e6f4d86e821a822b7b5e2e2a90edeb29c677c38bf58ade"
+              }
+            ]
+          },
+          "subflow_pins": [],
+          "editor": {
+            "labels": {},
+            "presets": {}
+          }
+        }
+      ]
+    }
+  },
+  "preparation": {
+    "definition": {
+      "control": {
+        "nodes": {
+          "end": {
+            "type": "end",
+            "outcome": "done"
+          },
+          "start": {
+            "type": "start"
+          },
+          "work": {
+            "type": "activity",
+            "activity": 0
+          }
+        },
+        "edges": {
+          "start": {
+            "next": "work"
+          },
+          "work": {
+            "ok": "end"
+          }
+        }
+      },
+      "outputs": {
+        "fields": {
+          "receipt": {
+            "value_type": "object",
+            "required": true,
+            "default": null
+          }
+        }
+      },
+      "outcomes": [
+        "done"
+      ],
+      "inputs": {
+        "fields": {
+          "request": {
+            "value_type": "object",
+            "required": true,
+            "default": null
+          }
+        }
+      },
+      "subject": {
+        "required": true,
+        "fields": {
+          "fields": {
+            "workspace": {
+              "value_type": "workspace_reference",
+              "required": true,
+              "default": null
+            }
+          }
+        }
+      },
+      "instances": [
+        {
+          "descriptor": {
+            "namespace": "native",
+            "name": "commit.create",
+            "version": 1
+          },
+          "config": {},
+          "execution_policy": "native"
+        }
+      ],
+      "input_bindings": {
+        "0": {
+          "request": {
+            "source": "workflow_input",
+            "field": "request"
+          }
+        }
+      },
+      "conditions": {},
+      "collections": {},
+      "loops": {},
+      "forks": {},
+      "output_bindings": {
+        "receipt": {
+          "source": "activity_output",
+          "activity": 0,
+          "field": "receipt"
+        }
+      },
+      "subflows": []
+    },
+    "inputs": {
+      "request": {
+        "parent": "0000000000000000000000000000000000000000",
+        "tree": "1111111111111111111111111111111111111111",
+        "message": "Sample approved candidate",
+        "review": {
+          "fence": {
+            "run": "sample-review",
+            "execution": "sample-review",
+            "activation": 1,
+            "attempt": 1,
+            "scope": null
+          },
+          "digest": "2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      }
+    },
+    "subject": {
+      "workspace": {
+        "reference": "workspace",
+        "id": "/workflow-fixture/native"
+      }
+    },
+    "reply": {
+      "type": "preview",
+      "value": {
+        "validation": {
+          "valid": true,
+          "diagnostics": []
+        },
+        "activities": [
+          {
+            "activity": 0,
+            "inputs": {
+              "request": {
+                "state": {
+                  "state": "present",
+                  "value": {
+                    "parent": "0000000000000000000000000000000000000000",
+                    "tree": "1111111111111111111111111111111111111111",
+                    "message": "Sample approved candidate",
+                    "review": {
+                      "fence": {
+                        "run": "sample-review",
+                        "execution": "sample-review",
+                        "activation": 1,
+                        "attempt": 1,
+                        "scope": null
+                      },
+                      "digest": "2222222222222222222222222222222222222222222222222222222222222222"
+                    }
+                  }
+                },
+                "provenance": [
+                  {
+                    "source": "workflow_input",
+                    "field": "request"
+                  }
+                ]
+              }
+            },
+            "outputs": {
+              "fields": {
+                "receipt": {
+                  "value_type": "object",
+                  "required": true,
+                  "default": null
+                }
+              }
+            },
+            "outcomes": [
+              "ok"
+            ],
+            "effect_intent": {
+              "mutation": true,
+              "resources": [
+                "native:workspace:/workflow-fixture/native"
+              ],
+              "approval": {
+                "revision": 1,
+                "title": "Run exact native.commit.create operation?",
+                "deadline_ms": 9223372036854775807
+              }
+            },
+            "unavailable_reason": null
+          }
+        ],
+        "outputs": {
+          "fields": {
+            "receipt": {
+              "value_type": "object",
+              "required": true,
+              "default": null
+            }
+          }
+        }
+      }
+    }
+  },
+  "subflow": {
+    "valid": {
+      "definition": {
+        "control": {
+          "nodes": {
+            "end": {
+              "type": "end",
+              "outcome": "done"
+            },
+            "start": {
+              "type": "start"
+            },
+            "work": {
+              "type": "activity",
+              "activity": 0
+            }
+          },
+          "edges": {
+            "start": {
+              "next": "work"
+            },
+            "work": {
+              "done": "end"
+            }
+          }
+        },
+        "outputs": {
+          "fields": {
+            "next": {
+              "value_type": "integer",
+              "required": true,
+              "default": null
+            }
+          }
+        },
+        "outcomes": [
+          "done"
+        ],
+        "inputs": {
+          "fields": {
+            "value": {
+              "value_type": "integer",
+              "required": true,
+              "default": null
+            }
+          }
+        },
+        "subject": null,
+        "instances": [
+          {
+            "descriptor": {
+              "namespace": "custom",
+              "name": "calculate-subflow",
+              "version": 1
+            },
+            "config": {},
+            "execution_policy": "local"
+          }
+        ],
+        "input_bindings": {
+          "0": {
+            "value": {
+              "source": "workflow_input",
+              "field": "value"
+            }
+          }
+        },
+        "conditions": {},
+        "collections": {},
+        "loops": {},
+        "forks": {},
+        "output_bindings": {
+          "next": {
+            "source": "activity_output",
+            "activity": 0,
+            "field": "next"
+          }
+        },
+        "subflows": []
+      },
+      "reply": {
+        "type": "validation",
+        "value": {
+          "valid": true,
+          "diagnostics": []
+        }
+      }
+    },
+    "invalid": {
+      "definition": {
+        "control": {
+          "nodes": {
+            "end": {
+              "type": "end",
+              "outcome": "done"
+            },
+            "start": {
+              "type": "start"
+            },
+            "work": {
+              "type": "activity",
+              "activity": 0
+            }
+          },
+          "edges": {
+            "start": {
+              "next": "work"
+            },
+            "work": {
+              "done": "end"
+            }
+          }
+        },
+        "outputs": {
+          "fields": {
+            "next": {
+              "value_type": "integer",
+              "required": true,
+              "default": null
+            }
+          }
+        },
+        "outcomes": [
+          "done"
+        ],
+        "inputs": {
+          "fields": {
+            "value": {
+              "value_type": "integer",
+              "required": true,
+              "default": null
+            }
+          }
+        },
+        "subject": null,
+        "instances": [
+          {
+            "descriptor": {
+              "namespace": "custom",
+              "name": "calculate-subflow",
+              "version": 1
+            },
+            "config": {},
+            "execution_policy": "local"
+          }
+        ],
+        "input_bindings": {
+          "0": {
+            "value": {
+              "source": "constant",
+              "value": "incompatible integer input"
+            }
+          }
+        },
+        "conditions": {},
+        "collections": {},
+        "loops": {},
+        "forks": {},
+        "output_bindings": {
+          "next": {
+            "source": "activity_output",
+            "activity": 0,
+            "field": "next"
+          }
+        },
+        "subflows": []
+      },
+      "reply": {
+        "type": "validation",
+        "value": {
+          "valid": false,
+          "diagnostics": [
+            {
+              "path": "/definition",
+              "code": "invalid_contract",
+              "message": "binding.value: incompatible constant"
+            },
+            {
+              "path": "/definition/input_bindings/0/value",
+              "code": "invalid_contract",
+              "message": "binding.value: incompatible constant"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "nested_publication": {
+    "format_version": 11,
+    "id": "calculate-child",
+    "project": "/workflow-fixture/native",
+    "revision": 1,
+    "definition": {
+      "control": {
+        "nodes": {
+          "end": {
+            "type": "end",
+            "outcome": "done"
+          },
+          "start": {
+            "type": "start"
+          },
+          "work": {
+            "type": "activity",
+            "activity": 0
+          }
+        },
+        "edges": {
+          "start": {
+            "next": "work"
+          },
+          "work": {
+            "ok": "end"
+          }
+        }
+      },
+      "outputs": {
+        "fields": {
+          "next": {
+            "value_type": "integer",
+            "required": true,
+            "default": null
+          }
+        }
+      },
+      "outcomes": [
+        "done"
+      ],
+      "inputs": {
+        "fields": {
+          "value": {
+            "value_type": "integer",
+            "required": true,
+            "default": null
+          }
+        }
+      },
+      "subject": null,
+      "instances": [
+        {
+          "descriptor": {
+            "namespace": "custom",
+            "name": "calculate",
+            "version": 1
+          },
+          "config": {},
+          "execution_policy": "local"
+        }
+      ],
+      "input_bindings": {
+        "0": {
+          "value": {
+            "source": "workflow_input",
+            "field": "value"
+          }
+        }
+      },
+      "conditions": {},
+      "collections": {},
+      "loops": {},
+      "forks": {},
+      "output_bindings": {
+        "next": {
+          "source": "activity_output",
+          "activity": 0,
+          "field": "next"
+        }
+      },
+      "subflows": []
+    },
+    "pins": {
+      "pins": [
+        {
+          "id": {
+            "namespace": "custom",
+            "name": "calculate",
+            "version": 1
+          },
+          "sha256": "437063cd44898d84189c4e7f71265299bf4e83c0ad7fc9c85466a35d2360fbb1"
+        }
+      ]
+    },
+    "subflow_pins": []
+  },
+  "correction_region": {
+    "reply": {
+      "type": "correction_region",
+      "value": {
+        "region": {
+          "max_corrections": 2,
+          "criteria": {
+            "criteria": [
+              "independent_review"
+            ]
+          },
+          "selected": {
+            "descriptor": {
+              "namespace": "user",
+              "name": "selected-correction",
+              "version": 1
+            },
+            "config": {},
+            "execution_policy": "native"
+          }
+        },
+        "definition": {
+          "control": {
+            "nodes": {
+              "correction": {
+                "type": "loop",
+                "scope": "correction",
+                "condition": "requires-correction"
+              },
+              "entry": {
+                "type": "start"
+              },
+              "operator": {
+                "type": "end",
+                "outcome": "operator"
+              },
+              "success": {
+                "type": "end",
+                "outcome": "success"
+              },
+              "technical-failure": {
+                "type": "end",
+                "outcome": "technical_failure"
+              }
+            },
+            "edges": {
+              "correction": {
+                "complete": "success",
+                "exhausted": "operator",
+                "failed": "technical-failure",
+                "unknown": "operator"
+              },
+              "entry": {
+                "next": "correction"
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "repeat": {
+                "value_type": "boolean",
+                "required": false,
+                "default": null
+              },
+              "state": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "operator",
+            "success",
+            "technical_failure"
+          ],
+          "inputs": {
+            "fields": {
+              "context": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              },
+              "repeat": {
+                "value_type": "boolean",
+                "required": false,
+                "default": null
+              },
+              "state": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "instances": [
+            {
+              "descriptor": {
+                "namespace": "user",
+                "name": "selected-correction",
+                "version": 1
+              },
+              "config": {},
+              "execution_policy": "native"
+            }
+          ],
+          "input_bindings": {
+            "0": {
+              "context": {
+                "source": "workflow_input",
+                "field": "context"
+              },
+              "criteria": {
+                "source": "constant",
+                "value": {
+                  "criteria": [
+                    "independent_review"
+                  ]
+                }
+              }
+            }
+          },
+          "conditions": {
+            "requires-correction": {
+              "operator": "compare",
+              "comparison": "equal",
+              "left": {
+                "source": "scope_output",
+                "scope": "correction",
+                "field": "repeat"
+              },
+              "right": {
+                "source": "constant",
+                "value": true
+              }
+            }
+          },
+          "collections": {},
+          "loops": {
+            "correction": {
+              "body": 0,
+              "max_iterations": 3,
+              "carried": {
+                "fields": {
+                  "repeat": {
+                    "value_type": "boolean",
+                    "required": false,
+                    "default": null
+                  },
+                  "state": {
+                    "value_type": "object",
+                    "required": true,
+                    "default": null
+                  }
+                }
+              },
+              "initial": {
+                "state": {
+                  "source": "workflow_input",
+                  "field": "state"
+                }
+              },
+              "result": {
+                "repeat": {
+                  "source": "activity_output",
+                  "activity": 0,
+                  "field": "repeat"
+                },
+                "state": {
+                  "source": "activity_output",
+                  "activity": 0,
+                  "field": "state"
+                }
+              }
+            }
+          },
+          "forks": {},
+          "output_bindings": {
+            "repeat": {
+              "source": "scope_output",
+              "scope": "correction",
+              "field": "repeat"
+            },
+            "state": {
+              "source": "scope_output",
+              "scope": "correction",
+              "field": "state"
+            }
+          },
+          "subflows": [
+            {
+              "project": "/workflow-fixture/native",
+              "id": "selected-correction",
+              "revision": 1
+            }
+          ]
+        }
+      }
+    },
+    "selected_publication": {
+      "type": "publication",
+      "value": {
+        "format_version": 11,
+        "id": "selected-correction",
+        "project": "/workflow-fixture/native",
+        "revision": 1,
+        "definition": {
+          "control": {
+            "nodes": {
+              "end": {
+                "type": "end",
+                "outcome": "assessed"
+              },
+              "start": {
+                "type": "start"
+              },
+              "work": {
+                "type": "activity",
+                "activity": 0
+              }
+            },
+            "edges": {
+              "start": {
+                "next": "work"
+              },
+              "work": {
+                "assessed": "end"
+              }
+            }
+          },
+          "outputs": {
+            "fields": {
+              "repeat": {
+                "value_type": "boolean",
+                "required": false,
+                "default": null
+              },
+              "state": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "assessed"
+          ],
+          "inputs": {
+            "fields": {
+              "context": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              },
+              "criteria": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              },
+              "repeat": {
+                "value_type": "boolean",
+                "required": false,
+                "default": null
+              },
+              "state": {
+                "value_type": "object",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": {
+            "required": true,
+            "fields": {
+              "fields": {
+                "workspace": {
+                  "value_type": "workspace_reference",
+                  "required": true,
+                  "default": null
+                }
+              }
+            }
+          },
+          "instances": [
+            {
+              "descriptor": {
+                "namespace": "native",
+                "name": "correction.assess",
+                "version": 1
+              },
+              "config": {},
+              "execution_policy": "native"
+            }
+          ],
+          "input_bindings": {
+            "0": {
+              "context": {
+                "source": "workflow_input",
+                "field": "context"
+              },
+              "criteria": {
+                "source": "workflow_input",
+                "field": "criteria"
+              },
+              "repeat": {
+                "source": "workflow_input",
+                "field": "repeat"
+              },
+              "state": {
+                "source": "workflow_input",
+                "field": "state"
+              }
+            }
+          },
+          "conditions": {},
+          "collections": {},
+          "loops": {},
+          "forks": {},
+          "output_bindings": {
+            "repeat": {
+              "source": "activity_output",
+              "activity": 0,
+              "field": "repeat"
+            },
+            "state": {
+              "source": "activity_output",
+              "activity": 0,
+              "field": "state"
+            }
+          },
+          "subflows": []
+        },
+        "pins": {
+          "pins": [
+            {
+              "id": {
+                "namespace": "native",
+                "name": "correction.assess",
+                "version": 1
+              },
+              "sha256": "96beec830942dfe7b3e6f4d86e821a822b7b5e2e2a90edeb29c677c38bf58ade"
+            }
+          ]
+        },
+        "subflow_pins": [],
+        "editor": {
+          "labels": {},
+          "presets": {}
+        }
+      }
+    },
+    "inspection": {
+      "publication": "bounded-correction",
+      "active_scope": {
+        "identity": {
+          "scope": "correction",
+          "generation": 2
+        },
+        "kind": {
+          "type": "loop",
+          "iteration": 1
+        }
+      }
+    }
+  }
+}

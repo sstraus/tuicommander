@@ -44,7 +44,6 @@ export interface BranchDetail {
 	is_current: boolean;
 	is_remote: boolean;
 	is_main: boolean;
-	is_merged: boolean;
 	ahead: number | null;
 	behind: number | null;
 	upstream: string | null;

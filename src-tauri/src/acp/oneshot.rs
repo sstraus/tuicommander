@@ -74,6 +74,9 @@ pub(crate) struct EgoTurn {
     /// mode has that a person would not expect: the model reached for a tool
     /// and an unattended turn cannot grant one.
     pub declined: usize,
+    /// Internal provenance; the one-shot wire response remains unchanged.
+    #[serde(skip)]
+    pub session_id: Option<String>,
 }
 
 /// A request that must be settled without granting anything.
@@ -160,6 +163,7 @@ impl TurnCollector {
             text: self.text.trim().to_string(),
             stop_reason: self.stop_reason?,
             declined: self.declined,
+            session_id: None,
         })
     }
 
@@ -496,9 +500,11 @@ async fn drive(
                 .with_session_id(session_id),
         );
     }
-    collected
-        .finish()
-        .ok_or_else(|| AcpClientError::transport_closed(connection_id).with_session_id(session_id))
+    let mut turn = collected.finish().ok_or_else(|| {
+        AcpClientError::transport_closed(connection_id).with_session_id(session_id.clone())
+    })?;
+    turn.session_id = Some(session_id.to_string());
+    Ok(turn)
 }
 
 /// Read until the turn settles, refusing every question on the way.
@@ -613,6 +619,10 @@ mod tests {
         .await
         .expect("AI Chat instructions must not alter an unattended launch");
         assert_eq!(turn.text, "onetwo");
+        assert!(turn.session_id.as_ref().is_some_and(|id| !id.is_empty()));
+        let wire = serde_json::to_value(&turn).unwrap();
+        assert!(wire.get("sessionId").is_none());
+        assert!(wire.get("session_id").is_none());
     }
 
     fn chunk(text: &str) -> AcpClientEvent {
@@ -853,6 +863,7 @@ mod tests {
             text: text.to_string(),
             stop_reason: v1::StopReason::EndTurn,
             declined,
+            session_id: None,
         }
     }
 

@@ -1,0 +1,59 @@
+/* Scope controls of the All Changes view, below the summary header. */
+.scopeBar {
+  composes: toolbar from "../ui/FormControls.module.css";
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-highlight);
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+}
+
+.commitList {
+  display: flex;
+  flex-direction: column;
+  max-height: 180px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+button[data-control-layout="row"].commitRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 12px;
+  border: none;
+  background: transparent;
+  color: var(--fg-primary);
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+button[data-control-layout="row"].commitRow:hover {
+  background: var(--bg-tertiary);
+}
+
+button[data-control-layout="row"].commitRowSelected {
+  background: var(--bg-secondary);
+}
+
+.commitHash {
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+}
+
+.commitSubject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

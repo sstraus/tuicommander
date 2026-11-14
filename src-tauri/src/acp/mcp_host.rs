@@ -88,6 +88,13 @@ pub trait McpOverAcpHost: Send + Sync {
     /// Release everything the connection held. Called once per connection,
     /// whether ego disconnected it or the ACP connection ended.
     fn disconnect(&self, connection_id: &str);
+
+    /// Tools whose every call this host already admits through its own ledger.
+    /// A mediated launch pre-approves them in ego, which otherwise asks a person
+    /// that no unattended turn has and refuses the call.
+    fn preapproved_tools(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// The MCP connections one ACP connection has open, and the host behind them.

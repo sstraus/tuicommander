@@ -56,10 +56,6 @@ impl RunStore {
         run.updated_ms = now_ms;
         if !next.is_open() {
             run.finished_ms = Some(now_ms);
-            super::triage::missing_triage_decision(&mut run);
-        }
-        if let Some(value) = details.workflow_binding {
-            run.workflow_binding = Some(value);
         }
         if let Some(value) = details.task_id {
             run.task_id = Some(value);
@@ -113,9 +109,6 @@ impl RunStore {
             }
             run.precheck_outcome = Some(value);
         }
-        if !next.is_open() && next != RunStatus::Completed && run.trigger.event_key().is_some() {
-            run.outcome = Some(RunOutcome::decision(&status(next)?, run.reason.clone()));
-        }
         write(&tx, &run)?;
         tx.commit().map_err(error)?;
         Ok(run)
@@ -141,31 +134,10 @@ impl RunStore {
         };
         for mut run in runs {
             run.status = RunStatus::Interrupted;
-            super::triage::missing_triage_decision(&mut run);
             run.updated_ms = now_ms.max(run.updated_ms);
             run.finished_ms = Some(run.updated_ms);
             run.reason =
                 Some("Application restarted before execution finished; not retried".into());
-            if run.trigger.event_key().is_some() {
-                run.outcome = Some(RunOutcome::decision("interrupted", run.reason.clone()));
-            }
-            write(&tx, &run)?;
-        }
-        // A review POST may have arrived before the process died. Never retry it.
-        let pending_reviews = {
-            let mut stmt = tx.prepare("SELECT snapshot_json FROM automation_runs WHERE json_extract(snapshot_json,'$.trigger.kind')='pull_request_review' AND json_extract(snapshot_json,'$.outcome.decision')='publication_pending'").map_err(error)?;
-            stmt.query_map([], |r| r.get::<_, String>(0))
-                .map_err(error)?
-                .map(|row| decode::<AutomationRun>(row.map_err(error)?))
-                .collect::<Result<Vec<_>, String>>()?
-        };
-        for mut run in pending_reviews {
-            if let Some(outcome) = &mut run.outcome {
-                outcome.decision = "publication_unknown".into();
-                outcome.failure_reason =
-                    Some("Application restarted during review publication; not retried".into());
-            }
-            run.updated_ms = now_ms.max(run.updated_ms);
             write(&tx, &run)?;
         }
         // An attempted send may already have arrived. Mark it unknown, never claim again.

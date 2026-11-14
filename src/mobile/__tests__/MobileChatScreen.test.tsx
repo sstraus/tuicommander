@@ -82,6 +82,56 @@ afterEach(() => {
 });
 
 describe("mobile ego chat", () => {
+	// Catches: separate title/controls rows waste phone height, or icon-only New loses its name or action.
+	it("keeps conversation controls in a single header with an accessible plus action", () => {
+		const current = chat();
+		createAcpChat.mockReturnValue(current);
+		const { container } = render(() => <MobileChatScreen />);
+		const title = screen.getByText("AI Chat");
+		const picker = screen.getByRole("combobox", { name: "Conversation" });
+		const add = screen.getByRole("button", { name: "New conversation" });
+		expect(container.querySelectorAll("header")).toHaveLength(1);
+		expect(picker.closest("header")).toBe(title.closest("header"));
+		expect(add.closest("header")).toBe(title.closest("header"));
+		expect(add.textContent?.trim()).toBe("");
+		expect(add.querySelector("svg")).not.toBeNull();
+		fireEvent.click(add);
+		expect(current.startSession).toHaveBeenCalledExactlyOnceWith();
+	});
+	// Catches: an empty or late optional catalogue leaves the active conversation absent from the native picker.
+	it("keeps the current conversation selected while its catalogue arrives", async () => {
+		const [sessions, setSessions] = createSignal<ReturnType<ReturnType<typeof chat>["sessions"]>>([]);
+		createAcpChat.mockReturnValue({ ...chat(), sessions });
+		render(() => <MobileChatScreen />);
+		const picker = screen.getByRole("combobox", { name: "Conversation" }) as HTMLSelectElement;
+		expect(picker.value).toBe("current");
+		expect(picker.options).toHaveLength(1);
+		expect(picker.selectedOptions[0].textContent).toBe("Untitled conversation");
+		setSessions([{ sessionId: "previous", cwd: "/repo", title: "Earlier review" }]);
+		expect(picker.value).toBe("current");
+		setSessions([
+			{ sessionId: "previous", cwd: "/repo", title: "Earlier review" },
+			{ sessionId: "current", cwd: "/repo", title: "Current work" },
+		]);
+		expect(picker.value).toBe("current");
+		expect(Array.from(picker.options).filter((option) => option.value === "current")).toHaveLength(1);
+		fireEvent.change(picker, { target: { value: "previous" } });
+		expect(selectSession).toHaveBeenCalledExactlyOnceWith("previous");
+	});
+
+	// Catches: standalone Textarea chrome adds a second border and a three-row minimum inside the phone shell.
+	it("uses the embedded editor surface without losing mobile draft input", () => {
+		const current = chat();
+		createAcpChat.mockReturnValue(current);
+		const { container } = render(() => <MobileChatScreen />);
+		const editor = container.querySelector("textarea")!;
+		expect(editor).not.toHaveAttribute("data-form-control");
+		expect(editor).not.toHaveAttribute("embedded");
+		expect(editor.className).toBe("input");
+		fireEvent.input(editor, { target: { value: "Reply from the phone" } });
+		fireEvent.click(screen.getByRole("button", { name: "Send" }));
+		expect(current.send).toHaveBeenCalledExactlyOnceWith("Reply from the phone", [], []);
+	});
 	// Catches: failed settings reads are presented as an unconfigured ego installation forever.
 	it("waits for settings and retries them on recovery before claiming ego is unconfigured", async () => {
 		hydrate.mockResolvedValueOnce(false as never).mockResolvedValueOnce(true as never);
@@ -419,6 +469,17 @@ describe("mobile ego chat", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 		expect(current.recover).toHaveBeenCalledOnce();
 		expect(screen.queryByRole("button", { name: "Start new chat" })).toBeNull();
+	});
+
+	// Catches: the mobile transcript drops ego's provider-retry status, so a failing turn shows a bare working pulse.
+	it("shows the provider-retry status of a failing turn in the transcript", () => {
+		createAcpChat.mockReturnValue({
+			...chat(),
+			busy: () => true,
+			retry: () => "Provider overloaded, retrying in 2s (attempt 2/6)",
+		});
+		render(() => <MobileChatScreen />);
+		expect(screen.getByText("Provider overloaded, retrying in 2s (attempt 2/6)").getAttribute("role")).toBe("status");
 	});
 
 	it("keeps Retry for an error that carries no structured body", () => {

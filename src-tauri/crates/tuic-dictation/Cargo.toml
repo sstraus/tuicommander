@@ -13,7 +13,9 @@ tuic-core = { path = "../tuic-core", features = ["audio-output"] }
 cpal = "0.18.2"
 # symphonia-mp3: the Edge speech service answers in MP3.
 rodio = { version = "0.23", default-features = false, features = ["playback", "symphonia-mp3"] }
-whisper-rs = "0.16"
+# raw-api re-exports whisper-rs-sys: the backend label asks ggml's device
+# registry which GPU, if any, whisper.cpp will use.
+whisper-rs = { version = "0.16", features = ["raw-api"] }
 # Pocket TTS loads the runtime library shipped with its downloaded model. A
 # build-time download would make this native dependency harder to bundle.
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic"] }

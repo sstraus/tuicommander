@@ -9,14 +9,7 @@ impl StoryStore {
         patch: StoryPatch,
     ) -> Result<Story, String> {
         let plan_id = self.get_story(story_id)?.plan_id;
-        let project = self.get_plan(&plan_id)?.project;
         let preflight = DependencyPreflight::prepare(self, &plan_id)?;
-        // Same lock order as workflow start: run reservations, then story records.
-        let _reservation = crate::workflows::guard_story_amendment(
-            &self.db_path.with_file_name("workflow_runs.sqlite3"),
-            &project,
-            story_id,
-        )?;
         let mut conn = self.connect()?;
         let tx = immediate(&mut conn)?;
         preflight.validate(&tx)?;
@@ -113,7 +106,7 @@ impl StoryStore {
             }
             story.dependencies = dependencies;
         }
-        story.status = if dependencies_integrated(&tx, &story, &preflight)? {
+        story.status = if dependencies_integrated(&tx, &story)? {
             StoryStatus::Ready
         } else {
             StoryStatus::Backlog

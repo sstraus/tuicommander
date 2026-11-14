@@ -133,8 +133,10 @@ export interface SubscribePtyOptions {
 	/**
 	 * Receive structured LogLine objects from `format=log` frames.
 	 * Each LogLine has `spans: [{text, fg?, bg?, bold?, italic?, underline?}]`.
+	 * `source` is the log offset range `[offset, total)` the frame covers. Chrome rows
+	 * occupy offsets without being sent, so `lines.length` can be smaller than the range.
 	 */
-	onLogLines?: (lines: LogLine[]) => void;
+	onLogLines?: (lines: LogLine[], source?: { offset: number; total: number }) => void;
 	/** Receive current screen rows (LogLine objects with styled spans) pushed alongside log frames. */
 	onScreenRows?: (rows: unknown[]) => void;
 	/** Receive the current PTY input line text (extracted from prompt row). */

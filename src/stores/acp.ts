@@ -6,6 +6,7 @@ import type {
 	AcpClientEvent,
 	AcpConnectionId,
 	AcpConnectionSnapshot,
+	AcpHostRequestId,
 	AcpPendingInteraction,
 	AcpSessionConfigOption,
 	AcpSessionId,
@@ -33,6 +34,8 @@ export interface AcpTurnOutcome {
 interface AcpConnectionEntry {
 	/** Latest streamed completion per attachment, including v1 failures with no activeTurn. */
 	outcomes: Record<AcpSessionId, AcpTurnOutcome>;
+	/** Automatic compaction successors announced by ego (`_meta.ego.compacted`), by source session. */
+	successors: Record<AcpSessionId, AcpSessionId>;
 	snapshot: AcpConnectionSnapshot;
 	/**
 	 * The last sequence this store handled, or 0 for none.
@@ -42,6 +45,15 @@ interface AcpConnectionEntry {
 	 */
 	cursor: number;
 	interactions: AcpPendingInteraction[];
+	/**
+	 * Requests this window saw settled, newest last.
+	 *
+	 * A re-adopt applies a pending list it fetched before the old stream
+	 * delivered a settlement, and the new stream resumes after that frame. So
+	 * nothing would ever take the answered question away again: a settled id is
+	 * never admitted back.
+	 */
+	settled: AcpHostRequestId[];
 	/**
 	 * The journal no longer holds the sequence asked for.
 	 *
@@ -71,6 +83,13 @@ const [state, setState] = createStore<AcpState>({ connections: {} });
  * it and proved it exists — a frame for an unknown connection is dropped one
  * level up, where the reason for dropping it can be stated once.
  */
+/** Settled request ids remembered per connection; far more than ever open at once. */
+const SETTLED_RETAINED = 256;
+
+function admissible(entry: AcpConnectionEntry, requestId: AcpHostRequestId): boolean {
+	return !entry.settled.includes(requestId) && !entry.interactions.some((i) => i.requestId === requestId);
+}
+
 function reduceEvent(entry: AcpConnectionEntry, frame: Extract<AcpStreamFrame, { kind: "event" }>): void {
 	const event = frame.event;
 	switch (event.kind) {
@@ -84,6 +103,8 @@ function reduceEvent(entry: AcpConnectionEntry, frame: Extract<AcpStreamFrame, {
 			if (attachment) {
 				attachment.state = event.state;
 				if (event.state === "cancelling" && attachment.activeTurn) attachment.activeTurn.state = "cancelling";
+				// A reattach restarts the revision at 0; the old one must not outrank it.
+				if (event.state === "detached") attachment.activity = undefined;
 			}
 			break;
 		}
@@ -127,6 +148,19 @@ function reduceEvent(entry: AcpConnectionEntry, frame: Extract<AcpStreamFrame, {
 				const attachment = entry.snapshot.attachments.find((a) => a.sessionId === frame.sessionId);
 				if (attachment) attachment.availableCommands = update.availableCommands as AcpAvailableCommand[];
 			}
+			const compacted = (
+				(update as { _meta?: { ego?: { compacted?: unknown } } })._meta?.ego as { compacted?: unknown } | undefined
+			)?.compacted as { version?: unknown; sourceSessionId?: unknown; targetSessionId?: unknown } | undefined;
+			if (
+				update.sessionUpdate === "session_info_update" &&
+				compacted?.version === 1 &&
+				typeof compacted.sourceSessionId === "string" &&
+				typeof compacted.targetSessionId === "string" &&
+				compacted.targetSessionId !== compacted.sourceSessionId &&
+				compacted.sourceSessionId === frame.sessionId
+			) {
+				entry.successors[compacted.sourceSessionId] = compacted.targetSessionId;
+			}
 			if (update.sessionUpdate === "config_option_update" && Array.isArray(update.configOptions)) {
 				const attachment = entry.snapshot.attachments.find((a) => a.sessionId === frame.sessionId);
 				if (attachment) attachment.configOptions = update.configOptions as AcpSessionConfigOption[];
@@ -134,7 +168,7 @@ function reduceEvent(entry: AcpConnectionEntry, frame: Extract<AcpStreamFrame, {
 			break;
 		}
 		case "permissionRequested":
-			if (!entry.interactions.some((i) => i.requestId === event.requestId)) {
+			if (admissible(entry, event.requestId)) {
 				entry.interactions.push({
 					kind: "permission",
 					requestId: event.requestId,
@@ -144,7 +178,7 @@ function reduceEvent(entry: AcpConnectionEntry, frame: Extract<AcpStreamFrame, {
 			}
 			break;
 		case "elicitationRequested":
-			if (!entry.interactions.some((i) => i.requestId === event.requestId)) {
+			if (admissible(entry, event.requestId)) {
 				entry.interactions.push({
 					kind: "elicitation",
 					requestId: event.requestId,
@@ -158,7 +192,17 @@ function reduceEvent(entry: AcpConnectionEntry, frame: Extract<AcpStreamFrame, {
 			// Whoever answered it, the question is gone. This window is not
 			// necessarily the one that answered.
 			entry.interactions = entry.interactions.filter((i) => i.requestId !== event.requestId);
+			if (!entry.settled.includes(event.requestId)) {
+				entry.settled.push(event.requestId);
+				if (entry.settled.length > SETTLED_RETAINED) entry.settled.shift();
+			}
 			break;
+		case "activityChanged": {
+			const attachment = entry.snapshot.attachments.find((a) => a.sessionId === frame.sessionId);
+			if (attachment && (attachment.activity?.revision ?? -1) <= event.activity.revision)
+				attachment.activity = event.activity;
+			break;
+		}
 		default:
 			// Unprojected events still move the cursor.
 			break;
@@ -190,7 +234,15 @@ export const acpStore = {
 			produce((s: AcpState) => {
 				const existing = s.connections[snapshot.connectionId];
 				if (existing) {
-					existing.snapshot = snapshot;
+					// A snapshot fetched before a newer stream frame must not
+					// roll the activity back: keep whichever revision is higher.
+					const attachments = snapshot.attachments.map((attachment) => {
+						const held = existing.snapshot.attachments.find((a) => a.sessionId === attachment.sessionId);
+						return held?.activity && held.activity.revision > (attachment.activity?.revision ?? -1)
+							? { ...attachment, activity: held.activity }
+							: attachment;
+					});
+					existing.snapshot = { ...snapshot, attachments };
 					for (const session of Object.keys(existing.outcomes)) {
 						if (!snapshot.attachments.some((attachment) => attachment.sessionId === session))
 							delete existing.outcomes[session];
@@ -200,8 +252,10 @@ export const acpStore = {
 				s.connections[snapshot.connectionId] = {
 					snapshot,
 					outcomes: {},
+					successors: {},
 					cursor: 0,
 					interactions: [],
+					settled: [],
 					gap: null,
 					streaming: false,
 				};
@@ -214,7 +268,7 @@ export const acpStore = {
 		setState(
 			produce((s: AcpState) => {
 				const entry = s.connections[connectionId];
-				if (entry) entry.interactions = [...interactions];
+				if (entry) entry.interactions = interactions.filter((i) => !entry.settled.includes(i.requestId));
 			}),
 		);
 	},
@@ -340,6 +394,11 @@ export const acpStore = {
 
 	attachment(connectionId: AcpConnectionId, sessionId: AcpSessionId): AcpAttachmentSnapshot | null {
 		return this.attachments(connectionId).find((a) => a.sessionId === sessionId) ?? null;
+	},
+
+	/** The session ego continued this one in after an automatic compaction, if it announced one. */
+	successor(connectionId: AcpConnectionId, sessionId: AcpSessionId): AcpSessionId | null {
+		return state.connections[connectionId]?.successors[sessionId] ?? null;
 	},
 
 	turnOutcome(connectionId: AcpConnectionId, sessionId: AcpSessionId): AcpTurnOutcome | null {

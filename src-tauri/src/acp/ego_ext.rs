@@ -14,12 +14,39 @@
 //! `deny_unknown_fields`, so an extra field here is a rejected call, not a
 //! tolerated one.
 
+use agent_client_protocol::schema::v1;
 use agent_client_protocol::{Error, JsonRpcMessage, JsonRpcRequest, UntypedMessage};
 use serde::{Deserialize, Serialize};
 
 use super::{
     EGO_COMPACT_METHOD, EGO_PAUSE_METHOD, EGO_RESUME_METHOD, EgoCompactResponse, EgoHoldResponse,
 };
+
+/// Ego reports a session it could not set up as a config update with
+/// `_meta.ego.configOptions.state = "failed"` and its JSON-RPC error in
+/// `_meta.ego.error` (ego-acp serve.rs `failed_config_options`). No offers
+/// follow it, so a caller that waits for one only reaches its deadline and
+/// loses ego's reason. Returns that reason; internal errors carry it in `data`.
+/// The actor keeps it in the attachment snapshot, so a waiter that starts after
+/// the update still reads it.
+pub(super) fn failed_configuration(options: &v1::ConfigOptionUpdate) -> Option<String> {
+    let ego = options.meta.as_ref()?.get("ego")?;
+    if ego["configOptions"]["state"] != "failed" {
+        return None;
+    }
+    let error = &ego["error"];
+    let mut reason = error["message"]
+        .as_str()
+        .unwrap_or("no error message")
+        .to_owned();
+    if let Some(data) = error.get("data").filter(|data| !data.is_null()) {
+        let data = data
+            .as_str()
+            .map_or_else(|| data.to_string(), str::to_owned);
+        reason = format!("{reason}: {data}");
+    }
+    Some(format!("ego session setup failed: {reason}"))
+}
 
 /// The version of the ego extensions this client speaks, and only this one.
 ///

@@ -5,6 +5,7 @@ import { progressStore } from "../stores/progress";
 import { settingsStore } from "../stores/settings";
 import { storiesUi } from "../stores/storiesUi";
 import { uiStore } from "../stores/ui";
+import { workflowsUi } from "../stores/workflowsUi";
 import {
 	canQueueToActiveTerminal,
 	queueTextToActiveTerminal,
@@ -21,6 +22,9 @@ import { ReferencesPanel } from "./ReferencesPanel";
 
 const StoriesDialog = lazy(() =>
 	import("./StoriesDialog/StoriesDialog").then((module) => ({ default: module.StoriesDialog })),
+);
+const WorkflowsDialog = lazy(() =>
+	import("./WorkflowsDialog/WorkflowsDialog").then((module) => ({ default: module.WorkflowsDialog })),
 );
 const AIChatPanel = lazy(() => import("./AIChatPanel").then((module) => ({ default: module.AIChatPanel })));
 
@@ -120,6 +124,15 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
 					{(project) => (
 						<Suspense>
 							<StoriesDialog project={project} onClose={() => storiesUi.close()} />
+						</Suspense>
+					)}
+				</Show>
+			</Show>
+			<Show when={workflowsUi.visible()}>
+				<Show when={workflowsUi.project()} keyed>
+					{(project) => (
+						<Suspense>
+							<WorkflowsDialog project={project} onClose={() => workflowsUi.close()} />
 						</Suspense>
 					)}
 				</Show>

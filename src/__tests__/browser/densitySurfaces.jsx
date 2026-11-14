@@ -4,7 +4,7 @@ import '../../styles.css';
 const surface=new URLSearchParams(location.search).get('surface')??'terminal';
 // In-memory backend replies expose real layout, not persistence or transport behavior.
 window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
- if(command==='story_capabilities')return true;
+ if(command==='story_capabilities')return { backend: "native", operations: {} };
  if(command==='story_action_command')return args.action.action==='list_plans'?{type:'plans',value:[]}:{type:'plan_sources',value:[]};
  return undefined;
 },transformCallback:()=>0};

@@ -13,7 +13,18 @@ const BOARD_STATUSES: &[StoryStatus] = &[
     StoryStatus::Done,
 ];
 
-pub(super) fn project(
+/// Next-action group of a status: 0 QA, 1 in progress, 2 ready, 3 done.
+/// The one place that maps provider statuses to the panel order.
+fn order_group(status: StoryStatus) -> u8 {
+    match status {
+        StoryStatus::Qa | StoryStatus::Review => 0,
+        StoryStatus::InProgress | StoryStatus::Blocked => 1,
+        StoryStatus::Ready | StoryStatus::Backlog => 2,
+        StoryStatus::Done | StoryStatus::WontFix => 3,
+    }
+}
+
+pub(crate) fn project(
     stories: &[StoryRead],
     filter: &StoryFilter,
 ) -> (Vec<String>, Vec<StoryColumn>) {
@@ -25,7 +36,10 @@ pub(super) fn project(
         })
         .collect();
     let mut ids = Vec::new();
-    for read in stories {
+    let mut ordered: Vec<&StoryRead> = stories.iter().collect();
+    // Stable sort: equal group and priority keep the current order.
+    ordered.sort_by_key(|read| (order_group(read.story.status), read.story.priority));
+    for read in ordered {
         let story = &read.story;
         let closed = matches!(story.status, StoryStatus::Done | StoryStatus::WontFix);
         if story.archived != filter.archived
@@ -50,7 +64,7 @@ pub(super) fn project(
     (ids, columns)
 }
 
-fn validate(filter: &StoryFilter) -> Result<(), String> {
+pub(crate) fn validate(filter: &StoryFilter) -> Result<(), String> {
     if filter.untyped_only && filter.story_type.is_some() {
         return Err("untypedOnly and storyType are mutually exclusive".into());
     }

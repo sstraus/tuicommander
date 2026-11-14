@@ -52,6 +52,7 @@ impl ChatLaunch {
             executable: PathBuf::from(&self.executable),
             profile: self.profile.clone(),
             master_prompt: self.master_prompt.clone(),
+            ai_chat: true,
         }
     }
 }
@@ -283,6 +284,18 @@ pub(crate) async fn compact(
     Ok(result)
 }
 
+/// Registered peers of every AI Chat: daily chats per workspace and custom conversations.
+pub(crate) fn registered_ai_chat_peers(state: &AppState) -> Vec<String> {
+    let config = state.config.read();
+    config
+        .ai_chat_peer_ids
+        .values()
+        .chain(config.ai_chat_launches.values().map(|l| &l.peer_id))
+        .filter(|peer| state.peer_agents.contains_key(*peer))
+        .cloned()
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,6 +339,11 @@ mod tests {
             "fixture agent missing: {}",
             executable.display()
         );
+        std::fs::write(
+            dir.path().join("expected-master-prompt.txt"),
+            crate::acp::AI_CHAT_PRESENTATION_INSTRUCTIONS,
+        )
+        .unwrap();
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
         state.config.write().ego_executable = executable.to_string_lossy().into_owned();
         state.config.write().ego_profile = "machine".into();
@@ -389,7 +407,10 @@ mod tests {
         std::fs::write(dir.path().join("expected-profile.txt"), "machine").unwrap();
         std::fs::write(
             dir.path().join("expected-master-prompt.txt"),
-            "AI Chat master instructions:\nDelegate investigations.\nReturn to chat.",
+            format!(
+                "{}\n\nAI Chat master instructions:\nDelegate investigations.\nReturn to chat.",
+                crate::acp::AI_CHAT_PRESENTATION_INSTRUCTIONS
+            ),
         )
         .unwrap();
         let opened = open(&state, ChatOpenRequest::default()).await.unwrap();
@@ -422,9 +443,11 @@ mod tests {
         );
         let next = resolve(&state, &ChatOpenRequest::default()).await.unwrap();
         let spec = crate::acp::launch_spec(&next.ego_config(), &next.workspace).unwrap();
-        assert_eq!(
-            spec.args.last().unwrap(),
-            "AI Chat master instructions:\nNew instructions"
+        assert!(
+            spec.args
+                .last()
+                .unwrap()
+                .ends_with("AI Chat master instructions:\nNew instructions")
         );
         state
             .acp
@@ -433,7 +456,7 @@ mod tests {
             .unwrap();
     }
 
-    /// Catches: blank prompts inject an empty flag, @ text reads a file, or UTF-8 limits count characters.
+    /// Catches: blank prompts lose host guidance, @ text reads a file, or host text consumes the user byte limit.
     #[tokio::test]
     async fn master_prompt_launch_preserves_literals_and_enforces_byte_limit() {
         let dir = tempfile::TempDir::new_in(tuic_test_support::test_temp_root()).unwrap();
@@ -443,26 +466,37 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         state.config.write().ai_chat_workspace = dir.path().to_string_lossy().into_owned();
-        for (text, expected) in [
-            ("", None),
-            (
-                "@private.txt\n--system",
-                Some("AI Chat master instructions:\n@private.txt\n--system"),
-            ),
-        ] {
+        for text in ["", "@private.txt\n--system"] {
             state.config.write().ai_chat_master_prompt = text.into();
             let launch = resolve(&state, &ChatOpenRequest::default()).await.unwrap();
             let spec = crate::acp::launch_spec(&launch.ego_config(), &launch.workspace).unwrap();
             assert!(!spec.args.iter().any(|arg| arg == "--system"));
-            let index = spec.args.iter().position(|arg| arg == "--append-system");
-            assert_eq!(index.map(|i| spec.args[i + 1].as_str()), expected);
+            let index = spec
+                .args
+                .iter()
+                .position(|arg| arg == "--append-system")
+                .unwrap();
+            let instructions = &spec.args[index + 1];
+            assert!(instructions.contains("fenced code blocks with the `mermaid` language tag"));
+            assert!(instructions.contains("prefer Mermaid over ASCII diagrams"));
+            assert!(instructions.contains("Use diagrams only when useful"));
+            if text.is_empty() {
+                assert!(!instructions.contains("AI Chat master instructions:"));
+            } else {
+                assert!(
+                    instructions.ends_with("AI Chat master instructions:\n@private.txt\n--system")
+                );
+            }
         }
         for text in ["a".repeat(8192), "é".repeat(4096)] {
             let mut document = serde_json::to_value(crate::config::AppConfig::default()).unwrap();
             document["ai_chat_master_prompt"] = serde_json::json!(text);
             let config: crate::config::AppConfig = serde_json::from_value(document).unwrap();
             state.config.write().ai_chat_master_prompt = config.ai_chat_master_prompt;
-            assert!(resolve(&state, &ChatOpenRequest::default()).await.is_ok());
+            let launch = resolve(&state, &ChatOpenRequest::default()).await.unwrap();
+            let spec = crate::acp::launch_spec(&launch.ego_config(), &launch.workspace).unwrap();
+            assert!(spec.args.last().unwrap().ends_with(&text));
+            assert!(spec.args.last().unwrap().len() > 8192);
         }
         for text in ["a".repeat(8193), "é".repeat(4097), "secret\0text".into()] {
             let mut document = serde_json::to_value(crate::config::AppConfig::default()).unwrap();
@@ -549,12 +583,14 @@ mod tests {
                 "-C",
                 custom.workspace.to_str().unwrap(),
                 "--profile",
-                "coordinator"
+                "coordinator",
+                "--append-system",
+                crate::acp::AI_CHAT_PRESENTATION_INSTRUCTIONS,
             ]
         );
         let other = resolve(&state, &ChatOpenRequest::default()).await.unwrap();
         let other_spec = crate::acp::launch_spec(&other.ego_config(), &other.workspace).unwrap();
-        assert_eq!(other_spec.args.last().unwrap(), "daily");
+        assert_eq!(&other_spec.args[3..5], &["--profile", "daily"]);
         assert_ne!(custom.peer_id, other.peer_id);
         assert_eq!(state.config.read().ego_profile, defaults.ego_profile);
         assert_eq!(state.config.read().ego_executable, defaults.ego_executable);
@@ -608,6 +644,19 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(restored, launch);
+        let spec = crate::acp::launch_spec(&restored.ego_config(), &restored.workspace).unwrap();
+        assert!(
+            spec.args
+                .last()
+                .unwrap()
+                .contains("prefer Mermaid over ASCII diagrams")
+        );
+        assert!(
+            spec.args
+                .last()
+                .unwrap()
+                .ends_with("AI Chat master instructions:\nSaved instructions")
+        );
         let error = resolve(
             &restarted,
             &ChatOpenRequest {

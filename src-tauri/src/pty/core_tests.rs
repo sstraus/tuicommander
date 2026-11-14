@@ -450,6 +450,37 @@ fn test_ego_is_always_hook_instrumented() {
     assert!(hook_instrumented_for(&agents, Some("ego")));
 }
 
+// Catches: a saved hook preference disables heuristic questions on native Windows.
+#[test]
+fn windows_saved_hooks_keep_heuristic_detection_and_native_ego() {
+    let mut agents = crate::config::AgentsConfig::default();
+    for preference in [None, Some(true), Some(false)] {
+        for agent in ["claude", "codex", "gemini", "grok", "opencode", "pi"] {
+            agents.agents.insert(
+                agent.into(),
+                crate::config::AgentSettings {
+                    hook_instrumentation: preference,
+                    native_status_signals: preference,
+                    ..Default::default()
+                },
+            );
+            let instrumented = hook_instrumented_on(&agents, Some(agent), true);
+            assert!(
+                !suppress_heuristic_question(
+                    instrumented,
+                    &ParsedEvent::Question {
+                        prompt_text: "Approve this action?".into(),
+                        confident: true,
+                    }
+                ),
+                "{agent}/{preference:?}"
+            );
+        }
+        assert!(hook_instrumented_on(&agents, Some("ego"), true));
+    }
+    assert!(!hook_instrumented_on(&agents, None, true));
+}
+
 // --- parse_osc7_cwd tests (story 1558-81bb) ---
 
 #[test]
@@ -1842,8 +1873,95 @@ fn test_codex_moving_working_row_reopens_completed_internal_continuation() {
     assert!(!lifecycle.idle_confirmed());
 }
 
+// Catches: Claude's Stop-hook recovery restores a Codex completion after an internal
+// continuation reopens it, allowing queued mail into a non-ready composer (#2837-df6a).
+#[cfg(unix)]
 #[test]
-fn test_claude_active_marker_reopens_premature_stop_hook_completion() {
+fn codex_reopen_unknown_screen_does_not_restore_idle_or_deliver_mail() {
+    let state = Arc::new(crate::state::tests_support::make_test_app_state());
+    let sid = "codex-reopen-no-claude-recovery";
+    agent_session(&state, sid, SHELL_IDLE);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("codex".into());
+    let bytes = insert_recording_session(&state, sid);
+    let silence = state.session_maps.silence_states.get(sid).unwrap().clone();
+    silence.lock().note_explicit_state(SHELL_IDLE, true);
+    apply_working_evidence(
+        &state,
+        &silence,
+        sid,
+        now_epoch_ms(),
+        "working-screen-movement",
+    );
+    assert_eq!(
+        state
+            .session_maps
+            .shell_states
+            .get(sid)
+            .unwrap()
+            .load(Ordering::Acquire),
+        SHELL_BUSY
+    );
+    assert!(!silence.lock().idle_confirmed());
+    assert!(matches!(
+        deliver_notice_to_pty(&state, sid, PEER_MAIL_WAKE),
+        PtyDelivery::Queued
+    ));
+    let epoch = state
+        .session_maps
+        .session_states
+        .get(sid)
+        .unwrap()
+        .turn_epoch;
+    let first = try_timer_idle_transition(
+        &state,
+        &silence,
+        sid,
+        AgentScreenActivity::Unknown,
+        Some("codex"),
+        Some(epoch),
+    );
+    state
+        .process_snapshot_cache
+        .store(Some(vec![process(10, 1, "codex", "codex")]));
+    refresh_background_work_from_cached_snapshot(
+        &state,
+        sid,
+        10,
+        "codex",
+        epoch,
+        state.process_snapshot_cache.load(),
+    );
+    let second = try_timer_idle_transition(
+        &state,
+        &silence,
+        sid,
+        AgentScreenActivity::Unknown,
+        Some("codex"),
+        Some(epoch),
+    );
+    assert!(
+        !first.transitioned && !second.transitioned,
+        "a Codex continuation must not regain its old idle"
+    );
+    assert!(!silence.lock().idle_confirmed());
+    flush_pending_injections_blocking(&state, sid);
+    assert!(
+        bytes.lock().unwrap().is_empty(),
+        "queued mail must remain unwritten on an Unknown Codex screen"
+    );
+    assert_eq!(
+        state.pending_injections.get(sid).map(|queue| queue.len()),
+        Some(1)
+    );
+}
+
+#[test]
+fn test_claude_native_stop_preserves_suggestions_during_retained_marker() {
     use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 
     let state = crate::state::tests_support::make_test_app_state();
@@ -1866,6 +1984,7 @@ fn test_claude_active_marker_reopens_premature_stop_hook_completion() {
         .insert(session_id.into(), AtomicU64::new(1));
     let mut lifecycle = SilenceState::new();
     lifecycle.mark_suggest_candidate(vec!["Premature follow-up".into()], 0);
+    lifecycle.note_explicit_state(SHELL_BUSY, true);
     lifecycle.note_explicit_state(SHELL_IDLE, true);
     let lifecycle = Arc::new(Mutex::new(lifecycle));
     state
@@ -1900,7 +2019,7 @@ fn test_claude_active_marker_reopens_premature_stop_hook_completion() {
             .get(session_id)
             .unwrap()
             .load(Ordering::Acquire),
-        SHELL_BUSY
+        SHELL_IDLE
     );
     assert!(
         state
@@ -1909,12 +2028,12 @@ fn test_claude_active_marker_reopens_premature_stop_hook_completion() {
             .get(session_id)
             .unwrap()
             .suggested_actions
-            .is_none()
+            .is_some()
     );
     let lifecycle = lifecycle.lock();
-    assert!(!lifecycle.completion_declared_for_epoch(0));
-    assert!(!lifecycle.explicit_idle());
-    assert!(!lifecycle.idle_confirmed());
+    assert!(lifecycle.completion_declared_for_epoch(0));
+    assert!(lifecycle.explicit_idle());
+    assert!(lifecycle.idle_confirmed());
 }
 
 #[test]
@@ -3048,7 +3167,7 @@ async fn hooked_claude_keeps_suggestions_distinct_from_real_questions() {
         );
     }
     assert!(
-        !silence.lock().hook_state_seen,
+        silence.lock().native_state.activity().is_none(),
         "configured hooks need a runtime marker before heuristic suppression"
     );
     let screen = state
@@ -4546,6 +4665,80 @@ fn user_submission_rearms_the_api_error_dedup() {
         api_errors(&mut rx),
         1,
         "the same API error after a user submission is a NEW failure and must notify"
+    );
+}
+
+/// Catches: the backend auto-retry types `continue` without the submission
+/// bookkeeping, so the identical API error of the failed retry stays deduped and
+/// retries 2 and 3 of the budget never arm (story 2746-2348).
+#[cfg(unix)]
+#[test]
+fn backend_auto_retry_submission_rearms_the_api_error_dedup() {
+    use crate::state::VtLogBuffer;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    const API_ERROR: &str = "API Error: 500 Internal server error.\r\n";
+
+    fn api_errors(rx: &mut tokio::sync::broadcast::Receiver<crate::state::AppEvent>) -> usize {
+        let mut count = 0;
+        while let Ok(evt) = rx.try_recv() {
+            if let crate::state::AppEvent::PtyParsed { parsed, .. } = evt
+                && parsed.get("type").and_then(|t| t.as_str()) == Some("api-error")
+            {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    let state = Arc::new(crate::state::tests_support::make_test_app_state());
+    let sid = "api-error-backend-retry-rearm";
+    crate::test_support::insert_recording_session(&state, sid);
+    agent_session(&state, sid, SHELL_IDLE);
+    let silence = state
+        .session_maps
+        .silence_states
+        .get(sid)
+        .map(|entry| Arc::clone(&*entry))
+        .unwrap();
+    silence.lock().startup_settled = true;
+    state
+        .grid
+        .vt_log_buffers
+        .insert(sid.to_string(), Mutex::new(VtLogBuffer::new(24, 80, 1000)));
+    state
+        .session_maps
+        .output_buffers
+        .insert(sid.to_string(), Mutex::new(OutputRingBuffer::new(4096)));
+    state
+        .session_maps
+        .last_output_ms
+        .insert(sid.to_string(), AtomicU64::new(0));
+
+    let mut cp = ChunkProcessor::new(None, None);
+    let mut rx = state.event_bus.subscribe();
+    cp.process_chunk("boot\r\n", &silence, sid, &state);
+    cp.process_chunk(API_ERROR, &silence, sid, &state);
+    assert_eq!(api_errors(&mut rx), 1, "the first API error must notify");
+
+    // The backend owner retries: the agent is idle at the prompt.
+    state
+        .session_maps
+        .shell_states
+        .get(sid)
+        .unwrap()
+        .store(SHELL_IDLE, Ordering::Release);
+    let armed = crate::api_retry::arm_after_error(&state, sid, "server", true).expect("armed");
+    crate::api_retry::fire(&state, sid, armed.generation, 0);
+    crate::pty::wait_for_injection_queue();
+    api_errors(&mut rx);
+
+    // The retried turn fails with the same text: a new failure, not a repaint.
+    cp.process_chunk(API_ERROR, &silence, sid, &state);
+    assert_eq!(
+        api_errors(&mut rx),
+        1,
+        "the API error of a failed auto-retry must notify, or the budget stops at one retry"
     );
 }
 
@@ -7285,11 +7478,13 @@ fn tuic_state_prompt_drives_shell_busy() {
 }
 
 #[test]
-fn tuic_state_idle_yields_no_awaiting_event() {
-    assert!(
-        tuic_state_awaiting_event("idle", 0).is_none(),
-        "idle only transitions shell_state; it pushes no awaiting event"
-    );
+fn tuic_state_idle_retracts_a_wait_in_the_same_chunk() {
+    // Catches: idle clears only an already-accumulated question, so a modal
+    // exception whose open/close frames share a PTY read latches awaiting.
+    assert!(matches!(
+        tuic_state_awaiting_event("idle", 0),
+        Some(ParsedEvent::UserInput { content, line: -1 }) if content.is_empty()
+    ));
 }
 
 #[test]
@@ -9888,7 +10083,11 @@ fn codex_0154_runtime_hook_idle_reaches_the_pty_state_machine() {
         SHELL_IDLE
     );
     let silence = silence.lock();
-    assert!(silence.hook_state_seen);
+    assert!(silence.native_state_received());
+    assert!(
+        silence.native_state.activity().is_none(),
+        "completion-only capture cannot disable busy adapters"
+    );
     assert!(silence.explicit_idle());
 }
 
@@ -9910,8 +10109,15 @@ fn codex_0154_runtime_hook_idle_reaches_the_pty_state_machine() {
 /// freshly written executable pays a code-signing scan on macOS (AGENTS.md).
 #[test]
 fn codex_notify_turn_complete_emits_the_idle_bytes_the_state_machine_accepts() {
-    let dir = tempfile::TempDir::new().unwrap();
+    let dir = tempfile::TempDir::new_in(crate::test_support::test_temp_root()).unwrap();
     crate::agent_hook_launch::regenerate_launch_assets(dir.path()).unwrap();
+    if cfg!(windows) {
+        assert!(
+            !dir.path().join("agent-hooks/codex-notify.sh").exists(),
+            "native Windows must not generate the POSIX notify artifact"
+        );
+        return;
+    }
     let script = std::fs::read_to_string(dir.path().join("agent-hooks/codex-notify.sh"))
         .expect("codex notify script must be generated");
 
@@ -10310,7 +10516,7 @@ fn completed_claude_prose_notification_does_not_flash_awaiting() {
         );
         processor.process_chunk(&screen, &silence, sid, &state);
         processor.process_chunk("\x1b]7770;state=idle\x07", &silence, sid, &state);
-        assert!(silence.lock().hook_state_seen);
+        assert!(silence.lock().native_state_received());
         let mut events = state.event_bus.subscribe();
         processor.process_chunk(notify, &silence, sid, &state);
         while let Ok(event) = events.try_recv() {
@@ -10403,7 +10609,7 @@ async fn visible_dialog_and_explicit_permission_still_badge_awaiting() {
         .map(str::to_string)
         .collect();
     let signals = [
-        rearm_awaiting_for_open_dialog(&ink, false, false, false)
+        rearm_awaiting_for_open_dialog(&ink, false, false, false, None)
             .expect("the visible Ink footer is a real dialog"),
         crate::output_parser::parse_choice_prompt(&choice)
             .expect("the numbered choice is a real dialog"),
@@ -10962,6 +11168,9 @@ fn retraction_skips_a_session_with_a_live_choice_prompt() {
         selection_mode: None,
         dismiss_key: None,
         amend_key: None,
+        header: None,
+        question_index: None,
+        question_count: None,
     });
     state
         .session_maps
@@ -11075,7 +11284,7 @@ async fn open_dialog_rearms_awaiting_after_a_sub_question_is_answered() {
         "…but the footer did not — this is why the changed-rows parser is blind"
     );
 
-    let evt = rearm_awaiting_for_open_dialog(&second, false, false, false)
+    let evt = rearm_awaiting_for_open_dialog(&second, false, false, false, None)
         .expect("an open dialog with the badge off must re-arm");
     let ParsedEvent::Question {
         prompt_text,
@@ -11107,21 +11316,21 @@ async fn open_dialog_rearms_awaiting_after_a_sub_question_is_answered() {
 fn rearm_stays_silent_unless_the_badge_is_actually_off() {
     let screen = askuserquestion_wizard_screen(1);
     assert!(
-        rearm_awaiting_for_open_dialog(&screen, true, false, false).is_none(),
+        rearm_awaiting_for_open_dialog(&screen, true, false, false, None).is_none(),
         "already awaiting — re-arming every repaint would storm"
     );
     assert!(
-        rearm_awaiting_for_open_dialog(&screen, false, true, false).is_none(),
+        rearm_awaiting_for_open_dialog(&screen, false, true, false, None).is_none(),
         "a live choice prompt owns awaiting through its own resolve path"
     );
     let no_dialog = vec!["· Gallivanting… (15m 12s)".to_string(), "❯".to_string()];
     assert!(
-        rearm_awaiting_for_open_dialog(&no_dialog, false, false, false).is_none(),
+        rearm_awaiting_for_open_dialog(&no_dialog, false, false, false, None).is_none(),
         "no dialog on screen, no badge"
     );
     let quoted = vec!["+  Enter to select · Esc to cancel".to_string()];
     assert!(
-        rearm_awaiting_for_open_dialog(&quoted, false, false, false).is_none(),
+        rearm_awaiting_for_open_dialog(&quoted, false, false, false, None).is_none(),
         "a diff line quoting the footer is not a dialog"
     );
 }
@@ -11130,7 +11339,7 @@ fn rearm_stays_silent_unless_the_badge_is_actually_off() {
 fn hook_instrumented_open_dialog_recovers_a_missing_question_badge() {
     let screen = askuserquestion_wizard_screen(0);
     assert!(
-        rearm_awaiting_for_open_dialog(&screen, false, false, false).is_some(),
+        rearm_awaiting_for_open_dialog(&screen, false, false, false, None).is_some(),
         "a visible dialog still needs the user when the hook's awaiting signal is absent"
     );
 }
@@ -11187,7 +11396,7 @@ async fn hooked_dialog_capture_preserves_question_until_the_dialog_is_answered()
         .screen_rows();
     crate::output_parser::ink_dialog_footer(&screen)
         .expect("the captured dialog must be visible at the observed geometry");
-    assert!(silence.lock().hook_state_seen);
+    assert!(silence.lock().native_state_received());
     assert!(
         await_session(&state, sid, |s| s.awaiting_input
             && s.question_text
@@ -11276,11 +11485,11 @@ async fn hooked_dialog_capture_preserves_question_until_the_dialog_is_answered()
 fn rearm_yields_to_a_question_already_parsed_in_the_same_tick() {
     let screen = askuserquestion_wizard_screen(0);
     assert!(
-        rearm_awaiting_for_open_dialog(&screen, false, false, false).is_some(),
+        rearm_awaiting_for_open_dialog(&screen, false, false, false, None).is_some(),
         "precondition: this screen re-arms when nothing else spoke"
     );
     assert!(
-        rearm_awaiting_for_open_dialog(&screen, false, false, true).is_none(),
+        rearm_awaiting_for_open_dialog(&screen, false, false, true, None).is_none(),
         "the parsed question is the better text; the footer must not overwrite it"
     );
 }
@@ -11300,7 +11509,10 @@ fn question_suppress_resolves_from_agent_config() {
     };
     agents.agents.insert("codex".into(), disabled);
 
-    assert!(hook_instrumented_for(&agents, Some("claude")));
+    assert_eq!(
+        hook_instrumented_for(&agents, Some("claude")),
+        !cfg!(windows)
+    );
     assert!(
         !hook_instrumented_for(&agents, Some("codex")),
         "explicit false"
@@ -12972,10 +13184,10 @@ mod grid_delivery_tests {
             session_id.to_string(),
             Mutex::new(crate::state::VtLogBuffer::new(24, 80, 1000)),
         );
-        state
-            .grid
-            .frame_dirty
-            .insert(session_id.to_string(), Arc::new(AtomicBool::new(false)));
+        state.grid.frame_dirty.insert(
+            session_id.to_string(),
+            Arc::new(crate::pty::frame_priority::FrameDirty::new(false)),
+        );
         let tx = new_grid_watch();
         let rx = tx.subscribe();
         state.grid.watch.insert(session_id.to_string(), tx);
@@ -14021,6 +14233,75 @@ async fn replay_claude_askuser_esc(
         }
     }
     (state, silence, processor)
+}
+
+/// Catches: Escape leaves the native AskUserQuestion tool and busy state latched.
+#[tokio::test(flavor = "current_thread")]
+async fn claude_2839_escape_retires_question_tool_and_idles() {
+    let sid = "5084b961-5870-4db4-9098-29ae04c1317e";
+    let capture = crate::pty_capture::decode_capture(&agent_prompt_fixture(
+        "claude-askuser-esc-21318-2839.tcap",
+    ))
+    .expect("valid live capture");
+    let (rows, cols) = capture.geometry.expect("recorded geometry");
+    let (state, silence) = chunk_trace_state(sid);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("claude".into());
+    state
+        .grid
+        .vt_log_buffers
+        .insert(sid.into(), Mutex::new(VtLogBuffer::new(rows, cols, 2000)));
+    crate::state::AppState::spawn_session_state_accumulator(state.clone());
+    let mut processor = ChunkProcessor::new(None, Some(sid.into()));
+    let mut utf8 = Utf8ReadBuffer::new();
+    let mut escape = EscapeAwareBuffer::new();
+    let mut saw_tool = false;
+    for record in capture.records {
+        if record.direction == crate::pty_capture::CaptureDirection::Output {
+            let data = utf8.push(&record.data);
+            let data = escape.push(&data);
+            let (clean, _) = crate::state::strip_kitty_sequences(&data);
+            processor.process_chunk(&clean, &silence, sid, &state);
+            for _ in 0..200 {
+                if state.session_maps.session_state_events.depth() == 0 {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            }
+            saw_tool |= state
+                .session_maps
+                .session_states
+                .get(sid)
+                .unwrap()
+                .current_tool
+                .as_deref()
+                == Some("AskUserQuestion");
+        }
+    }
+    assert!(saw_tool, "the recorded hook must publish the question tool");
+    assert_eq!(
+        shell_of(&state, sid),
+        SHELL_IDLE,
+        "Escape must end the turn"
+    );
+    let session = state.session_maps.session_states.get(sid).unwrap();
+    assert_eq!(
+        session.current_tool, None,
+        "Escape must retire the question tool"
+    );
+    assert!(
+        !session.awaiting_input,
+        "Escape must clear the question wait"
+    );
+    assert_eq!(
+        processor.claude_hooks.tools.current(),
+        None,
+        "the stale tool must not return on the next chunk"
+    );
 }
 
 /// Catches: the declined-question idle is recorded at a rank that later hooks
@@ -15593,6 +15874,128 @@ fn ego_recovery_clean_lifecycle_emits_no_recovery_events() {
     );
 }
 
+/// Catches: a follow-up ego turn reported completed/idle for its whole length
+/// because the previous turn's `suggest:` row, still on screen, is re-parsed as
+/// a fresh suggestion of the new turn (#2924-b811). The capture is a live ego
+/// 0.4.5 session: turn 1 ends with a suggest line, turn 2 is submitted and
+/// works for 1m28s before its own suggest line.
+#[test]
+fn ego_followup_turn_is_not_completed_by_previous_turn_suggest() {
+    let capture = crate::pty_capture::decode_capture(&agent_prompt_fixture(
+        "ego-followup-stale-suggest-2924.tcap",
+    ))
+    .expect("live ego capture");
+    // The capture began after launch, so it carries no geometry; the session
+    // was created with the default 24x80.
+    let (rows, cols) = capture.geometry.unwrap_or((24, 80));
+    let state = crate::state::tests_support::make_test_app_state();
+    let sid = "ego-followup-stale-suggest";
+    agent_session(&state, sid, SHELL_IDLE);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("ego".into());
+    state
+        .grid
+        .vt_log_buffers
+        .insert(sid.into(), Mutex::new(VtLogBuffer::new(rows, cols, 2000)));
+    let silence = state.session_maps.silence_states.get(sid).unwrap().clone();
+    let mut processor = ChunkProcessor::new(None, None);
+    let mut suggests_seen = 0;
+    let mut composer_ready = false;
+    let mut turn_two_submitted = false;
+    let mut mid_turn_two = None;
+    for record in capture.records {
+        let text = String::from_utf8_lossy(&record.data).into_owned();
+        match record.direction {
+            crate::pty_capture::CaptureDirection::Input => {
+                if composer_ready && text.ends_with('\r') {
+                    note_submitted_input(&state, sid);
+                    turn_two_submitted = suggests_seen == 1;
+                }
+            }
+            crate::pty_capture::CaptureDirection::Output => {
+                if text.contains("suggest: [") {
+                    suggests_seen += 1;
+                    if suggests_seen == 2 {
+                        break;
+                    }
+                }
+                processor.process_chunk(&text, &silence, sid, &state);
+                composer_ready |= text.contains("gpt-6-sol");
+                if turn_two_submitted && text.contains("sleep") {
+                    mid_turn_two = state.session_state_with_shell(sid);
+                }
+            }
+        }
+    }
+    let working = mid_turn_two.expect("turn two produced output before its own suggest");
+    assert_eq!(
+        (
+            working.shell_state.as_deref(),
+            working.agent_state.as_deref(),
+            working.suggested_actions.as_ref(),
+            silence.lock().completion_declared(),
+        ),
+        (Some("busy"), Some("working"), None, false)
+    );
+}
+
+/// Catches: the stale-suggest floor also swallowing the follow-up turn's OWN
+/// end-of-turn `suggest:` row, leaving the ego tab busy forever (#2924-b811).
+#[test]
+fn ego_followup_turn_own_suggest_still_declares_completion() {
+    let capture = crate::pty_capture::decode_capture(&agent_prompt_fixture(
+        "ego-followup-stale-suggest-2924.tcap",
+    ))
+    .expect("live ego capture");
+    let (rows, cols) = capture.geometry.unwrap_or((24, 80));
+    let state = crate::state::tests_support::make_test_app_state();
+    let sid = "ego-followup-own-suggest";
+    agent_session(&state, sid, SHELL_IDLE);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("ego".into());
+    state
+        .grid
+        .vt_log_buffers
+        .insert(sid.into(), Mutex::new(VtLogBuffer::new(rows, cols, 2000)));
+    let silence = state.session_maps.silence_states.get(sid).unwrap().clone();
+    let mut processor = ChunkProcessor::new(None, None);
+    let mut suggests_seen = 0;
+    let mut composer_ready = false;
+    for record in capture.records {
+        let text = String::from_utf8_lossy(&record.data).into_owned();
+        match record.direction {
+            crate::pty_capture::CaptureDirection::Input => {
+                if composer_ready && text.ends_with('\r') {
+                    note_submitted_input(&state, sid);
+                }
+            }
+            crate::pty_capture::CaptureDirection::Output => {
+                processor.process_chunk(&text, &silence, sid, &state);
+                composer_ready |= text.contains("gpt-6-sol");
+                if text.contains("suggest: [") {
+                    suggests_seen += 1;
+                    if suggests_seen == 2 {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(suggests_seen, 2, "capture holds turn two's own suggest row");
+    assert!(
+        silence.lock().completion_declared(),
+        "turn two's own suggest row must declare completion"
+    );
+}
+
 /// Catches: real ego output framing or interleaved input losing recovery transitions.
 #[test]
 fn ego_recovery_recorded_producer_replays_wait_retry_clear() {
@@ -16246,5 +16649,1107 @@ async fn captured_claude_preview_exports_shared_question_controls() {
         })
         .await,
         "both transports must publish clean native choices and their selected preview"
+    );
+}
+
+/// Catches: real Windows CONOUT$ hook OSC is dropped at reader boundaries,
+/// or its confident awaiting badge survives the recorded prompt/idle settlement.
+#[test]
+fn windows_conpty_recorded_hook_state_roundtrip() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../reports/agent-hooks/fixtures/windows-conpty-2631");
+    for case in ["bel-inherit", "bel-pipe", "st-inherit", "st-pipe"] {
+        let bytes = std::fs::read(root.join(case).join("conpty.bin")).unwrap();
+        let frames = std::fs::read_to_string(root.join(case).join("frames.tsv")).unwrap();
+        let recorded: Vec<&[u8]> = frames
+            .lines()
+            .map(|line| {
+                let fields: Vec<_> = line.split_whitespace().collect();
+                let offset: usize = fields[1].parse().unwrap();
+                let length: usize = fields[2].parse().unwrap();
+                &bytes[offset..offset + length]
+            })
+            .collect();
+        assert_eq!(recorded.concat(), bytes, "{case}: complete reader frames");
+        // Bytewise includes splits inside ESC ], the state payload, BEL and
+        // ESC backslash. Coalescing exercises SET/CLEAR in one production read.
+        for (schedule, chunks) in [
+            ("recorded", recorded),
+            ("bytewise", bytes.chunks(1).collect()),
+            ("coalesced", vec![bytes.as_slice()]),
+        ] {
+            let sid = "windows-conpty-replay";
+            let (state, silence) = chunk_trace_state(sid);
+            let mut receiver = state.event_bus.subscribe();
+            let mut processor = ChunkProcessor::new(None, None);
+            let mut utf8 = Utf8ReadBuffer::new();
+            let mut escape = EscapeAwareBuffer::new();
+            let mut transitions = Vec::new();
+            let mut previous = false;
+            for chunk in chunks {
+                let data = escape.push(&utf8.push(chunk));
+                let (clean, _) = crate::state::strip_kitty_sequences(&data);
+                processor.process_chunk(&clean, &silence, sid, &state);
+                while let Ok(event) = receiver.try_recv() {
+                    crate::state::tests_support::apply_replay_event(&state, &event);
+                    let session = state.session_maps.session_states.get(sid).unwrap();
+                    if session.awaiting_input != previous {
+                        if session.awaiting_input {
+                            assert!(session.question_confident, "{case}/{schedule}");
+                        }
+                        transitions.push(session.awaiting_input);
+                        previous = session.awaiting_input;
+                    }
+                }
+            }
+            // Independent oracle: the captured write-request is busy, awaiting,
+            // prompt, idle. It contains one wait and its native settlement.
+            assert_eq!(transitions, [true, false], "{case}/{schedule}");
+            assert_eq!(
+                state
+                    .session_maps
+                    .shell_states
+                    .get(sid)
+                    .unwrap()
+                    .load(Ordering::Relaxed),
+                SHELL_IDLE,
+                "{case}/{schedule}: recorded idle must settle busy"
+            );
+        }
+    }
+}
+
+/// Catches: Pi promise completion emits a frame that does not retract the
+/// confident wait in the real terminal parser and session accumulator.
+#[test]
+fn captured_pi_modal_completion_retracts_the_accumulated_wait() {
+    let capture =
+        crate::pty_capture::decode_capture(&agent_prompt_fixture("pi-extension-modals-2629.tcap"))
+            .expect("real Pi 0.84.2 modal recording");
+    assert_eq!(capture.geometry, Some((41, 128)));
+    let sid = "pi-modal-retraction";
+    let (state, silence) = chunk_trace_state(sid);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("pi".into());
+    let mut receiver = state.event_bus.subscribe();
+    let mut processor = ChunkProcessor::new(None, None);
+    let mut utf8 = Utf8ReadBuffer::new();
+    let mut escape = EscapeAwareBuffer::new();
+    let mut transitions = Vec::new();
+    let mut previous = false;
+    for record in capture.records {
+        if record.direction != crate::pty_capture::CaptureDirection::Output {
+            continue;
+        }
+        let data = escape.push(&utf8.push(&record.data));
+        let (clean, _) = crate::state::strip_kitty_sequences(&data);
+        processor.process_chunk(&clean, &silence, sid, &state);
+        while let Ok(event) = receiver.try_recv() {
+            crate::state::tests_support::apply_replay_event(&state, &event);
+            let waiting = state
+                .session_maps
+                .session_states
+                .get(sid)
+                .unwrap()
+                .awaiting_input;
+            if waiting != previous {
+                transitions.push(waiting);
+                previous = waiting;
+            }
+        }
+    }
+    // Eleven native modal promises: each enter/escape or factory exception must
+    // produce exactly one set followed by one clear. New-session stays idle.
+    assert_eq!(transitions, [true, false].repeat(11));
+    assert!(
+        !state
+            .session_maps
+            .session_states
+            .get(sid)
+            .unwrap()
+            .awaiting_input
+    );
+}
+
+#[test]
+fn captured_pi_fast_modal_exception_cannot_latch_after_coalescing() {
+    // Catches: awaiting and idle share a read before the accumulator sees SET.
+    let capture =
+        crate::pty_capture::decode_capture(&agent_prompt_fixture("pi-extension-modals-2629.tcap"))
+            .unwrap();
+    let pair = capture
+        .records
+        .windows(2)
+        .find(|pair| {
+            pair.iter()
+                .all(|record| record.direction == crate::pty_capture::CaptureDirection::Output)
+                && pair[0]
+                    .data
+                    .windows(b"7770;state=awaiting".len())
+                    .any(|w| w == b"7770;state=awaiting")
+                && pair[1]
+                    .data
+                    .windows(b"7770;state=idle".len())
+                    .any(|w| w == b"7770;state=idle")
+                && pair[1].elapsed_us - pair[0].elapsed_us < 1000
+        })
+        .expect("recorded immediate custom-factory exception");
+    let bytes = [pair[0].data.as_slice(), pair[1].data.as_slice()].concat();
+    let sid = "pi-fast-modal";
+    let (state, silence) = chunk_trace_state(sid);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("pi".into());
+    let mut receiver = state.event_bus.subscribe();
+    let mut processor = ChunkProcessor::new(None, None);
+    processor.process_chunk(std::str::from_utf8(&bytes).unwrap(), &silence, sid, &state);
+    let mut saw_wait = false;
+    while let Ok(event) = receiver.try_recv() {
+        crate::state::tests_support::apply_replay_event(&state, &event);
+        saw_wait |= state
+            .session_maps
+            .session_states
+            .get(sid)
+            .unwrap()
+            .awaiting_input;
+    }
+    assert!(saw_wait, "the captured modal must actually SET a question");
+    assert!(
+        !state
+            .session_maps
+            .session_states
+            .get(sid)
+            .unwrap()
+            .awaiting_input
+    );
+}
+
+/// Catches a query stranded behind StreamMask's possible secret prefix. The
+/// child has already enabled raw mode: ICANON cannot explain a missing reply.
+#[cfg(unix)]
+#[test]
+fn raw_cursor_reply_does_not_wait_for_a_secret_prefix_to_resolve() {
+    let state = crate::state::tests_support::make_test_app_state();
+    let session_id = "raw-query-secret-prefix";
+    let pair = native_pty_system()
+        .openpty(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .unwrap();
+    let mut reader = pair.master.try_clone_reader().unwrap();
+    let writer = pair.master.take_writer().unwrap();
+    let mut command = CommandBuilder::new("python3");
+    command.args([
+        "-c",
+        r#"import os, select, termios, time, tty
+old = termios.tcgetattr(0)
+try:
+    tty.setraw(0)
+    os.write(1, b'p')
+    start = time.monotonic()
+    os.write(1, b'\x1b[6n')
+    ready = select.select([0], [], [], 2.0)[0]
+    reply = os.read(0, 64) if ready else b''
+    elapsed = time.monotonic() - start
+finally:
+    termios.tcsetattr(0, termios.TCSANOW, old)
+print('\nCURSOR-RESULT:' + reply.hex() + ':' + str(elapsed))
+"#,
+    ]);
+    let child = pair.slave.spawn_command(command).unwrap();
+    drop(pair.slave);
+    state.session_maps.sessions.insert(
+        session_id.into(),
+        Mutex::new(PtySession {
+            launch_receipt: None,
+            writer: Arc::new(Mutex::new(writer)),
+            master: pair.master,
+            _child: child,
+            paused: Arc::new(AtomicBool::new(false)),
+            worktree: None,
+            initial_cwd: None,
+            cwd: None,
+            display_name: None,
+            display_name_is_custom: false,
+            display_name_from_spawn: false,
+            is_remote: false,
+            shell: "python3".into(),
+        }),
+    );
+    state.grid.vt_log_buffers.insert(
+        session_id.into(),
+        Mutex::new(VtLogBuffer::new(24, 80, 1000)),
+    );
+    let silence = Arc::new(Mutex::new(SilenceState::new()));
+    let mut processor = ChunkProcessor::new(None, None);
+    // Use the real masking entry point, with a synthetic non-sensitive value.
+    processor.secret_mask.push(
+        "",
+        vec![zeroize::Zeroizing::new("prefix-private-value".into())],
+    );
+    let mut utf8 = Utf8ReadBuffer::new();
+    let mut escapes = EscapeAwareBuffer::new();
+    let mut output = String::new();
+    let mut bytes = [0; 4096];
+    loop {
+        match reader.read(&mut bytes) {
+            Ok(0) => break,
+            Ok(count) => {
+                let data = escapes.push(&utf8.push(&bytes[..count]));
+                output.push_str(&data);
+                let (clean, actions) = strip_kitty_sequences(&data);
+                process_kitty_actions(&actions, session_id, &state);
+                processor.process_chunk(&clean, &silence, session_id, &state);
+            }
+            // Linux reports the final slave close as EIO; macOS returns EOF.
+            Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
+            Err(error) => panic!("PTY read: {error}"),
+        }
+    }
+    let (_, session) = state.session_maps.sessions.remove(session_id).unwrap();
+    let status = session.into_inner()._child.wait().unwrap();
+    assert!(status.success(), "{output}");
+    let result = output.split("CURSOR-RESULT:").nth(1).unwrap();
+    let (reply, elapsed) = result.trim().split_once(':').unwrap();
+    assert_eq!(reply, "1b5b313b3252", "{output}");
+    let elapsed: f64 = elapsed.parse().unwrap();
+    assert!(elapsed < 1.0, "cursor reply took {elapsed}s: {output}");
+}
+
+// Catches: native Claude permission requests are ignored, or matching completion latches awaiting.
+#[tokio::test]
+async fn claude_permission_answer_does_not_latch_wait() {
+    let sid = "claude-permission-2627";
+    let (state, mut processor) = claude_permission_state(sid);
+    for event in recorded_claude_permissions("accept") {
+        feed_claude_permission(&state, &mut processor, sid, &event);
+        match event["hook_event_name"].as_str().unwrap() {
+            "PermissionRequest" => assert!(
+                await_session(&state, sid, |s| s.awaiting_input && s.question_confident).await,
+                "native PermissionRequest must request human attention"
+            ),
+            "PostToolUse" | "Stop" => assert!(
+                await_session(&state, sid, |s| !s.awaiting_input).await,
+                "matching native settlement must clear attention"
+            ),
+            _ => {}
+        }
+    }
+}
+
+// Catches: an accepted tool still running suppresses a second permission in the same turn.
+#[tokio::test]
+async fn claude_permission_answer_before_tool_result_allows_next_permission() {
+    let sid = "claude-permission-next-before-result";
+    let (state, mut processor) = claude_permission_state(sid);
+    let receipts = recorded_claude_permissions("accept");
+    for receipt in &receipts[1..4] {
+        feed_claude_permission(&state, &mut processor, sid, receipt);
+    }
+    assert!(await_session(&state, sid, |s| s.awaiting_input).await);
+    let mut utf8 = Utf8ReadBuffer::new();
+    let mut escapes = EscapeAwareBuffer::new();
+    let capture = crate::pty_capture::decode_capture(include_bytes!(
+        "../fixtures/agent_prompts/claude-2627-permission-accept.tcap"
+    ))
+    .unwrap();
+    let silence = state.session_maps.silence_states.get(sid).unwrap().clone();
+    let mut answered = false;
+    for record in capture.records {
+        match record.direction {
+            crate::pty_capture::CaptureDirection::Output => {
+                let data = escapes.push(&utf8.push(&record.data));
+                let (clean, _) = crate::state::strip_kitty_sequences(&data);
+                processor.process_chunk(&clean, &silence, sid, &state);
+                tokio::task::yield_now().await;
+            }
+            crate::pty_capture::CaptureDirection::Input => {
+                let input = std::str::from_utf8(&record.data).unwrap();
+                if input == "\r" {
+                    assert!(await_session(&state, sid, |s| s.choice_prompt.is_some()).await);
+                    crate::mcp_http::session::apply_input_bookkeeping(&state, sid, input);
+                    answered = true;
+                    break;
+                }
+            }
+        }
+    }
+    assert!(
+        answered,
+        "recorded native Enter must resolve the first permission"
+    );
+    assert!(
+        !state
+            .session_maps
+            .session_states
+            .get(sid)
+            .unwrap()
+            .awaiting_input
+    );
+    // First tool has started, not finished; the next tool needs a separate decision.
+    processor.process_chunk("\x1b[2J\x1b[H", &silence, sid, &state);
+    tokio::task::yield_now().await;
+    let mut next_tool = receipts[2].clone();
+    next_tool["tool_use_id"] = "next-parallel-tool".into();
+    next_tool["tool_input"]["command"] = "touch second-proof.txt".into();
+    let mut next_permission = receipts[3].clone();
+    next_permission["tool_input"] = next_tool["tool_input"].clone();
+    feed_claude_permission(&state, &mut processor, sid, &next_tool);
+    feed_claude_permission(&state, &mut processor, sid, &next_permission);
+    assert!(
+        await_session(&state, sid, |s| s.awaiting_input).await,
+        "answering first permission must allow the next native permission before first tool completes"
+    );
+}
+
+// ---- 2634-ea5b: structured question and plan approval owners ---------------
+
+/// The native hook stdin that Claude Code 2.1.316 gave TUIC's hook for `name`.
+fn recorded_claude_question_receipts(name: &str) -> Vec<serde_json::Value> {
+    let text = match name {
+        "ask-multiselect" => {
+            include_str!("../fixtures/agent_hook_payload/claude-ask-multiselect-2.1.316.jsonl")
+        }
+        "plan-approve" => {
+            include_str!("../fixtures/agent_hook_payload/claude-plan-approve-2.1.316.jsonl")
+        }
+        "plan-reject" => {
+            include_str!("../fixtures/agent_hook_payload/claude-plan-reject-2.1.316.jsonl")
+        }
+        _ => panic!("unknown recording {name}"),
+    };
+    text.lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+/// The frames TUIC's generated Claude hook writes for one receipt, from the
+/// recorded owner. Same encoding as `claude_hook_frames`, other owner.
+fn recorded_owner_hook_frames(event: &serde_json::Value) -> String {
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(event.to_string());
+    let mut frames = String::new();
+    for piece in encoded.as_bytes().chunks(768) {
+        let piece = std::str::from_utf8(piece).unwrap();
+        frames.push_str(&format!(
+            "\x1b]7770;claude-hook=rec-2634-owner:7:{piece}\x1b\\"
+        ));
+    }
+    frames.push_str("\x1b]7770;claude-hook=rec-2634-owner:7:\x1b\\");
+    frames
+}
+
+/// A recorded `agent` session that owns the recorded TUIC session id. Claude
+/// runs with TUIC's hooks; ego writes its own native frames.
+fn recorded_question_state(
+    sid: &str,
+    agent: &str,
+    rows: u16,
+    cols: u16,
+) -> (Arc<AppState>, ChunkProcessor) {
+    let state = accumulating_state(sid);
+    state.config.write().progress_tracking = false;
+    agent_session(&state, sid, SHELL_IDLE);
+    {
+        let mut session = state.session_maps.session_states.get_mut(sid).unwrap();
+        session.agent_type = Some(agent.into());
+        session.hook_instrumented = agent == "claude";
+    }
+    state
+        .grid
+        .vt_log_buffers
+        .insert(sid.into(), Mutex::new(VtLogBuffer::new(rows, cols, 1000)));
+    (
+        state,
+        ChunkProcessor::new(None, Some("rec-2634-owner".into())),
+    )
+}
+
+/// Replay a recorded capture through the production reader and the production
+/// input bookkeeping. `on_input` runs before each recorded keypress is applied.
+async fn replay_recorded_question(
+    state: &Arc<AppState>,
+    processor: &mut ChunkProcessor,
+    sid: &str,
+    capture: tuic_terminal::pty_capture::DecodedCapture,
+    mut on_input: impl FnMut(&AppState, usize),
+) {
+    let silence = state.session_maps.silence_states.get(sid).unwrap().clone();
+    let mut utf8 = Utf8ReadBuffer::new();
+    let mut escapes = EscapeAwareBuffer::new();
+    let mut inputs = 0;
+    for record in capture.records {
+        if record.direction == crate::pty_capture::CaptureDirection::Input {
+            tokio::task::yield_now().await;
+            on_input(state, inputs);
+            inputs += 1;
+            crate::mcp_http::session::apply_input_bookkeeping(
+                state,
+                sid,
+                std::str::from_utf8(&record.data).unwrap(),
+            );
+        } else {
+            let data = escapes.push(&utf8.push(&record.data));
+            let (clean, _) = crate::state::strip_kitty_sequences(&data);
+            processor.process_chunk(&clean, &silence, sid, state);
+            tokio::task::yield_now().await;
+        }
+    }
+    assert!(inputs > 0, "the capture must hold the recorded answer");
+}
+
+// Catches: a plan refused with Escape (Claude 2.1.316 sends no PostToolUse and
+// no Stop for it) keeps its confident wait, and a late copy of the settled
+// ExitPlanMode receipt re-arms the human wait the refusal already settled.
+#[tokio::test]
+async fn late_structured_question_cannot_rearm_answered_wait() {
+    let sid = "claude-plan-reject-2634";
+    let capture =
+        crate::pty_capture::decode_capture(&agent_prompt_fixture("claude-plan-reject-2634.tcap"))
+            .expect("TUICCAP2 capture");
+    let (rows, cols) = capture.geometry.expect("recorded geometry");
+    let (state, mut processor) = recorded_question_state(sid, "claude", rows, cols);
+    let mut waited = false;
+    replay_recorded_question(&state, &mut processor, sid, capture, |state, _| {
+        let session = state.session_maps.session_states.get(sid).unwrap();
+        waited = session.awaiting_input && session.question_confident;
+    })
+    .await;
+    assert!(
+        waited,
+        "the recorded ExitPlanMode hook must own a confident wait"
+    );
+    assert!(
+        await_session(&state, sid, |s| !s.awaiting_input).await,
+        "Escape refused the plan: `User rejected Claude's plan` must settle the wait"
+    );
+
+    // The same native receipt again: the settled request must stay settled.
+    let late = recorded_claude_question_receipts("plan-reject")
+        .into_iter()
+        .find(|receipt| receipt["hook_event_name"] == "PreToolUse")
+        .expect("recorded ExitPlanMode PreToolUse");
+    let silence = state.session_maps.silence_states.get(sid).unwrap().clone();
+    processor.process_chunk(&recorded_owner_hook_frames(&late), &silence, sid, &state);
+    for _ in 0..8 {
+        tokio::task::yield_now().await;
+    }
+    assert!(
+        !state
+            .session_maps
+            .session_states
+            .get(sid)
+            .unwrap()
+            .awaiting_input,
+        "a late copy of the settled ExitPlanMode payload must not re-open its wait"
+    );
+}
+
+/// The client snapshot of `sid`, as `GET /sessions` and the desktop poll see it.
+fn snapshot(state: &AppState, sid: &str) -> crate::state::SessionState {
+    state
+        .session_state_with_shell(sid)
+        .expect("session snapshot")
+}
+
+// Catches: the second question of a recorded multi-question dialog repaints
+// with the first question's header or no position, the card rewrites the
+// native keys, or the card stays after the recorded answer.
+#[tokio::test]
+async fn recorded_multi_question_dialog_carries_its_card_until_answered() {
+    let sid = "claude-ask-multiselect-2634";
+    let capture = crate::pty_capture::decode_capture(&agent_prompt_fixture(
+        "claude-ask-multiselect-2634.tcap",
+    ))
+    .expect("TUICCAP2 capture");
+    let (rows, cols) = capture.geometry.expect("recorded geometry");
+    let (state, mut processor) = recorded_question_state(sid, "claude", rows, cols);
+    let mut seen = Vec::new();
+    replay_recorded_question(&state, &mut processor, sid, capture, |state, input| {
+        let snap = snapshot(state, sid);
+        let prompt = snap.choice_prompt.clone();
+        seen.push((
+            input,
+            snap.question_card.map(|card| card.questions.len()),
+            prompt.as_ref().and_then(|p| p.header.clone()),
+            prompt.as_ref().and_then(|p| p.question_index),
+            prompt.map(|p| {
+                let mut keys = vec![p.title];
+                keys.extend(
+                    p.options
+                        .into_iter()
+                        .map(|o| format!("{}={}", o.key, o.label)),
+                );
+                keys
+            }),
+        ));
+    })
+    .await;
+    assert_eq!(
+        seen[0].1,
+        Some(2),
+        "the open wait carries the recorded card: {seen:?}"
+    );
+    assert_eq!(
+        (seen[0].2.as_deref(), seen[0].3),
+        (Some("Color"), Some(1)),
+        "first question on screen: {seen:?}"
+    );
+    assert_eq!(
+        (seen[1].2.as_deref(), seen[1].3),
+        (Some("Sizes"), Some(2)),
+        "the repaint of the second question: {seen:?}"
+    );
+    let rows = seen[1].4.clone().expect("native dialog");
+    assert!(
+        rows.iter().skip(1).all(|row| !row.starts_with('=')) && rows.len() >= 3,
+        "native keys stay screen-derived: {rows:?}"
+    );
+    assert!(
+        await_session(&state, sid, |s| !s.awaiting_input).await,
+        "the recorded answer settles the wait"
+    );
+    assert!(
+        snapshot(&state, sid).question_card.is_none(),
+        "no card after the answer"
+    );
+}
+
+// Catches: a plan approval shows no card while it waits, or keeps its card
+// after the recorded PostToolUse approval.
+#[tokio::test]
+async fn recorded_plan_approval_card_clears_on_approval() {
+    let sid = "claude-plan-approve-2634";
+    let capture =
+        crate::pty_capture::decode_capture(&agent_prompt_fixture("claude-plan-approve-2634.tcap"))
+            .expect("TUICCAP2 capture");
+    let (rows, cols) = capture.geometry.expect("recorded geometry");
+    let (state, mut processor) = recorded_question_state(sid, "claude", rows, cols);
+    let mut kind = None;
+    replay_recorded_question(&state, &mut processor, sid, capture, |state, _| {
+        kind = snapshot(state, sid).question_card.map(|card| card.kind);
+    })
+    .await;
+    assert_eq!(
+        kind,
+        Some(crate::agent_hook_payload::CardKind::PlanApproval)
+    );
+    assert!(await_session(&state, sid, |s| !s.awaiting_input).await);
+    assert!(snapshot(&state, sid).question_card.is_none());
+}
+
+// Catches: a receipt split over two PTY reads (a hook writes one frame per
+// 768-byte piece) loses its card, or a repeated piece frame corrupts it.
+#[tokio::test]
+async fn structured_payload_split_across_reads_keeps_its_card() {
+    let sid = "claude-split-card-2634";
+    let (state, mut processor) = recorded_question_state(sid, "claude", 40, 120);
+    let silence = state.session_maps.silence_states.get(sid).unwrap().clone();
+    let receipts = recorded_claude_question_receipts("ask-multiselect");
+    for receipt in receipts.iter().filter(|r| {
+        matches!(
+            r["hook_event_name"].as_str(),
+            Some("UserPromptSubmit" | "PreToolUse")
+        )
+    }) {
+        let frames = recorded_owner_hook_frames(receipt);
+        // Split inside an OSC frame, not at a frame boundary.
+        let cut = frames.len() / 2;
+        let cut = (cut..frames.len())
+            .find(|&i| frames.is_char_boundary(i))
+            .unwrap();
+        processor.process_chunk(&frames[..cut], &silence, sid, &state);
+        processor.process_chunk(&frames[cut..], &silence, sid, &state);
+    }
+    processor.process_chunk("\x1b]7770;state=awaiting\x1b\\", &silence, sid, &state);
+    assert!(await_session(&state, sid, |s| s.awaiting_input).await);
+    let card = snapshot(&state, sid)
+        .question_card
+        .expect("card from split receipt");
+    assert_eq!(card.questions.len(), 2);
+    assert_eq!(card.questions[1].header.as_deref(), Some("Sizes"));
+}
+
+/// One recorded ego 0.4.3 `agent-event` frame (`ego-question-answer-2634.tcap`).
+fn recorded_ego_frame(event: &str) -> String {
+    use base64::Engine;
+    let capture =
+        crate::pty_capture::decode_capture(&agent_prompt_fixture("ego-question-answer-2634.tcap"))
+            .unwrap();
+    let raw: Vec<u8> = capture.records.into_iter().flat_map(|r| r.data).collect();
+    let raw = String::from_utf8_lossy(&raw).into_owned();
+    raw.split("\x1b]7770;agent-event=")
+        .skip(1)
+        .map(|rest| rest.split('\x1b').next().unwrap().to_owned())
+        .find(|payload| {
+            let json: serde_json::Value = serde_json::from_slice(
+                &base64::engine::general_purpose::STANDARD
+                    .decode(payload)
+                    .unwrap(),
+            )
+            .unwrap();
+            json["event"] == event
+        })
+        .map(|payload| format!("\x1b]7770;agent-event={payload}\x1b\\"))
+        .expect("recorded frame")
+}
+
+// Catches: the recorded ego native question shows no card while it waits, keeps
+// it after `modal_end`, or a late copy of the settled `modal_open` reopens it.
+#[tokio::test]
+async fn recorded_ego_question_card_follows_its_modal() {
+    let sid = "ego-question-answer-2634";
+    let capture =
+        crate::pty_capture::decode_capture(&agent_prompt_fixture("ego-question-answer-2634.tcap"))
+            .expect("TUICCAP2 capture");
+    let (rows, cols) = capture.geometry.expect("geometry");
+    let (state, mut processor) = recorded_question_state(sid, "ego", rows, cols);
+    let mut card = None;
+    replay_recorded_question(&state, &mut processor, sid, capture, |state, input| {
+        if input == 0 {
+            card = snapshot(state, sid).question_card;
+        }
+    })
+    .await;
+    let card = card.expect("the open modal carries its card");
+    assert_eq!(card.request_id, "01a19726-8a84-7331-a08f-596cdde18f79");
+    assert_eq!(card.text(), "Choose readiness");
+    assert!(await_session(&state, sid, |s| !s.awaiting_input).await);
+    let session = state.session_maps.session_states.get(sid).unwrap().clone();
+    assert!(session.wait_card.is_none() && snapshot(&state, sid).question_card.is_none());
+
+    // A late copy of the settled modal_open, even after its session starts
+    // again, must not name a wait.
+    let silence = state.session_maps.silence_states.get(sid).unwrap().clone();
+    for event in ["session_start", "modal_open"] {
+        processor.process_chunk(&recorded_ego_frame(event), &silence, sid, &state);
+    }
+    tokio::task::yield_now().await;
+    assert!(
+        state
+            .session_maps
+            .session_states
+            .get(sid)
+            .unwrap()
+            .wait_request
+            .is_none(),
+        "a settled ego modal id must never open again"
+    );
+}
+
+// Catches a suggestion turning an explicitly busy native agent green.
+#[test]
+fn native_busy_is_not_completed_by_suggest_or_process_metadata() {
+    let state = crate::state::tests_support::make_test_app_state();
+    let sid = "native-busy-suggest";
+    agent_session(&state, sid, SHELL_IDLE);
+    // Native frames are delivered by the terminal parser, as in a real PTY.
+    state
+        .grid
+        .vt_log_buffers
+        .insert(sid.into(), Mutex::new(VtLogBuffer::new(24, 80, 1000)));
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("ego".into());
+    let silence = state.session_maps.silence_states.get(sid).unwrap().clone();
+    let mut processor = ChunkProcessor::new(None, None);
+    processor.process_chunk("\x1b]7770;state=busy\x07", &silence, sid, &state);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .suggested_actions = Some(vec!["Next".into()]);
+    let snapshot = state.session_state_with_shell(sid).unwrap();
+    assert_eq!(snapshot.shell_state.as_deref(), Some("busy"));
+    assert_eq!(snapshot.agent_state.as_deref(), Some("working"));
+}
+
+// Catches retained spinner output reopening a native completion.
+#[test]
+fn native_idle_is_not_reopened_by_working_screen() {
+    let state = crate::state::tests_support::make_test_app_state();
+    let sid = "native-idle-spinner";
+    agent_session(&state, sid, SHELL_IDLE);
+    let silence = state.session_maps.silence_states.get(sid).unwrap().clone();
+    transition_explicit_shell_state(&state, sid, SHELL_BUSY, "busy", true);
+    transition_explicit_shell_state(&state, sid, SHELL_IDLE, "idle", true);
+    apply_working_evidence(&state, &silence, sid, now_epoch_ms(), "working-screen");
+    assert_eq!(
+        state
+            .session_state_with_shell(sid)
+            .unwrap()
+            .shell_state
+            .as_deref(),
+        Some("idle")
+    );
+}
+
+// Catches a native long-running task being timed out by a retained Ready screen.
+#[test]
+fn native_busy_is_not_closed_by_ready_or_silence() {
+    let state = crate::state::tests_support::make_test_app_state();
+    let sid = "native-busy-ready";
+    agent_session(&state, sid, SHELL_IDLE);
+    let silence = state.session_maps.silence_states.get(sid).unwrap().clone();
+    transition_explicit_shell_state(&state, sid, SHELL_BUSY, "busy", true);
+    {
+        let mut sl = silence.lock();
+        let stale = std::time::Instant::now() - PROTOCOL_STALE_TIMEOUT;
+        sl.evidence.busy.as_mut().unwrap().at = stale;
+        sl.last_output_at = stale;
+        sl.screen_ready_pending_since = Some(stale);
+    }
+    let decision = try_timer_idle_transition(
+        &state,
+        &silence,
+        sid,
+        AgentScreenActivity::Ready,
+        Some("claude"),
+        Some(0),
+    );
+    assert!(!decision.transitioned);
+    assert!(
+        !try_timer_idle_transition(
+            &state,
+            &silence,
+            sid,
+            AgentScreenActivity::Unknown,
+            Some("claude"),
+            Some(0),
+        )
+        .transitioned,
+        "native busy never uses completion-only stale-submission recovery"
+    );
+    assert_eq!(
+        state
+            .session_state_with_shell(sid)
+            .unwrap()
+            .shell_state
+            .as_deref(),
+        Some("busy")
+    );
+    transition_explicit_shell_state(&state, sid, SHELL_IDLE, "idle", false);
+    assert_eq!(
+        state
+            .session_state_with_shell(sid)
+            .unwrap()
+            .shell_state
+            .as_deref(),
+        Some("busy")
+    );
+}
+
+// Catches stale native authority leaking from an exited agent into its replacement.
+#[test]
+fn native_authority_retires_on_confirmed_foreground_exit() {
+    let state = crate::state::tests_support::make_test_app_state();
+    let sid = "native-authority-exit";
+    agent_session(&state, sid, SHELL_IDLE);
+    let silence = state.session_maps.silence_states.get(sid).unwrap().clone();
+    transition_explicit_shell_state(&state, sid, SHELL_BUSY, "busy", true);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_foreground_observed = true;
+    apply_foreground_agent_observation(&state, sid, 1, None, true, false, "shell".into());
+    assert!(silence.lock().native_state.activity().is_none());
+    assert!(
+        state
+            .session_state_with_shell(sid)
+            .unwrap()
+            .agent_state
+            .is_none()
+    );
+}
+
+// Catches OS child infrastructure overriding a native completed turn and stage.
+#[test]
+fn native_idle_ignores_descendant_background_metadata() {
+    let state = crate::state::tests_support::make_test_app_state();
+    let sid = "native-idle-descendants";
+    agent_session(&state, sid, SHELL_IDLE);
+    transition_explicit_shell_state(&state, sid, SHELL_BUSY, "busy", true);
+    transition_explicit_shell_state(&state, sid, SHELL_IDLE, "idle", true);
+    {
+        let mut session = state.session_maps.session_states.get_mut(sid).unwrap();
+        session.background_work = true;
+        session.foreground_input_blocked = true;
+    }
+    let snapshot = state.session_state_with_shell(sid).unwrap();
+    assert_eq!(snapshot.agent_state.as_deref(), Some("idle"));
+    assert!(!snapshot.background_work);
+}
+
+// Catches a local native command inventing a model turn and stranding Enter's transport claim.
+#[test]
+fn native_idle_local_submit_releases_claim_without_inventing_work() {
+    let state = crate::state::tests_support::make_test_app_state();
+    let sid = "native-local-submit";
+    agent_session(&state, sid, SHELL_IDLE);
+    let silence = state.session_maps.silence_states.get(sid).unwrap().clone();
+    transition_explicit_shell_state(&state, sid, SHELL_BUSY, "busy", true);
+    transition_explicit_shell_state(&state, sid, SHELL_IDLE, "idle", true);
+    note_submitted_input(&state, sid);
+    assert_eq!(
+        state
+            .session_state_with_shell(sid)
+            .unwrap()
+            .agent_state
+            .as_deref(),
+        Some("idle")
+    );
+    assert_eq!(
+        state
+            .session_maps
+            .shell_states
+            .get(sid)
+            .unwrap()
+            .load(std::sync::atomic::Ordering::Acquire),
+        SHELL_BUSY
+    );
+    silence.lock().screen_ready_pending_since =
+        Some(std::time::Instant::now() - AGENT_READY_CONFIRM);
+    let epoch = state
+        .session_maps
+        .session_states
+        .get(sid)
+        .unwrap()
+        .turn_epoch;
+    let decision = try_timer_idle_transition(
+        &state,
+        &silence,
+        sid,
+        AgentScreenActivity::Ready,
+        Some("claude"),
+        Some(epoch),
+    );
+    assert!(decision.transitioned);
+    assert_eq!(
+        state
+            .session_maps
+            .shell_states
+            .get(sid)
+            .unwrap()
+            .load(std::sync::atomic::Ordering::Acquire),
+        SHELL_IDLE
+    );
+    assert_eq!(silence.lock().native_state.activity(), Some(SHELL_IDLE));
+}
+
+// Catches legacy completion-only notifications disabling the only available busy adapter.
+#[test]
+fn completion_only_notify_keeps_working_adapter_available() {
+    let state = crate::state::tests_support::make_test_app_state();
+    let sid = "completion-only-notify";
+    agent_session(&state, sid, SHELL_BUSY);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("codex".into());
+    let silence = state.session_maps.silence_states.get(sid).unwrap().clone();
+    transition_explicit_shell_state(&state, sid, SHELL_IDLE, "idle", true);
+    assert!(silence.lock().native_state.activity().is_none());
+    apply_working_evidence(
+        &state,
+        &silence,
+        sid,
+        now_epoch_ms(),
+        "working-screen-movement",
+    );
+    assert_eq!(
+        state
+            .session_state_with_shell(sid)
+            .unwrap()
+            .agent_state
+            .as_deref(),
+        Some("working")
+    );
+}
+
+// Catches: a completed parent or retained screen overrides native busy while
+// a real ego-owned child still runs, or final child settlement never returns idle.
+#[test]
+fn recorded_ego_owned_child_keeps_native_working_until_settlement() {
+    use base64::Engine;
+    let capture =
+        crate::pty_capture::decode_capture(&agent_prompt_fixture("ego-owned-child-2930.tcap"))
+            .expect("recorded ego owned-child lifecycle");
+    let (rows, cols) = capture.geometry.expect("recorded terminal geometry");
+    let sid = "ego-owned-child-2930";
+    let (state, silence) = chunk_trace_state(sid);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("ego".into());
+    state
+        .grid
+        .vt_log_buffers
+        .insert(sid.into(), Mutex::new(VtLogBuffer::new(rows, cols, 2000)));
+    silence.lock().startup_settled = true;
+    let mut events = state.event_bus.subscribe();
+    let mut processor = ChunkProcessor::new(None, None);
+    let mut utf8 = Utf8ReadBuffer::new();
+    let mut escapes = EscapeAwareBuffer::new();
+    let mut children = 0;
+    let mut parent_completed = false;
+    let mut busy_after_parent = false;
+    let mut collection_started = false;
+    for (index, record) in capture.records.iter().enumerate() {
+        if record.direction != crate::pty_capture::CaptureDirection::Output {
+            continue;
+        }
+        let escaped = escapes.push(&utf8.push(&record.data));
+        let (clean, _) = crate::state::strip_kitty_sequences(&escaped);
+        processor.process_chunk(&clean, &silence, sid, &state);
+        while let Ok(event) = events.try_recv() {
+            crate::state::tests_support::apply_replay_event(&state, &event);
+        }
+        // Read the recorded native lifecycle only as the phase oracle. Activity
+        // under assertion comes from the production parser and accumulator above.
+        for frame in clean.split("\x1b]7770;agent-event=").skip(1) {
+            let encoded = frame.split('\x1b').next().unwrap();
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .expect("complete recorded native frame");
+            let frame: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            match frame["event"].as_str() {
+                Some("child_start") => children += 1,
+                // This recorded background result starts an automatic turn on
+                // collection. Its journal proves settlement before that turn;
+                // this producer path does not publish a rich child_end frame.
+                Some("turn_start") if parent_completed && children > 0 => {
+                    children = 0;
+                    collection_started = true;
+                }
+                Some("turn_end") => parent_completed = true,
+                _ => {}
+            }
+        }
+        if parent_completed && children > 0 {
+            let snapshot = state.session_state_with_shell(sid).unwrap();
+            assert_eq!(
+                snapshot.shell_state.as_deref(),
+                Some("busy"),
+                "record {index}"
+            );
+            assert_eq!(
+                snapshot.agent_state.as_deref(),
+                Some("working"),
+                "record {index}"
+            );
+            busy_after_parent = true;
+        }
+    }
+    assert!(
+        busy_after_parent,
+        "capture must contain a completed parent with a live child"
+    );
+    assert!(
+        collection_started && children == 0,
+        "recorded child result must be collected"
+    );
+    let snapshot = state.session_state_with_shell(sid).unwrap();
+    assert_eq!(snapshot.shell_state.as_deref(), Some("idle"));
+    assert!(matches!(
+        snapshot.agent_state.as_deref(),
+        Some("idle" | "completed")
+    ));
+}
+// Catches: native busy blocking a requested Codex interrupt from returning idle.
+#[test]
+fn recorded_codex_interrupt_releases_native_busy() {
+    let sid = "codex-interrupt-2961";
+    let (state, silence) = chunk_trace_state(sid);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("codex".into());
+    state
+        .grid
+        .vt_log_buffers
+        .insert(sid.into(), Mutex::new(VtLogBuffer::new(40, 132, 2000)));
+    transition_explicit_shell_state(&state, sid, SHELL_BUSY, "busy", true);
+    let capture =
+        crate::pty_capture::decode_capture(&agent_prompt_fixture("codex-interrupt-2961.tcap"))
+            .unwrap();
+    let mut processor = ChunkProcessor::new(None, None);
+    for record in capture.records {
+        processor.process_chunk(
+            std::str::from_utf8(&record.data).unwrap(),
+            &silence,
+            sid,
+            &state,
+        );
+    }
+    let activity = silence.lock().cached_screen_activity;
+    assert_eq!(activity, AgentScreenActivity::Interrupted);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .background_probe_satisfied_turn_epoch = Some(0);
+    // A historical banner alone cannot override native activity.
+    assert!(
+        !try_timer_idle_transition(&state, &silence, sid, activity, Some("codex"), Some(0))
+            .transitioned
+    );
+    silence.lock().note_interrupt_requested();
+    // Esc without a settled interrupt screen cannot release a running turn.
+    assert!(
+        !try_timer_idle_transition(
+            &state,
+            &silence,
+            sid,
+            AgentScreenActivity::Working,
+            Some("codex"),
+            Some(0)
+        )
+        .transitioned
+    );
+    try_timer_idle_transition(&state, &silence, sid, activity, Some("codex"), Some(0));
+    assert_eq!(
+        state
+            .session_maps
+            .shell_states
+            .get(sid)
+            .unwrap()
+            .load(Ordering::Acquire),
+        SHELL_IDLE
+    );
+    assert!(silence.lock().idle_confirmed());
+    assert_eq!(silence.lock().native_state, NativeActivity::Idle);
+    record_submitted_line(&state, sid, "resume".into(), 0);
+    assert_eq!(
+        state
+            .session_maps
+            .session_states
+            .get(sid)
+            .unwrap()
+            .turn_epoch,
+        1
     );
 }

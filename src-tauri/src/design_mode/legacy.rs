@@ -232,6 +232,26 @@ pub(crate) fn emit_changed(
     }
 }
 
+/// Native messaging carries up to 1 MiB to the browser; large eval scripts fit with headroom.
+const MAX_COMMAND_BYTES: usize = 256 * 1024;
+/// One eval evidence page; agents read further pages with `result_offset`.
+const EVAL_PAGE_BYTES: usize = 16 * 1024;
+
+/// Returns the page at `offset` and the offset of the next page, on UTF-8 boundaries.
+fn eval_page(text: &str, offset: usize) -> Result<(&str, Option<usize>), String> {
+    if offset > text.len() || !text.is_char_boundary(offset) {
+        return Err(format!(
+            "invalid_result_offset: Use a next_offset value up to {}",
+            text.len()
+        ));
+    }
+    let mut end = text.len().min(offset + EVAL_PAGE_BYTES);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    Ok((&text[offset..end], (end < text.len()).then_some(end)))
+}
+
 /// Executes on the existing extension port and returns its correlated reply.
 pub(crate) async fn browser_command(
     state: &Arc<AppState>,
@@ -245,9 +265,18 @@ pub(crate) async fn browser_command(
     ) {
         return Err("unknown_command: Unsupported browser command".into());
     }
-    if serde_json::to_vec(&args).map_err(|e| e.to_string())?.len() > 32 * 1024 {
-        return Err("command_too_large: Browser command exceeds 32 KiB".into());
+    if serde_json::to_vec(&args).map_err(|e| e.to_string())?.len() > MAX_COMMAND_BYTES {
+        return Err("command_too_large: Browser command exceeds 256 KiB".into());
     }
+    // The paging cursor belongs to the host; the browser evaluates only the script.
+    let mut args = args;
+    let result_offset = match args.as_object_mut().and_then(|a| a.remove("result_offset")) {
+        None => 0,
+        Some(value) => value
+            .as_u64()
+            .and_then(|offset| usize::try_from(offset).ok())
+            .ok_or("invalid_result_offset: Use a non-negative integer")?,
+    };
     let manager = manager(state).await;
     let status = manager
         .statuses()
@@ -276,11 +305,11 @@ pub(crate) async fn browser_command(
         ),
         "eval" => {
             let text = serde_json::to_string(&result["value"]).map_err(|e| e.to_string())?;
-            if text.len() > 16 * 1024 {
-                return Err("result_too_large: Eval result exceeds 16 KiB".into());
-            }
+            // Redact the whole value before paging, so a page boundary cannot split a secret.
+            let text = crate::redaction::redact_secrets(&text);
+            let (page, next_offset) = eval_page(&text, result_offset)?;
             Ok(
-                serde_json::json!({"evidence":super::extension::fenced(&crate::redaction::redact_secrets(&text))}),
+                serde_json::json!({"evidence":super::extension::fenced(page),"total_bytes":text.len(),"next_offset":next_offset}),
             )
         }
         "screenshot" => {
@@ -295,7 +324,7 @@ pub(crate) async fn browser_command(
                 .save(&state.data_dir.join("design-grabs"))?
                 .ok_or("result_too_large: Screenshot exceeds limit")?;
             Ok(
-                serde_json::json!({"path":path,"format":capture.format,"quality":if capture.format == "webp" { result["quality"].clone() } else { serde_json::Value::Null },"bytes":capture.bytes.len(),"mediaType":capture.media_type,
+                serde_json::json!({"path":path,"format":capture.format,"quality":if capture.format == "webp" { result["quality"].clone() } else { serde_json::Value::Null },"bytes":capture.bytes.len(),"mediaType":capture.media_type,"downscaled":result["downscaled"] == true,
                 "image":{"type":"image","mimeType":capture.media_type,"data":base64::engine::general_purpose::STANDARD.encode(&capture.bytes)}}),
             )
         }

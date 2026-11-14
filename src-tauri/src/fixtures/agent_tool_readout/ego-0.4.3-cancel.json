@@ -1,0 +1,121 @@
+[
+  {
+    "version": 1,
+    "agent": "ego",
+    "session": "01a19726-b318-7226-b4cc-7407e3687e7f",
+    "turn": null,
+    "event": "session_start",
+    "id": null,
+    "data": {}
+  },
+  {
+    "version": 1,
+    "agent": "ego",
+    "session": "01a19726-b318-7226-b4cc-7407e3687e7f",
+    "turn": "01a19726-b369-73ba-8a47-b1c86c8876f7",
+    "event": "turn_start",
+    "id": null,
+    "data": {}
+  },
+  {
+    "version": 1,
+    "agent": "ego",
+    "session": "01a19726-b318-7226-b4cc-7407e3687e7f",
+    "turn": "01a19726-b369-73ba-8a47-b1c86c8876f7",
+    "event": "tool_start",
+    "id": "01a19726-b3a3-7562-a4ee-a789c07a4790",
+    "data": {
+      "label": "task"
+    }
+  },
+  {
+    "version": 1,
+    "agent": "ego",
+    "session": "01a19726-b318-7226-b4cc-7407e3687e7f",
+    "turn": "01a19726-b369-73ba-8a47-b1c86c8876f7",
+    "event": "child_start",
+    "id": "01a19726-b3a3-7562-a4ee-a789c07a4790",
+    "data": {
+      "child": {
+        "kind": "foreground",
+        "turn": "01a19726-b3a4-71e5-8094-d1d5fc664720"
+      },
+      "outcome": null
+    }
+  },
+  {
+    "version": 1,
+    "agent": "ego",
+    "session": "01a19726-b318-7226-b4cc-7407e3687e7f",
+    "turn": "01a19726-b369-73ba-8a47-b1c86c8876f7",
+    "event": "child_activity",
+    "id": "01a19726-b3a3-7562-a4ee-a789c07a4790",
+    "data": {
+      "label": "Working",
+      "output_tokens": 0
+    }
+  },
+  {
+    "version": 1,
+    "agent": "ego",
+    "session": "01a19726-b318-7226-b4cc-7407e3687e7f",
+    "turn": "01a19726-b369-73ba-8a47-b1c86c8876f7",
+    "event": "child_activity",
+    "id": "01a19726-b3a3-7562-a4ee-a789c07a4790",
+    "data": {
+      "label": "Working",
+      "output_tokens": 0
+    }
+  },
+  {
+    "version": 1,
+    "agent": "ego",
+    "session": "01a19726-b318-7226-b4cc-7407e3687e7f",
+    "turn": "01a19726-b369-73ba-8a47-b1c86c8876f7",
+    "event": "child_end",
+    "id": "01a19726-b3a3-7562-a4ee-a789c07a4790",
+    "data": {
+      "child": {
+        "kind": "foreground",
+        "turn": "01a19726-b3a4-71e5-8094-d1d5fc664720"
+      },
+      "outcome": "interrupted"
+    }
+  },
+  {
+    "version": 1,
+    "agent": "ego",
+    "session": "01a19726-b318-7226-b4cc-7407e3687e7f",
+    "turn": "01a19726-b369-73ba-8a47-b1c86c8876f7",
+    "event": "tool_end",
+    "id": "01a19726-b3a3-7562-a4ee-a789c07a4790",
+    "data": {
+      "outcome": "failed"
+    }
+  },
+  {
+    "version": 1,
+    "agent": "ego",
+    "session": "01a19726-b318-7226-b4cc-7407e3687e7f",
+    "turn": "01a19726-b369-73ba-8a47-b1c86c8876f7",
+    "event": "turn_end",
+    "id": null,
+    "data": {
+      "outcome": "interrupted",
+      "reason": {
+        "Cancelled": "User"
+      }
+    }
+  },
+  {
+    "version": 1,
+    "agent": "ego",
+    "session": "01a19726-b318-7226-b4cc-7407e3687e7f",
+    "turn": null,
+    "event": "session_end",
+    "id": null,
+    "data": {
+      "outcome": "interrupted"
+    }
+  }
+]

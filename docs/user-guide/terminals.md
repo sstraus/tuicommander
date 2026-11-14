@@ -44,7 +44,7 @@ output keeps its horizontal scrolling layout.
 
 - **Cmd+T** — New terminal for the active branch
 - **`+` button** on sidebar branch — Add terminal to specific branch
-- **`+` button** on tab bar — New terminal tab
+- **`+` button** on tab bar — Open the agent launch menu. Agent and run config choices rank by branch usage, then repository usage when the branch has no history. Choose Terminal or Alt/Option-click `+` for a plain terminal; `Cmd/Ctrl+T` is unchanged. Agent icons and larger rows make the list easier to scan. Multiple configs show their names beside the agent; a check marks the default. Single-config agents show only the agent name.
 
 New terminals inherit the working directory from the active branch's worktree path.
 
@@ -77,7 +77,7 @@ Terminals are **never unmounted** from the DOM. When you switch branches or tabs
 
 ### CLI / Chat view
 
-Busy Session Chat sends wait in TUIC’s existing idle-gate queue on desktop and mobile. Each host-owned Pending prompt has Cancel and, for Claude, Codex and ego, a compact return-key action labelled **Send now: stop the current request**. Send now claims its queue id once; a prompt already taken by the idle gate is not sent again. Claude and Codex use Escape followed by confirmed idle; ego uses native Ctrl+Enter. Native CLI receipts from earlier direct sends remain read-only.
+Busy Session Chat sends wait in TUIC’s idle-gate queue on desktop and mobile. Each host-owned Pending prompt has Cancel and, for Claude, Codex and ego, a Send now action. Send now forces the same steering flow for all three: interrupt the current turn with Escape, wait for its ready composer, then submit the selected prompt before queued mail. It does not background a tool or queue text inside the busy CLI. This applies while Stop hooks run too. The tooltip reads **Send now: stop the current request**. A prompt already claimed by another sender is not sent again. A refused action keeps an unwritten prompt queued and reports the error; an uncertain write requires inspection, not an automatic retry. Native CLI receipts from earlier direct sends remain read-only.
 
 Session Chat and its composer belong to their terminal tab. **Go to repo** on a
 progress toast opens the reporting terminal when it is still open. Otherwise it
@@ -94,9 +94,11 @@ Expanded tool rows use theme colours for Bash/execute commands, flags, strings a
 
 For ego, configure an absolute **ego executable** in Settings that supports local transcript v1, including `--after`. This is the executable Chat uses, even if your shell launches a newer ego from another path. A failed export reports the configured path and exit status; check that Settings points to the transcript-capable binary. TUICommander binds the foreground ego process to the session whose lease names that PID, then reads `ego export SESSION --format transcript --after SEQ` from the same `EGO_HOME`. It does not select the newest session in the folder or read ego's private event files. The existing Chat ticker follows committed entries; message previews are omitted and completed answers appear once. Tool starts and results share a card. Goal continuations and compaction checkpoints appear as system notices, not user prompts. A new session binding resets the conversation rather than joining unrelated histories. Missing binding, unsupported export versions and unreadable sessions return to CLI with a reason. ego Chat is available immediately after a page reload, including while a native question or permission prompt is pending. It does not wait for the frontend to rediscover a session ID. The backend still checks the live process and lease before reading. ego Chat is also available on mobile through the same transcript lifecycle and existing event stream.
 
-Notice cards preserve line breaks between their heading and body. Harness inbox wakes are hidden in terminal Chat. Interruption notices remain compact chips. Images without retained image data appear as attachment chips. Consecutive thinking blocks share one disclosure. Answer blocks in the same turn share one reading card, limited to about 96 characters wide. Only the answer blocks selected by the CLI boundary rule have a green bar; unmarked prose after a blank row and later status text remain outside it on desktop and mobile. **Copy** in its top-right corner appears on hover or keyboard focus and copies the whole answer. Intermediate status prose remains separate and uses the normal readable text colour. Answer lists retain their list indent so their markers stay to the right of the green bar. Tool calls keep their single collapsed activity row; Claude Bash uses the agent-written description when available, while other tools and agents retain the backend title. Pasted CLI calls followed by a terminal output marker appear in a monospace block showing two lines; **+ N lines** expands the rest. Ordinary multiline prose stays as prose. Historical tool rows show status without a duration. Turn timestamps do not reach the frontend, so time separators are omitted. The Compose handle is available in CLI view. It stays muted with no button chrome at rest; hover or keyboard focus reveals its background and border without fading the label or queue count.
+Notice cards preserve line breaks between their heading and body. Harness inbox wakes are hidden in terminal Chat. Interruption notices remain compact chips. Images without retained image data appear as attachment chips. Consecutive thinking blocks share one disclosure. Answer blocks in the same turn share one reading card, limited to about 96 characters wide. Only the answer blocks selected by the CLI boundary rule have a green bar; unmarked prose after a blank row and later status text remain outside it on desktop and mobile. **Copy** in its top-right corner appears on hover or keyboard focus and copies the whole answer. Intermediate status prose remains separate and uses the normal readable text colour. The green bar belongs to an outer answer-region container, never to a list item. Adjacent answer blocks share a continuous rail, including paragraph spacing. Answer lists retain their normal indent so bullets and numbering stay to its right. A partially marked or nested list stays intact inside that outer rail: unmarked parents and siblings are visible context, not additional marked answers. Lists are not split, so ordered numbering and nesting stay unchanged. Tool calls keep their single collapsed activity row; Claude Bash uses the agent-written description when available, while other tools and agents retain the backend title. Pasted CLI calls followed by a terminal output marker appear in a monospace block showing two lines; **+ N lines** expands the rest. Ordinary multiline prose stays as prose. Historical tool rows show status without a duration. Turn timestamps do not reach the frontend, so time separators are omitted. The Compose handle is available in CLI view. It stays muted with no button chrome at rest; hover or keyboard focus reveals its background and border without fading the label or queue count.
 
 After clicking the desktop Chat transcript, typing a printable character returns focus to Compose and inserts it at the draft caret or selection. Transcript text selection, copy, search, and scrolling keep their normal behavior; typing does not take focus while transcript text is selected.
+
+On desktop CLI terminals, opening Compose reserves its minimum editor row and footer below the terminal. Longer drafts grow upward over terminal output, so typing does not repeatedly resize the terminal. Shrinking the draft keeps that space reserved; closing Compose restores the full terminal height. Pinning keeps Compose open without changing this layout. Clicking the terminal, or pressing Esc in pinned Compose, collapses the editor to its minimum so the terminal input row stays visible. The full draft remains scrollable. Focusing Compose again restores its growth without resizing the terminal. Mobile and Chat retain their existing layout.
 
 In Chat, Compose stays docked and open after sending or queueing, clears the submitted text, and keeps focus for the next message. It cannot be closed or unpinned while Chat is active. **Esc** returns to CLI for terminal interaction; the Compose shortcut focuses the Chat input. Switching back to CLI restores that tab's previous Compose open and pin state. Unsent drafts survive switching in either direction, including text entered while a send or queue is still pending.
 
@@ -127,6 +129,7 @@ Older recorded prompts with a prompt ID also appear when Claude did not record a
 - **Double-click** a tab to rename it (inline editing)
 - Press **Enter** to confirm, **Escape** to cancel
 - Explicit custom names persist through reconnects and are never replaced by agent output
+- Agent labels from the launch menus are base names, not custom names. Agent intent and terminal titles can replace them. An explicit user or MCP rename remains protected.
 - Spawn-assigned agent labels are base names: an `intent: text (Title)` marker may replace them with the current work phase, even when its text wraps across many terminal rows
 - Mobile CLI also keeps complete `intent:` text visible, rejoins terminal soft wraps, and tints every browser-wrapped row with the same theme warning colour.
 - The canvas keeps `intent:` rows visible with a theme-aware warning tint for ego, Claude and Codex. It removes complete `suggest:` marker rows and their continuation rows from the displayed grid. They occupy no selectable line and are excluded from copied text, including selections that cross scrollback. Suggestion chips remain independent of this projection. When blank separators surround the removed block, one separator remains instead of two adjacent blank lines.
@@ -148,10 +151,10 @@ Drag tabs to reorder them. Visual drop indicators show where the tab will land.
 | Orange pulsing dot | Question — agent needs user input |
 | Red pulsing dot | Error — API error or agent stuck |
 | Question icon | Agent is asking a question |
-| Progress bar | Operation in progress (OSC 9;4) |
+| Progress bar | Operation in progress (OSC 9;4). An indeterminate report (state 3) fills the tab width |
 | Amber gradient | Session created via HTTP/MCP (remote session) |
 
-Final API failures keep the red Error dot even when the agent prints a completion summary or returns to idle. Optional auto-retry sends up to three `continue` commands (after 5, 15 and 30 seconds); an idle agent that does not resume stays red. Native provider retry countdowns do not count as final failures. Actual resumed work clears the error, and the next successful idle turn returns to Done.
+Final API failures keep the red Error dot even when the agent prints a completion summary or returns to idle. Optional auto-retry (run by the backend, so it also works for mobile and headless sessions) sends up to three `continue` commands (after 5, 15 and 30 seconds); an idle agent that does not resume stays red. A retry that falls due while the session still reads busy waits and rechecks every 5 seconds instead of being dropped. Native provider retry countdowns do not count as final failures. Actual resumed work clears the error, and the next successful idle turn returns to Done.
 
 Sidebar branch icons also show purple when they contain unseen terminals.
 The mobile session list and session header use the same status colors: blue for
@@ -243,6 +246,15 @@ Split the terminal area into two panes:
 - **Cmd+Alt+\\** — Split horizontally (stacked)
 
 The new pane opens a fresh terminal in the same working directory. Maximum 2 panes at a time.
+
+### Drag to Split
+
+Drag a tab from the tab bar, or from the tab strip of a pane, into the terminal area. While you drag, a highlight shows where the tab goes:
+
+- **Near an edge** (left, right, top or bottom) — the pane splits in half and the tab takes that side.
+- **In the center of a pane** — the tab moves into that pane.
+
+Without a split, the whole terminal area is one pane: drop on an edge to create the first split next to the tab on screen. When a pane cannot split again, its edges act as its center. A pane that loses its last tab closes.
 
 ### Navigating Split Panes
 
@@ -406,9 +418,11 @@ The Compose panel can leave work for an agent without steering its current turn:
   It disappears when the queue is empty. Hover or focus the button to see the
   command/message breakdown. On touch screens, open Compose and tap **N queued**
   to inspect the waiting items; opening Compose does not expand the list.
-- In the open panel, **N queued** opens the queue list. Remove one entry there,
+- In the open panel, **N queued** opens the queue list. **Cancel** removes one entry,
   or use **Clear all** to discard all waiting entries, including TUIC notices.
   Removing a mail notice does not delete the peer message from its inbox.
+
+The Compose **N queued** list has a labelled **Cancel** action for each item and keeps **Clear all**. Supported items also show **Steer**, which uses the same backend delivery as Session Chat Send now. Claude, Codex and ego all interrupt the current request before submitting the selected text. There is no busy-queue fallback. Steer is hidden while a native question waits.
 
 Queueing is available only for detected agent sessions, not plain shells.
 
@@ -434,7 +448,7 @@ On restart, only terminals that had an active agent session are restored — pla
 
 ### OSC 8 Hyperlinks
 
-Terminal output that uses the OSC 8 standard for hyperlinks (e.g., URLs emitted by `ls --hyperlink`) is supported. Clicking an OSC 8 hyperlink opens the URL in your system browser.
+Terminal output that uses the OSC 8 standard for hyperlinks (e.g., URLs emitted by `ls --hyperlink`) is supported. Clicking an OSC 8 hyperlink opens the URL in your system browser. A network path or a custom-scheme link (`editor://…`, `smb://…`) opens with its system handler after you confirm the exact target in a dialog.
 
 ### Answers-only View
 
@@ -448,7 +462,7 @@ Terminal stream reconnect notices use the current terminal name when available a
 
 ### Open a terminal link in Design Mode
 
-Right-click an HTTP or HTTPS link, including a localhost dev server, then select **Start in Design Mode** and choose **Edge** or **Chrome**. The dedicated browser opens that URL and connects the agent in that terminal, not the focused tab. File and other non-web links retain Open and Copy link only. Browser extension setup is required once per repository profile.
+Right-click an HTTP or HTTPS link, including a localhost dev server, then select **Start in Design Mode** and choose **Edge** or **Chrome**. The dedicated browser opens that URL and connects the agent in that terminal, not the focused tab. File and other non-web links retain Open and Copy link only. The extension loads automatically on a cold launch; close an open Design Mode window first.
 
 ### History-anchored viewport scrolling
 
@@ -525,8 +539,10 @@ are not recalled. The command is restored only if queue removal succeeds before
 delivery. A normal Send's muted **Pending** bubble belongs to the native CLI and
 cannot be withdrawn by this action. AI Chat's shared ACP composer supports the
 same shortcut for text-only queued turns. Nonempty drafts and slash menus keep
-their normal arrow-key behavior. See [coverage and evidence](../frontend/chat-wrap-recall-evidence.md).
+their normal arrow-key behavior.
 
 ### Global Workspace membership
+
+Right-click a terminal tab or a session row in the sidebar to copy its session ID, process ID or alias when available.
 
 Right-click a terminal tab or a session row in the sidebar and select **Add to Global Workspace**. For an existing member, select **Remove from Global Workspace** instead. This changes workspace membership without closing the terminal.

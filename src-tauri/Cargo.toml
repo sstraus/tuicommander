@@ -17,7 +17,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "2.0.0"
+version = "2.1.0"
 
 [package]
 name = "tuicommander"
@@ -167,11 +167,12 @@ name = "tuic-remote"
 path = "src/bin/tuic_remote.rs"
 
 # The deterministic ACP agent the client tests drive. It is a test fixture, not
-# a product binary: Tauri bundling lists production binaries and sidecars
-# explicitly, so this target never ships.
+# a product binary: Tauri excludes targets whose required features are disabled.
+# Test setup enables test-fixtures; product builds leave it disabled.
 [[bin]]
 name = "tuic-acp-fixture-agent"
 path = "tests/fixtures/acp_fixture_agent.rs"
+required-features = ["test-fixtures"]
 test = false
 bench = false
 
@@ -180,6 +181,7 @@ bench = false
 [[bin]]
 name = "tuic-mcp-fixture-server"
 path = "tests/fixtures/mcp_fixture_server.rs"
+required-features = ["test-fixtures"]
 test = false
 bench = false
 
@@ -209,7 +211,9 @@ tauri-plugin-opener = { version = "2", optional = true }
 # would hide the requirement — declared here so dropping one of them does not break
 # an unrelated build.
 serde = { version = "1", features = ["derive", "rc"] }
-serde_json = "1"
+# Persisted workflow content digests must survive Number serialization/readback.
+# Declare this directly instead of relying on jsonschema's transitive feature.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 semver = "1"
 schemars = { version = "1", features = ["derive"] }
 jsonschema = { version = "0.59", default-features = false }
@@ -327,11 +331,13 @@ console-subscriber = { version = "0.5", optional = true }
 chromey = { version = "2.58", default-features = false, features = ["bytes"], optional = true }
 sourcemap = { version = "9.3.2", optional = true }
 toml = "1"
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled", "backup"] }
 ssh2-config = "0.8"
 
 [features]
 default = ["desktop"]
+# Never enable in Tauri product builds: these binaries are test-only subprocesses.
+test-fixtures = []
 desktop = [
     "dep:gio",
     "tuic-core/audio-output",
@@ -366,12 +372,19 @@ dictation = ["desktop", "dep:tuic-dictation"]
 # Opt-in generated-command IPC tests use Tauri's mock runtime, never a desktop app.
 settings-ipc-test = ["desktop", "tauri/test"]
 
-# GPU features for Linux builds (macOS always has Metal via target dep; Windows
-# is CPU-only — the whisper.cpp Vulkan backend's vulkan-shaders-gen sub-build is
-# chronically broken on the Windows runner (MAX_PATH/MSBuild), so we ship CPU).
+# GPU dictation features. macOS always has Metal (target dep in tuic-dictation).
+# Windows and Linux releases pass --features vulkan (release.yml, nightly.yml):
+# it needs the Vulkan SDK to build, and the binary needs the Vulkan loader to
+# start (Linux packages require or carry it; the Windows installer adds it).
 cuda = ["dictation", "tuic-dictation/cuda"]
 vulkan = ["dictation", "tuic-dictation/vulkan"]
 tokio-console = ["console-subscriber"]
+# Diagnostic only. The prefixed allocator does not interpose native malloc.
+heap-profile = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl"]
+
+[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
+tikv-jemallocator = { version = "0.7", optional = true, default-features = false, features = ["profiling_libunwind", "stats"] }
+tikv-jemalloc-ctl = { version = "0.7", optional = true, features = ["stats"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gio = { version = "0.18", optional = true }
@@ -386,9 +399,6 @@ block2 = { version = "0.6", optional = true }
 [target.'cfg(target_os = "windows")'.dependencies]
 webview2-com = { version = "0.39.1", optional = true }
 windows-core = { version = "0.62.2", optional = true }
-# CPU-only on Windows: the Vulkan backend (vulkan-shaders-gen) fails to build on
-# the CI runner. Dictation runs on CPU; re-enable "vulkan" only once the
-# whisper.cpp Windows shader build is stabilized.
 windows-sys = { version = "0.61", features = ["Win32_System_Diagnostics_ToolHelp", "Win32_System_Diagnostics_Debug", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_Security", "Win32_Foundation", "Win32_System_ProcessStatus", "Wdk_System_Threading", "Wdk_Storage_FileSystem", "Win32_System_IO", "Win32_Storage_FileSystem"] }
 
 [patch.crates-io]
@@ -457,3 +467,5 @@ tokio = { version = "1", features = ["test-util"] }
 tower = { version = "0.5", features = ["util"] }
 serial_test = "3"
 mockito = "1"
+# Relay tests write the OS keyring the way another process does.
+keyring = "3"

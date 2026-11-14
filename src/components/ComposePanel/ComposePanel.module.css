@@ -31,6 +31,39 @@
   transition: none;
 }
 
+/* Keep the footer's natural height and one shared editor row in flow.
+   Drafts, images and queue details grow upward without resizing the PTY. */
+@media (min-width: 601px) {
+  .panelMinimum {
+    position: relative;
+    flex-shrink: 0;
+    transition: none;
+  }
+
+  .panelMinimum .body {
+    position: relative;
+  }
+
+  .panelMinimum .bodyContents {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg-primary);
+  }
+
+  /* Returning to the terminal reveals its input row without changing its grid.
+     CodeMirror keeps the complete draft and scrolls inside the minimum box. */
+  .panelMinimum:not(:focus-within) .editor {
+    --auto-grow-max-height: var(--control-height, 36px);
+  }
+
+  .panelMinimum:not(:focus-within) .bodyContents {
+    max-height: 100%;
+    overflow: hidden;
+  }
+}
+
 .editor {
   flex-shrink: 0;
   --auto-grow-max-height: 96px;
@@ -133,7 +166,7 @@
 
 .queueList {
   /* The queue scrolls independently; it never consumes the reserved editor space. */
-  max-height: 78px;
+  max-height: 156px;
   overflow-y: auto;
   border-top: 1px solid var(--border);
   background: var(--bg-secondary);
@@ -183,18 +216,11 @@
   font-family: var(--font-mono);
 }
 
-.queueItemRemove {
+.queueItemActions {
   display: flex;
   align-items: center;
-  justify-content: center;
-  background: transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
+  gap: 4px;
   flex-shrink: 0;
-}
-
-.queueItemRemove:hover {
-  color: var(--error);
 }
 
 .queueButton {
@@ -231,4 +257,9 @@
   color: var(--error);
   font-size: var(--font-xs);
   font-family: var(--font-ui);
+}
+
+/* Keep an attachment grid readable without expanding text-only queues. */
+.queueList:has([data-prompt-images]) {
+  max-height: min(50vh, 440px);
 }

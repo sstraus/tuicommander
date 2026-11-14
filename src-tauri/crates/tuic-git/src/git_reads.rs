@@ -757,8 +757,6 @@ impl GitReads for GixGitReads {
             .map_err(|e| e.to_string())?
             .map(|r| r.name().shorten().to_str_lossy().into_owned());
 
-        let merged = crate::git::merged_branch_set(repo);
-
         let refs = grepo.references().map_err(|e| e.to_string())?;
         let mut branches: Vec<BranchDetail> = Vec::new();
         for r in refs.all().map_err(|e| e.to_string())? {
@@ -828,13 +826,11 @@ impl GitReads for GixGitReads {
                 (!s.is_empty()).then_some(s)
             };
 
-            let is_merged = merged.contains(&name);
             branches.push(BranchDetail {
                 is_main: crate::git::is_main_branch(&name),
                 name,
                 is_current,
                 is_remote,
-                is_merged,
                 ahead,
                 behind,
                 upstream,

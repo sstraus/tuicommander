@@ -21,6 +21,8 @@ fn codex_hook_command_transports_recorded_payload_and_inert_outside_tuic() {
     let mut child = Command::new("sh")
         .args(["-c", &command])
         .env("TUIC_SESSION", "own-tab")
+        // The tty fallback: never post to the TUIC that runs this test.
+        .env_remove("TUIC_SOCKET")
         .stdin(Stdio::piped())
         .spawn()
         .unwrap();
@@ -46,4 +48,64 @@ fn codex_hook_command_transports_recorded_payload_and_inert_outside_tuic() {
         .unwrap();
     assert!(status.success());
     assert!(!output.exists());
+}
+
+// Catches: installed tool hooks emitting unscoped busy or requesting attention for automatic approvals.
+#[cfg(unix)]
+#[test]
+fn codex_installed_tool_commands_preserve_native_receipts_without_permission_hooks() {
+    use base64::Engine;
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let scratch = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let output = scratch.path().join("tool-frames");
+    let map = codex_hook_map();
+    assert!(!map.iter().any(|entry| entry.0 == "PermissionRequest"));
+    for index in [2, 3] {
+        let payload = include_str!("fixtures/codex_tools_2626/hooks.jsonl")
+            .lines()
+            .nth(index)
+            .unwrap();
+        let receipt: serde_json::Value = serde_json::from_str(payload).unwrap();
+        let command = map
+            .iter()
+            .find(|entry| entry.0 == receipt["hook_event_name"].as_str().unwrap())
+            .expect("native tool edge must be installed")
+            .2
+            .replace(tty_resolve(), &format!("__t='{}'", output.display()));
+        let mut child = Command::new("sh")
+            .args(["-c", &command])
+            .env("TUIC_SESSION", "own-tab")
+            // The tty fallback: never post to the TUIC that runs this test.
+            .env_remove("TUIC_SOCKET")
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload.as_bytes())
+            .unwrap();
+        assert!(child.wait().unwrap().success());
+        assert_eq!(
+            std::fs::read_to_string(&output).unwrap(),
+            format!(
+                "\x1b]7770;codex-tool=own-tab:{}\x1b\\",
+                base64::engine::general_purpose::STANDARD.encode(payload)
+            )
+        );
+        std::fs::remove_file(&output).unwrap();
+        assert!(
+            Command::new("sh")
+                .args(["-c", &command])
+                .env_remove("TUIC_SESSION")
+                .stdin(Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert!(!output.exists());
+    }
 }

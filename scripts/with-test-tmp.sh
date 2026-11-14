@@ -12,6 +12,23 @@ case "${TMPDIR:-}" in
   "$root/"*|"$HOME/Gits/"*) test_tmp_base="${TMPDIR%/}" ;;
   *) test_tmp_base="$root/.tmp/tuic-tests" ;;
 esac
+# mbx binds its cache socket at "$TMPDIR/mbx-session-XXXXXX/cache-agent.sock",
+# and a Unix socket path holds at most 103 bytes on macOS. Keep room for that
+# and for this run's "tuic-run.XXXXXX/" directory; a deep checkout falls back
+# to the shared Gits scratch root (#2841-774f). A GitHub runner has no ~/Gits
+# and a checkout root over the budget, so it uses the runner's own short temp
+# directory, which the runner deletes after the job (#3061-4580).
+# 103 - 17 ("/tuic-run.XXXXXX/") - 35 ("mbx-session-XXXXXX/cache-agent.sock").
+socket_budget=51
+if [ "${#test_tmp_base}" -gt "$socket_budget" ] && [ -d "$HOME/Gits" ]; then
+  test_tmp_base="$HOME/Gits/.tmp/tuic-tests"
+elif [ "${#test_tmp_base}" -gt "$socket_budget" ] && [ -n "${RUNNER_TEMP:-}" ]; then
+  test_tmp_base="${RUNNER_TEMP%/}/tuic-tests"
+fi
+if [ "${#test_tmp_base}" -gt "$socket_budget" ]; then
+  echo "with-test-tmp.sh: $test_tmp_base is ${#test_tmp_base} bytes; the mbx socket path limit leaves $socket_budget. Set TMPDIR to a shorter directory under $root or ~/Gits." >&2
+  exit 1
+fi
 mkdir -p "$test_tmp_base"
 for stale_root in "$root/.tmp/tuic-tests" "$HOME/Gits/.tmp/tuic-tests"; do
   if [[ -d "$stale_root" ]]; then

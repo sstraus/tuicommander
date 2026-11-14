@@ -16,6 +16,92 @@ struct Run {
     names: Vec<String>,
     argv: Vec<String>,
     cwd: String,
+    /// Advertised by the tool schema for every action; shown in the consent form.
+    reason: Option<String>,
+}
+
+/// Names the field serde refused. Only a field name from serde's
+/// missing/unknown-field errors is echoed, never a value.
+fn refused_field(error: &serde_json::Error) -> String {
+    let message = error.to_string();
+    ["missing field `", "unknown field `"]
+        .iter()
+        .find_map(|prefix| message.strip_prefix(prefix))
+        .and_then(|rest| rest.split('`').next())
+        .map(|f| format!(" (field `{f}`)"))
+        .unwrap_or_default()
+}
+
+fn invalid_schema(what: &str, accepted: &str, error: &serde_json::Error) -> String {
+    format!("Invalid {what}{}: {accepted}", refused_field(error))
+}
+
+fn invalid_run(error: &serde_json::Error) -> String {
+    invalid_schema(
+        "secret command",
+        "run takes names, argv, cwd and an optional reason; \
+         e.g. argv [\"curl\", \"--variable\", \"%API_TOKEN\", \"--expand-header\", \
+         \"Authorization: token {{API_TOKEN}}\", \"https://host/api\"] with names [\"API_TOKEN\"]",
+        error,
+    )
+}
+
+/// TTL revokes new injection only; masks survive until session teardown.
+fn schedule_expiry(
+    state: &Arc<AppState>,
+    scope: String,
+    (status, generation, deadline): task::PutOutcome,
+) -> serde_json::Value {
+    let state = Arc::downgrade(state);
+    tokio::spawn(async move {
+        tokio::time::sleep_until(deadline).await;
+        if let Some(state) = state.upgrade() {
+            state.secrets.expire_scope(&scope, generation);
+        }
+    });
+    serde_json::json!(status)
+}
+
+/// `put` with `references`: the same scope store as `put` with `values`, filled
+/// through the SecretProvider port. The reply carries names only; a provider
+/// error is the typed message and stores nothing.
+pub(crate) fn put_references<R>(
+    state: &Arc<AppState>,
+    args: &serde_json::Value,
+    provider: &provider_op::OpProvider<R>,
+) -> Result<serde_json::Value, String>
+where
+    R: provider_op::OpRunner,
+{
+    let mut input = args.clone();
+    input.as_object_mut().map(|o| o.remove("action"));
+    let put: provider::ReferencePut = serde_json::from_value(input).map_err(|error| {
+        invalid_schema(
+            "secret reference schema",
+            "put references takes references [{name, op, account}], scope and ttl",
+            &error,
+        )
+    })?;
+    let entries: Vec<_> = put
+        .references
+        .into_iter()
+        .map(provider::ReferenceEntry::into_ref)
+        .collect();
+    // `op` blocks on a prompt up to its timeout: keep it off the async workers.
+    let resolve = || {
+        state
+            .secrets
+            .put_references(provider, &put.scope, &entries, put.ttl)
+    };
+    let multi_thread = tokio::runtime::Handle::current().runtime_flavor()
+        == tokio::runtime::RuntimeFlavor::MultiThread;
+    let (_, outcome) = if multi_thread {
+        tokio::task::block_in_place(resolve)
+    } else {
+        resolve()
+    }
+    .map_err(|e| e.to_string())?;
+    Ok(schedule_expiry(state, put.scope, outcome))
 }
 
 pub(crate) async fn handle_secret(
@@ -24,6 +110,15 @@ pub(crate) async fn handle_secret(
 ) -> serde_json::Value {
     tracing::info!(source = "secrets", "Secret tool dispatched");
     let result = match args["action"].as_str() {
+        Some("put") if args.get("references").is_some() => put_references(
+            state,
+            args,
+            &provider_op::OpProvider(provider_op::CommandOpRunner::new(
+                "op",
+                &[],
+                std::time::Duration::from_secs(30),
+            )),
+        ),
         Some("put") => {
             let mut input = args.clone();
             input.as_object_mut().map(|o| o.remove("action"));
@@ -33,18 +128,13 @@ pub(crate) async fn handle_secret(
                     state
                         .secrets
                         .put(put)
-                        .map(|(status, generation, deadline)| {
-                            let state = Arc::downgrade(state);
-                            tokio::spawn(async move {
-                                tokio::time::sleep_until(deadline).await;
-                                if let Some(state) = state.upgrade() {
-                                    state.secrets.expire_scope(&scope, generation);
-                                }
-                            });
-                            serde_json::json!(status)
-                        })
+                        .map(|outcome| schedule_expiry(state, scope, outcome))
                 }
-                Err(_) => Err("Invalid task secret schema".into()),
+                Err(error) => Err(invalid_schema(
+                    "task secret schema",
+                    "put takes names, values, scope and ttl",
+                    &error,
+                )),
             }
         }
         Some("request") => {
@@ -57,7 +147,11 @@ pub(crate) async fn handle_secret(
                     }),
                     Err(error) => Err(error),
                 },
-                Err(_) => Err("Invalid secret request schema".into()),
+                Err(error) => Err(invalid_schema(
+                    "secret request schema",
+                    "request takes fields and reason; each field has name, kind and an optional display",
+                    &error,
+                )),
             }
         }
         Some("run") => {
@@ -65,7 +159,7 @@ pub(crate) async fn handle_secret(
             input.as_object_mut().map(|o| o.remove("action"));
             match serde_json::from_value::<Run>(input) {
                 Ok(run) => execute(state, run).await,
-                Err(_) => Err("Invalid secret command".into()),
+                Err(error) => Err(invalid_run(&error)),
             }
         }
         Some("remove") => match serde_json::from_value::<Vec<String>>(args["names"].clone()) {
@@ -118,7 +212,10 @@ async fn execute(state: &Arc<AppState>, run: Run) -> Result<serde_json::Value, S
             .collect();
         let mut form = Form::request(
             fields,
-            format!("Approve this exact argv in {}", cwd.display()),
+            match run.reason.as_deref().filter(|r| !r.is_empty()) {
+                Some(reason) => format!("{reason} — approve this exact argv in {}", cwd.display()),
+                None => format!("Approve this exact argv in {}", cwd.display()),
+            },
         )?;
         form.argv = Some(resolved_argv.clone());
         form.cwd = Some(cwd.to_string_lossy().into_owned());
@@ -159,7 +256,7 @@ fn resolve_program(program: &str) -> Result<std::path::PathBuf, String> {
 pub(super) async fn run_child(
     argv: &[String],
     cwd: &std::path::Path,
-    environment: &BTreeMap<String, Zeroizing<String>>,
+    environment: &BTreeMap<String, FormValue>,
 ) -> Result<serde_json::Value, String> {
     use std::process::Stdio;
     let mut command = tokio::process::Command::new(&argv[0]);
@@ -232,7 +329,7 @@ pub(super) async fn run_child(
     };
     let needles: Vec<_> = environment
         .values()
-        .flat_map(|value| mask::representations(value))
+        .flat_map(FormValue::mask_representations)
         .collect();
     Ok(
         serde_json::json!({"status": "completed", "exit_code": status.code(), "stdout": mask::mask_bytes(&stdout, &needles), "stderr": mask::mask_bytes(&stderr, &needles)}),

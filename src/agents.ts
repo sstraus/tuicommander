@@ -426,6 +426,8 @@ export interface AgentsConfig {
 	agents: Record<string, AgentSettingsConfig>;
 	/** Which agent CLI to use for headless prompt execution when no agent is in the active terminal */
 	headless_agent?: HeadlessAgentChoice;
+	/** Run configuration name that workflow Agent steps launch with */
+	workflow_profile?: string;
 	/** User additions appended after generated modules for every agent. */
 	launch_instructions?: string;
 	launch_modules?: Record<string, boolean>;
@@ -474,7 +476,9 @@ export const MCP_SUPPORT: Record<AgentType, boolean> = {
 };
 
 /**
- * Which agents support native-hook state instrumentation (settings-hook shape).
+ * Agent adapters for hook state instrumentation. Availability is host-specific:
+ * Settings must also read get_agent_hook_state on the owning machine; native
+ * Windows reports unsupported regardless of these adapter declarations.
  * Claude/Gemini/Grok/Codex use settings-hooks; OpenCode uses a code-extension plugin.
  */
 export const HOOK_SUPPORT: Record<AgentType, boolean> = {
@@ -487,9 +491,8 @@ export const HOOK_SUPPORT: Record<AgentType, boolean> = {
 	goose: false,
 	grok: true,
 	droid: false,
-	// pi exposes lifecycle events to extensions, but TUIC has no managed installer for
-	// them yet — its screen adapter covers busy/idle without instrumentation.
-	pi: false,
+	// Pi uses one marked extension and paired modal promises.
+	pi: true,
 	// ego reports state natively over OSC 7770 — there is no hook to install.
 	ego: false,
 	git: false,
@@ -515,7 +518,7 @@ export const AGENT_DISPLAY: Record<AgentType, { icon: string; color: string; for
 
 /** Preserve the actual modified key for an unknown foreground program. Never
  * downgrade an unverified key to CR: that can execute a shell command. Registry
- * choices and observations are recorded in docs/evidence/ctrl-menu-1660. */
+ * choices are covered by mobile/__tests__/fixtures/agent-key-fixture.json. */
 export function getCtrlEnterSequence(agentType?: string | null): string {
 	return agentType && Object.hasOwn(AGENTS, agentType)
 		? AGENTS[agentType as AgentType].ctrlEnterSequence

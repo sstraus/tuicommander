@@ -1,8 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { AutomationsDialog } from "../../components/AutomationsDialog/AutomationsDialog";
+import { activityStore } from "../../stores/activityStore";
 import { automationsUi } from "../../stores/automations";
 import { definition, fakeAdapter } from "../automationsFixtures";
+
+beforeAll(() => activityStore.hydrate());
 
 afterEach(() => {
 	cleanup();
@@ -44,21 +47,11 @@ describe("Automations dialog readability", () => {
 	it("opens the first definition and preserves the draft when refreshing", async () => {
 		mount();
 		expect(await screen.findByLabelText("Name")).toHaveValue("Sentry");
+		expect(screen.queryByRole("checkbox", { name: "Select first automation on open" })).not.toBeInTheDocument();
 		fireEvent.input(screen.getByLabelText("Name"), { target: { value: "Unsaved" } });
 		fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
 		await waitFor(() => expect(screen.getByRole("button", { name: "Refresh" })).not.toBeDisabled());
 		expect(screen.getByLabelText("Name")).toHaveValue("Unsaved");
-	});
-	// Catches: auto-selection ignoring the user's persisted opt-out on reopen.
-	it("persists the setting that disables initial selection", async () => {
-		const view = mount();
-		await screen.findByLabelText("Name");
-		fireEvent.click(screen.getByLabelText("Select first automation on open"));
-		view.unmount();
-		mount();
-		await screen.findByRole("button", { name: /Sentry/ });
-		expect(screen.getByLabelText("Select first automation on open")).not.toBeChecked();
-		expect(screen.queryByLabelText("Name")).toBeNull();
 	});
 	// Catches: late initial loading replacing a new automation the user already started.
 	it("keeps a new draft started before the list finishes loading", async () => {

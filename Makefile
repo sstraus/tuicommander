@@ -52,6 +52,7 @@ test-shell:
 
 # Install tracked git hooks. Idempotent.
 #   pre-commit — Makefile TUIC_APP_INSTANCE scope (bypass: --no-verify) +
+#                landing cargo fmt/biome check on staged files (bypass: TUIC_SKIP_FORMAT_GATE=1) +
 #                agent-state fixture gate (bypass: TUIC_SKIP_FIXTURE_GATE=1)
 #   pre-push   — GitHub-issue closing-keyword guard (bypass: TUIC_SKIP_ISSUE_CHECK=1)
 hooks:
@@ -118,8 +119,9 @@ AGENT_TEST_INSTANCE?=agent-test
 AGENT_TEST_PORT?=19876
 AGENT_TEST_DRY_RUN?=0
 AGENT_TEST_SPEECH_OUTPUT?=0
+AGENT_TEST_REUSE_BUILD_SHA256?=
 agent-test:
-	@python3 -B scripts/agent-test.py start --instance "$(AGENT_TEST_INSTANCE)" --port "$(AGENT_TEST_PORT)" $(if $(filter 1,$(AGENT_TEST_DRY_RUN)),--dry-run,) $(if $(filter 1,$(AGENT_TEST_SPEECH_OUTPUT)),--speech-output,)
+	@python3 -B scripts/agent-test.py start --instance "$(AGENT_TEST_INSTANCE)" --port "$(AGENT_TEST_PORT)" $(if $(filter 1,$(AGENT_TEST_DRY_RUN)),--dry-run,) $(if $(filter 1,$(AGENT_TEST_SPEECH_OUTPUT)),--speech-output,) $(if $(AGENT_TEST_REUSE_BUILD_SHA256),--reuse-build-sha256 "$(AGENT_TEST_REUSE_BUILD_SHA256)",)
 
 agent-test-stop:
 	@python3 -B scripts/agent-test.py stop --instance "$(AGENT_TEST_INSTANCE)" --port "$(AGENT_TEST_PORT)"
@@ -287,18 +289,15 @@ dist: build sign
 
 # --- GitHub CI workflows ---
 
-# Push main to origin, triggering the Nightly workflow (builds tip release).
-# Also force-moves the tip git tag to HEAD so the release points to the latest commit.
-# Usage: make nightly
+# The shared tool owns exclusions, snapshot ancestry, secret scanning and push guards.
+SNAPSHOT_TOOL ?= $(HOME)/Gits/personal/orchestrator/tools/release/snapshot.py
+RELEASE_NOTES ?=
+RELEASE_COMMIT ?=
+NIGHTLY_DATE ?=
+
+# Publish one daily public snapshot and move only the rolling nightly tag.
 nightly:
-	@BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
-	if [ "$$BRANCH" != "main" ]; then echo "ERROR: must be on main (currently on $$BRANCH)" && exit 1; fi; \
-	if [ -n "$$(git status --porcelain)" ]; then echo "ERROR: working tree is dirty — commit or stash first" && exit 1; fi; \
-	echo "==> Pushing main and updating tip tag..."; \
-	git tag -f -m "Nightly tip for $$(git rev-parse --short HEAD)" tip; \
-	git push origin main; \
-	git push origin tip --force; \
-	echo "==> Nightly triggered. Monitor: gh run list -w Nightly --limit 1"
+	@python3 scripts/publish-snapshot.py nightly --tool "$(SNAPSHOT_TOOL)" --date "$(NIGHTLY_DATE)"
 
 # Bump version across all manifests (no commit, no tag).
 # Usage: make bump V=0.6.2
@@ -330,38 +329,11 @@ release-notes:
 	@if [ -z "$(V)" ]; then echo "ERROR: specify version with V=x.y.z" && exit 1; fi; \
 	./scripts/generate-release-notes.sh $(V)
 
-# Full versioned release: tag current version, push, wait for CI, publish.
-# To bump first: make bump BUMP=patch (or minor|major), then make github-release.
-# NOTE: sed -i '' is macOS syntax — run this from macOS only.
+# Submit a public release snapshot for a PR; tag it only after public main advances.
+# Usage: make github-release RELEASE_NOTES=/path/to/reviewed-groups.json
+# After CI and a fast-forward merge: make github-release RELEASE_COMMIT=<snapshot-sha>
 github-release:
-	@set -e; \
-	BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
-	if [ "$$BRANCH" != "main" ]; then echo "ERROR: must be on main (currently on $$BRANCH)" && exit 1; fi; \
-	if [ -n "$$(git status --porcelain)" ]; then echo "ERROR: working tree is dirty — commit or stash first" && exit 1; fi; \
-	CUR=$$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'); \
-	TAG="v$$CUR"; \
-	if git rev-parse "$$TAG" >/dev/null 2>&1; then echo "ERROR: tag $$TAG already exists" && exit 1; fi; \
-	echo "==> Releasing $$TAG"; \
-	git tag -a -m "$$TAG" "$$TAG"; \
-	COMMIT=$$(git rev-parse HEAD); \
-	echo "--- Pushing..."; \
-	git push origin main; \
-	git push origin "$$TAG" || { git tag -d "$$TAG"; echo "ERROR: tag push failed — local tag removed, fix and re-run"; exit 1; }; \
-	echo "--- Waiting for Release workflow on $$COMMIT..."; \
-	sleep 10; \
-	RUN_ID=""; \
-	for i in 1 2 3 4 5; do \
-		RUN_ID=$$(gh run list -w Release --limit 5 --json databaseId,headSha --jq ".[] | select(.headSha == \"$$COMMIT\") | .databaseId" 2>/dev/null | head -1) || true; \
-		if [ -n "$$RUN_ID" ]; then break; fi; \
-		echo "  run not found yet, retrying ($$i/5)..."; \
-		sleep 5; \
-	done; \
-	if [ -z "$$RUN_ID" ]; then echo "ERROR: no Release workflow run found for $$COMMIT" && exit 1; fi; \
-	echo "--- Watching run $$RUN_ID (Ctrl+C to detach)..."; \
-	gh run watch "$$RUN_ID" --exit-status; \
-	echo "--- Publishing draft release..."; \
-	gh release edit "$$TAG" --draft=false; \
-	echo "==> Released: $$(gh release view $$TAG --json url --jq .url)"
+	@python3 scripts/publish-snapshot.py release --tool "$(SNAPSHOT_TOOL)" --notes "$(RELEASE_NOTES)" --commit "$(RELEASE_COMMIT)"
 
 # Build a debug preview with a different app name to avoid conflicts with the real app.
 # The resulting .app is named "TUIC-preview" with a separate bundle ID, so macOS and

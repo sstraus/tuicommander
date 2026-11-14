@@ -7,6 +7,7 @@ import { acpTranscript } from "../../stores/acpTranscript";
 import { appLogger } from "../../stores/appLogger";
 import { settingsStore } from "../../stores/settings";
 import { terminalsStore } from "../../stores/terminals";
+import { toastsStore } from "../../stores/toasts";
 import { uiStore } from "../../stores/ui";
 import { isTauri } from "../../transport";
 import { cx } from "../../utils";
@@ -81,6 +82,21 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 	onMount(() => onCleanup(trackPanelWidth(panelEl, (width) => uiStore.setAiChatPanelMeasuredWidth(width))));
 	createEffect(() => aiChatDraft.activate(chat.sessionId() ?? ""));
 	let transcriptSearch: TranscriptSearchRef | undefined;
+	const claimFocus = (event: MouseEvent) => {
+		if (event.button !== 0 || !(event.target instanceof Element)) return;
+		// Controls keep their own focus, including buttons that macOS does not
+		// focus on click. A transcript selection must stay selected for copying.
+		const control = event.target.closest<HTMLElement>(
+			"button, a[href], input, textarea, select, [contenteditable], [tabindex]",
+		);
+		if (control && control !== panelEl && control.getAttribute("aria-label") !== "Chat transcript") {
+			control.focus({ preventScroll: true });
+			return;
+		}
+		if (!window.getSelection()?.isCollapsed) return;
+		const composer = panelEl.querySelector<HTMLTextAreaElement>('textarea[data-control-layout="composer-editor"]');
+		(composer ?? panelEl).focus({ preventScroll: true });
+	};
 	const keyDown = (event: KeyboardEvent) => {
 		if (event.key === "Escape" && !event.defaultPrevented && !event.metaKey && !event.ctrlKey && !event.altKey) {
 			const searchClosed = transcriptSearch?.close();
@@ -142,6 +158,14 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 		} else props.onOpenSettings?.("general", SETTINGS_SECTION_EGO);
 	};
 
+	/** Provider login and model selection live in Settings > AI Chat; TUIC collects no secret. */
+	const configureProvider = async () => {
+		if (isPanelMode() && isTauri()) {
+			await emitTo("main", "panel-action", { panelId: "ai-chat", action: "configure-ai-chat", data: {} });
+			await invoke("focus_main_window");
+		} else props.onOpenSettings?.("ai-chat");
+	};
+
 	const emptyMessage = () => {
 		switch (chat.phase()) {
 			case "unconfigured":
@@ -160,7 +184,15 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 	};
 
 	return (
-		<div id="ai-chat-panel" ref={panelEl} class={cx(s.panel, !props.visible && s.hidden)} onKeyDown={keyDown}>
+		<div
+			id="ai-chat-panel"
+			ref={panelEl}
+			class={cx(s.panel, !props.visible && s.hidden)}
+			data-focus-target="ai-chat"
+			tabIndex={-1}
+			onClick={claimFocus}
+			onKeyDown={keyDown}
+		>
 			<PanelResizeHandle panelId="ai-chat-panel" minWidth={300} maxWidth={700} />
 
 			<div class={s.tidyHeader}>
@@ -273,15 +305,26 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 			</Show>
 
 			<Transcript
+				onSetupProvider={() =>
+					void configureProvider().catch((error) =>
+						appLogger.error("ai-chat", "Failed to open AI Chat settings", error),
+					)
+				}
 				fontSize={terminalsStore.getActive()?.fontSize}
 				onSearchRef={(ref) => {
 					transcriptSearch = ref;
 				}}
 				canForkAtMessage={() => chat.capabilities()?.forkAtMessage === true}
 				onFork={(messageId) => void chat.fork(messageId)}
+				onQuote={(quoted) => {
+					const session = chat.sessionId();
+					if (session) aiChatDraft.insertReference(session, quoted);
+				}}
 				observeToolDuration={false}
 				entries={chat.entries}
+				messageActions={chat.messageActions}
 				busy={chat.busy}
+				working={chat.working}
 				retry={chat.retry}
 				muteIntermediate={settingsStore.state.chatMuteIntermediateText}
 				emptyMessage={emptyMessage()}
@@ -299,7 +342,16 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 				}}
 				onClear={() => {
 					const session = chat.sessionId();
-					if (session) acpTranscript.clear(session);
+					if (!session) {
+						toastsStore.add("Nothing to clear", "No conversation view is open.", "info");
+						return;
+					}
+					acpTranscript.clear(session);
+					toastsStore.add(
+						"Conversation view cleared",
+						"Saved history and agent context are unchanged. Reopening the conversation restores its history.",
+						"info",
+					);
 				}}
 			>
 				<RemoteInteractions />

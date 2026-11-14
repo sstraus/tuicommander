@@ -211,7 +211,9 @@
 }
 
 .repoList {
-  /* container for repo sections */
+  /* Clip before overflow reaches the vertical scroller. On .content itself,
+     overflow-y:auto would turn overflow-x:clip back into scrollable hidden. */
+  overflow-x: clip;
 }
 
 /* ── Repo filter status banner (shown only while "active only" is engaged) ── */
@@ -604,17 +606,37 @@
 }
 
 .worktreeDiagnostic {
-  padding: 4px 12px;
-  font-family: var(--font-mono);
-  font-size: var(--font-md);
+  display: flex;
+  align-items: center;
+  gap: var(--row-gap);
+  padding: 3px var(--row-pad-x);
+  min-height: var(--row-h);
+  font-size: var(--font-sm);
   color: var(--warning);
 }
 
-.diagnosticGuidance {
-  margin-top: 2px;
+.worktreeDiagnostic > svg {
+  flex-shrink: 0;
+}
+
+.diagnosticName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-primary);
+}
+
+.diagnosticError {
+  padding: 0 var(--row-pad-x) 3px;
   font-size: var(--font-xs);
-  color: var(--fg-secondary);
+  color: var(--error);
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .repoEmpty {
@@ -957,6 +979,12 @@ button[data-control-layout="row"].branchTabItem {
   opacity: 1;
 }
 
+/* Silent past the stall threshold while the agent claims to work: steady, not pulsing. */
+.branchTabDotStalled {
+  background: var(--warning);
+  opacity: 1;
+}
+
 .branchAgentIcon {
   display: inline-flex;
   align-items: center;
@@ -1151,6 +1179,13 @@ button[data-control-layout="row"].branchTabItem {
 
 /* Branch actions */
 .branchActions {
+  /* Like repo actions, reveal over the row instead of pushing fixed-width
+     facts past its edge and letting focus scroll the whole list sideways. */
+  position: absolute;
+  right: var(--row-pad-x);
+  top: 50%;
+  transform: translateY(-50%);
+  background: inherit;
   display: flex;
   flex-shrink: 0;
   gap: 4px;
@@ -1162,7 +1197,16 @@ button[data-control-layout="row"].branchTabItem {
 }
 
 @media (hover: hover) {
-  .branchItem:hover .branchActions {
+  /* Preserve the in-flow compact controls' 22px height plus row padding when
+     their action layer is positioned over the row. */
+  .branchItem { min-height: 28px; }
+
+  @media (max-width: 600px) {
+    .branchItem { min-height: 50px; }
+  }
+
+  .branchItem:hover .branchActions,
+  .branchItem:focus-within .branchActions {
     max-width: none;
     opacity: 1;
     pointer-events: auto;
@@ -1241,12 +1285,8 @@ button[data-control-layout="row"].branchTabItem {
   color: var(--fg-muted);
   font-family: var(--font-ui);
   margin-left: auto;
-  /* This span REPLACES .branchActions in flow when the quick switcher arms, so it
-     owns that element's height budget too. .branchActions is display:flex around
-     20px buttons; its max-width:0 clips it horizontally but never shortens it, so
-     the row is 28px until it goes display:none. A bare 12px span is a ~14px line
-     box, the row drops to the 26px min-height, and every branch row in the sidebar
-     shrinks 2px the instant the hint appears. Match the 20px instead. */
+  /* The quick switcher hides the action overlay and shows this hint instead.
+     The row owns the compact-control height, so hints cannot collapse it. */
   display: flex;
   align-items: center;
   min-height: 20px;
@@ -2463,6 +2503,11 @@ button[data-control-layout="row"].branchTabItem {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	cursor: pointer;
+}
+
+/* Button's .button centers its content at equal specificity; the element qualifier wins in any order. */
+button.crossRepoChildren {
+	justify-content: flex-start;
 }
 
 .crossRepoChildren:hover {

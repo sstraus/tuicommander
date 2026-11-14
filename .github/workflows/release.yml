@@ -32,11 +32,16 @@ jobs:
           - platform: macos-latest
             args: '--target aarch64-apple-darwin'
             label: macOS-ARM
+          # --features vulkan: GPU dictation through whisper.cpp's Vulkan backend.
+          # With the loader but no usable Vulkan device whisper.cpp runs on the
+          # CPU; without the loader the binary does not start, so every Linux
+          # package carries or requires libvulkan.so.1, and the Windows
+          # installer adds vulkan-1.dll when System32 has none.
           - platform: ubuntu-22.04
-            args: ''
+            args: '--features vulkan'
             label: Linux-x64
           - platform: windows-latest
-            args: '--bundles nsis'
+            args: '--bundles nsis --features vulkan'
             label: Windows-x64
 
     runs-on: ${{ matrix.platform }}
@@ -66,7 +71,18 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev mold
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev mold libvulkan-dev
+
+      # whisper-rs-sys needs VULKAN_SDK (headers, glslc, the Windows import
+      # library) for the vulkan feature. The stripped-down SDK has no Linux
+      # libvulkan.so; libvulkan-dev above links it.
+      - name: Install Vulkan SDK
+        if: matrix.platform != 'macos-latest'
+        uses: jakoch/install-vulkan-sdk-action@655818d26aa39d663e587b5620dd26519358981f # v1.5.4
+        with:
+          vulkan_version: 1.4.309.0
+          cache: true
+          stripdown: true
 
       # Keep the Windows build/target dir short (C:/t): whisper.cpp's nested
       # CMake TryCompile paths can exceed the 260-char MAX_PATH that MSBuild's
@@ -97,6 +113,12 @@ jobs:
       - name: Install meson and ninja
         shell: bash
         run: python -m pip install --upgrade meson ninja
+
+      # The NSIS hook installs this loader only where System32 has none.
+      - name: Fetch Vulkan loader for the installer (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: python scripts/fetch-vulkan-loader.py
 
       - uses: pnpm/action-setup@v4
 
@@ -135,6 +157,18 @@ jobs:
               Where-Object { $_.Name -eq 'CMakeCache.txt' -or $_.Name -eq 'CMakeFiles' } |
               Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
           }
+
+      # whisper-rs-sys passes every GGML_* env var to CMake but does not declare
+      # it with rerun-if-env-changed, so cargo keeps a restored ggml build that
+      # was configured with other flags (#151). Drop its build-script output and
+      # fingerprints so CMake runs again with the GGML_NATIVE value below.
+      - name: Drop cached whisper-rs-sys build
+        shell: bash
+        run: |
+          target="${CARGO_TARGET_DIR:-src-tauri/target}"
+          [ -d "$target" ] || exit 0
+          find "$target/" -maxdepth 4 -type d \( -path '*/build/whisper-rs-sys-*' -o -path '*/.fingerprint/whisper-rs-sys-*' \) \
+            -prune -print -exec rm -rf {} +
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -203,7 +237,14 @@ jobs:
           # whisper.cpp build flags per platform:
           # - macOS: override -march to avoid i8mm detection mismatch on M-series < M4 (Metal GPU always active)
           # - Linux: -fPIC required for whisper-rs-sys static linking
-          # - Windows: whisper-rs is CPU-only (Vulkan backend's shader build is broken on the runner); -Z7 for sccache MSVC compat
+          # - Windows: -Z7 for sccache MSVC compat
+          # GGML_NATIVE OFF on every leg: ggml must target a fixed CPU baseline, not the
+          # runner CPU. x64 then gets SSE4.2/AVX/AVX2/FMA/F16C/BMI2 and no AVX-512, which
+          # crashed dictation on AVX2-only CPUs (#151). macOS keeps only -march=armv8.4-a,
+          # which every M1 supports; native would add the runner chip's features.
+          GGML_NATIVE: "OFF"
+          # The NSIS hook fails the build instead of shipping without the loader.
+          TUIC_REQUIRE_VULKAN_LOADER: ${{ matrix.label == 'Windows-x64' && '1' || '' }}
           CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || matrix.label == 'Windows-x64' && '-Z7' || '' }}
           CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || matrix.label == 'Windows-x64' && '-Z7' || '' }}
         with:
@@ -216,6 +257,19 @@ jobs:
           includeUpdaterJson: true
           # tauri.conf.json enables the non-default dictation feature for bundles.
           args: ${{ matrix.args }}
+
+      # Proves the shipped ggml has no AVX-512 (zmm) code. A failure keeps the
+      # draft release from being published by finalize-release.
+      - name: Check ggml x86-64 baseline (no AVX-512)
+        if: matrix.label != 'macOS-ARM'
+        shell: bash
+        run: bash scripts/check-ggml-x86-baseline.sh "${CARGO_TARGET_DIR:-src-tauri/target}"
+
+      # The vulkan build imports libvulkan.so.1 and does not start without it.
+      # The .deb/.rpm declare the loader package; the AppImage must carry it.
+      - name: Check AppImage carries the Vulkan loader
+        if: matrix.label == 'Linux-x64'
+        run: bash scripts/check-appimage-vulkan-loader.sh src-tauri/target/release/bundle/appimage
 
       - name: Cleanup macOS keychain
         if: always() && startsWith(matrix.platform, 'macos-')
@@ -237,6 +291,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      tag: ${{ steps.publish.outputs.tag }}
+      prerelease: ${{ steps.publish.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v6
 
@@ -245,6 +302,7 @@ jobs:
         run: bash scripts/check-release-tag.sh "$GITHUB_REF_NAME"
 
       - name: Build release notes
+        id: publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -342,8 +400,21 @@ jobs:
           [[ "${latest}" == false ]] && latest_flag=(--latest=false)
           gh release edit "${TAG}" --notes-file .tmp/tuic-tests/release-body.md --draft=false \
             --prerelease="${prerelease}" "${latest_flag[@]}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"
 
       - name: Publish beta updater feed
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/publish-beta-feed.sh "$(jq -r '.version' src-tauri/tauri.conf.json)"
+
+  notify-tap:
+    # Publishing with GITHUB_TOKEN does not trigger the release.published workflow.
+    # Call it directly; keep release events for releases published outside this workflow.
+    needs: finalize-release
+    uses: ./.github/workflows/notify-tap.yml
+    with:
+      tag: ${{ needs.finalize-release.outputs.tag }}
+      prerelease: ${{ needs.finalize-release.outputs.prerelease == 'true' }}
+    secrets:
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

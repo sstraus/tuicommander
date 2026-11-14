@@ -10,29 +10,10 @@ Native plans have a stored `revision`. `update_plan` takes `plan_id`, `expected_
 
 `plugin_settings_action(plugin_id: String, action: PluginAction)` returns catalogue descriptors, a redacted snapshot, or a commit reply. Actions: describe, get with paths, set/reset with path and expectedRevision, patch with operations and expectedRevision. The backend binds the plugin owner and config file; unloaded or schema-less plugins are unavailable. HTTP twin: `POST /api/plugins/{id}/settings`.
 
-Slice F exposes `start_graph {target:{type:story|plan,id},expected_revision?,definition_id,definition_revision,request_id,limits?}` through the existing owning-daemon service. Story starts require the current native revision and pin the selected publication; the request ID is bound to its payload. Omitted limits use Rust defaults. Plan dispatch remains unavailable in this build and its start control says so. The `workflow action=run` MCP entry uses an inline schema generated from `RunAction` and the public `RunCommand` variants; it returns the same scoped snapshots and cursor-ordered events as IPC/HTTP. Run history shows pinned activations, decisions/evidence, repair counters, pause targets and complete event payloads across pages. Graph recovery uses `resume_graph {execution_id,activation_id,resolution}` after answering pending input; pause and cancel use the existing sequence-fenced commands. Legacy runs offer inspection and cancellation in the UI. No new persistence or client scheduler is added.
-
-## Workflow runs
-
-WF01 adds optional `graphExecutions[].contract` metadata to the shared snapshot:
-`{version:3,definitionSha256,policyImports:[]}` for new contract-3 graphs. Historical
-contract-2 graphs omit it and retain serial/exclusive-Join semantics. The empty
-imports list means only native graph/check/closure policy is pinned, not imported
-global routing or publication authority. Routes, actions and command receipt
-shapes do not change. See the [shared contract baseline](../backend/workflow-baseline/contract.md).
-
-
-| Command | Parameters | Result | Description |
-|---|---|---|---|
-| `workflow_run_action` | `project, action` | tagged `RunReply` | Starts, reads, lists plan runs, pages events, inspects typed command executions (`command_executions`), executes pinned checks, records checked integrations or canonical recertifications, or commands a durable project-scoped run. See [Workflow runs](../backend/workflows.md#durable-runs). |
-
-## Workflow definitions
-
-| Command | Parameters | Result | Description |
-|---|---|---|---|
-| `workflow_definition_action` | `project, action` | tagged `WorkflowReply` | Reads, edits, validates, and publishes project-scoped workflow definitions; `update_closure` sets the approval policy and `update_checks` pins executable checks. See [Workflow definitions](../backend/workflows.md). |
-
 ## Native stories
+
+`story_action_command` accepts `backend_status` and the explicit human `approve_connector {installation,expected_identity}` action. The status descriptor includes backend identity, automatic/explicit provenance, reason, availability, installation, version and error even if initialization fails. HTTP and headless use the same service; see the story backend protocol.
+`set_backend {backend:"native"|"automatic"|"wiz-stories"}` is also an authenticated-human-only shared action. Native continuity precedes discovery; active run snapshot provenance prevents backend changes after restart. Approval compares the displayed `generation` (entry/version), not a full installation-tree digest.
 
 Native stories expose `qa` for work that waits on manual checks. A criterion starts with `[MANUAL]`, or is marked through `set_criterion_manual {index,manual}`. Active work automatically enters QA when all unchecked criteria are manual; `submit_qa` explicitly requests that state. `reject_qa` returns QA to In progress; `approve` requires every criterion checked. QA keeps plans Active and dependencies blocked. All transitions retain expected-revision checks. See the [native stories guide](../user-guide/native-stories.md#manual-qa).
 
@@ -46,11 +27,10 @@ Both archive and restore refuse claimed stories and plans that contain a claimed
 
 `story_archive_history` (`story_id`) and `plan_archive_history` (`plan_id`) return `{type:"archive_history",value:[{revision,archived,actor}]}` in revision order. Events commit atomically with the record and retain caller provenance. Existing status transition history remains separate. Consecutive archive-only revisions preserve accepted-work integration receipts; a work change or a moved canonical Git ref still invalidates them. Example: `tuic story '{"action":"archive_story","story_id":"<id>","expected_revision":1}' --project /absolute/project`.
 
-
 | Command | Parameters | Result | Description |
 |---|---|---|---|
 | `story_action_command` | `project, action, sessionId?` | tagged `StoryReply` | Creates, reads, amends, claims, transitions, or removes a cancelled dependency from native stories. `update_story` takes a revision-checked typed patch for unclaimed Backlog/Ready stories without run ownership; metadata, criteria and dependencies commit atomically. `list_plan_sources` discovers project Markdown plans and `add_plan_source` records one with its document title; both are also available through HTTP and MCP. `plan_view` returns a Rust-derived plan summary and transitive `abandoned` indicators; `transition_history` returns actor provenance. Removal requires a Backlog dependent, a direct WontFix prerequisite, and the current revision. The backend checks project ownership and claim session identity. See [HTTP API](http-api.md#native-stories). |
-| `story_capabilities` | none | `true` | Infallible capability probe used before loading the dialog. Its absence means the running desktop backend predates native stories. |
+| `story_capabilities` | `project?` | `Result<StoryCapabilities>` | Capability probe used before loading the dialog: `{ backend, operations }`, booleans per operation plus additive `operations.story_edits {title,priority,problem,criteria_add,single_change}` of the project's story backend (`native`, or `external:<adapter id>` from `story-backends.json`; see `docs/backend/story-backend-protocol.md`). Without `project` it answers native; an external adapter that cannot start is an error. Its absence, or a plain `true` from an older build, means the running backend needs a restart. |
 
 `add_plan_source` reuses an active plan with the same source. If only an archived plan matches, it returns an error that identifies the plan and gives explicit restore instructions; it does not create another record or change archive state.
 
@@ -96,8 +76,8 @@ grid-cell coordinates. Both match the stored sequence without normalization.
 | `write_pty_parts` | `session_id, parts: Vec<String>` | `()` | Write several inputs under one writer lock. The parts stay separate on purpose: post-write bookkeeping runs once per part, and it is not a function of the joined bytes (a lone `/` opens slash mode, an exact option key answers a choice prompt) |
 | `enqueue_agent_command` | `session_id, text, idempotency_key?, expected_draft?` | `{ accepted, typed, queued }` | Queue for the next idle window; optional `expectedDraft` validates and clears the live composer first (errors after clearing are uncertain; do not retry automatically); optional key (1–128 UTF-8 bytes, wire name `idempotencyKey`) recognizes the last 128 accepted keys per live PTY without resubmitting; acceptance is not a model-turn receipt |
 | `clear_queued_agent_commands` | `session_id` | `usize` | Drop every queued command; returns how many |
-| `list_queued_agent_commands` | `session_id` | `[{ id, text, kind }]` | Every parked entry in delivery order, including notices and initial prompts |
-| `send_queued_agent_command_now` | `session_id, command_id` | `bool` | Claim one pending item and send now: ego native steer or Claude/Codex interrupt then confirmed idle; false when already claimed; failures never retry ambiguous writes |
+| `list_queued_agent_commands` | `session_id` | `[{ id, text, kind, send_now? }]` | Every parked entry in delivery order, including notices and initial prompts. `send_now` is `interrupt`, or absent when the harness has no Send now |
+| `send_queued_agent_command_now` | `session_id, command_id` | `bool` | Force one pending item: Claude, Codex and ego share Escape, confirmed idle (up to 10 s), then full-text submission before queued mail; false when already claimed; a refusal keeps an unwritten item queued; ambiguous writes never retry |
 | `remove_queued_agent_command` | `session_id, command_id` | `bool` | Drop one queued command by id; false when it already drained |
 | `resize_pty` | `session_id, rows, cols` | `()` | Resize PTY; alternate-screen resizes preserve primary-log continuity |
 | `pause_pty` | `session_id` | `()` | Pause reader thread |
@@ -115,6 +95,7 @@ grid-cell coordinates. Both match the stored sequence without normalization.
 | `get_shell_state` | `session_id` | `Option<String>` | Get current shell state ("busy", "idle", or null); agent-specific semantic Working markers can repair a transient false-idle state |
 | `has_foreground_process` | `session_id: String` | `bool` | Checks if a non-shell foreground process is running |
 | `get_pty_capture` | -- | `JSON` | Raw PTY capture tap state: enabled, session filter, directory, bytes per session. Browser parity: `GET /diagnostics/capture`. |
+| `set_terminal_literal_reads` | `session_id: String, enabled: bool` | `{session_id, enabled}` | Owner grant for literal terminal reads of one PTY session; memory only, cleared on session close and restart. `session action=output literal=true` then skips secret-shaped pattern masking for that session on screen, delta, absolute and raw reads; registered and scoped secrets stay masked. Surfaced as **Allow Literal Terminal Reads** in the tab context menu. Desktop-only (`INTENTIONALLY_UNMAPPED`): models reach loopback HTTP and MCP, so no HTTP route can grant it. |
 | `set_pty_capture` | `enabled: bool, session_id: Option<String>` | `JSON` | Start/stop recording raw PTY bytes to `<config dir>/captures/<id>.tcap` or the absolute `TUIC_CAPTURE_DIR` override; a relative override returns an error and leaves recording disabled. Starting begins a fresh file. Surfaced as **Capture Session** in the tab context menu under `isPerfDebug()`. Browser parity: `POST /diagnostics/capture`. |
 | `set_session_name` | `session_id, name, is_custom?` | `()` | Set a session display name and whether it represents an explicit user rename |
 | `get_input_buffer_content` | `session_id` | `String` | Get the current content of the input line buffer (what the user is typing). Used by plugins with `pty:read` capability. |
@@ -124,6 +105,7 @@ grid-cell coordinates. Both match the stored sequence without normalization.
 | `ack_terminal_frame` | `session_id, epoch: u64, received: u64, visible?: bool` | `()` | Report the total number of frames this client has received and optionally update epoch-scoped desktop visibility. Hidden subscriptions receive no frames. The gate opens when the echo catches up with what was sent, which is what tells a fresh ack from a late one for an abandoned frame. An ack whose epoch is not the live subscription's is dropped. A receipt never marks the grid dirty or generates a frame; actual pending damage and recovery debt are retained by the ticker. Browser parity: none — the WS path uses sequence numbers instead |
 | `unsubscribe_terminal_grid` | `session_id, epoch: u64` | `()` | Tear down the grid channel and its gate. The pending scroll target is NOT torn down — it belongs to the session, so an attached browser keeps scrolling after the desktop terminal closes. A non-matching epoch is ignored: a remount subscribes before the outgoing instance unsubscribes, and honouring the stale call would blank a mounted terminal. Browser parity: closing the WS |
 | `chat_view_snapshot` | `session_id, epoch: Option<u64>, from_seq: Option<u64>, pending_texts: Option<Vec<String>>` | `ChatViewSnapshot` | Chat view of a Claude or Grok terminal: transcript entries from the bound session file as ACP updates, with a bounded log, epoch and `reset` flag. Errors `not_bound: <reason>` for a terminal with no bound Claude or Grok agent. Browser parity: `POST /sessions/:id/chat-view`. Optional pending texts return in request order after the same Rust redaction and character cap used for user receipts |
+| `chat_view_full_text` | `session_id, message_id` | `{ text }` | Whole prompt or reply of one message the Chat stream capped at 20 000 characters, read back from the bound Claude transcript through the same adapter (redaction kept, no cut). Errors `not_bound: …`, `not_supported` (other agents), `message not found in the transcript`. Browser parity: `GET /sessions/:id/chat-view/messages/:message_id/full-text` |
 | `terminal_styled_rows` | `session_id, start, count` | `Result<Response, String>` (packed bytes) | A range of styled rows by absolute index, filling the client-side scroll cache. Raw bytes for the same reason as grid frames. Browser parity: `GET /sessions/:id/terminal/styled-rows` (`application/octet-stream`) |
 
 `terminal_scroll_info`, `terminal_search`, `terminal_search_buffer`,
@@ -189,7 +171,7 @@ receive it on `/events`.
 | `get_repo_summary` | `repo_path` | `RepoSummary` | Aggregate snapshot: worktree paths + merged branches + per-path diff stats in one IPC |
 | `get_repo_structure` | `repo_path` | `RepoStructure` | Fast phase: worktree paths + merged branches only (Phase 1 of progressive loading) |
 | `get_repo_diff_stats` | `repo_path` | `RepoDiffStats` | Slow phase: per-worktree diff stats, last commit timestamps, and `workspace_statuses` keyed by opaque workspace id (Phase 2 of progressive loading) |
-| `run_git_command` | `path, args` | `GitCommandResult` | Run allowlisted git command (success, stdout, stderr, exit_code) |
+| `run_git_command` | `path, args` | `GitCommandResult` | Run an allowlisted git subcommand with normal options; generic branch deletion is refused (success, stdout, stderr, exit_code) |
 | `get_working_tree_status` | `path` | `WorkingTreeStatus` | Full porcelain v2 status: branch, upstream, ahead/behind, stash count, staged/unstaged entries, untracked files |
 | `update_from_base` | `path, branch_name, strategy?` | `String` | Fetch configured base ref and rebase or merge the branch onto it. Conflict cleanup reports `(aborted)` only after abort succeeds; abort failure includes manual recovery guidance. |
 | `git_stage_files` | `path, files` | `()` | Stage files (`git add`). Path-traversal validated |
@@ -201,11 +183,13 @@ receive it on `/events`.
 | `git_stash_apply` | `path, index` | `()` | Apply stash entry by index |
 | `git_stash_pop` | `path, index` | `()` | Pop stash entry by index |
 | `git_stash_drop` | `path, index` | `()` | Drop stash entry by index |
+| `git_stash_facts` | `path, stash_ref` | `StashFacts` | Deterministic facts for the stash Check prompt (files already in HEAD, branch state, diff) |
+| `git_stash_check_drop` | `path, stash_ref, hash, verdict` | `StashCheckOutcome` | Drop a stash only when the verdict is redundant/obsolete AND git proves every file is in HEAD; archives the commit under `refs/archive/stash/<hash>` first |
 | `git_stash_show` | `path, index` | `String` | Show diff of stash entry |
 | `git_apply_reverse_patch` | `path, patch, scope?` | `()` | Apply a unified diff patch in reverse (`git apply --reverse`). Used for hunk/line restore. `scope="staged"` adds `--cached`. Patch passed via stdin (no temp files). Path-traversal validated |
 | `get_file_history` | `path, file, count?, after?` | `Vec<CommitLogEntry>` | Per-file commit log following renames (default 50, max 500) |
 | `get_file_blame` | `path, file` | `Vec<BlameLine>` | Per-line blame: hash, author, author_time (unix), line_number, content |
-| `get_branches_detail` | `path` | `Vec<BranchDetail>` | Rich branch listing: name, ahead/behind, last commit date, tracking upstream, merged status |
+| `get_branches_detail` | `path` | `Vec<BranchDetail>` | Rich branch listing: name, ahead/behind, last commit date, tracking upstream. No merged status: the Branches tab loads that separately through `get_merged_branches`, so the per-branch classifier never delays the list |
 | `delete_branch` | `path, name, force` | `()` | Delete a local branch. `force=false` uses the shared integration proof and compares the ref with its proved tip; content-based proof requires an exact-tip archive. `force=true` preserves the exact tip at `refs/archive/<branch>` before deleting, archives at `refs/archive/<branch>-<sha7>` when that name holds a different tip, and cannot delete a checked-out branch. Refuses to delete the current branch or default branch |
 | `create_branch` | `path, name, start_point, checkout` | `()` | Create a new branch from `start_point` (defaults to HEAD). `checkout=true` switches to it immediately |
 | `get_recent_branches` | `path, limit` | `Vec<String>` | Recently checked-out branches from reflog, ordered by recency |
@@ -282,11 +266,12 @@ reached is an error carrying ego's own sentence, never an empty result.
 | `begin_orphan_cleanup` | `repo_path, paths` | `()` | Register the open Ask dialog for an agent answer. |
 | `pending_orphan_cleanup_answer` | `repo_path` | `bool?` | Read the pending answer, or `null` while unanswered. |
 | `clear_orphan_cleanup` | `repo_path` | `()` | Clear the pending answer when the dialog closes. |
-| `remove_orphan_worktree` | `repo_path, worktree_path, safe_only?, confirmed_sessions?` | `()` | Remove a registered detached orphan by filesystem path. With `safe_only`, recheck clean status, branch reachability and live sessions immediately before removal. Without it, refuse when a live session in the checkout is not in `confirmed_sessions` (the session ids the user saw). |
+| `resolve_worktree_diagnostic_cmd` | `repo_path, worktree_path, action` | `()` | Fix one unavailable-registration sidebar diagnostic. `action=repair` runs `git worktree repair <path>` from the main checkout for a present checkout whose `.git` pointer is dead; `action=prune` drops the registration of a deleted folder (never deletes files). The path must be a current `missing` diagnostic. |
+| `remove_orphan_worktree` | `repo_path, worktree_path, safe_only?, confirmed_sessions?, expected_fingerprint?` | `()` | Remove a registered detached orphan by filesystem path. A dirty checkout requires the fingerprint from the confirmed assessment. With `safe_only`, recheck clean status, branch reachability and live sessions immediately before removal. Without it, refuse when a live session in the checkout is not in `confirmed_sessions` (the session ids the user saw). |
 | `switch_branch` | `repo_path, branch_name` | `()` | Switch main worktree to a different branch (with dirty-state and process checks) |
 | `merge_and_archive_worktree` | `repo_path, branch_name, workspace_id, target_branch, after_merge, force?, expected_fingerprint?` | `MergeArchiveResult` | Merge worktree branch into base and archive or delete. A pre-flight counts commits and checks the exact checkout. For `archive` or `delete`, an unverified or dirty checkout or one with a live session returns `action: "needs_confirmation"` **before merging**. Re-call with `force: true` and the confirmed lifecycle `expected_fingerprint` to proceed; a changed fingerprint aborts. A locked checkout is not archived. If conflict cleanup abort fails, the error includes the manual abort command. |
 | `finalize_merged_worktree` | `repo_path, workspace_id, action, force?, expected_fingerprint?` | `MergeArchiveResult` | Clean up after a completed merge, or explicitly archive a reviewed workspace without merging (`action: "archive"`, `force: true`, confirmed fingerprint). Uses the same lifecycle review as one-click cleanup and also requires merged commit status before automatic cleanup. Without `force`, a dirty, unverified, or live checkout returns `action: "needs_confirmation"` (`merged: true` — only cleanup stopped). Force requires the confirmed lifecycle `expected_fingerprint` and rejects changed state. A lock stops archiving. Delete may include `branch_delete_warning` if safe branch deletion kept the branch. |
-| `get_workspace_lifecycle` | `repo_path, workspace_id` | `{ archive_checklist, dirty_files, untracked_files, live_sessions, warnings, missing_checkout, dirty_fingerprint?, submodule_unpushed_commits, commit_status, removal_safety, error? }` | Fresh workspace-id-addressed removal preflight. `archive_checklist` supplies `checks: [{ passed, label }]`, `can_delete`, `archive_explanation`, and `delete_explanation`; Delete recomputes this verdict before mutation. `missing_checkout: true` identifies a registered checkout whose directory is gone; it has no dirty fingerprint and requires force confirmation. `dirty_files` counts files a removal discards (`null` when unavailable — not `0`); `commit_status` is `unmerged`, `in_sync`, `merged`, or `unknown`; `removal_safety` is `safe`, `requires_force`, or `unknown`. Unknown never authorizes removal. HTTP twin: `GET /worktrees/lifecycle`. |
+| `get_workspace_lifecycle` | `repo_path, workspace_id` | `{ archive_checklist, dirty_files, untracked_files, copied_files, live_sessions, warnings, missing_checkout, dirty_fingerprint?, submodule_unpushed_commits, commit_status, removal_safety, error? }` | Fresh workspace-id-addressed removal preflight. `copied_files` lists paths and copy classifications; legacy untracked files are explicitly uncertain. `archive_checklist` supplies `checks: [{ passed, label }]`, `can_delete`, `archive_explanation`, and `delete_explanation`; Delete recomputes this verdict before mutation. `missing_checkout: true` identifies a registered checkout whose directory is gone; it has no dirty fingerprint and requires force confirmation. `dirty_files` counts files a removal discards (`null` when unavailable — not `0`); `commit_status` is `unmerged`, `in_sync`, `merged`, or `unknown`; `removal_safety` is `safe`, `requires_force`, or `unknown`. Unknown never authorizes removal. HTTP twin: `GET /worktrees/lifecycle`. |
 | `list_base_ref_options` | `repo_path` | `Vec<String>` | List valid base refs for worktree creation |
 | `run_setup_script` | `script, cwd` | `JSON` | Run a setup script through `sh -c` / `cmd /C` in `cwd`; returns exit code and captured output |
 | `generate_clone_branch_name_cmd` | `base_name, existing_names` | `String` | Generate hybrid branch name for clone worktree |
@@ -323,8 +308,8 @@ reached is an error carrying ego's own sentence, never an empty result.
 | `save_keybindings` | `base, config` | `()` | Save typed action/key overrides; reject invalid records before persistence |
 | `load_agents_config` | -- | `AgentsConfig` | Load per-agent run configs, including optional model defaults, and `prevent_alt_screen` overrides |
 | `save_agents_config` | `base, config` | `()` | Save per-agent run configs, including optional model defaults, and `prevent_alt_screen` overrides |
-| `get_agent_native_status_signals` | `agent_type` | `bool` | Read the default-on Claude/Codex launch-scoped status setting |
-| `set_agent_native_status_signals` | `agent_type`, `enabled` | `()` | Change launch-scoped status injection for future sessions |
+| `get_agent_native_status_signals` | `agent_type` | `bool` | Read effective Claude/Codex launch-scoped status setting; false on native Windows without the bundled `tuic.exe` |
+| `set_agent_native_status_signals` | `agent_type`, `enabled` | `()` | Change launch-scoped status injection for future sessions; native Windows without the bundled `tuic.exe` rejects without writes |
 | `load_activity` | -- | `ActivityConfig` | Load activity dashboard state |
 | `save_activity` | `base, items` | `()` | Save activity dashboard state |
 | `load_repo_local_config` | `repo_path` | `RepoLocalConfig?` | Read `.tuic.json` from repo root; returns null if absent or malformed |
@@ -386,7 +371,7 @@ remote daemon.
 | `detect_all_agent_binaries` | `binaries` | `HashMap<String, AgentBinaryDetection>` | Detect the named binaries in parallel, path only (no version or screen-capability lookup) |
 | `detect_claude_binary` | -- | `String` | Detect Claude binary |
 | `detect_installed_ides` | -- | `Vec<String>` | Detect installed IDEs |
-| `open_default_app` | `target: String, kind: "url" \| "path"` | `()` | Host-only default application open; allows http/https/mailto/tel URLs, checks path metadata, returns after spawn and reaps the launcher through `tuic_core::child_reaping` |
+| `open_default_app` | `target: String, kind: "url" \| "path" \| "handler"` | `()` | Host-only default application open; `url` allows http/https/mailto/tel URLs, `handler` (owner-confirmed links only) allows a UNC path or a custom-scheme URL and refuses `javascript`/`vbscript`/`data`/`blob`/`about`/`file` and one-letter schemes (UNC becomes `smb://` outside Windows), checks path metadata, returns after spawn and reaps the launcher through `tuic_core::child_reaping` |
 | `open_in_app` | `path, app, line?, col?` | `()` | Open path in application; `line`/`col` are used only by editors that support them |
 | `spawn_agent` | `pty_config, agent_config` | `String` (session ID) | Spawn agent in PTY |
 
@@ -508,7 +493,7 @@ The live registry exposes status via SSE events (`upstream_status_changed`). Val
 | `get_claude_usage_timeline` | `scope, days?` | `Vec<TimelinePoint>` | Hourly token usage from session transcripts |
 | `get_claude_session_stats` | `scope` | `SessionStats` | Aggregated token/session stats from JSONL transcripts |
 | `get_claude_project_list` | -- | `Vec<ProjectEntry>` | List project slugs with session counts |
-| `get_codex_usage_api` | -- | `CodexUsageApiResponse` | Fetch rate-limit usage through the official Codex App Server |
+| `get_codex_usage_api` | -- | `CodexUsageApiResponse` | Read quota through the shared Codex credential owner |
 | `get_codex_usage_stats` | -- | `CodexStatsResponse` | Fetch daily token history and supported lifetime stats through the Codex App Server |
 | `get_grok_usage_api` | -- | `GrokUsageApiResponse` | Fetch billing-period usage through Grok Build's `_x.ai/billing` ACP extension |
 | `set_terminal_theme_colors` | `foreground: [u8;3]`, `background: [u8;3]`, `cursor: [u8;3]` | `()` | Publish the resolved terminal theme so the emulator can answer OSC 10/11/12 colour queries |
@@ -578,11 +563,12 @@ are unaffected (they build `NSAlert`) and stay as they are.
 |---------|------|---------|-------------|
 | `resolve_terminal_path` | `cwd, candidate` | `Option<ResolvedFilePath>` | Resolve one terminal path candidate against `cwd`; `null` on a miss |
 | `resolve_terminal_paths` | `cwd, candidates` | `Vec<Option<ResolvedFilePath>>` | Batched form, answered **positionally**: entry `i` is the result for `candidates[i]`. One IPC round-trip per terminal screen instead of one per candidate |
-| `resolve_markdown_link` | `root, currentFile, href` | `MarkdownLinkTarget` | Decode and resolve a rendered Markdown link relative to its file; return a heading, file, missing path, or blocked network path. Runs filesystem work on the blocking pool |
+| `resolve_markdown_link` | `root, currentFile, href` | `MarkdownLinkTarget` | Decode and resolve a rendered Markdown link relative to its file; return a heading, file, missing path, `external` network target (UNC, never probed; the frontend opens it after owner confirmation), or blocked target. Runs filesystem work on the blocking pool |
 | `list_directory` | `repoPath, subdir` | `Vec<DirEntry>` | List directory contents; links add `symlink_target` (link text) and `symlink_target_kind` (`directory`, `file`, `unavailable`), with size 0 |
 | `get_home_directory` | — | `String` | Return this machine's home directory for local or remote browsing |
 | `fs_read_file` | `path` | `String` | Read file contents |
 | `write_file` | `path, content` | `()` | Write file |
+| `markdown_review_changed_lines` | `path, baseline?, expected` | `String?` | Current-file changed line ranges from a saved editor baseline; null for missing, unchanged or stale snapshots |
 | `write_file_if_unchanged` | `repo_path, file, expected, content` | `bool` | Write only when the file still equals `expected`; `false` = changed on disk, nothing written (mobile Markdown review) |
 | `create_directory` | `path` | `()` | Create directory |
 | `delete_path` | `path` | `()` | Delete file, directory, or symbolic link; links are removed without following their targets |
@@ -630,8 +616,8 @@ JavaScript `String.slice` semantics for ASCII, accented text, and non-BMP emoji.
 
 | Command | Args | Returns | Description |
 |---------|------|---------|-------------|
-| `plugin_read_file` | `path, plugin_id` | `String` | Read file as UTF-8 (within $HOME, 10 MB limit) |
-| `plugin_read_file_base64` | `path, max_bytes?, plugin_id` | `String` | Read file bytes as base64 within `$HOME`; default 10 MiB, positive custom budgets clamped to 512 MiB |
+| `plugin_read_file` | `path, plugin_id` | `String` | Read file as UTF-8 (absolute path the user can access, 10 MB limit) |
+| `plugin_read_file_base64` | `path, max_bytes?, plugin_id` | `String` | Read file bytes as base64 from an absolute path the user can access; default 10 MiB, positive custom budgets clamped to 512 MiB |
 | `plugin_write_file_base64` | `path, content, max_bytes?, plugin_id` | `()` | Atomically replace a file from base64 bytes within `$HOME`; default 10 MiB, positive custom budgets clamped to 512 MiB |
 | `plugin_read_file_tail` | `path, max_bytes, plugin_id` | `String` | Read last N bytes of file, skip partial first line |
 | `plugin_list_directory` | `path, pattern?, plugin_id` | `Vec<String>` | List filenames in directory (optional glob filter) |
@@ -659,6 +645,7 @@ JavaScript `String.slice` semantics for ASCII, accented text, and non-BMP emoji.
 | `mdkb_code_find` | `repo_path, name, kind?` | `CodeFindResult` | Exact symbol lookup by name, optionally filtered by kind. `symbols` is capped by mdkb; `total` is the unclamped match count and `capped` says whether rows were held back (both `null` when mdkb sent no count) |
 | `install_mdkb` | — | `String` | Download and install mdkb binary |
 | `uninstall_mdkb` | — | `()` | Remove mdkb binary (errors for homebrew/cargo installs) |
+| `install_ego` | — | `String` | Download the latest ego release binary (`ego-<os>-<arch>`, `ego_install.rs`), install it through the same routine as `install_mdkb` (`release_install.rs`), and save its path as `ego_executable`. Host-only, like `install_mdkb` |
 
 **Line numbers are 1-based on this boundary.** mdkb stores symbol ranges 0-based
 but takes a 1-based `line` as *input* to `symbol_at_position`. `mdkb_commands::editor_line`
@@ -722,6 +709,7 @@ empty result.
 | `read_file` | `path, file` | `String` | Read file contents |
 | `get_mcp_status` | -- | `JSON` | MCP server status including live `tls_active` (not Tailscale capability), plus unfiltered `native_tools: [{name, summary, description}]` Settings inventory (no token — use `get_connect_url` for QR) |
 | `get_mcp_audit` | -- | `JSON` | Body-free MCP tools/call outcome audit (same body as `GET /mcp/audit`); `{enabled:false,records:[]}` while `mcp_call_audit_enabled` is off |
+| `get_mcp_usage` | -- | `JSON` | Last 7 days of MCP usage per role (same body as `GET /mcp/usage`); `{enabled:false,roles:[]}` while `mcp_usage_rollup_enabled` is off |
 | `suspended_session_action` | `request` | JSON | Rust-owned durable suspend/resume, metadata sync, list, forget and verified resume resolution. HTTP: `POST /sessions/suspended`; actions and shapes documented in HTTP API |
 | `mcp_confirm_response` | `request_id, confirmed` | `()` | Answer a pending `ui(action=confirm)`. HTTP: `POST /mcp/confirm-response`. Every client is shown the same request and the first answer wins, so an unknown or already-answered id is a no-op, not an error |
 | `get_connect_url` | `ip` | `String` | Build QR connect URL server-side (token stays in backend) |
@@ -772,8 +760,8 @@ can choose what the host runs.
 
 | Command | Args | Returns | Description |
 |---------|------|---------|-------------|
-| `ai_chat_selection` | — | `{ workspace, sessionId: string \| null }` | Read the backend-owned active conversation for the configured workspace; HTTP `GET /acp/chat/selection` |
-| `select_ai_chat_conversation` | `session_id: Option<String>` | `()` | Persist last-writer-wins selection (null clears); HTTP `PUT /acp/chat/selection` with `{ sessionId }`. Changed snapshots invalidate desktop and SSE clients |
+| `ai_chat_selection` | — | `{ workspace, sessionId: string \| null, replacing: string \| null }` | Read the backend-owned active conversation for the configured workspace; HTTP `GET /acp/chat/selection` |
+| `select_ai_chat_conversation` | `session_id: Option<String>, replacing: Option<String>` | `()` | Persist last-writer-wins selection (null clears); `replacing` names the tab a compaction successor continues. HTTP `PUT /acp/chat/selection` with `{ sessionId, replacing }`. Changed snapshots invalidate desktop and SSE clients |
 | `acp_workspace_root` | — | `String` | The directory AI Chat runs in, from `ai_chat_workspace` (empty = home directory of this host). A missing folder is created; an unusable one is refused with a message naming the setting |
 | `acp_connect` | `root`, optional `env: Record<string, string>` | `AcpConnectionSnapshot` | Launch ego with process-local env overrides; supplied env requires a fresh connection (disconnect first when already live). Omitted env adopts the live peer |
 | `acp_reconnect` | `connectionId, root` | `AcpConnectionSnapshot` | Settle the old connection and start a new generation |
@@ -790,6 +778,8 @@ can choose what the host runs.
 | `acp_session_close` | `connectionId, sessionId` | `()` | Detach without deleting |
 | `acp_session_set_viewed_repo` | `connectionId, sessionId, viewedRepo?` | `()` | Update or clear the attached chat's effective repository hint for spoken prompts; no prompt is submitted and cwd is unchanged |
 | `acp_session_prompt` | `connectionId, sessionId, prompt, viewedRepo?` | `AcpTurnId` | Start a turn or accept it into the server-owned FIFO when one is running. `viewedRepo` is sent as `_meta.tuicommander/viewedRepo`, a hint for that turn only |
+| `acp_message_action` | `connectionId, sessionId, request: { messageId, text, action }` | `{ turnId, reactions }` | Send a conversational reaction addition/removal or comment about an exact native message through the original prompt queue. Not evaluation or authorization; offline refusal leaves marks unchanged |
+| `acp_message_reactions` | `sessionId` | `Record<string, string[]>` | Read backend-persisted accepted marks keyed by native message ID; browser parity: `GET /acp/chat/:sessionId/reactions` |
 | `acp_session_cancel` | `connectionId, sessionId` | `()` | Cancel the running turn |
 | `acp_queued_prompt_cancel` | `connectionId, sessionId, turnId` | `()` | Remove one queued prompt before it reaches ego |
 | `acp_queued_prompt_recall` | `connectionId, sessionId, turnId` | `string` | Atomically withdraw a queued text-only prompt and return its full text; refuse missing, dispatched, steering-in-flight, or attachment-bearing prompts without removing them |
@@ -890,13 +880,9 @@ OSC 133 event `line` and hook-generated `UserInput.line` use all-time rows. `ter
 - `telegram_settings`: safe settings snapshot (`enabled`, `token_set`, `bot_alias`, `registered_agent_name` (nullable), decimal-string `chats`, `connected`, `last_error`, `last_message_time`). Never returns a token or message text.
 - `telegram_setup { change }`: `change.action` is `token` (password `token`, checks `getMe`), `pair` (returns `code`, `expires_in_seconds`), `add_chat`/`remove_chat` (`chat_id`), or `configure` (`enabled`). Errors are typed safe Telegram categories.
 
-The daemon executor now owns recovery and duration timers under an OS run-database lock. Reads never recover live work, and a non-owner daemon refuses run mutations. Graph resume uses `resume_graph {execution_id,activation_id,resolution}` with an explicit pending activation; status-only resume cannot bypass graph position. Graph start controls, Agent effects and delivery policy remain unavailable until their later slices.
-
 `acp_session_fork` accepts optional `atMessageId`, with the same behavior as the ACP HTTP fork route. Capability snapshots expose `forkAtMessage` separately from tip fork support.
 
 `acp_session_list` uses the same complete ancestry projection as HTTP: original ego lineage plus `_meta.tuicommander.lineageDepth` and disabled deleted-parent placeholders.
-
-`workflow_run_action` also accepts the read-only `incidents` action with `run_id`. It returns the same project-scoped camelCase incident entries as `POST /workflows/run/action`; see the HTTP API run incident projection.
 
 ### `acp_chat_open`
 
@@ -982,7 +968,6 @@ The request is `{action:"add",account:{provider,host,kind,label,username?}}` or
 `secret_form_submit` require the active native window identity. Account forms
 do not expose a mobile capability or accept HTTP bootstrap/submission.
 
-
 Automation worktree cleanup (#1623-8b2a): Automation runs retain automation/run IDs and the exact created workspace path and ID in their saved snapshot, including after definition deletion. Worktree cleanup is explicit and limited to final runs. The backend resolves the saved identity and rechecks shared Git integration/archive proof, dirt, submodule commits and live sessions; it never forces removal or closes sessions. Shared `automation_action` actions `worktree_preview` and `cleanup_worktree` accept a saved run `id` on IPC, HTTP, MCP and CLI.
 Automation templates (#1622-be11): the shared automation action accepts
 **templates** (catalogue) and **template** (draft). Draft inputs are template_id,
@@ -1038,7 +1023,6 @@ See the HTTP reference for action arguments and typed error prefixes.
 
 `compare_work_item_comments` / `POST /tasks/compare-comments` accepts `{detail, previous, enabled, followed}` and returns `{snapshot, notify}`. `detail` is the unchanged WorkItemDetail; `previous` is null or `{latest, ids, count}` (latest is a UTC timestamp in milliseconds). The pure Rust comparison has no provider IO or persistence. First observations, disabled/unfollowed inputs, older comments and edits are silent. GitHub full comment counts cover normal comments outside the first page. Desktop and HTTP use the same implementation.
 
-
 `resume_session(tuic_session)` returns `{ok:true,session_id}` through the shared Rust wake path. HTTP parity: `POST /sessions/wake` with `{tuicSession}`. Live targets are idempotent; failed resume retains the suspended record.
 
 ### Guarded automated agent input
@@ -1050,6 +1034,7 @@ See the HTTP reference for action arguments and typed error prefixes.
 `settings_action(request: JSON) -> JSON` uses the same Rust-generated envelope as POST `/settings/action` and MCP settings. Native caller authority is host-issued, never deserialized from the request. Typed owner workflows use the same envelope and explicit machine target. Owner transactions remain inventory-gated.
 
 Gated HTTP and IPC edits return `confirmation_required` with `proposalId` and do not write.
+Confirmation applies only when a change adds authority: enabling or widening a listener, loosening authentication, replacing TLS material or weakening TLS, enabling the relay or changing its destination, adding or replacing an executable, launcher argument or stdio upstream command, and adding a tunnel forward or auto-connect. Narrowing, disabling, lowering a timeout and no-op edits apply directly. The owner's own Settings window (the native `settings_action` command) applies every edit directly; HTTP, MCP and other native callers get the proposal flow. No request field can claim owner-window intent.
 Replay the exact original edit with `approval: "<proposalId>"` and `confirm: true`.
 The same request opens the existing all-client human confirmation dialog, waits for the
 answer, and, only after approval, commits the exact edit under its original caller.
@@ -1069,7 +1054,7 @@ the error to the caller. HTTP equivalent: `POST /sessions/{id}/force-retry`.
 
 ## Settings startup ownership
 
-`settings_action` shares its envelope and recovery behavior with HTTP and MCP; native caller trust does not bypass owner CAS or human confirmation. [Settings startup workflows](../backend/settings-startup.md) describes GitHub `list_accounts` and configured Ego `begin_login`/`login_status`, including owner revision checks, a human-operated terminal and credential readback distinct from process completion.
+`settings_action` shares its envelope and recovery behavior with HTTP and MCP; the owner's Settings window skips human confirmation, but no caller skips owner CAS. [Settings startup workflows](../backend/settings-startup.md) describes GitHub `list_accounts` and configured Ego `begin_login`/`login_status`, including owner revision checks, a human-operated terminal and credential readback distinct from process completion.
 
 ### CircleCI credential settings (#1991-bd88)
 
@@ -1140,48 +1125,17 @@ reset instant), formatted by the same client presenter on desktop and mobile.
 
 Unavailable detached registrations are excluded from automatic orphan cleanup in both Ask and On modes, including the Ask countdown. They remain repair diagnostics until restored or explicitly removed. Safe-only removal rechecks availability, so a directory moved after assessment cannot be pruned automatically. Explicit user-confirmed removal remains available.
 
-
 ### Append-only story notes
 
 `add_note` and `list_notes` use the same shared story service on all transports. Notes retain backend actor/time and the subject revision without advancing it. Optional `{runId, commandId}` receipt references are validated against the same project and plan. See [Native stories in the HTTP API](http-api.md#append-only-story-notes) for fields, replies, bounds, and append-only semantics.
 
-
 ### Ego terminal usage
 
-`get_ego_usage({ sessionId })` returns `{ text: string | null, tooltip?: string }` from the live ego terminal's exact pid/lease binding. The backend shares session usage's live-terminal executable resolution and calls that binary with `usage --json --session-dir <bound store> -C <manifest workspace>`, accepts report v3 or v4 and selects only that session. V4 adds observed context capacity and typed remaining limits; current-key balances remain distinct from session observations. The optional tooltip carries limit timestamps, sources, and reported resets. Missing data returns null; command failures return an error. Async: no child work runs on the macOS main thread. HTTP parity: `GET /ego/usage?sessionId=<id>`.
-
-
-### Bound issue triage decisions (#2324-424d)
-
-Issue triage: `automation_action` run/history responses include
-`trigger.kind="triage"` and optional `triage_decision={outcome,reason}`. The
-shared `triage_decision` action is bound-agent-only: HTTP and IPC both reject
-unbound submissions with `Triage decision requires a bound agent caller`.
-See the MCP guide for the managed evaluator's report contract.
+`get_ego_usage({ sessionId })` returns `{ text: string | null, tooltip?: string, usage_agent: "claude" | "codex" | null }`. Ego terminal usage uses the exact live pid lease and `ego usage --json --session <id>` reports v3–v6. The badge shows the short model name and observed context tokens/capacity. Its tooltip shows the full provider/model. Anthropic models use the existing Claude usage endpoint and ticker; openai-codex models use the existing Codex usage endpoint and ticker. Other providers show model/context only. Ego ledger costs and provider-limit observations do not supply badge quotas; session details still show ledger accounting. Unsupported report versions return an error and log one warning per process, rather than silently emptying the badge. The executable comes from the live terminal, not the AI Chat setting. HTTP parity: `GET /ego/usage?sessionId=<id>`. Async: child work stays off the macOS main thread.
 
 ## Archive retention cleanup
 
 `sweep_archive_retention(repo_path)` returns `{ deleted: string[], kept: string[] }`. The host resolves the configured days; callers cannot supply a deletion threshold. Used by repository refresh. Named kept entries include their reason. It preserves archive refs and uses non-force Git removal. HTTP twin: `POST /worktrees/archive-retention`.
-
-### Native integration trial actions (WF07)
-
-`workflow_run_action` accepts the same policy, `integrate`, `integration`, `integration_obligations` and `cleanup_integration` actions as the existing HTTP run route. Native integration is disabled by default per canonical repository. It returns durable phase records and preserves integration when proof intake, dependency refresh or cleanup remains pending. See [Native integration](../backend/workflows.md#opt-in-native-integration-wf07).
-
-### Workflow decision inbox (WF03)
-
-The existing workflow run action accepts `{"action":"question_inbox"}` for the
-canonical project. The read-only tagged reply contains `unansweredCount` and
-`items` (run identity/status, story identity and complete revisioned question).
-`command` also accepts `answer_question` with `question_id`, `expected_revision`,
-`subject_digest`, `actor` and a schema-valid JSON `answer`; `revise_question`
-requires the question ID/revision, new `request` and actor. The outer command still
-requires `run_id`, `command_id` and `expected_sequence`. IPC
-`workflow_run_action`, HTTP `POST /workflows/run/action?path=<project>` and MCP
-`workflow action=run input=<RunAction>` use the same service. The inbox needs no
-coordinator. See the backend workflow decision contract for shapes, deadline
-outcomes, retained legacy replay and continuation semantics.
-
-Native story phase previews use the existing story action envelope: `available_transitions {story_id,expected_revision}` returns `{type:"available_transitions",value:{revision,moves:[{status,command}]}}`. It uses the committed-transition evaluator without saving the story or history. Destinations include automatic QA and dependency-derived outcomes, with archived records and actor/workflow restrictions enforced. Previews do not reserve a move; the caller submits `transition` with the returned revision and command, and refreshes after any conflict. IPC, HTTP, CLI and managed MCP share this action.
 
 ### Unrelated branch integration status
 
@@ -1195,3 +1149,53 @@ files without verified current trust return `reviewRequired` from the state
 command. `installed` requires native readback. The HTTP hook-instrumentation and
 hook-state routes use the same owner. Status reads never grant trust. Normal
 `/hooks` review remains available when the installed CLI cannot verify setup.
+
+On native Windows without a usable bundled `tuic.exe`, hook instrumentation setters return an unsupported error before persistence or hook-file access. The matching HTTP routes use the same command cores. Saved hook preferences remain unchanged.
+
+`list_active_sessions` returns the same typed agent report/stage projection as HTTP `GET /sessions`, including host `report_at` and null stage for unknown/non-live sessions. [Contract](../user-guide/agent-teams.md#typed-reports-and-agent-stages).
+
+Managed agent inventories expose the same `stalled` flag across transports. [Silence policy](../user-guide/agent-teams.md#silent-managed-workers).
+
+### Waiting items and agent health
+
+`boss_attention() -> { items, health, warnings }` reads the items that wait on the user (manual checks, unanswered workflow questions and unread reports with their typed report reference) and agent health. The HTTP twin is `GET /agents/attention`; both offload the shared read-only Rust projection to `spawn_blocking`. `boss-attention-changed` carries `{}` and invalidates the projection on desktop and SSE. No answer, report acknowledgement or digest-link parsing is performed.
+
+### Native update installation
+
+`install_app_update(rid, onEvent)` is desktop-only. `rid` is the `Update` resource
+returned by the updater plugin to the same WebView; `onEvent` receives the plugin
+compatible `Started`, `Progress`, and `Finished` download events. The command
+returns the complete installation error chain, checks macOS extraction space,
+and leaves relaunch policy to the existing frontend. It has no HTTP mapping:
+remote clients do not own native updater resources or permission to replace the host.
+
+### Scheduled neutral bindings
+
+The existing neutral action accepts trigger source `scheduled` with `kind: "schedule"`,
+`resource_prefix: "schedule:<binding id>"`, `events: ["due"]`, and optional draft field
+`schedule: {"cron":"0 9 * * *","timezone":"UTC","text":"Review the summary"}`.
+Only scheduled bindings accept that field, and it is required for them.
+The installed mapping fields are `text` (string) and `occurrence_ms` (integer).
+Starts and exact local approval answers use the existing run/Answer envelopes.
+See [trigger admission](../backend/workflow-trigger-admission.md#scheduled-neutral-starts).
+
+### Plugin random-access reads
+
+`plugin_file_size(path, plugin_id) -> u64` and `plugin_read_file_range(path, offset, length, plugin_id) -> String` require `fs:read`. Absolute paths follow the existing binary read policy. Range results are exact Base64 bytes, capped at 8 MiB; past EOF and short reads fail. Both commands run filesystem work in the blocking pool.
+
+## Provider quota registry
+
+| Command | Parameters | Result | Description |
+|---|---|---|---|
+| `get_provider_quotas` | none | `QuotaView[]` | Return current views without a network read. |
+| `get_session_quota_binding` | `sessionId` | `SubscriptionKey \| null` | Return the key bound to the session. |
+| `refresh_provider_quota` | `key` | `Result<QuotaView, string>` | Request a refresh, limited to once per minute per key and subject to registry backoff and authentication policy. |
+
+`provider-quota-changed` delivers the changed `QuotaView` on both Tauri and `/events`. A `SubscriptionKey` can include an optional `profile`. An unsupported named profile is unavailable; it does not use the default profile.
+
+Claude and Codex usage endpoints read the same registry owner as session quota
+consumers. The existing response fields stay unchanged. Active provider detail
+has a separate timestamp, so passive Codex window updates retain credits,
+allowed/reached flags and model availability from the last active read. Claude
+retains extra usage and local plan metadata. Codex statistics use only the
+separate App Server `account/usage/read` method, not another quota request.

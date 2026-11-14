@@ -385,3 +385,38 @@ fn project_story_view_includes_every_plan_but_not_other_projects_or_archive_scop
         2
     );
 }
+
+#[test]
+fn project_orders_stories_by_next_action_then_priority() {
+    // Catches: Done items listed before In progress, or priority ignored inside a group.
+    let dir = tempfile::tempdir_in(tuic_test_support::test_temp_root()).expect("scratch");
+    let store = StoryStore::open_at(&dir.path().join("stories.sqlite3")).expect("store");
+    let plan = store
+        .create_plan(NewPlan {
+            project: "/project".into(),
+            title: "Order".into(),
+            source: "plan.md".into(),
+        })
+        .expect("plan");
+    let base = create(&store, &plan.id, "base", None);
+    let read = |id: &str, status: StoryStatus, priority: u8| {
+        let mut story = base.clone();
+        story.id = id.into();
+        story.status = status;
+        story.priority = priority;
+        StoryRead {
+            story,
+            abandoned: false,
+            completed_outside: false,
+        }
+    };
+    let stories = vec![
+        read("done", StoryStatus::Done, 1),
+        read("ready", StoryStatus::Ready, 1),
+        read("wip3", StoryStatus::InProgress, 3),
+        read("wip1", StoryStatus::InProgress, 1),
+        read("qa", StoryStatus::Qa, 3),
+    ];
+    let (ids, _) = filters::project(&stories, &StoryFilter::default());
+    assert_eq!(ids, vec!["qa", "wip1", "wip3", "ready", "done"]);
+}

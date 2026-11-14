@@ -719,3 +719,92 @@ async fn every_session_carries_this_process_and_nothing_a_caller_named() {
         .await
         .unwrap();
 }
+
+/// Catches: a busy fork copies partial/cancelled/failed output or stops its parent.
+#[tokio::test]
+async fn busy_fork_uses_successful_turn_and_leaves_parent_running() {
+    use tuicommander_lib::acp::{AcpClientEvent, AcpTurnState};
+    let fixture = Fixture::with("session-fork-active");
+    let connection = fixture.connect().await;
+    let id = connection.connection_id;
+    let root = fixture.root();
+    fixture
+        .manager
+        .new_session(id, authority(root.clone()))
+        .await
+        .unwrap();
+    let mut stream = fixture.manager.subscribe(id, 0).unwrap();
+    fixture
+        .manager
+        .prompt(id, session(FIRST), vec![text("first")])
+        .await
+        .unwrap();
+    until(&mut stream, |event| {
+        matches!(event, AcpClientEvent::SessionUpdate { .. })
+    })
+    .await;
+    let error = fixture
+        .manager
+        .attach(
+            id,
+            AcpAttachKind::Fork,
+            session(FIRST),
+            authority(root.clone()),
+        )
+        .await
+        .unwrap_err();
+    assert!(error.message.contains("No verified completed turn"));
+    fixture.manager.cancel(id, session(FIRST)).await.unwrap();
+    acp_support::until_settled(&mut stream).await;
+
+    fixture
+        .manager
+        .prompt(id, session(FIRST), vec![text("good")])
+        .await
+        .unwrap();
+    acp_support::until_settled(&mut stream).await;
+    fixture
+        .manager
+        .prompt(id, session(FIRST), vec![text("bad")])
+        .await
+        .unwrap();
+    until(&mut stream, |event| {
+        matches!(event, AcpClientEvent::TurnFailed { .. })
+    })
+    .await;
+    let parent_turn = fixture
+        .manager
+        .prompt(id, session(FIRST), vec![text("active")])
+        .await
+        .unwrap();
+    until(&mut stream, |event| {
+        matches!(event, AcpClientEvent::SessionUpdate { .. })
+    })
+    .await;
+    let child = fixture
+        .manager
+        .attach(id, AcpAttachKind::Fork, session(FIRST), authority(root))
+        .await
+        .unwrap();
+    assert_eq!(child.session_id, session(FORKED));
+    let snapshot = fixture.manager.snapshot(id).unwrap();
+    let parent = snapshot
+        .attachments
+        .iter()
+        .find(|row| row.session_id == session(FIRST))
+        .unwrap();
+    assert_eq!(parent.active_turn.as_ref().unwrap().turn_id, parent_turn);
+    assert_eq!(
+        parent.active_turn.as_ref().unwrap().state,
+        AcpTurnState::Running
+    );
+    fixture
+        .manager
+        .prompt(id, child.session_id, vec![text("independent child")])
+        .await
+        .unwrap();
+    acp_support::until_settled(&mut stream).await;
+    fixture.manager.cancel(id, session(FIRST)).await.unwrap();
+    acp_support::until_settled(&mut stream).await;
+    fixture.manager.disconnect(id).await.unwrap();
+}

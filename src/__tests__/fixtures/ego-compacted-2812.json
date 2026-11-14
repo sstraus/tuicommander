@@ -1,0 +1,13 @@
+{
+  "sessionUpdate": "session_info_update",
+  "_meta": {
+    "ego": {
+      "compacted": {
+        "version": 1,
+        "sourceSessionId": "b21adc42-3b43-56b8-9a21-91cbfcef613a",
+        "sourceSeq": 22,
+        "targetSessionId": "7718cecf-2cc1-5993-9f59-6ae2ac9cf6f6"
+      }
+    }
+  }
+}

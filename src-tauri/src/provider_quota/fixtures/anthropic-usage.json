@@ -1,0 +1,15 @@
+{
+  "five_hour": null,
+  "seven_day": {
+    "utilization": 82.0,
+    "resets_at": "2026-11-12T17:00:00.081975+00:00",
+    "limit_dollars": null,
+    "used_dollars": null,
+    "remaining_dollars": null,
+    "locked_reason": null
+  },
+  "seven_day_oauth_apps": null,
+  "seven_day_opus": null,
+  "seven_day_sonnet": null,
+  "seven_day_cowork": null
+}

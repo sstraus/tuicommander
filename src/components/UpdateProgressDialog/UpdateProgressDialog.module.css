@@ -35,3 +35,10 @@
   font-size: var(--font-md);
   color: var(--fg-secondary);
 }
+
+/* Paths and nested causes must remain readable inside the shared scroll body. */
+.errorMessage {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}

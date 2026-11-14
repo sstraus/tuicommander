@@ -44,6 +44,8 @@ pub(crate) enum PendingInjection {
         text: String,
         queued_at: std::time::Instant,
         overdue_reported: bool,
+        /// Launch-time authority for an automatic completion, never a user prompt.
+        automatic_origin: Option<String>,
     },
 }
 
@@ -75,6 +77,27 @@ impl PendingInjection {
             text: text.into(),
             queued_at: std::time::Instant::now(),
             overdue_reported: false,
+            automatic_origin: None,
+        }
+    }
+
+    pub(crate) fn automatic_completion(text: &str, origin: &str) -> Self {
+        let mut entry = Self::user_command(text);
+        if let Self::UserCommand {
+            automatic_origin, ..
+        } = &mut entry
+        {
+            *automatic_origin = Some(origin.to_owned());
+        }
+        entry
+    }
+
+    pub(crate) fn automatic_origin(&self) -> Option<&str> {
+        match self {
+            Self::UserCommand {
+                automatic_origin, ..
+            } => automatic_origin.as_deref(),
+            _ => None,
         }
     }
 
@@ -122,6 +145,16 @@ impl PendingInjection {
             Self::UserCommand { .. } => "user_command",
         }
     }
+}
+
+/// First-run dialogs of one managed child: which TUIC may answer, and which it
+/// already answered, so a repaint of an answered dialog gets no second answer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ManagedFirstRun {
+    /// Claude workspace trust (`skip_trust_dialog`, default on).
+    pub(crate) answer_trust: bool,
+    pub(crate) trust_answered: bool,
+    pub(crate) imports_answered: bool,
 }
 
 /// A spawned child's initial prompt that has not reached its composer yet.
@@ -189,6 +222,10 @@ pub(crate) struct WorktreeRemovedPayload {
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "event", content = "payload")]
 pub enum AppEvent {
+    #[serde(rename = "provider-quota-changed")]
+    ProviderQuotaChanged(serde_json::Value),
+    #[serde(rename = "provider-quota-binding-changed")]
+    ProviderQuotaBindingChanged(serde_json::Value),
     #[serde(rename = "work-item-provider-request")]
     WorkItemProviderRequest {
         request_id: String,
@@ -394,6 +431,8 @@ pub enum AppEvent {
     RepositoriesChanged,
     #[serde(rename = "ideas-changed")]
     IdeasChanged,
+    #[serde(rename = "boss-attention-changed")]
+    BossAttentionChanged,
     #[serde(rename = "settings-changed")]
     SettingsChanged(crate::settings::changes::SettingsChanged),
     #[serde(rename = "open-markdown-tabs-changed")]
@@ -483,6 +522,12 @@ pub enum AppEvent {
     },
     #[serde(rename = "workflow-run-changed")]
     WorkflowRunChanged {
+        repo_path: String,
+        payload: serde_json::Value,
+    },
+    /// An external story backend reported changed stories (`{rescan, ids, error?}`).
+    #[serde(rename = "stories-changed")]
+    StoriesChanged {
         repo_path: String,
         payload: serde_json::Value,
     },
@@ -626,6 +671,18 @@ fn is_zero(v: &u32) -> bool {
     *v == 0
 }
 
+/// A live-session capability invalidated by a native user stop. A fresh
+/// accumulator starts a fresh identity, so retries cannot cross host restarts.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub(crate) struct BackgroundWakeOrigin(pub(crate) String);
+
+impl Default for BackgroundWakeOrigin {
+    fn default() -> Self {
+        Self(uuid::Uuid::new_v4().to_string())
+    }
+}
+
 /// Per-session state accumulated from broadcast events.
 /// Updated by a background task that subscribes to the event bus.
 /// Read by `GET /sessions` to enrich the response for REST-polling clients.
@@ -637,11 +694,33 @@ fn is_zero(v: &u32) -> bool {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct SessionState {
+    pub background_wake_origin: BackgroundWakeOrigin,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_recovery: Option<crate::output_parser::ProviderRecovery>,
+    /// Labels of the native ego children in flight (#2674-1be8). Descriptive
+    /// only; never drives busy, idle or awaiting.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub native_children: Vec<String>,
+    /// Outcome of the last settled native ego turn. Descriptive only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_turn_outcome: Option<String>,
     /// Validated native hook identity; never a discovery heuristic.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub codex_binding: Option<crate::codex_binding::CodexBinding>,
+    /// Tool call id of the question or permission a native hook owner holds
+    /// open; set by the PTY reader. It only selects the matching transcript
+    /// question (`agent_question`) and is never sent to clients.
+    #[serde(skip)]
+    pub(crate) wait_request: Option<String>,
+    /// The normalized payload of `wait_request`, set by the PTY reader with it.
+    /// Never sent itself: the snapshot copies it into `question_card`.
+    #[serde(skip)]
+    pub(crate) wait_card: Option<std::sync::Arc<crate::agent_hook_payload::QuestionCard>>,
+    /// The structured question or plan approval of the live wait. Present only
+    /// in a snapshot whose `awaiting_input` belongs to the same native request
+    /// (`agent_hook_payload::apply`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub question_card: Option<crate::agent_hook_payload::QuestionCard>,
     /// True when a Question parsed event is pending (no subsequent user-input or pty-exit)
     pub awaiting_input: bool,
     /// The question text, if awaiting input
@@ -676,6 +755,11 @@ pub(crate) struct SessionState {
     /// are excluded by the PTY process-tree classifier.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub background_work: bool,
+    /// The agent claims to work, yet nothing moved for the stall threshold
+    /// (story 3050). Derived at read time from the silence sweep, for every
+    /// session; clients render it instead of busy.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub stalled: bool,
     /// Last I/O time of a freshly verified abandoned shell.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub abandoned_since_ms: Option<u64>,
@@ -732,12 +816,23 @@ pub(crate) struct SessionState {
     /// Last API error, if any
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
+    /// The native agent refused its turn (OSC 7770 `state=error`). The input of
+    /// the derived `agent_state=error`: automated input stays out until native
+    /// `busy`/`prompt` or a submitted line. The PTY reader and the input paths
+    /// write it synchronously, because the idle edge that `state=error` causes
+    /// starts the queue flush itself (#3011-1784).
+    #[serde(skip)]
+    pub(crate) agent_error: bool,
     /// Current agent intent text (from `intent: ...` tokens)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_intent: Option<String>,
     /// Current task name from the agent status line
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_task: Option<String>,
+    /// Newest live native tool name (story 2636-5551): verified hook or
+    /// protocol metadata, bounded and without arguments. Never a state.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_tool: Option<String>,
     /// Last user prompt with >= 10 words
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_prompt: Option<String>,
@@ -759,6 +854,9 @@ pub(crate) struct SessionState {
     /// were parsed so the async accumulator cannot restore prior-turn completion.
     #[serde(skip)]
     pub(crate) turn_epoch: u64,
+    /// Auto-retry budget and timer for server API errors (story 2746-2348).
+    #[serde(skip)]
+    pub(crate) api_retry: crate::api_retry::ApiRetryState,
     /// One draft may interrupt this turn until the next native input write.
     #[serde(skip)]
     pub(crate) turn_interrupt: Option<Arc<()>>,
@@ -897,7 +995,9 @@ pub(crate) fn resolve_choice_prompt_input(state: &AppState, session_id: &str, da
     // session_states lock just dropped above (SilenceState → SessionState
     // lock order — see apply_event_to_session_state's PtyParsed arm).
     if let Some(silence) = state.session_maps.silence_states.get(session_id) {
-        silence.lock().clear_awaiting();
+        let mut silence = silence.lock();
+        silence.clear_awaiting();
+        silence.choice_input_resolved_pending = true;
     }
     state.emit_pty_event(AppEvent::PtyParsed {
         session_id: session_id.to_string(),
@@ -913,6 +1013,10 @@ impl SessionState {
         self.agent_type_from_run_config = agent_type.is_some();
         self.agent_foreground_observed = false;
         self.codex_binding = None;
+        self.wait_request = None;
+        self.wait_card = None;
+        self.current_tool = None;
+        self.agent_error = false;
         self.agent_type = agent_type;
     }
 }
@@ -920,7 +1024,10 @@ impl SessionState {
 /// Used by WS dedup to avoid sending identical state frames.
 impl PartialEq for SessionState {
     fn eq(&self, other: &Self) -> bool {
-        self.provider_recovery == other.provider_recovery
+        self.background_wake_origin == other.background_wake_origin
+            && self.provider_recovery == other.provider_recovery
+            && self.native_children == other.native_children
+            && self.native_turn_outcome == other.native_turn_outcome
             && self.awaiting_input == other.awaiting_input
             && self.question_text == other.question_text
             && self.question_confident == other.question_confident
@@ -930,12 +1037,14 @@ impl PartialEq for SessionState {
             && self.shell_state == other.shell_state
             && self.agent_state == other.agent_state
             && self.background_work == other.background_work
+            && self.stalled == other.stalled
             && self.abandoned_since_ms == other.abandoned_since_ms
             && self.agent_type == other.agent_type
             && self.codex_binding == other.codex_binding
             && self.last_error == other.last_error
             && self.agent_intent == other.agent_intent
             && self.current_task == other.current_task
+            && self.current_tool == other.current_tool
             && self.active_sub_tasks == other.active_sub_tasks
             && self.queued_commands == other.queued_commands
             && self.last_prompt == other.last_prompt
@@ -943,6 +1052,7 @@ impl PartialEq for SessionState {
             && self.suggested_actions == other.suggested_actions
             && self.slash_menu_items == other.slash_menu_items
             && self.choice_prompt == other.choice_prompt
+            && self.question_card == other.question_card
             && self.terminal_mode == other.terminal_mode
     }
 }
@@ -1626,6 +1736,8 @@ pub struct AgentMessage {
     pub from_name: String,
     /// Message body (max 64 KB)
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub report: Option<crate::agent_report::AgentReport>,
     /// Per-recipient logical unix-millis cursor
     pub timestamp: u64,
     /// Whether this message was pushed via SSE channel notification.
@@ -1656,26 +1768,6 @@ pub(crate) enum AgentDeliveryAssignment {
     Terminal,
     InboxOnly,
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum UrgentNoticeReservation {
-    AlreadyRead,
-    InFlight,
-    Written,
-    Reserved,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct UrgentNotice {
-    first_through: u64,
-    through: u64,
-    written: bool,
-    reserved_at: std::time::Instant,
-}
-
-// Two 6s confirmation windows and split writes fit inside this lease. A stalled
-// writer must not suppress later notices forever; the mailbox remains durable.
-const URGENT_NOTICE_LEASE: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OrchestratorDeliveryAssignment {
@@ -1733,7 +1825,6 @@ pub(crate) struct AgentDeliveryGate {
     next_lease: u64,
     active_waiters: std::collections::HashSet<u64>,
     owners: HashMap<String, AgentDeliveryOwner>,
-    urgent_notices: HashMap<String, UrgentNotice>,
     orchestrator_wake_pending_through: Option<u64>,
     orchestrator_wake_needed_through: Option<u64>,
     orchestrator_observed_through: u64,
@@ -1752,7 +1843,6 @@ impl Default for AgentDeliveryGate {
             next_lease: 0,
             active_waiters: std::collections::HashSet::new(),
             owners: HashMap::new(),
-            urgent_notices: HashMap::new(),
             orchestrator_wake_pending_through: None,
             orchestrator_wake_needed_through: None,
             orchestrator_observed_through: 0,
@@ -1837,6 +1927,19 @@ fn lifecycle_notice_kind(message: &AgentMessage) -> Option<String> {
     }
     let payload = serde_json::from_str::<serde_json::Value>(&message.content).ok()?;
     let kind = payload.get("type")?.as_str()?;
+    // Each refused capability must survive later notices before the parent
+    // reads it.
+    if kind == "capability_denied" {
+        return None;
+    }
+    // Each silence episode is independently actionable, even before inbox reads.
+    if kind == "state_change" && payload.get("state")?.as_str()? == "stalled" {
+        return None;
+    }
+    // Each child report closes a different task of the parent.
+    if kind == "child_report" {
+        return None;
+    }
     // Each answered question can start a new wait. Keep those notices even if
     // ordinary lifecycle updates from the same child are coalesced.
     if kind == "state_change" && payload.get("state")?.as_str()? == "awaiting_input" {
@@ -1906,6 +2009,8 @@ impl Default for GitHubState {
 /// upstream proxy registry, OAuth flows, and the tool-search index they feed.
 pub struct McpState {
     pub(crate) call_audit: parking_lot::Mutex<crate::mcp_http::mcp_call_audit::Audit>,
+    /// Persistent daily usage counts (#2808-5998); body-free.
+    pub(crate) usage_rollup: Arc<crate::mcp_http::mcp_usage_rollup::Rollup>,
     pub(crate) response_pages: parking_lot::Mutex<crate::mcp_http::response_pages::ResponsePages>,
     /// Active MCP Streamable HTTP sessions (session_id -> metadata for TTL reaping + client identity)
     pub sessions: DashMap<String, McpSessionMeta>,
@@ -1934,12 +2039,17 @@ pub struct McpState {
     /// every `tools_changed` signal by the updater task in
     /// `mcp_http::mcp_transport::spawn_tool_search_index_updater`.
     pub(crate) tool_search_index: Arc<parking_lot::RwLock<crate::tool_search::ToolSearchIndex>>,
+    /// Last read of the Fabbrica control MCP upstream (`fabbrica_attention.rs`).
+    pub(crate) fabbrica: parking_lot::RwLock<crate::fabbrica_attention::FabbricaView>,
+    /// What the state-gated native tools depend on (`mcp_http::tool_usage`).
+    pub(crate) tool_usage: parking_lot::RwLock<crate::mcp_http::tool_usage::ToolUsage>,
 }
 
 impl Default for McpState {
     fn default() -> Self {
         Self {
             call_audit: parking_lot::Mutex::default(),
+            usage_rollup: Arc::default(),
             response_pages: parking_lot::Mutex::default(),
             sessions: DashMap::new(),
             upstream_registry: Arc::new(crate::mcp_proxy::registry::UpstreamRegistry::new()),
@@ -1952,6 +2062,8 @@ impl Default for McpState {
             tool_search_index: Arc::new(parking_lot::RwLock::new(
                 crate::tool_search::ToolSearchIndex::build(&[]),
             )),
+            fabbrica: parking_lot::RwLock::default(),
+            tool_usage: parking_lot::RwLock::default(),
         }
     }
 }
@@ -1994,7 +2106,7 @@ pub(crate) struct GridState {
     pub(crate) gates: DashMap<String, Arc<crate::grid_gate::GridGate>>,
     /// Dirty flag: set by PTY reader when new data is processed, cleared by frame ticker.
     /// Decouples read() from frame serialization to coalesce rapid writes (spinners).
-    pub(crate) frame_dirty: DashMap<String, Arc<AtomicBool>>,
+    pub(crate) frame_dirty: DashMap<String, Arc<crate::pty::frame_priority::FrameDirty>>,
     /// Bounded input wake hint; owned and removed by the reader/ticker lifecycle.
     pub(crate) input_frame_priority:
         DashMap<String, Arc<crate::pty::frame_priority::InputFramePriority>>,
@@ -2024,11 +2136,16 @@ pub struct SessionMaps {
     /// Per-session kitty keyboard protocol state (session_id → state).
     /// Separate DashMap (not inside PtySession) to avoid writer contention.
     pub(crate) kitty_states: DashMap<String, Mutex<KittyKeyboardState>>,
+    /// Ordered terminal replies waiting for the tty to leave canonical mode.
+    /// The reader and frame ticker share the queue lock before taking the writer.
+    pub(crate) terminal_replies: DashMap<String, Mutex<Vec<u8>>>,
     /// Per-session input line buffers for reconstructing user input from PTY writes.
     /// Separate DashMap (like kitty_states) to avoid writer lock contention.
     pub(crate) input_buffers: DashMap<String, Mutex<crate::input_line_buffer::InputLineBuffer>>,
     /// Serializes guarded automated submissions with raw input and its bookkeeping.
     pub(crate) input_transactions: DashMap<String, Arc<parking_lot::ReentrantMutex<()>>>,
+    /// A forced owner input reserves the next ready edge against FIFO/mail drains.
+    pub(crate) steering_sessions: DashSet<String>,
     /// Last relevant user prompt per session (>= 10 words).
     /// Updated on each qualifying user input line, read by the Activity Dashboard.
     pub(crate) last_prompts: DashMap<String, String>,
@@ -2077,6 +2194,12 @@ pub struct SessionMaps {
     /// post-mortem `session action=output` reads can return the real code.
     /// Reaped by `pty::spawn_tombstone_sweeper` alongside the output buffers.
     pub(crate) exit_codes: DashMap<String, i32>,
+    /// EOF cleanup owns a child wait whose outcome has not been published yet.
+    pub(crate) pending_exits: DashSet<String>,
+    /// Why TUIC itself ended a session (`kill_requested`, `idle_close`, ...), set
+    /// next to the exit code by `close_pty_core_with_reason`/`kill_pty_core`.
+    /// Absent for a session that ended on its own. Reaped with `exit_codes`.
+    pub(crate) exit_reasons: DashMap<String, String>,
     /// Epoch-ms timestamp of last shell_state transition per session.
     /// Updated by `pty::try_shell_transition` on every successful CAS.
     /// Used by `session(status)` to compute idle_since_ms / busy_duration_ms.
@@ -2096,6 +2219,14 @@ pub struct SessionMaps {
     /// to whatever terminal currently backs it — including after a respawn, which
     /// mints a new session key under the same `$TUIC_SESSION`.
     pub(crate) live_pty_by_tuic_session: DashMap<String, String>,
+    /// PTY session key → the reader's processor, shared with the local API so
+    /// agent hooks post their OSC 7770 frames there instead of the agent tty
+    /// (#2749-bee7). Removed with the session.
+    pub(crate) hook_inboxes: DashMap<String, Arc<crate::pty::HookInbox>>,
+    /// PTY session key → `hook_clock` reading taken when its `$TUIC_SESSION` was
+    /// bound, before the child started; the reader's hook inbox takes it as its
+    /// generation, so no hook of the new process predates it (#2632-97ef).
+    pub(crate) hook_generations: DashMap<String, u64>,
     /// Parent session for swarm-spawned agents (child_tuic_session → parent_tuic_session).
     /// Populated at spawn time when caller_tuic is set. Used to route auto-notifications
     /// (state_change messages) to the orchestrator's inbox on exit and idle transitions.
@@ -2242,6 +2373,8 @@ pub struct AppState {
     /// `build_router`, so `tuic-remote` needs this field to compile at all.
     pub(crate) claude_usage_cache: Mutex<crate::claude_usage::SessionStatsCache>,
     pub(crate) claude_usage_scan: Mutex<crate::claude_usage::UsageScan>,
+    /// Provider quota per subscription; the only quota cache readers consult.
+    pub(crate) provider_quota: Arc<crate::provider_quota::QuotaRegistry>,
     /// Centralized application log ring buffer (1000 entries).
     /// Frontend pushes via push_log, reads via get_logs.
     /// Wrapped in Arc so the tracing subscriber layer can share the same buffer.
@@ -2308,10 +2441,23 @@ pub struct AppState {
     pub peer_agents: DashMap<String, PeerAgent>,
     /// Explicit opt-out for managed children; removed with the PTY.
     pub(crate) keep_open_sessions: DashSet<String>,
+    /// Capabilities fixed by the spawn that created a managed agent (session
+    /// id → set). Only spawn writes an entry; it is removed with the PTY. A
+    /// session without an entry is not capped.
+    pub(crate) agent_capabilities: DashMap<String, crate::agent_capabilities::CapabilitySet>,
+    /// (session id, capability) refusals already mailed to the parent, so a
+    /// retrying agent costs its parent one mail per capability.
+    pub(crate) capability_denials_mailed: DashSet<(String, crate::agent_capabilities::Capability)>,
     /// Managed children whose last mail to their parent starts with BLOCKED and
     /// that nothing has mailed since. Kept outside the bounded inboxes so
     /// overflow cannot drop the hold; removed by the idle sweep with the PTY.
     pub(crate) blocked_children: DashSet<String>,
+    /// Children whose latest mail to their parent was a RESULT. Same lifecycle
+    /// as `blocked_children`; stall recovery does not nudge them (story 2748).
+    pub(crate) reported_children: DashSet<String>,
+    /// The report each managed child owes its parent (story 3014). Removed with
+    /// the exit publication or by the idle sweep with the parent link.
+    pub(crate) child_obligations: DashMap<String, crate::agent_health::Obligation>,
     /// Message inbox per agent (tuic_session → VecDeque<AgentMessage>).
     /// Capped at AGENT_INBOX_CAPACITY messages per agent. Matching lifecycle
     /// notices coalesce; other messages evict FIFO at capacity.
@@ -2327,6 +2473,7 @@ pub struct AppState {
     /// the position instead: an omitted `since` resumes from here, an explicit one
     /// overrides it, and `since=0` stays the deliberate replay escape hatch.
     pub(crate) agent_read_cursor: DashMap<String, u64>,
+    pub(crate) agent_reports: crate::agent_stage::Reports,
     pub(crate) mail_subscriptions: crate::mail_subscriptions::MailSubscriptions,
     /// Server notices, initial prompts and Compose commands waiting for a
     /// recipient's next safe idle window. Entries share one typed FIFO so
@@ -2341,8 +2488,9 @@ pub struct AppState {
     /// dialog still receives it when it becomes ready.
     pub(crate) pending_initial_prompts: DashMap<String, PendingInitialPrompt>,
     pub(crate) launch_transaction_lock: tokio::sync::Mutex<()>,
-    /// Claude MCP children allowed to answer their one startup trust dialog.
-    pub(crate) managed_trust_dialogs: DashSet<String>,
+    /// Every managed child (agent spawn or workflow launch) and the first-run
+    /// dialogs TUIC answers for it. Other first-run dialogs are reported as waits.
+    pub(crate) managed_first_run: DashMap<String, ManagedFirstRun>,
     /// Per-peer atomic handoff between blocking waiters and terminal delivery.
     /// Each message has exactly one wake-up owner while remaining visible in
     /// the authoritative inbox for backward-compatible reads.
@@ -2373,6 +2521,8 @@ pub struct AppState {
     pub(crate) one_shot_requests: crate::acp::oneshot::OneShotRequests,
     /// Mobile alert windows for ACP conversations, separate from PTY state.
     acp_push_last_ms: DashMap<String, Option<u64>>,
+    /// The tab the selected AI Chat conversation continues after a compaction.
+    pub(crate) ai_chat_successor: crate::ai_chat_selection::SuccessorLink,
     /// When true, the desktop window is currently focused and the user is at
     /// their machine — suppress mobile push notifications to avoid duplicate
     /// alerts. Set to true on focus and at startup; set to false on blur or
@@ -2408,6 +2558,8 @@ pub struct AppState {
     /// Serialize durable suspend/resume transitions and retain frontend-discovered metadata.
     pub(crate) suspend_metadata: DashMap<String, serde_json::Value>,
     pub(crate) suspend_lock: Mutex<()>,
+    /// Saved terminal identities captured before the frontend consumes its snapshot.
+    pub(crate) restorable_terminals: dashmap::DashSet<String>,
     /// Identities retained while a durable tab has no live PTY.
     pub(crate) hibernated_peers: dashmap::DashSet<String>,
     /// Pending confirmation requests: request_id → oneshot sender for the human's answer.
@@ -2514,6 +2666,18 @@ impl AppState {
             let _ = tx.send(event.clone());
         }
         let _ = self.event_bus.send(event);
+    }
+
+    /// Re-read and publish the state of `session_id` when it moved without a PTY
+    /// event of its own (a stall flagged by the silence sweep). The pulse goes
+    /// on the accumulator lane only: it is a no-op for the accumulated state and
+    /// never reaches clients as output activity.
+    pub(crate) fn republish_session_state(&self, session_id: &str) {
+        let event = AppEvent::PtyActivity {
+            session_id: session_id.to_string(),
+        };
+        let parented = self.event_is_parented(&event);
+        self.session_maps.session_state_events.send(event, parented);
     }
 
     /// Tell every UI a terminal's chat view has entries past `seq`. Bus only
@@ -2655,6 +2819,11 @@ impl AppState {
             .is_some_and(|parent| parent.value() == &msg.from_tuic_session)
         {
             self.blocked_children.remove(recipient);
+            self.reported_children.remove(recipient);
+            self.child_obligations.insert(
+                recipient.to_owned(),
+                crate::agent_health::Obligation::open(&msg.id),
+            );
         }
         let to_parent = self
             .session_maps
@@ -2664,14 +2833,59 @@ impl AppState {
         if !to_parent {
             return;
         }
-        if msg.content.trim_start().starts_with("BLOCKED") {
-            self.blocked_children.insert(msg.from_tuic_session.clone());
+        // Any typed report except progress, or a RESULT or BLOCKED text, is the
+        // report the child owed: TUIC then sends no `child_report` for this task.
+        if msg.report.as_ref().map_or_else(
+            || {
+                let content = msg.content.trim_start();
+                content.starts_with("RESULT") || content.starts_with("BLOCKED")
+            },
+            |r| r.state != crate::agent_report::ReportState::Progress,
+        ) {
+            self.child_obligations
+                .entry(msg.from_tuic_session.clone())
+                .or_insert_with(|| {
+                    crate::agent_health::Obligation::open(crate::agent_health::SPAWN_OBLIGATION)
+                })
+                .closed = true;
+        }
+        if msg.report.is_none() && msg.content.trim_start().starts_with("RESULT") {
+            self.reported_children.insert(msg.from_tuic_session.clone());
+        } else {
+            self.reported_children.remove(&msg.from_tuic_session);
+        }
+        if msg.report.as_ref().map_or_else(
+            || msg.content.trim_start().starts_with("BLOCKED"),
+            |r| {
+                matches!(
+                    r.state,
+                    crate::agent_report::ReportState::Blocked
+                        | crate::agent_report::ReportState::Waiting
+                )
+            },
+        ) {
+            // A closed child keeps its `session_parent` entry until its reader
+            // publishes `exited` (#2788-4bd6), but it has a teardown record and no
+            // live session. A late BLOCKED must not start a hold that outlives it
+            // and is inherited by a reused id.
+            let closed = !self
+                .session_maps
+                .sessions
+                .contains_key(&msg.from_tuic_session)
+                && self
+                    .session_maps
+                    .exit_reasons
+                    .contains_key(&msg.from_tuic_session);
+            if !closed {
+                self.blocked_children.insert(msg.from_tuic_session.clone());
+            }
         } else {
             self.blocked_children.remove(&msg.from_tuic_session);
         }
     }
 
     pub(crate) fn push_agent_inbox(&self, recipient: &str, msg: AgentMessage) -> u64 {
+        self.agent_reports.accept(self, &msg);
         self.track_blocked_hold(recipient, &msg);
         let timestamp = self.store_agent_inbox(recipient, msg);
         crate::mcp_http::remote_peer::notice_stored(self, recipient);
@@ -2726,7 +2940,7 @@ impl AppState {
             inbox.push_back(msg);
             (evicted, stored_timestamp)
         };
-        if let Some((evicted_id, evicted_through, missed)) = evicted {
+        if let Some((evicted_id, _, missed)) = evicted {
             if missed {
                 gate.eviction_watermark = gate.eviction_watermark.saturating_add(1);
                 *self
@@ -2735,8 +2949,6 @@ impl AppState {
                     .or_insert(0) += 1;
             }
             gate.owners.remove(&evicted_id);
-            gate.urgent_notices
-                .retain(|_, notice| notice.through > evicted_through);
         }
         gate.inbox_revision = gate.inbox_revision.wrapping_add(1);
         let revision = gate.inbox_revision;
@@ -2861,8 +3073,6 @@ impl AppState {
                 .max()
                 .unwrap_or(since);
             self.requeue_unread_terminal_mail(&mut gate, tuic_session, since, read_through);
-            gate.urgent_notices
-                .retain(|_, notice| notice.through > read_through);
             gate.orchestrator_observed_through =
                 gate.orchestrator_observed_through.max(read_through);
             if read_through == 0
@@ -2916,80 +3126,6 @@ impl AppState {
         for id in skipped {
             if requeue_beyond(&mut inbox, &id, read_through) {
                 gate.owners.remove(&id);
-            }
-        }
-    }
-
-    /// Reserve one unread urgent notice per sender and recipient. This shares
-    /// the inbox delivery gate so reads and concurrent sends agree on the
-    /// covered logical cursor.
-    pub(crate) fn reserve_urgent_notice(
-        &self,
-        recipient: &str,
-        sender: &str,
-        through: u64,
-    ) -> UrgentNoticeReservation {
-        let gate_entry = self
-            .active_agent_waiters
-            .entry(recipient.to_string())
-            .or_default();
-        let mut gate = gate_entry.lock();
-        if self
-            .agent_read_cursor
-            .get(recipient)
-            .is_some_and(|cursor| *cursor >= through)
-        {
-            return UrgentNoticeReservation::AlreadyRead;
-        }
-        if gate.urgent_notices.get(sender).is_some_and(|notice| {
-            !notice.written && notice.reserved_at.elapsed() >= URGENT_NOTICE_LEASE
-        }) {
-            gate.urgent_notices.remove(sender);
-        }
-        match gate.urgent_notices.get_mut(sender) {
-            Some(notice) => {
-                notice.through = notice.through.max(through);
-                if notice.written {
-                    UrgentNoticeReservation::Written
-                } else {
-                    UrgentNoticeReservation::InFlight
-                }
-            }
-            None => {
-                gate.urgent_notices.insert(
-                    sender.to_string(),
-                    UrgentNotice {
-                        first_through: through,
-                        through,
-                        written: false,
-                        reserved_at: std::time::Instant::now(),
-                    },
-                );
-                UrgentNoticeReservation::Reserved
-            }
-        }
-    }
-
-    pub(crate) fn finish_urgent_notice(
-        &self,
-        recipient: &str,
-        sender: &str,
-        first_through: u64,
-        written: bool,
-    ) {
-        let Some(gate_entry) = self.active_agent_waiters.get(recipient) else {
-            return;
-        };
-        let mut gate = gate_entry.lock();
-        if gate
-            .urgent_notices
-            .get(sender)
-            .is_some_and(|notice| notice.first_through == first_through)
-        {
-            if written {
-                gate.urgent_notices.get_mut(sender).unwrap().written = true;
-            } else {
-                gate.urgent_notices.remove(sender);
             }
         }
     }
@@ -3431,8 +3567,6 @@ impl AppState {
                 })
                 .unwrap_or(0);
         }
-        gate.urgent_notices
-            .retain(|_, notice| notice.through > read_through);
         let no_pending_mail = self.agent_inbox.get(tuic_session).is_none_or(|inbox| {
             inbox.iter().all(|message| {
                 gate.owners.get(&message.id) != Some(&AgentDeliveryOwner::TerminalPending)
@@ -3578,6 +3712,24 @@ impl AppState {
             .count()
     }
 
+    /// A delayed generic notice is obsolete when the recipient has already read
+    /// all its mail. Resolve the peer separately from the PTY key, just as inbox
+    /// acknowledgement does when removing notices already parked in the queue.
+    pub(crate) fn mail_wake_is_obsolete(&self, session_id: &str) -> bool {
+        let recipient = self
+            .peer_identity_for_live_pty(session_id)
+            .unwrap_or_else(|| session_id.to_string());
+        let Some(entry) = self.active_agent_waiters.get(&recipient) else {
+            return false;
+        };
+        let gate = entry.lock();
+        self.agent_inbox.get(&recipient).is_none_or(|inbox| {
+            inbox.iter().all(|message| {
+                gate.owners.get(&message.id) != Some(&AgentDeliveryOwner::TerminalPending)
+            })
+        })
+    }
+
     pub(crate) fn mark_terminal_delivery_dispatched(&self, tuic_session: &str, message_id: &str) {
         if let Some(gate) = self.active_agent_waiters.get(tuic_session) {
             let mut gate = gate.lock();
@@ -3649,6 +3801,9 @@ impl AppState {
         self.session_maps
             .live_pty_by_tuic_session
             .insert(tuic_session.to_string(), session_id.to_string());
+        self.session_maps
+            .hook_generations
+            .insert(session_id.to_string(), tuic_ipc::hook_clock::now());
     }
 
     /// Drop every `$TUIC_SESSION` pointing at a PTY that is going away, returning
@@ -3669,6 +3824,7 @@ impl AppState {
         for identity in &orphaned {
             self.session_maps.live_pty_by_tuic_session.remove(identity);
         }
+        self.session_maps.hook_generations.remove(session_id);
         orphaned
     }
 
@@ -3762,6 +3918,20 @@ impl AppState {
         log_buffer: Arc<Mutex<crate::app_logger::LogRingBuffer>>,
     ) -> Self {
         crate::attachments::cleanup_orphans(&data_dir);
+        let restorable_terminals: dashmap::DashSet<String> =
+            crate::config::load_repositories()["repos"]
+                .as_object()
+                .into_iter()
+                .flat_map(|repos| repos.values())
+                .flat_map(|repo| {
+                    repo["workspaces"]
+                        .as_object()
+                        .into_iter()
+                        .flat_map(|workspaces| workspaces.values())
+                })
+                .flat_map(|workspace| workspace["savedTerminals"].as_array().into_iter().flatten())
+                .filter_map(|tab| tab["tuicSession"].as_str().map(str::to_owned))
+                .collect();
         let session_token = config.services.auth.session_token.clone();
         let push_store = crate::push::PushStore::load(&data_dir);
         let audit_path = data_dir.join("tunnel_audit.db");
@@ -3815,6 +3985,7 @@ impl AppState {
             grid: GridState::default(),
             claude_usage_cache: parking_lot::Mutex::new(crate::claude_usage::load_cache_from_disk()),
             claude_usage_scan: Default::default(),
+            provider_quota: Default::default(),
             log_buffer,
             event_bus: tokio::sync::broadcast::channel(256).0,
             remote_survive_secs: None,
@@ -3835,16 +4006,21 @@ impl AppState {
             relay: RelayState::new(),
             peer_agents: DashMap::new(),
             keep_open_sessions: DashSet::new(),
+            agent_capabilities: DashMap::new(),
+            capability_denials_mailed: DashSet::new(),
             blocked_children: DashSet::new(),
+            reported_children: DashSet::new(),
+            child_obligations: DashMap::new(),
             agent_inbox: DashMap::new(),
             agent_inbox_evictions: DashMap::new(),
             agent_read_cursor: DashMap::new(),
+            agent_reports: Default::default(),
             mail_subscriptions: Default::default(),
             pending_injections: DashMap::new(),
             recent_queue_keys: DashMap::new(),
             pending_initial_prompts: DashMap::new(),
             launch_transaction_lock: tokio::sync::Mutex::new(()),
-            managed_trust_dialogs: DashSet::new(),
+            managed_first_run: DashMap::new(),
             active_agent_waiters: DashMap::new(),
             orchestrator_peers: DashSet::new(),
             #[cfg(unix)]
@@ -3856,6 +4032,7 @@ impl AppState {
             acp: crate::acp::AcpClientManager::new(),
             one_shot_requests: Default::default(),
             acp_push_last_ms: DashMap::new(),
+            ai_chat_successor: Default::default(),
             push_store,
             desktop_window_focused: std::sync::atomic::AtomicBool::new(cfg!(feature = "desktop")),
             server_start_time: std::time::Instant::now(),
@@ -3870,6 +4047,7 @@ impl AppState {
             screenshot_responses: DashMap::new(),
             suspend_metadata: DashMap::new(),
             suspend_lock: Mutex::new(()),
+            restorable_terminals,
             hibernated_peers: dashmap::DashSet::new(),
             settings_policy: Arc::new(crate::settings::policy::Policy::default()),
             settings_api: tokio::sync::OnceCell::new(),
@@ -4364,6 +4542,9 @@ pub(crate) struct GitCacheState {
     worktree_storage_settings: Mutex<WorktreeStorageSettings>,
     pub(crate) repo_info: GitCache<crate::git::RepoInfo>,
     pub(crate) merged_branches: GitCache<Vec<String>>,
+    /// Merged verdicts for the checked-out workspace branches only (structure
+    /// snapshot). Separate from `merged_branches`, which covers every local branch.
+    pub(crate) workspace_merged_branches: GitCache<Vec<String>>,
     pub(crate) repo_diff_stats: GitCache<crate::git::RepoDiffStats>,
     pub(crate) branches_detail: GitCache<Vec<crate::git::BranchDetail>>,
     pub(crate) github_status: GitCache<Vec<crate::github::BranchPrStatus>>,
@@ -4391,6 +4572,7 @@ impl GitCacheState {
             worktree_storage_settings: Mutex::new(WorktreeStorageSettings::load()),
             repo_info: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
             merged_branches: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
+            workspace_merged_branches: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
             repo_diff_stats: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
             branches_detail: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
             github_status: build_git_cache(GITHUB_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
@@ -4423,6 +4605,7 @@ impl GitCacheState {
     pub(crate) fn clear_all(&self) {
         self.repo_info.invalidate_all();
         self.merged_branches.invalidate_all();
+        self.workspace_merged_branches.invalidate_all();
         self.repo_diff_stats.invalidate_all();
         self.branches_detail.invalidate_all();
         self.github_status.invalidate_all();
@@ -4434,6 +4617,7 @@ impl GitCacheState {
     pub(crate) fn invalidate_repo(&self, path: &str) {
         self.repo_info.invalidate(path);
         self.merged_branches.invalidate(path);
+        self.workspace_merged_branches.invalidate(path);
         self.repo_diff_stats.invalidate(path);
         self.branches_detail.invalidate(path);
         // github_status (remote PR/CI data) is NOT invalidated here — local git
@@ -4726,6 +4910,8 @@ impl AppState {
             .get(session_id)
             .map(|s| s.clone())?;
         crate::codex_binding::validate_snapshot(self, session_id, &mut state);
+        crate::agent_hook_payload::apply(&mut state);
+        crate::agent_question::enrich(self, session_id, &mut state);
         state.queued_commands = crate::pty::queued_command_count(self, session_id) as u32;
         state.shell_state = self
             .session_maps
@@ -4735,29 +4921,50 @@ impl AppState {
                 crate::pty::shell_state_wire(atom.load(std::sync::atomic::Ordering::Relaxed))
                     .map(str::to_string)
             });
-        let completion_settled = state.suggested_actions.is_some()
-            || self
-                .session_maps
-                .silence_states
-                .get(session_id)
-                .is_some_and(|silence| {
-                    let silence = silence.lock();
+        let (native_activity, completion_declared) = self
+            .session_maps
+            .silence_states
+            .get(session_id)
+            .map(|silence| {
+                let silence = silence.lock();
+                (
+                    if state.agent_type.is_some() {
+                        silence.native_state.activity()
+                    } else {
+                        None
+                    },
                     if state.agent_type.as_deref() == Some("claude")
                         && state.shell_state.as_deref() != Some("idle")
                     {
                         silence.completion_settled_for_epoch(state.turn_epoch)
                     } else {
                         silence.completion_declared_for_epoch(state.turn_epoch)
-                    }
-                });
-        // Ego reports turn boundaries through OSC 7770. Descendants (including
-        // pending background jobs) describe process ownership, not an active turn.
-        // Keep that metadata for suspend/standby safety, but never promote a
-        // confirmed idle ego turn back to working because of those processes.
+                    },
+                )
+            })
+            .unwrap_or((None, false));
+        let native_authority = native_activity.is_some();
+        if let Some(activity) = native_activity {
+            state.shell_state = crate::pty::shell_state_wire(activity).map(str::to_owned);
+        }
+        // A turn interrupted without its end hook leaves no live tool behind.
+        if state.shell_state.as_deref() == Some("idle") {
+            state.current_tool = None;
+        }
+        // Suggestions are next actions, not a completion receipt. An observed
+        // native busy remains authoritative even when prose includes a suggestion.
+        let completion_settled = !(native_authority
+            && state.shell_state.as_deref() == Some("busy"))
+            && (state.suggested_actions.is_some() || completion_declared);
+        // Descendants remain stored for suspend safety, not native turn state.
         let ego_turn_idle = state.agent_type.as_deref() == Some("ego")
             && state.shell_state.as_deref() == Some("idle");
-        let background_work =
-            !ego_turn_idle && (state.has_pending_background_probe() || state.background_work);
+        let background_work = !native_authority
+            && !ego_turn_idle
+            && (state.has_pending_background_probe() || state.background_work);
+        if native_authority {
+            state.background_work = false;
+        }
         // A current-turn completion marker is stronger than a stale BUSY atom
         // (for example a completed Codex screen that still contains its last
         // Working row). Keep real background work authoritative, but normalize
@@ -4768,12 +4975,14 @@ impl AppState {
         }
         state.agent_state = if state.agent_type.is_none() {
             None
-        } else if state.foreground_input_blocked {
+        } else if !native_authority && state.foreground_input_blocked {
             // A direct program's child owns the terminal even if the retained
             // ready screen or completion marker still describes the parent.
             Some("working".to_string())
         } else if state.awaiting_input || state.choice_prompt.is_some() {
             Some("awaiting_input".to_string())
+        } else if state.agent_error {
+            Some("error".to_string())
         } else if background_work {
             Some("working".to_string())
         } else if completion_settled {
@@ -4785,6 +4994,11 @@ impl AppState {
         } else {
             Some("starting".to_string())
         };
+        state.stalled = state.agent_state.as_deref() == Some("working")
+            && self.agent_reports.health.lock().stalled(
+                session_id,
+                &crate::agent_health::activity(self, session_id, state.turn_epoch),
+            );
         if state.agent_type.is_some()
             || crate::idle_close::shell_last_io_ms(self, session_id) != state.abandoned_since_ms
         {
@@ -4906,12 +5120,7 @@ impl AppState {
         repo: &str,
     ) -> Option<(String, String)> {
         let session_id = notice.session_id.as_ref()?;
-        let ready = {
-            let config = state.config.read();
-            config.services.push.enabled
-                && !config.services.push.vapid_private_key.is_empty()
-                && !state.push_store.is_empty()
-        };
+        let ready = Self::mobile_push_ready(state);
         let focused = state
             .desktop_window_focused
             .load(std::sync::atomic::Ordering::Relaxed);
@@ -4961,12 +5170,33 @@ impl AppState {
             // publishes nothing. Task-local because this task is the sole writer
             // of `session_states` and therefore the sole source of these pushes.
             let mut published: HashMap<String, SessionState> = HashMap::new();
+            // Waits published without their question text, until the deadline.
+            let mut unnamed: HashMap<String, std::time::Instant> = HashMap::new();
+            let mut recheck = tokio::time::interval(Self::UNNAMED_WAIT_RECHECK);
+            recheck.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             loop {
                 tokio::select! {
+                    _ = recheck.tick(), if !unnamed.is_empty() => {
+                        let now = std::time::Instant::now();
+                        unnamed.retain(|_, deadline| now < *deadline);
+                        let sessions: Vec<String> = unnamed.keys().cloned().collect();
+                        for session_id in sessions {
+                            // Same dedup as an event: pushes only if the text landed.
+                            Self::publish_session_state_change(
+                                &state,
+                                &AppEvent::PtyActivity { session_id: session_id.clone() },
+                                &mut published,
+                            );
+                            Self::track_unnamed_wait(&mut unnamed, &published, &session_id);
+                        }
+                    }
                     event = state_rx.recv() => match event {
                         Some(queued) => {
                             Self::apply_session_state_event(&state, &queued.event, queued.parented);
                             Self::publish_session_state_change(&state, &queued.event, &mut published);
+                            if let Some(session_id) = queued.event.pty_session_id() {
+                                Self::track_unnamed_wait(&mut unnamed, &published, session_id);
+                            }
                             // After the apply, not before: the depth counts events the
                             // authoritative state has not absorbed yet, and an event
                             // being applied right now is still one of them.
@@ -4988,6 +5218,38 @@ impl AppState {
                 }
             }
         });
+    }
+
+    /// How often a wait published without its question text is re-read.
+    const UNNAMED_WAIT_RECHECK: std::time::Duration = std::time::Duration::from_millis(250);
+    /// How long after publication that re-read lasts. The transcript row trails
+    /// the hook by about 1.2 s (measured 2026-11-03); a later row is left to the
+    /// client's 30 s poll.
+    const UNNAMED_WAIT_WINDOW: std::time::Duration = std::time::Duration::from_secs(10);
+
+    /// Keep `session_id` under re-read while its published state is a Claude or
+    /// Codex wait with no question text: the card opens empty and the transcript
+    /// row that names it lands later, with no event of its own to push on.
+    fn track_unnamed_wait(
+        unnamed: &mut HashMap<String, std::time::Instant>,
+        published: &HashMap<String, SessionState>,
+        session_id: &str,
+    ) {
+        let is_unnamed = published.get(session_id).is_some_and(|state| {
+            state.awaiting_input
+                && matches!(state.agent_type.as_deref(), Some("claude" | "codex"))
+                && state
+                    .question_text
+                    .as_deref()
+                    .is_none_or(|text| text.trim().is_empty())
+        });
+        if is_unnamed {
+            unnamed
+                .entry(session_id.to_owned())
+                .or_insert_with(|| std::time::Instant::now() + Self::UNNAMED_WAIT_WINDOW);
+        } else {
+            unnamed.remove(session_id);
+        }
     }
 
     /// Publish `SessionStateChanged` for the session `event` just mutated, when
@@ -5054,12 +5316,7 @@ impl AppState {
 
     /// Use the host preference at consumption time, but the event's spawn ancestry.
     fn session_push_ready(state: &AppState, parented: bool) -> bool {
-        let push_enabled = {
-            let config = state.config.read();
-            config.services.push.enabled
-                && !config.services.push.vapid_private_key.is_empty()
-                && !state.push_store.is_empty()
-        };
+        let push_enabled = Self::mobile_push_ready(state);
         push_enabled
             && (!parented
                 || !crate::config::load_notification_config_in(&state.data_dir)
@@ -5089,6 +5346,14 @@ impl AppState {
             prompt,
         );
         Self::send_mobile_push_url(state, url, &body);
+    }
+
+    /// Push is enabled, has a VAPID key and at least one subscribed device.
+    pub(crate) fn mobile_push_ready(state: &AppState) -> bool {
+        let config = state.config.read();
+        config.services.push.enabled
+            && !config.services.push.vapid_private_key.is_empty()
+            && !state.push_store.is_empty()
     }
 
     /// Send a push notification to all mobile subscribers at an arbitrary deep link.
@@ -5188,6 +5453,7 @@ impl AppState {
             AppEvent::PtyOsc133 { .. } | AppEvent::PtyCwd { .. } => {}
             AppEvent::SessionClosed { session_id, .. } => {
                 state.session_maps.session_states.remove(session_id);
+                state.provider_quota.unbind(session_id);
             }
             AppEvent::PtyParsed { session_id, parsed } => {
                 let event_type = parsed.get("type").and_then(|t| t.as_str()).unwrap_or("");
@@ -5299,7 +5565,22 @@ impl AppState {
                         last_activity_ms: now_ms,
                         ..Default::default()
                     });
-                s.last_activity_ms = now_ms;
+                // `last_activity_ms` is the semantic idle age (sidebar row,
+                // mobile SessionCard, idle_close). An idle agent that repaints
+                // re-parses the same facts, so a repaint-able type restamps only
+                // when it moved the logical state (`PartialEq` excludes the
+                // stamp). Every other type is a discrete event and always
+                // restamps (#2890-e551).
+                let repaint_baseline = matches!(
+                    event_type,
+                    "status-line" | "tool-activity" | "intent" | "slash-menu"
+                        | "child-activity" | "active-subtasks" | "progress"
+                        | "provider-recovery" | "usage-limit"
+                )
+                .then(|| s.clone());
+                if repaint_baseline.is_none() {
+                    s.last_activity_ms = now_ms;
+                }
                 match event_type {
                     "provider-recovery" => {
                         let recovery = parsed.get("recovery").filter(|v| !v.is_null())
@@ -5314,6 +5595,18 @@ impl AppState {
                             }
                             s.provider_recovery = recovery;
                         }
+                    }
+                    "child-activity" => {
+                        s.native_children = parsed
+                            .get("children")
+                            .and_then(|v| serde_json::from_value(v.clone()).ok())
+                            .unwrap_or_default();
+                    }
+                    "turn-outcome" => {
+                        s.native_turn_outcome = parsed
+                            .get("outcome")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_owned);
                     }
                     "question" if epoch_matches => {
                         let new_confident = parsed
@@ -5460,6 +5753,12 @@ impl AppState {
                             s.current_task = new_task;
                         }
                     }
+                    "tool-activity" => {
+                        s.current_tool = parsed
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_owned);
+                    }
                     "intent" => {
                         s.agent_intent = parsed
                             .get("text")
@@ -5543,6 +5842,11 @@ impl AppState {
                     }
                     _ => {}
                 }
+                if let Some(before) = repaint_baseline
+                    && before != *s
+                {
+                    s.last_activity_ms = now_ms;
+                }
                 drop(s);
 
                 // Applied outside the session_states entry lock — same
@@ -5568,6 +5872,18 @@ impl AppState {
                 // outside the session_states entry lock to avoid re-entrancy.
                 if event_type == "user-input" {
                     crate::pty::flush_pending_injections(state, session_id);
+                }
+
+                // Backend-owned auto-retry (story 2746-2348), outside the
+                // session_states lock: the owner re-enters it.
+                match event_type {
+                    "api-error" => crate::api_retry::note_api_error(
+                        state,
+                        session_id,
+                        parsed.get("error_kind").and_then(|v| v.as_str()).unwrap_or(""),
+                    ),
+                    "status-line" => crate::api_retry::note_working(state, session_id),
+                    _ => {}
                 }
 
                 // Route the parked prompt to the spawning orchestrator, outside the
@@ -5599,6 +5915,9 @@ impl AppState {
             AppEvent::PtyExit { session_id } => {
                 if let Some(mut session) = state.session_maps.session_states.get_mut(session_id) {
                     session.provider_recovery = None;
+                    session.native_children.clear();
+                    session.native_turn_outcome = None;
+                    session.agent_error = false;
                 }
                 crate::codex_binding::revoke(state, session_id);
                 let push_ready = Self::session_push_ready(state, parented);
@@ -5619,6 +5938,9 @@ impl AppState {
                     entry.awaiting_input = false;
                     entry.question_text = None;
                     entry.question_confident = false;
+                    entry.wait_request = None;
+                    entry.wait_card = None;
+                    entry.current_tool = None;
                     entry.rate_limited = false;
                     entry.retry_after_ms = None;
                     entry.rate_limit_set_ms = 0;
@@ -5651,6 +5973,8 @@ impl AppState {
             | AppEvent::AiChatSelectionChanged
             | AppEvent::OpenMarkdownTabsChanged
             | AppEvent::SettingsChanged(_)
+            | AppEvent::ProviderQuotaChanged(_)
+            | AppEvent::ProviderQuotaBindingChanged(_)
             | AppEvent::IdeasChanged
             | AppEvent::RepositoriesChanged
             | AppEvent::DirChanged { .. }
@@ -5669,6 +5993,7 @@ impl AppState {
             | AppEvent::ConflictAssistStatus { .. }
             | AppEvent::ProgressRecorded { .. }
             | AppEvent::WorkflowRunChanged { .. }
+            | AppEvent::StoriesChanged { .. }
             | AppEvent::AutomationRunChanged { .. }
             | AppEvent::CloseDialog { .. }
             | AppEvent::BackgroundModeChanged { .. }
@@ -5686,6 +6011,7 @@ impl AppState {
             // A mirrored event is the far end's accumulator output. Feeding it
             // in here would build a second, local row for a session this
             // machine does not run.
+            | AppEvent::BossAttentionChanged
             | AppEvent::RemoteMirrored { .. } => {}
             // Dictation is bound to a session but says nothing about it: a
             // download belongs to the installation, and a spoken reply belongs
@@ -5737,6 +6063,8 @@ pub(crate) struct PtyConfig {
     /// Pre-generated stable session UUID — injected as `TUIC_SESSION` env var.
     /// Persists across app restarts so agents can resume the same session.
     pub(crate) tuic_session: Option<String>,
+    #[serde(default)]
+    pub(crate) restored: bool,
     /// Extra environment variables injected into the PTY process (e.g. agent feature flags).
     #[serde(default)]
     pub(crate) env: HashMap<String, String>,
@@ -5979,6 +6307,7 @@ mod tests {
             from_name: "sender".to_string(),
             content: "x".to_string(),
             timestamp: 1,
+            report: None,
             delivered_via_channel: false,
         }
     }
@@ -5990,6 +6319,7 @@ mod tests {
             from_name: "tuic".to_string(),
             content: serde_json::json!({"type": kind, "state": state}).to_string(),
             timestamp: 1,
+            report: None,
             delivered_via_channel: false,
         }
     }
@@ -6362,82 +6692,6 @@ mod tests {
         );
         assert!(!state.agent_inbox_evictions.contains_key("peer"));
         assert!(!state.agent_inbox_evictions.contains_key("other"));
-    }
-
-    /// Catches: a lost urgent-notice writer suppresses every later urgent notice forever.
-    #[test]
-    fn urgent_notice_in_flight_expires_without_settling_its_replacement() {
-        let state = tests_support::make_test_app_state();
-        let recipient = "urgent-expiry";
-        let first = state.push_agent_inbox(recipient, make_msg("first"));
-        assert_eq!(
-            state.reserve_urgent_notice(recipient, "sender", first),
-            UrgentNoticeReservation::Reserved
-        );
-        let second = state.push_agent_inbox(recipient, make_msg("second"));
-        assert_eq!(
-            state.reserve_urgent_notice(recipient, "sender", second),
-            UrgentNoticeReservation::InFlight
-        );
-        // The lease is 30s, longer than both 6s submission confirmation windows.
-        // Use the public clock here so the regression also runs on pre-fix code.
-        std::thread::sleep(Duration::from_secs(31));
-        let third = state.push_agent_inbox(recipient, make_msg("third"));
-        assert_eq!(
-            state.reserve_urgent_notice(recipient, "sender", third),
-            UrgentNoticeReservation::Reserved,
-            "an abandoned writer must not suppress future urgent notices"
-        );
-        state.finish_urgent_notice(recipient, "sender", first, true);
-        let fourth = state.push_agent_inbox(recipient, make_msg("fourth"));
-        assert_eq!(
-            state.reserve_urgent_notice(recipient, "sender", fourth),
-            UrgentNoticeReservation::InFlight,
-            "a late old writer must not mark the replacement as written"
-        );
-        state.finish_urgent_notice(recipient, "sender", third, true);
-        assert_eq!(
-            state.reserve_urgent_notice(recipient, "sender", fourth),
-            UrgentNoticeReservation::Written
-        );
-    }
-
-    #[test]
-    fn urgent_notice_reservation_survives_partial_read_and_clears_after_eviction() {
-        let state = tests_support::make_test_app_state();
-        let recipient = "peer";
-        let first_through = state.push_agent_inbox(recipient, make_msg("urgent-0"));
-        assert_eq!(
-            state.reserve_urgent_notice(recipient, "sender", first_through),
-            UrgentNoticeReservation::Reserved
-        );
-        state.finish_urgent_notice(recipient, "sender", first_through, true);
-        let second_through = state.push_agent_inbox(recipient, make_msg("urgent-1"));
-        assert_eq!(
-            state.reserve_urgent_notice(recipient, "sender", second_through),
-            UrgentNoticeReservation::Written
-        );
-        state.observe_agent_inbox(recipient, 0, 1);
-        let third_through = state.push_agent_inbox(recipient, make_msg("urgent-2"));
-        assert_eq!(
-            state.reserve_urgent_notice(recipient, "sender", third_through),
-            UrgentNoticeReservation::Written
-        );
-        state.observe_agent_inbox(recipient, first_through, 2);
-        let fourth_through = state.push_agent_inbox(recipient, make_msg("urgent-3"));
-        assert_eq!(
-            state.reserve_urgent_notice(recipient, "sender", fourth_through),
-            UrgentNoticeReservation::Reserved
-        );
-
-        for index in 0..AGENT_INBOX_CAPACITY {
-            state.push_agent_inbox(recipient, make_msg(&format!("filler-{index}")));
-        }
-        let after_eviction = state.push_agent_inbox(recipient, make_msg("urgent-after-eviction"));
-        assert_eq!(
-            state.reserve_urgent_notice(recipient, "sender", after_eviction),
-            UrgentNoticeReservation::Reserved
-        );
     }
 
     #[test]
@@ -9034,6 +9288,41 @@ mod tests {
         assert_eq!(&*out, "beforeafter");
     }
 
+    /// Catches: ego children or the turn outcome never reaching the session
+    /// snapshot, raising awaiting, or surviving the process exit.
+    #[test]
+    fn native_children_and_outcome_accumulate_and_clear_on_exit() {
+        let state = fresh_state();
+        let snapshot = apply(
+            &state,
+            &make_parsed(
+                "child-activity",
+                serde_json::json!({"children": ["Working"]}),
+            ),
+        );
+        assert_eq!(snapshot.native_children, ["Working"]);
+        assert!(
+            !snapshot.awaiting_input,
+            "rich activity never raises awaiting"
+        );
+        let snapshot = apply(
+            &state,
+            &make_parsed(
+                "turn-outcome",
+                serde_json::json!({"outcome": "interrupted"}),
+            ),
+        );
+        assert_eq!(snapshot.native_turn_outcome.as_deref(), Some("interrupted"));
+        let exited = apply(
+            &state,
+            &AppEvent::PtyExit {
+                session_id: "s1".to_string(),
+            },
+        );
+        assert_eq!(exited.native_children, [] as [String; 0]);
+        assert_eq!(exited.native_turn_outcome, None);
+    }
+
     /// Catches: recovery entry/exit being invisible to the parent, or duplicate snapshots flooding it.
     #[test]
     fn provider_recovery_accumulates_and_notifies_parent_on_edges() {
@@ -9678,6 +9967,8 @@ mod tests {
             config.services.push.enabled = true;
             config.services.push.vapid_private_key = private;
             config.services.push.vapid_public_key = public;
+            // The loopback mock stands in for an owner-added push provider.
+            config.services.push.added_providers = vec!["127.0.0.1".into()];
         }
         let client_key = p256::ecdsa::SigningKey::random(&mut rand_core::OsRng);
         state.push_store.upsert(crate::push::PushSubscription {
@@ -9737,6 +10028,7 @@ mod tests {
                     executable,
                     profile: String::new(),
                     master_prompt: String::new(),
+                    ai_chat: false,
                 },
                 crate::acp::AcpConnectRequest {
                     root: root.path().to_path_buf(),
@@ -9845,6 +10137,82 @@ mod tests {
             s.last_activity_ms, 1_000,
             "the activity pulse must not restamp last_activity_ms"
         );
+    }
+
+    /// Story 2890-e551. An idle agent that repaints re-emits the same parsed
+    /// facts; `last_activity_ms` is the sidebar's idle age, so a parse that
+    /// leaves the logical state identical must not move it.
+    ///
+    /// Catches: every `PtyParsed` restamping `last_activity_ms`, which pins an
+    /// idle ego sub-agent row at "<1m" forever.
+    #[test]
+    fn repaint_only_parses_keep_last_activity() {
+        let state = fresh_state();
+        let status = make_parsed(
+            "status-line",
+            serde_json::json!({ "task_name": "Reading files", "full_line": "⏺ Reading files" }),
+        );
+        let intent = make_parsed(
+            "intent",
+            serde_json::json!({ "text": "fixing", "title": null }),
+        );
+        apply(&state, &status);
+        apply(&state, &intent);
+        state
+            .session_maps
+            .session_states
+            .get_mut("s1")
+            .unwrap()
+            .last_activity_ms = 1_000;
+
+        let after_status = apply(&state, &status);
+        let after_intent = apply(&state, &intent);
+
+        assert_eq!(
+            after_status.last_activity_ms, 1_000,
+            "identical status-line restamped"
+        );
+        assert_eq!(
+            after_intent.last_activity_ms, 1_000,
+            "identical intent restamped"
+        );
+    }
+
+    /// Catches: the fix suppressing the stamp for real transitions too.
+    #[test]
+    fn real_transitions_restamp_last_activity() {
+        let state = fresh_state();
+        let seed = |state: &Arc<AppState>| {
+            state
+                .session_maps
+                .session_states
+                .get_mut("s1")
+                .unwrap()
+                .last_activity_ms = 1_000;
+        };
+        for event in [
+            make_parsed("user-input", serde_json::json!({ "content": "go" })),
+            make_parsed(
+                "question",
+                serde_json::json!({ "prompt_text": "Proceed?", "confident": true }),
+            ),
+            make_parsed("tool-activity", serde_json::json!({ "name": "Bash" })),
+            make_parsed(
+                "intent",
+                serde_json::json!({ "text": "a new intent", "title": null }),
+            ),
+            make_parsed(
+                "status-line",
+                serde_json::json!({ "task_name": "Another task", "full_line": "x" }),
+            ),
+        ] {
+            seed(&state);
+            let s = apply(&state, &event);
+            assert!(
+                s.last_activity_ms > 1_000,
+                "transition did not restamp: {event:?}"
+            );
+        }
     }
 
     #[test]
@@ -10269,6 +10637,8 @@ mod tests {
                 config.services.push.enabled = true;
                 config.services.push.vapid_private_key = private;
                 config.services.push.vapid_public_key = public;
+                // The loopback mock stands in for an owner-added push provider.
+                config.services.push.added_providers = vec!["127.0.0.1".into()];
             }
             std::fs::write(
                 state.data_dir.join("notifications.json"),
@@ -10378,6 +10748,8 @@ mod tests {
             config.services.push.enabled = true;
             config.services.push.vapid_private_key = private;
             config.services.push.vapid_public_key = public;
+            // The loopback mock stands in for an owner-added push provider.
+            config.services.push.added_providers = vec!["127.0.0.1".into()];
         }
         state
             .desktop_window_focused

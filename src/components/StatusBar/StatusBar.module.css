@@ -25,11 +25,20 @@
   flex: 1;
 }
 
+.rightGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  max-width: 75%;
+  min-width: 0;
+  margin-left: auto;
+}
+
 .controls {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
   flex: 0 0 auto;
   overflow: visible;
 }
@@ -49,7 +58,7 @@
 .info {
   color: var(--fg-secondary);
   flex: 1 1 0;
-  min-width: 60px;
+  min-width: 0;
   overflow: hidden;
   transition: color 600ms ease-out;
 }
@@ -116,10 +125,17 @@
   border-radius: var(--radius-sm);
   background: var(--bg-tertiary);
   white-space: nowrap;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .agentUsage {
+  color: var(--fg-secondary);
+}
+
+.agentTool {
   color: var(--fg-secondary);
 }
 
@@ -137,6 +153,43 @@
   animation: pulse-opacity 2s ease-in-out infinite;
 }
 
+/* Holds every ticker: side by side while they fit, the overflow rotates in the last slot */
+.tickerArea {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Natural pool width, capped by the bar; no reserved gap after the usage badge. */
+  flex: 0 1 auto;
+  max-width: 45vw;
+  justify-content: flex-end;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tickerAreaEmpty {
+  display: none;
+}
+
+/* Renders the whole pool at natural width so the layout can measure it; never visible */
+.tickerProbe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  gap: 8px;
+  width: max-content;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.tickerPinned {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
 .tickerMessage {
   font-family: var(--font-ui);
   font-size: var(--font-sm);
@@ -147,7 +200,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 0 1 auto;
-  min-width: 60px;
+  min-width: 0;
 }
 
 .tickerClickable {
@@ -391,6 +444,10 @@
   color: var(--error);
   white-space: nowrap;
   cursor: default;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .toggleBtn { position: relative; overflow: visible; }

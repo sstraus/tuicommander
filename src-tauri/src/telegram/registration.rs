@@ -58,21 +58,7 @@ impl Runtime {
         if let Some(peer) = self.registered_peer() {
             return Some(peer.to_owned());
         }
-        let peers = {
-            let config = self.state.config.read();
-            config
-                .ai_chat_peer_ids
-                .values()
-                .cloned()
-                .chain(
-                    config
-                        .ai_chat_launches
-                        .values()
-                        .map(|launch| launch.peer_id.clone()),
-                )
-                .filter(|peer| self.state.peer_agents.contains_key(peer))
-                .collect::<Vec<_>>()
-        };
+        let peers = crate::acp_chat::registered_ai_chat_peers(&self.state);
         self.state.acp.latest_live_peer(&peers)
     }
 

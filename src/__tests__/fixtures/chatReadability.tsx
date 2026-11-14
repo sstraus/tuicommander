@@ -89,15 +89,17 @@ render(
 		document.querySelectorAll<HTMLElement>("#terminal ul[data-tuic-answer], #terminal ol[data-tuic-answer]"),
 	).map((list) => {
 		const style = getComputedStyle(list);
+		const rail = list.closest<HTMLElement>("[data-tuic-answer-region]")!;
+		const railBorder = parseFloat(getComputedStyle(rail).borderLeftWidth);
 		const item = list.querySelector("li")!;
 		const range = document.createRange();
 		range.selectNodeContents(item.firstChild!);
 		return {
 			tag: list.tagName,
-			border: parseFloat(style.borderLeftWidth),
+			border: railBorder,
 			padding: parseFloat(style.paddingLeft),
 			font: parseFloat(style.fontSize),
-			ruleRight: list.getBoundingClientRect().left + parseFloat(style.borderLeftWidth),
+			ruleRight: rail.getBoundingClientRect().left + railBorder,
 			itemLeft: item.getBoundingClientRect().left,
 			textLeft: range.getBoundingClientRect().left,
 			marker: getComputedStyle(item, "::marker").color,
@@ -112,9 +114,11 @@ render(
 		)
 		.map((list) => ({
 			listBorder: parseFloat(getComputedStyle(list).borderLeftWidth),
-			ruleLeft: list.getBoundingClientRect().left,
+			ruleLeft: list.closest("[data-tuic-answer-region]")!.getBoundingClientRect().left,
+			railBorder: parseFloat(getComputedStyle(list.closest("[data-tuic-answer-region]")!).borderLeftWidth),
 			items: Array.from(list.children).map((item) => ({
 				border: parseFloat(getComputedStyle(item).borderLeftWidth),
+				answer: item.hasAttribute("data-tuic-answer"),
 				left: item.getBoundingClientRect().left,
 			})),
 		}));
@@ -132,6 +136,6 @@ render(
 		lists,
 		unmarkedBorder: getComputedStyle(unmarked).borderLeftWidth,
 		answerLists,
-		paragraphRuleLeft: reference.getBoundingClientRect().left,
+		paragraphRuleLeft: reference.closest("[data-tuic-answer-region]")!.getBoundingClientRect().left,
 	};
 };

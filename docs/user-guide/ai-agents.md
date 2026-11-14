@@ -37,7 +37,7 @@ absolute bridge path that is missing or not executable.
 
 ### Native scrollback on launch
 
-**Prevent alternate screen** in Settings → AI → Agents is enabled by default for every agent. TUIC applies Claude Code's `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1` and `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` environment controls when enabled. A terminal that enters the alternate screen within its first seconds raises a warning toast naming the session and the fix. Codex and Grok receive `--no-alt-screen` when their installed CLI advertises it in `--help`; OpenCode receives `--mini` when available. On Windows, the probe selects an executable `.exe` or `.cmd` launcher ahead of an extensionless npm shell shim. TUICommander checks the executable with a two-second deadline and shares concurrent checks. A timed-out check is not retried until that binary changes; a quick inconclusive exit is retried after a short cooldown. Older versions still start without an unsupported option. Existing flags are not duplicated. Rust applies the same policy to structured IPC, HTTP and MCP launches and exports it to new TUIC shells, where zsh, bash and fish wrappers apply it to commands typed manually. `command <agent>` bypasses those wrappers, but not the launch-instructions shim. Reopen an existing shell after changing the setting. In typed OpenCode commands, `--mini` applies to interactive launches (bare, options or a project path), and skips all recorded subcommands and aliases, including `mcp list` and `run`. Goose wrappers omit TUIC `--name` when arguments include `--no-session`, `--name NAME`, `--name=NAME`, `-n NAME`, `-nNAME`, `--path PATH`, `--path=PATH`, `--resume` or `-r`. Normal `session` and `run` launches retain tab naming.
+**Prevent alternate screen** in Settings → AI → Agents is enabled by default for every agent. TUIC applies Claude Code's `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1` and `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` environment controls when enabled. A terminal that enters the alternate screen within its first seconds raises a warning toast naming the session and the fix. Codex and Grok receive `--no-alt-screen` when their installed CLI advertises it in `--help`; OpenCode receives `--mini` when available. On Windows, the probe selects an executable `.exe` or `.cmd` launcher ahead of an extensionless npm shell shim. TUICommander checks the executable with a two-second deadline and shares concurrent checks. A timed-out check is not retried until that binary changes; a quick inconclusive exit is retried after a short cooldown. Older versions still start without an unsupported option. Existing flags are not duplicated. On Unix, the PATH shim also removes repeated native screen flags after shell alias expansion, before the real executable starts. Arguments after `--` stay unchanged. Absolute executable paths bypass this shim. Integration scripts and shim hard links are refreshed when TUIC creates a new shell; an app update does not replace functions already loaded in an existing shell. Rust applies the same policy to structured IPC, HTTP and MCP launches and exports it to new TUIC shells, where zsh, bash and fish wrappers apply it to commands typed manually. `command <agent>` bypasses those wrappers, but not the launch-instructions shim. Reopen an existing shell after changing the setting. In typed OpenCode commands, `--mini` applies to interactive launches (bare, options or a project path), and skips all recorded subcommands and aliases, including `mcp list` and `run`. Goose wrappers omit TUIC `--name` when arguments include `--no-session`, `--name NAME`, `--name=NAME`, `-n NAME`, `-nNAME`, `--path PATH`, `--path=PATH`, `--resume` or `-r`. Normal `session` and `run` launches retain tab naming.
 
 Gemini currently defaults to the primary screen (`ui.useAlternateBuffer: false`), Cursor enables fullscreen only when requested, and pi defaults to regular TUI mode. Other agents without a documented alternate-screen control keep their own defaults. If an agent enters the alternate screen despite these defaults, TUICommander records one warning for that session with the agent name and detected version.
 
@@ -49,7 +49,7 @@ Managed MCP Codex spawns pass `-c check_for_update_on_startup=false` so an avail
 
 ### Workspace trust for managed spawns
 
-**Accept workspace trust for managed spawns** is on by default for Claude Code and Codex in Settings → AI → Agents. When an agent starts another agent through TUICommander's `agent spawn` action in a new folder, the child starts without waiting for a workspace trust answer. Codex receives a trust setting for that one launch and folder, including when a custom launcher forwards its arguments to Codex. TUICommander answers Claude Code's initial trust picker only when it shows the expected question with **No, exit** selected. Neither path edits the CLI's saved trust configuration.
+**Accept workspace trust for managed spawns** is on by default for Claude Code, Codex and ego in Settings → AI → Agents. When an agent starts another agent through TUICommander's `agent spawn` action in a new folder, the child starts without waiting for a workspace trust answer. Codex receives a trust setting for that one launch and folder, including when a custom launcher forwards its arguments to Codex. TUICommander answers Claude Code's initial trust picker only when it shows the expected question with **No, exit** selected. It also answers Claude Code's external `CLAUDE.md` imports question with **No, disable external imports**. Workflow-launched agents get the same answers. Any other first-run dialog is left open and reported to the parent as a wait with the dialog text. ego receives `--trust-workspace`, and ego remembers that answer for the folder. Codex and Claude Code keep their saved trust configuration unchanged.
 
 Turn this setting off for an agent if you want to answer its normal trust question during managed spawns. Terminals that you open yourself always use the agent's normal trust behavior.
 
@@ -81,6 +81,23 @@ blocks injection. A blocked raw write reports uncertainty after two seconds;
 it can still complete, so do not resend it automatically. Session close remains
 available without waiting for that writer.
 
+### AI Chat state
+
+AI Chat does not use terminal detection. Its state comes from ego over ACP, and
+the desktop panel, a browser and the phone show the same state:
+
+- **Working** while a turn runs, while a tool call of that turn runs, or while
+  an ego child of that chat runs. A durable child can keep a chat working after
+  its turn ended; you can still send the next prompt.
+- **Waiting for you** while a permission or a question is open. Answering,
+  rejecting, Stop and an ego exit each remove the wait. An answered question
+  does not come back when the panel reconnects.
+- **Idle** otherwise. A chat that you stopped is marked interrupted.
+
+A child in one chat never marks another chat as working. Child state needs an
+ego that advertises it (ego 0.4.1 or later); an older ego shows turn and tool
+state only.
+
 ## Rate Limit Detection
 
 When an agent hits a rate limit, TUICommander detects it from terminal output:
@@ -105,7 +122,7 @@ For unrecognized agents, silence-based detection kicks in — if the terminal st
 
 ## Launch Instructions (TUIC Output Markers)
 
-TUICommander generates a launch playbook through the agent's native instruction channel: Markers, Working with the user, Waiting and long work, Git and worktrees, Process safety, and Children. The Children module is included only for spawned children; children do not receive follow-up suggestions. MCP initialize instructions retain live discovery, but do not repeat playbook obligations for launch-capable agents. Other clients retain the MCP marker fallback. When mdkb is installed, the launch playbook also carries a fixed "Code search" rule that tells the agent to search with MDKB first; without mdkb it is absent. TUICommander checks once when it writes the launch files (startup, settings change, mdkb install or uninstall).
+TUICommander generates a launch playbook through the agent's native instruction channel: Markers, Working with the user, Waiting and long work, Git and worktrees, Process safety, and Children. The Markers module asks agents to place `💬 ` at the start of a new line for each directly answering sentence, or after a list-item prefix. A marker after prose on the same line is literal text, not an answer marker. The Children module is included only for spawned children; children do not receive follow-up suggestions. MCP initialize instructions retain live discovery, but do not repeat playbook obligations for launch-capable agents. Other clients retain the MCP marker fallback. When mdkb is installed, the launch playbook also carries a fixed "Code search" rule that tells the agent to search with MDKB first; without mdkb it is absent. TUICommander checks once when it writes the launch files (startup, settings change, mdkb install or uninstall).
 
 The **Waiting and long work** module runs long work in the background and continues ready, non-overlapping work. The agent yields only when a background result blocks its next useful action and no independent work remains, or it needs your answer. A yield reports what is running and what the result unblocks, without a completion claim or follow-up suggestions. The agent uses the launched mechanism's completion wake, never polling or sleeping to wait. Terminal submissions still send text and Enter together in one call.
 
@@ -139,9 +156,33 @@ TUIC writes the effective text to `<config-dir>/agent-hooks/instructions-<agent>
 
 **Scope:** agents that TUIC starts (Run, MCP/HTTP spawns, worktree launches) get the flag. In a TUIC shell on macOS and Linux, TUIC puts a shim directory first on `PATH` (`shell-integration/bin`). The shim adds the same flag and runs the next real binary on `PATH`, so a typed agent, an alias, and a wrapper script that runs the agent by name all get the instructions. The prompt hook of zsh, bash and fish moves the shim directory back to the front of `PATH` if your shell startup files prepend another directory. OpenCode gets `OPENCODE_CONFIG_CONTENT` instead, which also reaches an absolute-path launch. These agents have no env var or config file that appends instructions without side effects, so they use the shim: claude, codex, grok, goose, pi and ego. A shim-served agent launched by absolute path, and every typed launch on Windows or WSL, bypasses launch injection. MCP does not restore the playbook for a recognized launch-capable agent. The shim never adds a flag that you already pass. Agent names in the Unix shim directory are hard links to one script, so launchers that canonicalise executable paths retain the agent name. New shell launches replace legacy symlinks atomically. Unchanged installs retain the executable inode; a script update refreshes all agent links. The shim directory must support hard links. If installation fails, TUIC logs the error and does not prepend that directory to the new shell's `PATH`.
 
+### Independent headless ego advisors
+
+Use `ego run - < brief.md > answer.md` for a headless stdin prompt. A bare
+`ego -` selects a prompt source, not the headless driver. TUIC does not change
+ego retry defaults or add retry flags: explicit headless runs keep their finite
+default (zero retries), and caller-supplied `--retry N` remains unchanged.
+
+On macOS and Linux, the shim isolates `ego run` and ego session launches whose
+stdin or stdout is not a terminal. They receive no implicit parent launch
+instructions, attachment grant or `TUIC_SESSION`. A process boundary also stops
+MCP ancestry recovery from binding their bridge to the parent terminal. Explicit
+`--append-system` and `--read-only-dir` arguments remain unchanged.
+
+Direct terminal launches retain their context. For a deliberately hosted,
+redirected peer, supply its valid host identity and `TUIC_EGO_HOSTED=1` on that
+invocation. The shim consumes this one-launch opt-in; later tools do not inherit
+it. The host remains responsible for assigning a distinct peer identity when
+appropriate. Administrative commands and ACP keep their existing pass-through
+behavior. These rules apply to the Unix PATH shim, not absolute-path launches or
+native Windows launches.
+
 ## Native Hook Instrumentation
 
-Claude and Codex status signals are enabled by default and scoped to each TUIC launch. Claude receives an additional `--settings <config-dir>/agent-hooks/claude.json`; Codex receives `-c notify=["<config-dir>/agent-hooks/codex-notify.sh"]`. Existing explicit overrides win. The Codex adapter emits idle on `agent-turn-complete` and then chains the user's configured `notify` command with the original JSON payload. No global agent configuration is written by this default path.
+With Codex global hooks installed and trusted, native tool start/end events restore Working for the exact terminal session. Native `request_user_input` hooks provide the question text and clear Input on their matching result, a new prompt, stop, interruption or session end. Native terminal rendering still supplies answer controls. Other tools do not dismiss an open human approval. Codex 0.166.0 does not identify permission ownership in hooks, so TUIC does not consume `PermissionRequest`; existing human-approval detection stays active. After updating TUIC, update and trust the changed hook definitions in `/hooks`. Codex `SubagentStart`/`SubagentStop` hooks keep a native child roster per terminal (#2635-8052): a lead that stops while children still work stays Working until the last child stops, and the session's `native_children` lists them (shared with ego children). Progress Flow draws each live child as a Running column under its terminal; the column goes away when the roster drops the child. A child's own prompt never moves the lead turn or rebinds Chat to the child transcript. A new lead prompt, interruption, session end or exit clears the roster, so a missing child stop cannot hold later turns; within one turn the five-minute stale-completion backstop bounds it. Grok child hooks are not wired yet.
+
+
+Claude and Codex status signals are enabled by default and scoped to each TUIC launch. Claude receives an additional `--settings <config-dir>/agent-hooks/claude.json`; on macOS and Linux, the PATH shim applies this to named launches and resumes, including `env CLAUDE_CONFIG_DIR=… claude` and script wrappers. The shim consumes the hook-setting environment variable before running an agent, so later tool subprocesses do not inherit this implicit policy; Codex receives `-c notify=["<config-dir>/agent-hooks/codex-notify.sh"]`. Restored and discovered Claude launches use the same settings, including when the saved command names an absolute executable. Explicit `--settings`, `--settings=…`, `--bare`, administrative commands and the native-status opt-out keep their existing behavior. The Codex adapter emits idle on `agent-turn-complete` and then chains the user's configured `notify` command with the original JSON payload. No global agent configuration is written by this default path.
 
 After a completion hook, decorative terminal animation and redraws keep the
 session idle. New input and recognized active work can start another turn.
@@ -155,6 +196,8 @@ Instead of inferring busy/idle/waiting from terminal output, TUICommander can dr
 
 When enabled, TUIC writes small shell hooks into the agent's settings file that emit `OSC 7770;state=…` on each lifecycle event (busy on prompt/tool start, `awaiting` on an approval/question prompt, idle on stop). The session state then follows the hooks precisely, and the heuristic question-detection above is suppressed for that agent. Screen and ordinary silence cannot override a protocol-held turn. If its completion signal is lost, a stable Ready screen plus five minutes without PTY output recovers the session and writes a `protocol-stale` warning.
 
+For OpenCode 2.2.3, update the managed plugin and launch `opencode --standalone` in the TUIC terminal. This starts a private native server that inherits the terminal. The shared background service cannot attribute its events to one terminal, so the plugin stays inactive there. Native question forms and permission requests set Input; answering or cancelling restores the current execution state without waiting for another tool. Concurrent requests keep Input until each owned wait settles. Execution success, failure, interruption, session deletion and plugin/location shutdown clear the affected waits. Native session and request ids stay separate from the TUIC tab id. The older named-function plugin is reported as outdated and needs an update; it does not load on this CLI.
+
 For Claude, `awaiting` also covers **MCP elicitation** — the dialog an MCP server raises to ask you for input (`MCP server "…" requests your input`, with Accept/Decline). It arrives through Claude's `Elicitation` event and is retracted by `ElicitationResult`; no screen scraping is involved, because that dialog matches none of the question heuristics.
 
 **Ownership is safe and reversible.** Each managed hook carries a `# tuic-managed-hook` sentinel; enabling installs only TUIC's entries and disabling removes only them — your own (and wiz/mdkb) hooks in the same file are never touched. The toggle is the source of truth; the effect applies on the agent's **next launch** (hooks are read at startup).
@@ -166,9 +209,28 @@ For Claude, `awaiting` also covers **MCP elicitation** — the dialog an MCP ser
 | Codex | `~/.codex/hooks.json` + `~/.codex/config.toml` (`[features] hooks = true`) | Supported |
 | Grok | `~/.grok/hooks/tuic.json` (own file) | Supported |
 | OpenCode | `~/.config/opencode/plugin/tuic.ts` (Bun/TS plugin) | Supported |
-| Others (Amp, Cursor, Goose, Droid, pi) | — | No TUIC-managed hook system — stays heuristic |
+| pi | `~/.pi/agent/extensions/tuic.ts` (marked extension) | Supported on macOS/Linux; Pi 0.84.2 API recorded |
+| Others (Amp, Cursor, Goose, Droid) | — | No TUIC-managed hook system — stays heuristic |
 
-> **Platform note:** Hook instrumentation is **macOS/Linux only** — it resolves the controlling tty via `ps`/`/dev/tty`, which has no Windows equivalent. On Windows the toggle is hidden and agents keep heuristic detection (no regression).
+Pi uses **Install hooks globally** to install one owned extension. If
+`PI_CODING_AGENT_DIR` selects another agent directory in TUIC's environment,
+that directory contains `extensions/tuic.ts` instead. An unmarked file is never
+overwritten or removed. Restart Pi to load a changed extension.
+
+Pi agent and tool callbacks report busy; agent end reports idle. Extension
+`select`, `confirm`, `input`, `editor` and `custom` dialogs report awaiting
+until their promises settle. Answer, rejection, Escape and exceptions all
+restore the current run state. Tool activity cannot clear a still-open dialog.
+Session replacement and extension shutdown drop old waits. Model selection
+alone does not start work. Print and RPC UI methods are not PTY modal owners.
+
+> **Platform note:** On native Windows the generated hooks run the bundled `tuic.exe agent-state <verb> [state]` instead of POSIX `sh` (#2632-97ef). It reads the hook event from stdin (at most 768 KiB; a larger event sends only its coarse state), builds the same OSC 7770 frames, and posts them over the named pipe to `POST /sessions/{TUIC_SESSION}/hook`. When no TUIC answers, or the TUIC that owns the pipe does not know the session, the frames go in-band to the console (`CONOUT$`), which ConPTY delivers unchanged. Posts carry the hook's process-start monotonic clock, so a late hook cannot revive a settled turn. Codex `notify` runs `tuic.exe agent-state codex-notify -- <your notify>` and chains your own notify command. When `tuic.exe` is not next to the application, or its path holds `"`, `%`, `!`, `$` or a backtick, hooks stay unsupported: hook state returns `unsupported`, setters reject changes before any write, and Settings hides the controls. Saved preferences and existing hooks remain intact. Not yet verified on Windows hardware: the shell each agent uses for hook commands (`cmd` and `sh` accept the quoted path; PowerShell needs `&`), and end-to-end latency. ego keeps native PTY OSC signals and its separate ACP path.
+
+### Current tool readout
+
+While an agent runs a tool, the status bar agent badge shows the tool name after a dot (for example `claude · Bash`). The mobile session card and the session details sheet show it as **Current tool**. The name comes only from verified native metadata of the terminal's own session: Claude, Codex and Grok hooks, ego terminal events, and the managed Pi extension and OpenCode plugin. TUIC shows only the name, at most 64 characters, and never the tool arguments. When several tools run at the same time, the newest one shows. The end of one tool removes only that tool. A turn end, a cancelled turn, a session end, a shell return or an idle prompt removes all of them. The readout never changes Working, Idle or Input. Gemini and ego AI Chat show no tool readout. After updating TUIC, reinstall the Pi extension and the OpenCode plugin in Settings (they show **Outdated**) to get their readout.
+
+pi sessions signed in to Claude Pro/Max or ChatGPT (Codex) show that subscription quota in the status bar. The managed Pi extension sends TUIC the quota headers of each model response, never a token or cookie. When the session is idle for a while, TUIC reads the usage endpoint with the pi login in `~/.pi/agent/auth.json` (or `PI_CODING_AGENT_DIR`). The quota appears after the first model response of the session. GitHub Copilot quota is not available yet. Reinstall the Pi extension in Settings after updating TUIC.
 
 ### ego terminal questions
 
@@ -263,6 +325,8 @@ When enabled, TUICommander polls the Claude API every 5 minutes and shows:
 
 The dashboard opens as a tab in the Activity Center. You can also reach it by clicking the Claude usage badge in the status bar.
 When opened from the badge, its rate-limit data uses that session's credential profile. Sessions with a nonempty `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` show a neutral **API key** label instead of subscription usage. TUICommander does not read OAuth credentials or call the usage API for these sessions, even when `CLAUDE_CONFIG_DIR` is set. The transcript-based charts and project statistics currently scan the default Claude projects directory.
+
+If the usage API returns HTTP 429, the badge immediately shows **rate-limited, retry HH:MM**, using the host's local time. It does not wait inside the request or send a generating fallback request. The account profile shares a two-to-five-minute cooldown with mobile quota reads; other profiles remain independent. This temporary throttle does not mean the plan lacks usage reporting.
 
 ## Agent Teams
 
@@ -466,3 +530,11 @@ read their owning daemon's usage. No local account is used for a remote PTY.
 ### Ego terminal usage (#2386-6f7c)
 
 Ego terminal usage uses the exact live pid lease and `ego usage --json` v3 or v4. The shared badge shows observed context tokens, the observed context capacity when present, complete monetary spend, and complete subscription API-price equivalents. Spend and equivalents remain separate. Version 4 also shows explicitly reported remaining requests, tokens, input tokens, output tokens, or USD. Session observations must match the exact provider/model; a current OpenRouter credential balance is labelled `openrouter key`, not session spend. The hover text includes each limit's observation time, source, and reported reset. Unknown fields stay hidden; TUIC does not calculate remaining balances from limit minus usage or borrow another provider account. The executable comes from the live terminal, not the AI Chat setting.
+
+## Grok completion and permission state
+
+Grok native hooks report cancellation and API failure as idle. Only `Notification(permission_prompt)` opens a confident permission wait; idle and task-complete notifications do not. Matching tool success, tool failure or denial clears the wait, as do a new prompt, stop, cancellation and session exit. Updating hooks replaces only the TUIC-owned file and takes effect on the next Grok launch.
+
+### Claude permission attention
+
+Claude native status hooks mark a tool permission as waiting for input. Ordinary idle notifications do not request attention. Answering, refusing or cancelling the native dialog clears that wait, including responses that produce no post-tool event. Background tool activity preserves an open question, plan or elicitation dialog. New hook registrations apply to new agent launches; global installation preserves user-owned hooks. Native Windows hook availability remains unchanged.

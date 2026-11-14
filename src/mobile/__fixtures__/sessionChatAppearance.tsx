@@ -114,8 +114,22 @@ async function mount() {
 	}
 	if (params.has("pending"))
 		entries.push(
-			{ id: "pending-1", kind: "user", text: "Review the migration and check backward compatibility.", pending: true },
-			{ id: "pending-2", kind: "user", text: "Then update the release notes.", pending: true },
+			{
+				id: "pending-1",
+				kind: "user",
+				text: "Review the migration and check backward compatibility.",
+				pending: true,
+				queuedCommandId: 1,
+				sendNow: "interrupt",
+			},
+			{
+				id: "pending-2",
+				kind: "user",
+				text: "Then update the release notes.",
+				pending: true,
+				queuedCommandId: 2,
+				sendNow: "interrupt",
+			},
 		);
 	const terminalId = terminalsStore.add({
 		sessionId: "appearance-only",
@@ -161,9 +175,11 @@ async function mount() {
 						busy={() => false}
 						emptyMessage=""
 						observeToolDuration={false}
+						onSendPendingNow={() => {}}
+						onCancelPending={() => {}}
 					/>
 				</div>
-				<Show when={mobile && params.has("queued")}>
+				<Show when={mobile && params.has("queued") && !mobileChat.active()}>
 					<QueuedPrompts sessionId="appearance-only" count={queueCount()} revision={0} />
 				</Show>
 				{mobile && (
