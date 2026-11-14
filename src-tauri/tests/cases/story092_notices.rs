@@ -88,9 +88,12 @@ async fn a_connection_wakes_a_host_on_ready_on_a_question_and_on_settling() {
         .await
         .expect("session/prompt");
 
-    // Attaching a session and starting a turn are not things to wake anyone
-    // for — the host that asked for them is right there — so the next notice
-    // is the agent stopping to ask.
+    // Attaching a session lands it Idle, and an attachment reaching Idle is a
+    // wake (a held turn released to Idle must reach a waiting host). Starting
+    // a turn is not, so the next notice after that is the agent stopping to ask.
+    let attached = next_notice(&mut notices).await;
+    assert_eq!(attached.kind, AcpNoticeKind::Settled);
+    assert_eq!(named_session(&attached), Some(SESSION));
     let asking = next_notice(&mut notices).await;
     assert_eq!(asking.kind, AcpNoticeKind::InteractionPending);
     assert_eq!(named_session(&asking), Some(SESSION));

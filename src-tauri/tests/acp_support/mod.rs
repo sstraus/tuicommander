@@ -67,6 +67,7 @@ impl Fixture {
             executable: fixture_agent(),
             profile: String::new(),
             master_prompt: String::new(),
+            ai_chat: false,
         }
     }
 

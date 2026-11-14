@@ -1,0 +1,116 @@
+[
+  {
+    "name": "mobile-dark",
+    "blocks": [
+      {
+        "pre": {
+          "left": 35,
+          "right": 358,
+          "top": 317.2890625,
+          "bottom": 336.1328125,
+          "height": 18.84375
+        },
+        "button": {
+          "left": 305.875,
+          "right": 339,
+          "top": 321.2890625,
+          "bottom": 338.7890625,
+          "height": 17.5
+        },
+        "label": {
+          "left": 306.875,
+          "right": 338,
+          "top": 322.2890625,
+          "bottom": 337.2890625,
+          "height": 15
+        },
+        "clientHeight": 19,
+        "scrollHeight": 22,
+        "buttonStyle": {
+          "font": "13.3333px Arial",
+          "lineHeight": "normal",
+          "padding": "0px",
+          "position": "absolute"
+        },
+        "documentWidth": 390,
+        "viewportWidth": 390
+      }
+    ]
+  },
+  {
+    "name": "mobile-light",
+    "blocks": [
+      {
+        "pre": {
+          "left": 35,
+          "right": 358,
+          "top": 317.2890625,
+          "bottom": 336.1328125,
+          "height": 18.84375
+        },
+        "button": {
+          "left": 305.875,
+          "right": 339,
+          "top": 321.2890625,
+          "bottom": 338.7890625,
+          "height": 17.5
+        },
+        "label": {
+          "left": 306.875,
+          "right": 338,
+          "top": 322.2890625,
+          "bottom": 337.2890625,
+          "height": 15
+        },
+        "clientHeight": 19,
+        "scrollHeight": 22,
+        "buttonStyle": {
+          "font": "13.3333px Arial",
+          "lineHeight": "normal",
+          "padding": "0px",
+          "position": "absolute"
+        },
+        "documentWidth": 390,
+        "viewportWidth": 390
+      }
+    ]
+  },
+  {
+    "name": "desktop-narrow-dark",
+    "blocks": [
+      {
+        "pre": {
+          "left": 35,
+          "right": 358,
+          "top": 317.2890625,
+          "bottom": 336.1328125,
+          "height": 18.84375
+        },
+        "button": {
+          "left": 312.875,
+          "right": 346,
+          "top": 321.2890625,
+          "bottom": 338.7890625,
+          "height": 17.5
+        },
+        "label": {
+          "left": 313.875,
+          "right": 345,
+          "top": 322.2890625,
+          "bottom": 337.2890625,
+          "height": 15
+        },
+        "clientHeight": 19,
+        "scrollHeight": 22,
+        "buttonStyle": {
+          "font": "13.3333px Arial",
+          "lineHeight": "normal",
+          "padding": "0px",
+          "position": "absolute"
+        },
+        "documentWidth": 390,
+        "viewportWidth": 390
+      }
+    ]
+  }
+]

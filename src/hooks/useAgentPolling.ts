@@ -20,12 +20,14 @@ type BackendSessionState = {
 	agent_state?: string;
 	abandoned_since_ms?: number;
 	agent_intent?: string | null;
+	current_tool?: string | null;
 	last_prompt?: string | null;
 	awaiting_input?: boolean;
 	question_confident?: boolean;
 	question_text?: string;
 	choice_prompt?: ChoicePrompt;
 	background_work?: boolean;
+	stalled?: boolean;
 	queued_commands?: number;
 	last_activity_ms?: number;
 };
@@ -44,7 +46,8 @@ function toAgentLifecycleState(value: unknown): AgentLifecycleState {
 		value === "working" ||
 		value === "awaiting_input" ||
 		value === "idle" ||
-		value === "completed"
+		value === "completed" ||
+		value === "error"
 		? value
 		: null;
 }
@@ -89,14 +92,18 @@ function applySessionState(termId: string, sessionId: string, state: BackendSess
 		// SessionState snapshots are complete. Rust omits Option::None fields,
 		// therefore absence retracts context instead of meaning "unchanged".
 		agentIntent: state?.agent_intent ?? null,
+		currentTool: state?.current_tool ?? null,
 		lastPrompt: state?.last_prompt ?? null,
 		// API failure is durable backend state, not a question. Idle snapshots
 		// must not erase the red dot set by the parsed-event consumer.
-		awaitingInput: state?.last_error ? "error" : isAwaiting ? "question" : null,
+		// A refused native turn (agent_state=error) shows the same red state.
+		awaitingInput: state?.last_error || state?.agent_state === "error" ? "error" : isAwaiting ? "question" : null,
+		lastError: state?.last_error ?? null,
 		awaitingInputConfident: state?.question_confident === true,
 		questionText: isAwaiting ? (state?.question_text ?? null) : null,
 		choicePrompt: isAwaiting ? (state?.choice_prompt ?? null) : null,
 		backgroundWork: state?.background_work === true,
+		stalled: state?.stalled === true,
 		abandonedSinceMs: state?.abandoned_since_ms ?? null,
 		// Omitted by the backend when zero (serde skips it), so absence is an
 		// empty queue — not "unknown".

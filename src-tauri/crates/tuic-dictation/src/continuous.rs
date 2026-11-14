@@ -781,6 +781,8 @@ pub struct HandsFree {
     /// the binding, the reply queue and the entry hint exist, the microphone
     /// does not, and input stays push-to-talk. Set by the caller after `arm`.
     listening: bool,
+    /// Capture or a closed batch still awaits transcription and submission.
+    capture_active: bool,
 }
 
 impl HandsFree {
@@ -801,6 +803,7 @@ impl HandsFree {
             speech_outage_notice: None,
             announced_language: None,
             listening: true,
+            capture_active: false,
         }
     }
 
@@ -825,6 +828,16 @@ impl HandsFree {
         {
             self.turn_language = Some(language.to_string());
         }
+    }
+
+    /// Read under the same lock held across the actual submit call.
+    fn may_start_reply(&self, generation: u64) -> bool {
+        self.generation == generation
+            && self.binding.is_some()
+            && !self.capture_active
+            && self.pending.is_none()
+            && (self.phase == Phase::Delivered
+                || (self.phase == Phase::Waiting && self.last_error.is_none()))
     }
 
     pub fn phase(&self) -> &Phase {
@@ -923,6 +936,7 @@ impl HandsFree {
         self.announced_language = None;
         self.last_hold = None;
         self.listening = true;
+        self.capture_active = false;
         Ok(self.generation)
     }
 
@@ -1161,6 +1175,7 @@ impl HandsFree {
             reason: reason.clone(),
         };
         self.binding = None;
+        self.capture_active = false;
         self.speech_outage_notice = None;
         // Every reason this machine can end for — the user's abort, a closed
         // target, a lost owner, a dead microphone — is the user no longer
@@ -1200,6 +1215,36 @@ impl HandsFree {
     /// The capture device failed.
     pub fn note_device_failed(&mut self, message: impl Into<String>) -> Option<Disarmed> {
         self.disarm(DisarmReason::DeviceFailed(message.into()))
+    }
+}
+
+/// One conversation's admission adapter, shared by native and browser outputs.
+pub struct PlaybackGate {
+    mode: std::sync::Arc<parking_lot::Mutex<HandsFree>>,
+    generation: u64,
+}
+
+impl PlaybackGate {
+    pub fn new(mode: std::sync::Arc<parking_lot::Mutex<HandsFree>>, generation: u64) -> Self {
+        Self { mode, generation }
+    }
+}
+
+impl super::speaker::StartPlayback for PlaybackGate {
+    fn try_play(
+        &self,
+        output: &dyn super::speaker::Output,
+        audio: &super::speech::SpeechAudio,
+    ) -> Option<Result<(), String>> {
+        // The renderer holds its queue lock. Never wait for the mode here:
+        // capture or submit may need the queue to apply an interruption.
+        let mode = self.mode.try_lock()?;
+        if !mode.may_start_reply(self.generation) {
+            return None;
+        }
+        // Keep admission atomic with capture edges and submit completion.
+        // This precedes FarEndTap, so held audio is not a phantom reference.
+        Some(output.play(audio))
     }
 }
 
@@ -1330,11 +1375,10 @@ pub fn deliver_due(
 ///
 /// One line, for the reason [`compose_entry`] gives: the sink types this into
 /// a terminal and submits it, and a newline in the middle submits half of it.
-pub const MODE_ENTRY_HINT: &str = "Hands-free voice is now on for this conversation: what arrives from \
-     here on was spoken out loud, and you can answer out loud with the `voice` tool of the \
-     TUICommander MCP server (tuicommander), called with action \"speak\". If that tool is not \
-     loaded yet, search your deferred tools for \"voice\". Keep spoken replies short enough to \
-     listen to.";
+pub const MODE_ENTRY_HINT: &str = "Hands-free voice is on: messages from now on are spoken. \
+     Answer aloud with the `voice` tool (tuicommander MCP, action \"speak\"; if not loaded, \
+     search deferred tools for \"voice\"): one short sentence at once that you are on it, \
+     then a short answer when done.";
 
 /// The start notice to send, given the `hands_free_start_notice` setting.
 ///
@@ -1788,7 +1832,26 @@ pub fn tick(
     // The other half of barge-in. Read before the push, because the edge is
     // what matters: a level trigger would pause once per tick.
     let had_voice = capture.segmenter.has_voice();
-    let closed = capture.segmenter.push(&samples);
+    let closed = {
+        // Publish the segmenter edge while holding the admission lock. A
+        // renderer cannot start between segmentation and its mode update.
+        let mut mode = mode.lock();
+        if mode.generation() != generation || mode.binding().is_none() {
+            return Tick::NotArmed;
+        }
+        let closed = capture.segmenter.push(&samples);
+        // Empty/rejected transcripts reset the phase before the next pass.
+        // Keep admission busy until every closed utterance has been handled.
+        mode.capture_active = !closed.is_empty() || capture.segmenter.is_capturing();
+        if !closed.is_empty() {
+            mode.note_transcribing();
+        } else if mode.capture_active {
+            mode.note_capturing();
+        } else {
+            mode.note_capture_discarded();
+        }
+        closed
+    };
     // Somebody is talking — an unbroken `min_speech_ms`, not merely a few
     // frames over the floor and not frames added up over seconds: the
     // canceller removes the linear echo and not all of it, so a real room
@@ -1876,15 +1939,8 @@ pub fn tick(
     if !closed.is_empty() || !capture.segmenter.is_capturing() {
         capture.next_wake_probe_samples = SAMPLE_RATE as usize;
     }
-    if closed.is_empty() {
-        if capture.segmenter.is_capturing() {
-            mode.lock().note_capturing();
-        } else {
-            // An utterance that opened and closed on too little speech never
-            // reaches the recogniser, so nothing else would end its phase.
-            mode.lock().note_capture_discarded();
-            capture.resume_speaker("discard");
-        }
+    if closed.is_empty() && !capture.segmenter.is_capturing() {
+        capture.resume_speaker("discard");
     }
     if capture
         .paused_at_ms
@@ -1944,14 +2000,15 @@ pub fn tick(
     }
 
     for utterance in closed {
-        // The generation is read with the lock, before the pass starts. What
-        // comes back is checked against the generation *then* current, which is
-        // how a result that outlived its mode is refused.
-        let generation = {
+        // Every pass belongs to this tick's generation. A rearm must not
+        // attach the remaining old batch to the new conversation.
+        {
             let mut mode = mode.lock();
+            if mode.generation() != generation || mode.binding().is_none() {
+                return Tick::NotArmed;
+            }
             mode.note_transcribing();
-            mode.generation()
-        };
+        }
         let started = std::time::Instant::now();
         let result = endpoint.transcribe(&utterance.audio);
         capture.note_inference(started);
@@ -2016,6 +2073,14 @@ pub fn tick(
                 return disarmed_or_not_armed(mode.lock().note_device_failed(error));
             }
         }
+    }
+
+    {
+        let mut mode = mode.lock();
+        if mode.generation() != generation || mode.binding().is_none() {
+            return Tick::NotArmed;
+        }
+        mode.capture_active = capture.segmenter.is_capturing();
     }
 
     // Bound in its own statement, never in the `match` scrutinee: a temporary
@@ -3194,14 +3259,38 @@ mod tests {
     #[test]
     fn the_start_notice_names_the_mcp_tool_and_how_to_load_it() {
         assert!(
-            MODE_ENTRY_HINT.contains("`voice` tool of the TUICommander MCP server (tuicommander)"),
+            MODE_ENTRY_HINT.contains("`voice` tool (tuicommander MCP"),
             "{MODE_ENTRY_HINT}"
         );
         assert!(
-            MODE_ENTRY_HINT.contains("search your deferred tools for \"voice\""),
+            MODE_ENTRY_HINT.contains("search deferred tools for \"voice\""),
             "{MODE_ENTRY_HINT}"
         );
         assert!(MODE_ENTRY_HINT.contains("action \"speak\""));
+    }
+
+    // catches: the default notice drops the acknowledgement before tool work.
+    #[test]
+    fn test_entry_hint_requires_immediate_spoken_ack() {
+        let mut mode = armed();
+        let queue = FakeSink::default();
+        let notice = entry_hint_text("");
+
+        deliver_entry_hint(&mut mode, &queue, &notice, Some("it"))
+            .expect("armed")
+            .expect("written");
+
+        let delivered = entries(&queue);
+        assert_eq!(delivered.len(), 1);
+        let notice = &delivered[0];
+        assert!(
+            notice.contains(
+                "one short sentence at once that you are on it, then a short answer when done."
+            ),
+            "the model must hear the acknowledgement, work, answer sequence: {notice}"
+        );
+        assert!(!notice.contains(['\n', '\r']));
+        assert!(notice.ends_with(" Reply in Italian."), "{notice}");
     }
 
     // catches: a replies-only conversation tells the model its input was spoken,

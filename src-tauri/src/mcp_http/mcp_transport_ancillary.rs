@@ -16,7 +16,6 @@ use super::mcp_transport_catalogue::UI_ACTIONS;
 use super::mcp_transport_catalogue::VOICE_ACTIONS;
 use super::mcp_transport_catalogue::validate_mcp_repo_path;
 use super::mcp_transport_peer::PEER_IDENTITY_BIND_LOCK;
-use super::mcp_transport_session_agent::handle_session;
 use super::mcp_transport_session_agent::require_action;
 use super::mcp_transport_session_agent::require_path;
 
@@ -182,10 +181,14 @@ async fn remove_detached_checkout(
     state: &Arc<AppState>,
     repo_path: String,
     worktree_path: String,
+    force: bool,
+    expected_fingerprint: Option<String>,
 ) -> serde_json::Value {
+    // Agent requests cannot establish that the owner confirmed a dirty checkout.
+    let _ = (force, expected_fingerprint);
     let state = state.clone();
     match tokio::task::spawn_blocking(move || {
-        crate::worktree::remove_orphan_checkout(&state, &repo_path, &worktree_path, true, &[])
+        crate::worktree::remove_orphan_checkout(&state, &repo_path, &worktree_path, true, &[], None)
     })
     .await
     {
@@ -402,6 +405,7 @@ async fn handle_worktree_with_caller(
                 base_ref,
                 resolve_mcp_origin_pty(state, mcp_session_id),
                 args["spawn_session"].as_bool().unwrap_or(false),
+                resolve_mcp_origin_session(state, mcp_session_id),
             )
             .await
             {
@@ -414,6 +418,7 @@ async fn handle_worktree_with_caller(
                         "workspace_id": &created.workspace_id,
                         "branch": &branch_name,
                         "base_commit": &created.base_commit,
+                        "creator_session": &created.creator_session,
                         // The same value the HTTP route returns, not a second
                         // rendering of it: one payload, two carriers, so the two
                         // transports cannot describe the same workspace
@@ -466,7 +471,14 @@ async fn handle_worktree_with_caller(
                 return e;
             }
             if let Some(worktree_path) = args["worktree_path"].as_str() {
-                return remove_detached_checkout(state, path, worktree_path.to_owned()).await;
+                return remove_detached_checkout(
+                    state,
+                    path,
+                    worktree_path.to_owned(),
+                    args["force"].as_bool().unwrap_or(false),
+                    args["expected_fingerprint"].as_str().map(str::to_owned),
+                )
+                .await;
             }
             let workspace_id = match args["branch"].as_str() {
                 Some(b) => b.to_string(),
@@ -684,9 +696,9 @@ fn handle_debug(state: &Arc<AppState>, args: &serde_json::Value) -> serde_json::
             serde_json::json!(sessions)
         }
         "invoke_js" => {
-            // invoke_js executes arbitrary JS in the WebView — must be routed through
-            // handle_debug_unified which enforces the loopback guard.
-            serde_json::json!({"error": "invoke_js must be called via the debug tool (loopback-only)"})
+            // invoke_js executes arbitrary JS in the WebView — it is served only by
+            // handle_debug_unified, which shares the HTTP route's evaluation guard.
+            serde_json::json!({"error": "invoke_js must be called via the debug tool"})
         }
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'debug'. Available: {}", other, DEBUG_ACTIONS
@@ -1049,65 +1061,83 @@ pub(super) fn handle_voice(
 /// The grouped wire contract reuses the service inputs and their owners.
 #[derive(serde::Deserialize, schemars::JsonSchema)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
-enum WorkflowAction {
-    Story {
-        input: crate::stories::StoryAction,
-    },
-    Run {
-        input: Box<crate::workflows::RunAction>,
-    },
-    ProposalCreate {
-        input: WorkflowStoryCreateInput,
-    },
-    Report {
-        input: crate::workflows::AttemptReport,
-    },
-    Launch {
-        input: WorkflowLaunchInput,
+enum WorkflowToolAction {
+    Neutral {
+        input: Box<crate::workflows::neutral_api::model::NeutralAction>,
     },
 }
 
+/// One generator for the whole tool, so every shared subtype
+/// is written once in root `$defs`. This schema is the tool's `inputSchema` root, so the
+/// `#/$defs/...` references resolve. Inlining copied the graph types into each designer
+/// action and grew the tool past the 65536-byte search budget (#2743-9a94).
 pub(super) fn workflow_action_schema() -> serde_json::Value {
-    let generator = schemars::generate::SchemaSettings::draft2020_12()
-        .with(|settings| settings.inline_subschemas = true)
-        .into_generator();
-    let mut schema = serde_json::to_value(generator.into_root_schema_for::<WorkflowAction>())
+    let generator = schemars::generate::SchemaSettings::draft2020_12().into_generator();
+    let mut schema = serde_json::to_value(generator.into_root_schema_for::<WorkflowToolAction>())
         .expect("workflow input schema");
+    schema.as_object_mut().unwrap().remove("$schema");
+    schema
+}
+
+/// The native `story` tool takes one `StoryAction` as its whole arguments (#2804-6bd7).
+pub(super) fn story_action_schema() -> serde_json::Value {
+    let generator = schemars::generate::SchemaSettings::draft2020_12().into_generator();
+    let mut schema =
+        serde_json::to_value(generator.into_root_schema_for::<crate::stories::StoryAction>())
+            .expect("story input schema");
     schema.as_object_mut().unwrap().remove("$schema");
     schema
 }
 
 pub(super) fn handle_workflow(
     state: &Arc<AppState>,
-    addr: SocketAddr,
+    caller: super::guards::CallerAuthority,
     args: &serde_json::Value,
     mcp_session_id: Option<&str>,
 ) -> serde_json::Value {
-    let action: WorkflowAction = match serde_json::from_value(args.clone()) {
+    let action: WorkflowToolAction = match serde_json::from_value(args.clone()) {
         Ok(action) => action,
         Err(error) => {
             return serde_json::json!({"error": format!("invalid workflow action: {error}")});
         }
     };
     match action {
-        WorkflowAction::Story { input } => {
-            handle_story(state, &serde_json::json!({"input":input}), mcp_session_id)
+        WorkflowToolAction::Neutral { input } => {
+            if !caller.is_owner() {
+                return serde_json::json!({"error":"neutral workflow requires a local or authenticated caller"});
+            }
+            let bound = resolve_mcp_origin_pty(state, mcp_session_id)
+                .and_then(|pty| {
+                    Some((
+                        crate::progress::project_for_session(state, &pty)?,
+                        resolve_mcp_origin_session(state, mcp_session_id)?,
+                    ))
+                })
+                .or_else(|| {
+                    let origin = state.mcp.acp_origins.get(mcp_session_id?)?;
+                    let snapshot = state.acp.snapshot(origin.connection_id).ok()?;
+                    if snapshot.generation != origin.generation || snapshot.settlement.is_some() {
+                        return None;
+                    }
+                    let peer = origin.peer_id.as_deref()?;
+                    Some((
+                        state.acp.peer_root(peer)?.to_string_lossy().into_owned(),
+                        peer.to_owned(),
+                    ))
+                });
+            let Some((project, identity)) = bound else {
+                return serde_json::json!({"error":"neutral workflow requires a bound live managed session with a project"});
+            };
+            match crate::workflows::neutral_api::neutral_action(
+                state,
+                &project,
+                *input,
+                Some(crate::workflows::NativeCaller::Agent(identity)),
+            ) {
+                Ok(reply) => to_json_or_error(reply),
+                Err(error) => serde_json::json!({"error":error}),
+            }
         }
-        WorkflowAction::Run { input } => {
-            handle_workflow_run(state, &serde_json::json!({"input":input}), mcp_session_id)
-        }
-        WorkflowAction::ProposalCreate { input } => {
-            handle_workflow_story_create(state, &serde_json::json!({"input":input}), mcp_session_id)
-        }
-        WorkflowAction::Report { input } => {
-            handle_workflow_report(state, &serde_json::json!({"input":input}), mcp_session_id)
-        }
-        WorkflowAction::Launch { input } => handle_workflow_launch(
-            state,
-            addr,
-            &serde_json::json!({"input":input}),
-            mcp_session_id,
-        ),
     }
 }
 
@@ -1116,286 +1146,38 @@ pub(super) fn handle_story(
     args: &serde_json::Value,
     mcp_session_id: Option<&str>,
 ) -> serde_json::Value {
-    let Some(pty) = resolve_mcp_origin_pty(state, mcp_session_id) else {
+    let pty = resolve_mcp_origin_pty(state, mcp_session_id);
+    let acp_peer = mcp_session_id.and_then(|id| {
+        let origin = state.mcp.acp_origins.get(id)?;
+        let snapshot = state.acp.snapshot(origin.connection_id).ok()?;
+        (snapshot.generation == origin.generation && snapshot.settlement.is_none())
+            .then(|| origin.peer_id.clone())
+            .flatten()
+    });
+    if pty.is_none() && acp_peer.is_none() {
         return serde_json::json!({"error": "story requires a bound live managed session"});
-    };
-    let Some(project) = crate::progress::project_for_session(state, &pty) else {
-        return serde_json::json!({"error": "calling session has no registered project"});
-    };
-    let action: crate::stories::StoryAction = match serde_json::from_value(args["input"].clone()) {
+    }
+    let action: crate::stories::StoryAction = match serde_json::from_value(args.clone()) {
         Ok(value) => value,
         Err(error) => return serde_json::json!({"error": format!("invalid story action: {error}")}),
     };
-    to_json_or_error(crate::stories::story_action_for_session(
-        state,
-        &project,
-        action,
-        Some(&pty),
-    ))
-}
-
-pub(super) fn handle_workflow_run(
-    state: &Arc<AppState>,
-    args: &serde_json::Value,
-    mcp_session_id: Option<&str>,
-) -> serde_json::Value {
-    let Some(pty) = resolve_mcp_origin_pty(state, mcp_session_id) else {
-        return serde_json::json!({"error": "workflow_run requires a bound live managed session"});
-    };
-    let Some(project) = crate::progress::project_for_session(state, &pty) else {
-        return serde_json::json!({"error": "calling session has no registered project"});
-    };
-    let action = match serde_json::from_value(args["input"].clone()) {
-        Ok(value) => value,
-        Err(error) => {
-            return serde_json::json!({"error": format!("invalid workflow run action: {error}")});
-        }
-    };
-    to_json_or_error(crate::workflows::run_action_with_events(
-        state, &project, action,
-    ))
-}
-
-#[derive(serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct WorkflowStoryCreateInput {
-    pub(super) run_id: String,
-    proposal_key: String,
-    pub(super) story: crate::stories::NewStory,
-}
-
-pub(super) fn handle_workflow_story_create(
-    state: &Arc<AppState>,
-    args: &serde_json::Value,
-    mcp_session_id: Option<&str>,
-) -> serde_json::Value {
-    let Some(pty) = resolve_mcp_origin_pty(state, mcp_session_id) else {
-        return serde_json::json!({"error": "workflow story creation requires a bound live managed session"});
-    };
-    let Some(project) = crate::progress::project_for_session(state, &pty) else {
-        return serde_json::json!({"error": "calling session has no registered project"});
-    };
-    let input: WorkflowStoryCreateInput = match serde_json::from_value(args["input"].clone()) {
-        Ok(input) => input,
-        Err(error) => {
-            return serde_json::json!({"error": format!("invalid workflow story proposal: {error}")});
-        }
-    };
-    let result = (|| -> Result<serde_json::Value, String> {
-        let owner = crate::progress::resolve_owning_project(Some(&project))?;
-        let store = crate::workflows::RunStore::open()?;
-        let before = store.snapshot(&input.run_id)?;
-        if before.project != owner.to_string_lossy() {
-            return Err("workflow run does not belong to calling session's project".into());
-        }
-        let story = store.create_story_from_coordinator(
-            &input.run_id,
-            &pty,
-            &input.proposal_key,
-            input.story,
-        )?;
-        let after = store.snapshot(&input.run_id)?;
-        if after.sequence > before.sequence {
-            crate::workflows::emit_run_changed(state, &after.project, &after.id, after.sequence);
-        }
-        Ok(serde_json::json!({"story": story, "runId": after.id, "sequence": after.sequence}))
-    })();
-    result.unwrap_or_else(|error| serde_json::json!({"error": error}))
-}
-
-pub(super) fn handle_workflow_report(
-    state: &Arc<AppState>,
-    args: &serde_json::Value,
-    mcp_session_id: Option<&str>,
-) -> serde_json::Value {
-    let acp_origin = mcp_session_id.and_then(|id| {
-        state
-            .mcp
-            .acp_origins
-            .get(id)
-            .map(|entry| entry.value().clone())
-    });
-    let pty = resolve_mcp_origin_pty(state, mcp_session_id);
-    let caller = pty.clone().or_else(|| {
-        acp_origin
-            .as_ref()
-            .and_then(|origin| origin.peer_id.clone())
-    });
-    let Some(caller) = caller else {
-        return serde_json::json!({"error":"workflow report requires a bound live managed session"});
-    };
-    let project = if let Some(pty) = &pty {
-        crate::progress::project_for_session(state, pty)
-    } else {
-        state
-            .acp
-            .peer_root(&caller)
-            .map(|path| path.to_string_lossy().into_owned())
-    };
-    let Some(project) = project else {
-        return serde_json::json!({"error":"calling session has no registered project"});
-    };
-    let report: crate::workflows::AttemptReport =
-        match serde_json::from_value(args["input"].clone()) {
-            Ok(value) => value,
-            Err(error) => {
-                return serde_json::json!({"error": format!("invalid workflow report: {error}")});
-            }
+    if let Some(pty) = pty {
+        let Some(project) = crate::progress::project_for_session(state, &pty) else {
+            return serde_json::json!({"error": "calling session has no registered project"});
         };
-    let store = match crate::workflows::RunStore::open() {
-        Ok(store) => store,
-        Err(error) => return serde_json::json!({"error": error}),
-    };
-    let snapshot = match store.snapshot(&report.run_id) {
-        Ok(snapshot) => snapshot,
-        Err(error) => return serde_json::json!({"error": error}),
-    };
-    let owner = match crate::progress::resolve_owning_project(Some(&project)) {
-        Ok(owner) => owner,
-        Err(error) => return serde_json::json!({"error": error}),
-    };
-    if snapshot.project != owner.to_string_lossy() {
-        return serde_json::json!({"error": "workflow run does not belong to calling session's project"});
-    }
-    let binding = snapshot
-        .attempts
-        .iter()
-        .find(|a| a.id == report.attempt_id)
-        .and_then(|a| a.agent.as_ref());
-    let observed_acp = acp_origin.as_ref().and_then(|origin| {
-        state
-            .acp
-            .snapshot(origin.connection_id)
-            .ok()
-            .and_then(|snapshot| {
-                (snapshot.generation == origin.generation && snapshot.attachments.len() == 1).then(
-                    || crate::workflows::AcpAgentBinding {
-                        connection_id: origin.connection_id,
-                        generation: origin.generation,
-                        conversation_id: snapshot.attachments[0].session_id.to_string(),
-                    },
-                )
-            })
-    });
-    let refuse = |reason: &str| match store.record_report_refusal(
-        &report,
-        &caller,
-        observed_acp.as_ref(),
-        reason,
-    ) {
-        Ok(()) => serde_json::json!({"error":reason}),
-        Err(error) => {
-            serde_json::json!({"error":format!("{reason}; disposition persistence failed: {error}")})
-        }
-    };
-    match (
-        binding.and_then(|binding| binding.acp.as_ref()),
-        acp_origin.as_ref(),
-    ) {
-        (Some(binding), Some(origin))
-            if pty.is_none()
-                && binding.connection_id == origin.connection_id
-                && binding.generation == origin.generation
-                && origin.peer_id.as_deref() == Some(caller.as_str()) =>
-        {
-            let matching = state
-                .acp
-                .snapshot(origin.connection_id)
-                .is_ok_and(|snapshot| {
-                    snapshot.generation == origin.generation
-                        && snapshot.settlement.is_none()
-                        && snapshot.attachments.len() == 1
-                        && snapshot.attachments[0].session_id.to_string() == binding.conversation_id
-                });
-            if !matching {
-                return refuse("ACP workflow caller attachment is unavailable or superseded");
-            }
-        }
-        (None, None) if pty.is_some() => {}
-        _ => {
-            return refuse(
-                "workflow report transport or ACP generation does not match the bound attempt",
-            );
-        }
-    }
-    let reported_story_id = report.story_id.clone();
-    let result = if let Some(origin) = observed_acp {
-        store.report_acp_agent(report, &caller, origin)
+        to_json_or_error(crate::stories::story_action_for_session(
+            state,
+            &project,
+            action,
+            Some(&pty),
+        ))
     } else {
-        store.report_bound_agent(report, &caller)
-    };
-    match result {
-        Ok(receipt) => {
-            if receipt.sequence > snapshot.sequence {
-                crate::workflows::emit_run_changed(
-                    state,
-                    &receipt.snapshot.project,
-                    &receipt.snapshot.id,
-                    receipt.sequence,
-                );
-            }
-            if receipt.sequence > snapshot.sequence
-                && reported_story_id != snapshot.plan_id
-                && matches!(
-                    &receipt.event.kind,
-                    crate::workflows::RunEventKind::AttemptReported { .. }
-                        | crate::workflows::RunEventKind::QuestionRequested { .. }
-                )
-                && let Ok(Some(coordinator_session)) =
-                    crate::workflows::active_coordinator_session(&receipt.snapshot)
-            {
-                match state.resolve_peer_ref_checked(&coordinator_session) {
-                    Ok(Some(peer)) => {
-                        queue_workflow_coordinator_wake(
-                            state,
-                            &peer,
-                            &caller,
-                            &receipt.snapshot.id,
-                            &reported_story_id,
-                            receipt.sequence,
-                        );
-                    }
-                    Ok(None) => {}
-                    Err(error) => tracing::warn!(
-                        "workflow coordinator wake skipped for run {}: {error}",
-                        receipt.snapshot.id
-                    ),
-                }
-            }
-            to_json_or_error(receipt)
-        }
-        Err(error) => serde_json::json!({"error": error}),
+        to_json_or_error(crate::stories::story_action_for_acp_peer(
+            state,
+            &acp_peer.unwrap(),
+            action,
+        ))
     }
-}
-
-/// Inbox mail is a cursor into the durable run log, never a second result record.
-pub(super) fn queue_workflow_coordinator_wake(
-    state: &AppState,
-    recipient: &str,
-    reporter: &str,
-    run_id: &str,
-    story_id: &str,
-    sequence: i64,
-) -> bool {
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
-    let message = crate::state::AgentMessage {
-        id: format!("workflow-event:{run_id}:{sequence}"),
-        from_tuic_session: reporter.to_owned(),
-        from_name: "workflow".into(),
-        content: serde_json::json!({
-            "type": "workflow_event",
-            "runId": run_id,
-            "storyId": story_id,
-            "sequence": sequence,
-        })
-        .to_string(),
-        timestamp: now_ms,
-        delivered_via_channel: false,
-    };
-    queue_peer_notice(state, recipient, message)
 }
 
 /// Host-originated mail shares peer identity locking and payload-free wake routing.
@@ -1429,437 +1211,6 @@ pub(crate) fn queue_peer_notice(
         }
     }
     true
-}
-
-#[derive(serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct WorkflowLaunchInput {
-    pub(super) run_id: String,
-    attempt_id: String,
-    pub(super) worktree_path: String,
-    pub(super) agent_type: String,
-    #[serde(default)]
-    pub(super) skills: Vec<crate::workflows::SkillReference>,
-    pub(super) feedback: Option<String>,
-}
-
-pub(super) fn handle_workflow_launch(
-    state: &Arc<AppState>,
-    addr: SocketAddr,
-    args: &serde_json::Value,
-    mcp_session_id: Option<&str>,
-) -> serde_json::Value {
-    let input: WorkflowLaunchInput = match serde_json::from_value(args["input"].clone()) {
-        Ok(input) => input,
-        Err(error) => {
-            return serde_json::json!({"error": format!("invalid workflow launch: {error}")});
-        }
-    };
-    launch_workflow_agent(state, addr, mcp_session_id, input)
-        .unwrap_or_else(|error| serde_json::json!({"error": error}))
-}
-
-fn launch_workflow_agent(
-    state: &Arc<AppState>,
-    addr: SocketAddr,
-    mcp_session_id: Option<&str>,
-    input: WorkflowLaunchInput,
-) -> Result<serde_json::Value, String> {
-    if !addr.ip().is_loopback() {
-        return Err("workflow agent launch is restricted to localhost".into());
-    }
-    let caller = resolve_mcp_origin_pty(state, mcp_session_id)
-        .ok_or("workflow launch requires a bound live managed session")?;
-    let project = crate::progress::project_for_session(state, &caller)
-        .ok_or("calling session has no registered project")?;
-    let owner = crate::progress::resolve_owning_project(Some(&project))?
-        .to_string_lossy()
-        .to_string();
-    let store = crate::workflows::RunStore::open()?;
-    let run = store.snapshot(&input.run_id)?;
-    if run.project != owner {
-        return Err("workflow run does not belong to calling session's project".into());
-    }
-    let attempt = run
-        .attempts
-        .iter()
-        .find(|a| a.id == input.attempt_id)
-        .ok_or("workflow attempt not found")?;
-    if attempt.story_id != run.plan_id
-        && crate::workflows::active_coordinator_session(&run)?.as_deref() != Some(&caller)
-    {
-        return Err("only this run's active coordinator may launch a story worker".into());
-    }
-    if attempt.story_id == run.plan_id {
-        let cwd = state
-            .session_maps
-            .sessions
-            .get(&caller)
-            .and_then(|session| session.lock().cwd.clone())
-            .ok_or("calling session has no working directory")?;
-        let cwd = std::path::Path::new(&cwd)
-            .canonicalize()
-            .map_err(|e| format!("resolve calling worktree: {e}"))?;
-        let path = std::path::Path::new(&input.worktree_path)
-            .canonicalize()
-            .map_err(|e| format!("resolve workflow worktree: {e}"))?;
-        if !cwd.starts_with(&path) {
-            return Err("workflow plan launch must use the caller's isolated worktree".into());
-        }
-    }
-    launch_workflow_effect(state, addr, mcp_session_id, input, &owner, false)
-}
-
-fn launch_workflow_effect(
-    state: &Arc<AppState>,
-    addr: SocketAddr,
-    mcp_session_id: Option<&str>,
-    input: WorkflowLaunchInput,
-    owner: &str,
-    daemon: bool,
-) -> Result<serde_json::Value, String> {
-    if input.agent_type.trim().is_empty() || input.agent_type.len() > 128 {
-        return Err("invalid workflow agent type".into());
-    }
-    let worktree = std::path::Path::new(&input.worktree_path)
-        .canonicalize()
-        .map_err(|error| format!("resolve workflow worktree: {error}"))?;
-    let worktree = worktree.to_string_lossy().to_string();
-    if worktree == owner {
-        return Err("workflow agents require an isolated worktree".into());
-    }
-    crate::worktree::validate_branch_worktree_path(owner, &worktree)?;
-    let store = crate::workflows::RunStore::open()?;
-    let run = store.snapshot(&input.run_id)?;
-    if run.project != owner {
-        return Err("workflow run does not belong to calling session's project".into());
-    }
-    if run.status != crate::workflows::RunStatus::Running {
-        return Err("workflow run is not running".into());
-    }
-    if !daemon && run.event_contract_version >= 3 && !run.graph_executions.is_empty() {
-        return Err("contract-3 graph agent launch is daemon-owned; use the run controls".into());
-    }
-    let attempt = run
-        .attempts
-        .iter()
-        .find(|attempt| attempt.id == input.attempt_id)
-        .ok_or("workflow attempt not found")?;
-    if attempt.state != crate::workflows::AttemptState::Running {
-        return Err("workflow attempt is not running".into());
-    }
-    if let Some(binding) = &attempt.agent {
-        if let Some(acp) = &binding.acp {
-            let delivery = super::managed_launch_acp::deliver(
-                state,
-                binding
-                    .launch_id
-                    .as_deref()
-                    .ok_or("ACP binding has no launch reference")?,
-            )?;
-            return Ok(serde_json::json!({
-                "runId":run.id,"attemptId":attempt.id,"session_id":null,
-                "peer_id":binding.session_id,"acp":acp,"launch_id":binding.launch_id,
-                "already_bound":true,"delivery":delivery,
-            }));
-        }
-        return Ok(serde_json::json!({
-            "runId": run.id,
-            "attemptId": attempt.id,
-            "session_id": binding.session_id,
-            "task_id": binding.task_id,
-            "already_bound": true,
-        }));
-    }
-    let (mut package, mut execution) = if attempt.story_id == run.plan_id {
-        let plan = crate::stories::StoryStore::open()?.get_plan(&run.plan_id)?;
-        let definition = crate::workflows::WorkflowStore::open()?
-            .get_published(&run.definition_id, run.definition_revision)?;
-        let stories = crate::stories::StoryStore::open()?.list_stories(&run.plan_id)?;
-        let plan_text = read_plan_text_for_prompt(&worktree, &plan.source)?;
-        let execution = definition
-            .graph
-            .nodes
-            .iter()
-            .find_map(|node| match &node.kind {
-                crate::workflows::NodeKind::Agent { execution, .. }
-                    if node.id == attempt.node_id =>
-                {
-                    execution.clone()
-                }
-                _ => None,
-            });
-        let package = crate::workflows::render_plan_prompt(
-            &run,
-            &plan,
-            attempt,
-            &definition,
-            &stories,
-            &[],
-            run.sequence,
-            &plan_text,
-            &input.skills,
-        )?;
-        (package, execution)
-    } else {
-        let story = crate::stories::StoryStore::open()?.get_story(&attempt.story_id)?;
-        let definition = crate::workflows::WorkflowStore::open()?
-            .get_published(&run.story_definition_id, run.story_definition_revision)?;
-        let execution = definition
-            .graph
-            .nodes
-            .iter()
-            .find_map(|node| match &node.kind {
-                crate::workflows::NodeKind::Agent { execution, .. }
-                    if node.id == attempt.node_id =>
-                {
-                    execution.clone()
-                }
-                _ => None,
-            });
-        let package = crate::workflows::render_story_prompt(
-            &run,
-            &story,
-            attempt,
-            &definition,
-            &input.skills,
-            input.feedback.as_deref(),
-        )?;
-        (package, execution)
-    };
-    let pinned_route = if daemon && run.event_contract_version >= 3 {
-        let (policy, pinned) = crate::workflows::pinned_agent_route(&run, attempt)?;
-        pinned.validate_live_settings()?;
-        execution = Some(pinned.route.execution.clone());
-        // The complete route is pinned in GraphContract. Keep its digest in
-        // the bounded display preview instead of exceeding binding's limit.
-        package.audit_preview = format!(
-            "Host routing policy: {} revision {}\n{}",
-            policy.sha256, policy.revision, package.audit_preview
-        )
-        .chars()
-        .take(2_000)
-        .collect();
-        Some(pinned.clone())
-    } else {
-        None
-    };
-    let effect_key = format!("spawn:{}", attempt.id);
-    let intended = run.effects.iter().find(|effect| effect.key == effect_key);
-    if intended
-        .is_some_and(|effect| !daemon || effect.state != crate::workflows::EffectState::Intended)
-    {
-        return Err("spawn intent already exists; reconcile before retrying".into());
-    }
-    if attempt.story_id != run.plan_id
-        && !run.stories.iter().any(|story| {
-            story.story_id == attempt.story_id && story.worktree_path.as_deref() == Some(&worktree)
-        })
-    {
-        let assignment = store.command(
-            &run.id,
-            &format!("assign-worktree:{}", attempt.story_id),
-            crate::workflows::RunCommand::AssignWorktree {
-                story_id: attempt.story_id.clone(),
-                path: worktree.clone(),
-            },
-        )?;
-        if assignment.sequence > run.sequence {
-            crate::workflows::emit_run_changed(state, &run.project, &run.id, assignment.sequence);
-        }
-    }
-    let effect = if let Some(effect) = intended {
-        effect.clone()
-    } else {
-        let reserved = store.command(
-            &run.id,
-            &format!("spawn-intent:{}", attempt.id),
-            crate::workflows::RunCommand::ReserveEffect {
-                key: effect_key,
-                kind: crate::workflows::EffectKind::SpawnAgent,
-            },
-        )?;
-        crate::workflows::emit_run_changed(state, &run.project, &run.id, reserved.sequence);
-        let crate::workflows::RunEventKind::EffectReserved { effect } = reserved.event.kind else {
-            return Err("workflow state changed before spawn; retry after refreshing".into());
-        };
-        effect
-    };
-    // The reservation and external spawn cannot share a database transaction.
-    // Avoid starting the process when a cancellation already won the race.
-    if daemon && store.duration_expired(&run.id)? {
-        store.command(
-            &run.id,
-            &format!("daemon:spawn-deadline:{}", attempt.id),
-            crate::workflows::RunCommand::ExpireDeadline,
-        )?;
-    }
-    if store.snapshot(&run.id)?.status != crate::workflows::RunStatus::Running {
-        // No external action happened, so a paused run can close the intent.
-        // Cancellation has already marked outstanding intents uncertain.
-        if store.snapshot(&run.id)?.status == crate::workflows::RunStatus::Paused
-            && let Ok(failed) = store.command(
-                &run.id,
-                &format!("spawn-aborted:{}", attempt.id),
-                crate::workflows::RunCommand::MarkEffect {
-                    effect_id: effect.id.clone(),
-                    succeeded: false,
-                },
-            )
-        {
-            crate::workflows::emit_run_changed(state, &run.project, &run.id, failed.sequence);
-        }
-        return Err("workflow stopped before agent spawn".into());
-    }
-    let launch_input = super::managed_launch::Launch {
-        profile: match &execution {
-            Some(crate::workflows::AgentExecution::Pty { profile }) => profile,
-            _ => &input.agent_type,
-        },
-        name: &format!("Workflow {:?}", package.role),
-        prompt: &package.prompt,
-        workspace: &worktree,
-        owner_scope: &format!("workflow:{}", run.id),
-        idempotency_key: &attempt.id,
-        keep_open: true,
-    };
-    let spawned = match &execution {
-        Some(crate::workflows::AgentExecution::Acp {
-            profile,
-            model,
-            effort,
-        }) => {
-            if !daemon {
-                return Err("ACP workflow launch requires daemon authority".into());
-            }
-            let runtime = pinned_route
-                .as_ref()
-                .and_then(|p| p.route.acp_runtime.as_ref())
-                .ok_or("ACP launch has no pinned host runtime")?;
-            super::managed_launch_acp::launch(state, launch_input, profile, model, effort, runtime)
-        }
-        _ => super::managed_launch::launch(state, addr, mcp_session_id, launch_input),
-    };
-    if let Some(error) = spawned.get("error").and_then(serde_json::Value::as_str) {
-        if let Ok(failed) = store.command(
-            &run.id,
-            &format!("spawn-failed:{}", attempt.id),
-            crate::workflows::RunCommand::MarkEffect {
-                effect_id: effect.id.clone(),
-                succeeded: false,
-            },
-        ) {
-            crate::workflows::emit_run_changed(state, &run.project, &run.id, failed.sequence);
-        }
-        return Err(error.to_owned());
-    }
-    let acp: Option<crate::workflows::AcpAgentBinding> = spawned
-        .get("acp")
-        .map(|value| {
-            serde_json::from_value(value.clone())
-                .map_err(|e| format!("invalid managed ACP reference: {e}"))
-        })
-        .transpose()?;
-    let Some(session_id) = (if acp.is_some() {
-        spawned["peer_id"].as_str()
-    } else {
-        spawned["session_id"].as_str()
-    }) else {
-        let _ = store.reconcile(&run.id);
-        return Err(
-            "managed spawn returned no session id; workflow paused for reconciliation".into(),
-        );
-    };
-    let binding = crate::workflows::AgentBinding {
-        acp: acp.clone(),
-        launch_id: spawned["launch_id"].as_str().map(str::to_owned),
-        session_id: session_id.into(),
-        task_id: spawned["task_id"].as_str().map(str::to_owned),
-        effect_id: effect.id.clone(),
-        prompt_contract_version: package.contract_version,
-        prompt_sha256: package.prompt_sha256,
-        audit_preview: package.audit_preview,
-    };
-    let bound = match store.bind_agent(&run.id, &attempt.id, binding) {
-        Ok(receipt) => receipt,
-        Err(error) => {
-            // Cancellation can still win while the managed process starts.
-            // Stop the unbound child; its intent remains uncertain in the run
-            // snapshot so an operator can see what happened.
-            let killed = if let Some(acp) = &acp {
-                let runtime = tokio::runtime::Handle::try_current().map_err(|e| e.to_string())?;
-                serde_json::json!({"acp_disconnect":runtime.block_on(state.acp.disconnect(acp.connection_id)).map_err(|e| e.message)})
-            } else {
-                handle_session(
-                    state,
-                    &serde_json::json!({"action":"kill","session_id":session_id}),
-                    mcp_session_id,
-                )
-            };
-            let _ = store.reconcile(&run.id);
-            return Err(format!(
-                "managed agent started but attempt binding failed: {error}; child termination: {killed}"
-            ));
-        }
-    };
-    crate::workflows::emit_run_changed(state, &run.project, &run.id, bound.sequence);
-    if acp.is_some() {
-        super::managed_launch_acp::deliver(
-            state,
-            spawned["launch_id"]
-                .as_str()
-                .ok_or("ACP binding has no managed launch reference")?,
-        )?;
-    } else if !state.session_maps.sessions.contains_key(session_id) {
-        for changed in store.interrupt_agent_session(session_id)? {
-            crate::workflows::emit_run_changed(
-                state,
-                &changed.project,
-                &changed.id,
-                changed.sequence,
-            );
-        }
-    }
-    Ok(serde_json::json!({
-        "runId": run.id,
-        "attemptId": attempt.id,
-        "session_id": if acp.is_some() { None } else { Some(session_id) },
-        "peer_id": if acp.is_some() { Some(session_id) } else { None },
-        "acp": acp,
-        "launch_id": spawned["launch_id"],
-        "task_id": spawned["task_id"],
-        "sequence": bound.sequence,
-    }))
-}
-
-fn read_plan_text_for_prompt(project: &str, source: &str) -> Result<String, String> {
-    let relative = std::path::Path::new(source);
-    if relative.as_os_str().is_empty()
-        || !relative
-            .components()
-            .all(|component| matches!(component, std::path::Component::Normal(_)))
-    {
-        return Ok(String::new());
-    }
-    let path = std::path::Path::new(project).join(relative);
-    if !path.is_file() {
-        return Ok(String::new());
-    }
-    let resolved = path
-        .canonicalize()
-        .map_err(|error| format!("resolve plan source: {error}"))?;
-    if !resolved.starts_with(project) {
-        return Err("plan source escapes the project".into());
-    }
-    if resolved
-        .metadata()
-        .map_err(|error| format!("inspect plan source: {error}"))?
-        .len()
-        > 16_000
-    {
-        return Err("plan source exceeds prompt size limit".into());
-    }
-    std::fs::read_to_string(&resolved).map_err(|error| format!("read plan source: {error}"))
 }
 
 pub(super) async fn handle_progress(
@@ -1944,11 +1295,7 @@ pub(crate) fn report_progress(
         });
     }
     if let (Some(session_id), Some((_, text))) = (acp_session_id, blocked_question.as_ref()) {
-        let config = state.config.read();
-        let push_ready = config.services.push.enabled
-            && !config.services.push.vapid_private_key.is_empty()
-            && !state.push_store.is_empty();
-        drop(config);
+        let push_ready = crate::state::AppState::mobile_push_ready(state);
         let window_focused = state
             .desktop_window_focused
             .load(std::sync::atomic::Ordering::Relaxed);
@@ -2331,26 +1678,20 @@ pub(super) const CONFIRM_TIMEOUT: std::time::Duration = std::time::Duration::fro
 ///
 /// A request nobody answers within [`CONFIRM_TIMEOUT`] resolves as *not* confirmed
 /// and says so, so the caller can tell silence apart from a deliberate refusal.
+///
+/// Authenticated remote callers may ask, like loopback ones: reaching this
+/// handler already proves loopback or authentication.
 pub(super) async fn handle_confirm(
     state: &Arc<AppState>,
-    addr: SocketAddr,
     args: &serde_json::Value,
     mcp_session_id: Option<&str>,
 ) -> serde_json::Value {
-    if !addr.ip().is_loopback() {
-        return serde_json::json!({"error": "Action 'confirm' is restricted to localhost connections"});
-    }
     if let Some(id) = args["proposalId"].as_str() {
         let Some(connection) = mcp_session_id else {
             return serde_json::json!({"error": "settings confirmation requires a server-issued connection"});
         };
-        let enabled = state
-            .config
-            .read()
-            .mcp_capabilities
-            .allows("settings", None)
-            && state.config.read().settings_mcp_enabled;
-        let caller = crate::settings::policy::Caller::mcp(addr, connection.to_owned(), enabled);
+        let enabled = state.config.read().settings_mcp_enabled;
+        let caller = crate::settings::policy::Caller::mcp(connection.to_owned(), enabled);
         return super::confirm_settings(state, &caller, id, mcp_session_id).await;
     }
     ask_confirm(state, args, mcp_session_id, CONFIRM_TIMEOUT).await
@@ -2575,6 +1916,26 @@ pub(super) async fn handle_repo_with_caller(
         | "branch_delete" => {
             handle_worktree_with_caller(state, args, is_claude_code, mcp_session_id).await
         }
+        "get_settings" | "set_settings" => {
+            let path = match require_path(args, action) {
+                Ok(path) => path,
+                Err(error) => return error,
+            };
+            if let Err(error) = validate_mcp_repo_path(&path) {
+                return error;
+            }
+            let state = Arc::clone(state);
+            let args = args.clone();
+            let is_set = action == "set_settings";
+            run_blocking_handler(move || {
+                if is_set {
+                    super::mcp_repo_settings::set(&state, &args, &path)
+                } else {
+                    super::mcp_repo_settings::get(&path)
+                }
+            })
+            .await
+        }
         "progress_list" => {
             let path = match require_path(args, action) {
                 Ok(path) => path,
@@ -2625,7 +1986,7 @@ pub(super) async fn handle_ui_unified(
         // Waits for the human, but only on a oneshot — no blocking-pool worker is
         // held, so a confirmation left unanswered costs a pending task and nothing
         // else.
-        "confirm" => handle_confirm(state, addr, args, mcp_session_id).await,
+        "confirm" => handle_confirm(state, args, mcp_session_id).await,
         "screenshot" => handle_screenshot(state, addr, args).await,
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'ui'. Available: {}", other, UI_ACTIONS
@@ -2719,7 +2080,6 @@ pub(super) async fn handle_screenshot(
 /// Extended debug tool: original actions + plugin_guide.
 pub(super) fn handle_debug_unified(
     state: &Arc<AppState>,
-    addr: SocketAddr,
     args: &serde_json::Value,
 ) -> serde_json::Value {
     let action = match require_action(args, "debug", DEBUG_ACTIONS) {
@@ -2727,19 +2087,15 @@ pub(super) fn handle_debug_unified(
         Err(e) => return e,
     };
     match action {
-        "frame_workload_dump" => {
-            if !addr.ip().is_loopback() {
-                return serde_json::json!({"error": "frame_workload_dump is restricted to localhost connections"});
-            }
-            super::log_routes::eval_debug_script(
-                state,
-                "return window.__TUIC__.frameWorkload.dump('mcp-manual')",
-            )
-        }
+        // The MCP endpoint sits behind the same auth middleware and Host/Origin
+        // boundary as the HTTP routes, so a non-loopback caller reaching this
+        // point is token-authenticated; the private-form guard stays in
+        // `eval_debug_script` (#2658-7301).
+        "frame_workload_dump" => super::log_routes::eval_debug_script(
+            state,
+            "return window.__TUIC__.frameWorkload.dump('mcp-manual')",
+        ),
         "invoke_js" => {
-            if !addr.ip().is_loopback() {
-                return serde_json::json!({"error": "invoke_js is restricted to localhost connections"});
-            }
             let script = match args["script"].as_str() {
                 Some(s) => s,
                 None => return serde_json::json!({"error": "script required (string)"}),
@@ -2755,7 +2111,7 @@ pub(super) fn handle_debug_unified(
                 "logs": "App log entries (info/warn/error mirrored from JS). Params: level, source, limit (default 50).",
                 "sessions": "All PTY sessions with pid, cwd, foreground process info.",
                 "frame_workload_dump": "Persist enabled frame recorder; async result in eval_js logs. Requires responsive desktop JS.",
-                "invoke_js": "Execute JS in the main WebView (localhost only). Use `return expr` for output. Result + captured console output logged as source='eval_js'. Read via logs(source='eval_js', limit=1)."
+                "invoke_js": "Execute JS in the main WebView (local or authenticated callers). Use `return expr` for output. Result + captured console output logged as source='eval_js'. Read via logs(source='eval_js', limit=1)."
             },
             "invoke_js_guide": {
                 "console_capture": "console.log/warn/error/info are captured and included in the result.",
@@ -2785,109 +2141,13 @@ pub(super) fn handle_debug_unified(
         )}),
     }
 }
-/// Called only by the database-owning workflow actor, never by a transport caller.
-pub(crate) fn launch_daemon_workflow_agent(
-    state: &Arc<AppState>,
-    run_id: &str,
-    attempt_id: &str,
-    worktree: &str,
-    agent_type: &str,
-    feedback: Option<String>,
-) -> Result<serde_json::Value, String> {
-    state.workflow_runtime.require_owner()?;
-    let run = crate::workflows::RunStore::open()?.snapshot(run_id)?;
-    let attempt = run
-        .attempts
-        .iter()
-        .find(|a| a.id == attempt_id)
-        .ok_or("workflow attempt missing")?;
-    if !run.graph_executions.iter().any(|g| {
-        g.target_id == attempt.story_id
-            && g.activations.iter().any(|a| {
-                (a.node_id == attempt.node_id
-                    || (attempt.story_id == run.plan_id
-                        && g.definition.graph.nodes.iter().any(|n| {
-                            n.id == a.node_id
-                                && matches!(n.kind, crate::workflows::NodeKind::CreateStories)
-                        })))
-                    && a.state == crate::workflows::graph::ActivationState::Running
-            })
-    }) {
-        return Err("daemon launch requires a reached Agent activation".into());
-    }
-    launch_workflow_effect(
-        state,
-        "127.0.0.1:0"
-            .parse()
-            .map_err(|e| format!("daemon address: {e}"))?,
-        None,
-        WorkflowLaunchInput {
-            run_id: run_id.into(),
-            attempt_id: attempt_id.into(),
-            worktree_path: worktree.into(),
-            agent_type: agent_type.into(),
-            skills: vec![],
-            feedback,
-        },
-        &run.project,
-        true,
-    )
-}
-
-/// Retry only a persisted, definitely-not-delivered ACP prompt. A submitted
-/// but uncertain prompt is never replayed, and an absent process is not replaced.
-pub(crate) fn resume_daemon_workflow_delivery(
-    state: &Arc<AppState>,
-    run_id: &str,
-    attempt_id: &str,
-) -> Result<bool, String> {
-    state.workflow_runtime.require_owner()?;
-    let run = crate::workflows::RunStore::open()?.snapshot(run_id)?;
-    if run.status != crate::workflows::RunStatus::Running {
-        return Ok(false);
-    }
-    let attempt = run
-        .attempts
-        .iter()
-        .find(|attempt| attempt.id == attempt_id)
-        .ok_or("workflow attempt missing")?;
-    if attempt.state != crate::workflows::AttemptState::Running {
-        return Ok(false);
-    }
-    let binding = attempt.agent.as_ref().ok_or("workflow binding missing")?;
-    let Some(acp) = &binding.acp else {
-        return Ok(false);
-    };
-    let launch_id = binding
-        .launch_id
-        .as_deref()
-        .ok_or("ACP launch reference missing")?;
-    let runtime = tokio::runtime::Handle::try_current().map_err(|e| e.to_string())?;
-    let receipt = runtime.block_on(super::launch_transaction::execute_owned(
-        state,
-        ([127, 0, 0, 1], 0).into(),
-        &serde_json::json!({"launch_id":launch_id}),
-    ));
-    if receipt["peer_id"] != binding.session_id
-        || receipt["connection_id"] != serde_json::json!(acp.connection_id)
-        || receipt["generation"] != acp.generation
-        || receipt["conversation_id"] != acp.conversation_id
-    {
-        return Err("ACP launch receipt does not match its bound conversation".into());
-    }
-    match receipt["prompt_delivery"].as_str() {
-        Some("delivered") => Ok(false),
-        Some("not_delivered") => { super::managed_launch_acp::deliver(state, launch_id)?; Ok(true) }
-        _ => Err("ACP prompt outcome unknown; inspect the retained launch and conversation before replacement".into()),
-    }
-}
 
 pub(crate) struct DaemonWorkspace {
     pub path: String,
     pub id: String,
 }
 
-pub(crate) async fn create_daemon_workflow_worktree(
+pub(crate) async fn create_daemon_worktree(
     state: &Arc<AppState>,
     project: &str,
     branch: &str,
@@ -2900,6 +2160,7 @@ pub(crate) async fn create_daemon_workflow_worktree(
         base_ref.map(str::to_owned),
         None,
         false,
+        None,
     )
     .await
     .map_err(|(_, value)| value.0.to_string())

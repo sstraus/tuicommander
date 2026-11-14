@@ -1,4 +1,4 @@
-import { type Component, createMemo, createSignal, For, Show } from "solid-js";
+import { type Component, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { AGENT_TYPES, AGENTS, type AgentType } from "../../agents";
 import { SMART_PROMPTS_BUILTIN } from "../../data/smartPromptsBuiltIn";
 import type { SavedPrompt, SmartPlacement } from "../../stores/promptLibrary";
@@ -215,6 +215,11 @@ export const SmartPromptEditor: Component<{
 		props.onChange({ shortcut: combo });
 	};
 
+	let cursorFrame: number | undefined;
+	onCleanup(() => {
+		if (cursorFrame !== undefined) cancelAnimationFrame(cursorFrame);
+	});
+
 	const handleInsertVariable = (varName: string) => {
 		const el = textareaRef;
 		if (!el) return;
@@ -226,7 +231,9 @@ export const SmartPromptEditor: Component<{
 		const newContent = before + insertion + after;
 		handleContentChange(newContent);
 		// Restore cursor position after insertion
-		requestAnimationFrame(() => {
+		if (cursorFrame !== undefined) cancelAnimationFrame(cursorFrame);
+		cursorFrame = requestAnimationFrame(() => {
+			cursorFrame = undefined;
 			el.focus();
 			const pos = start + insertion.length;
 			el.setSelectionRange(pos, pos);

@@ -1,6 +1,6 @@
 import { EditorView } from "@codemirror/view";
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const pending = vi.hoisted(() => ({ send: vi.fn(), queue: vi.fn() }));
 
@@ -49,6 +49,12 @@ vi.mock("../../../invoke", () => ({
 import { Terminal } from "../../../components/Terminal/Terminal";
 import { appLogger } from "../../../stores/appLogger";
 import { terminalsStore } from "../../../stores/terminals";
+
+beforeAll(async () => {
+	// Terminal loads ComposePanel lazily. A cold import under full-suite load took longer than
+	// the 1s waitFor for `.cm-editor`, so load it here and keep the waits about the view only.
+	await import("../../../components/ComposePanel/ComposePanel");
+});
 
 beforeEach(() => {
 	vi.spyOn(appLogger, "debug").mockImplementation(() => {});

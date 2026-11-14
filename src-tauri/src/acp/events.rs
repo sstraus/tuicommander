@@ -20,12 +20,14 @@
 //! [`stream_gap`]: AcpClientError::stream_gap
 
 use std::collections::VecDeque;
+use std::sync::{Arc, Weak};
 
 use parking_lot::Mutex;
 use tokio::sync::broadcast;
 
 use super::{
-    AcpClientError, AcpClientEvent, AcpConnectionId, AcpEventEnvelope, AcpNotice, AcpTurnId,
+    AcpClientError, AcpClientEvent, AcpConnectionId, AcpEventEnvelope, AcpEventPage, AcpNotice,
+    AcpStreamFrame, AcpTurnId,
 };
 use agent_client_protocol::schema::v1;
 
@@ -39,6 +41,18 @@ const JOURNAL_CAPACITY: usize = 1024;
 /// How far behind a live subscriber may fall before it is told it has a gap.
 const LIVE_CAPACITY: usize = 256;
 
+/// Events in one page when the caller does not say.
+const PAGE_DEFAULT_EVENTS: usize = 256;
+
+/// Serialized bytes in one page when the caller does not say.
+const PAGE_DEFAULT_BYTES: usize = 1024 * 1024;
+
+/// The most serialized bytes one page may carry, whatever the caller asks for.
+///
+/// A single event larger than this is still returned alone, so a cursor can
+/// never stall behind it.
+const PAGE_MAX_BYTES: usize = 4 * 1024 * 1024;
+
 /// The first sequence number an event can carry.
 ///
 /// Sequences start at one so that zero means "from the beginning" without
@@ -48,18 +62,29 @@ const FIRST_SEQUENCE: u64 = 1;
 pub struct AcpEventJournal {
     connection_id: AcpConnectionId,
     generation: u64,
-    live: broadcast::Sender<AcpEventEnvelope>,
     /// Shared by every connection this client holds, unlike `live`.
     ///
     /// A notice is a wake signal for the whole app, so it goes on one bus that
     /// an SSE consumer subscribes to once instead of one per connection.
     notices: broadcast::Sender<AcpNotice>,
-    state: Mutex<JournalState>,
+    state: Arc<Mutex<JournalState>>,
 }
 
 struct JournalState {
+    /// Lives with the retained events so a lagging stream can re-subscribe and
+    /// read what it missed in one step under the lock.
+    live: broadcast::Sender<AcpEventEnvelope>,
     next_sequence: u64,
     retained: VecDeque<AcpEventEnvelope>,
+}
+
+impl JournalState {
+    /// The oldest sequence still held, or the next one when nothing is.
+    fn earliest(&self) -> u64 {
+        self.retained
+            .front()
+            .map_or(self.next_sequence, |event| event.sequence)
+    }
 }
 
 /// Events from a chosen point, backlog first and then live.
@@ -70,6 +95,10 @@ pub struct AcpEventStream {
     backlog: std::vec::IntoIter<AcpEventEnvelope>,
     live: broadcast::Receiver<AcpEventEnvelope>,
     connection_id: AcpConnectionId,
+    /// Weak, so a dropped journal still ends the stream.
+    journal: Weak<Mutex<JournalState>>,
+    /// The sequence after the last one handed out.
+    next: u64,
 }
 
 impl AcpEventJournal {
@@ -83,23 +112,13 @@ impl AcpEventJournal {
         Self {
             connection_id,
             generation,
-            live,
             notices,
-            state: Mutex::new(JournalState {
+            state: Arc::new(Mutex::new(JournalState {
+                live,
                 next_sequence: FIRST_SEQUENCE,
                 retained: VecDeque::with_capacity(JOURNAL_CAPACITY),
-            }),
+            })),
         }
-    }
-
-    /// Positive protocol handoff proof only. A retained journal miss is unknown,
-    /// not proof that a prompt was never sent.
-    pub(super) fn has_sent_prompt(&self, turn: super::AcpTurnId, expected: &str) -> bool {
-        self.state.lock().retained.iter().any(|event| {
-            event.turn_id == Some(turn)
-                && matches!(&event.event,
-                super::AcpClientEvent::PromptSent { text } if text == expected)
-        })
     }
 
     /// Stamp one event, retain it, and hand it to whoever is listening.
@@ -127,10 +146,12 @@ impl AcpEventJournal {
                 state.retained.pop_front();
             }
             state.retained.push_back(envelope.clone());
+            // An error here means nobody is subscribed, which is not a failure.
+            // Sent under the lock so live order is sequence order, and a
+            // re-subscribing stream cannot miss or repeat an event.
+            let _ = state.live.send(envelope.clone());
             envelope
         };
-        // An error here means nobody is subscribed, which is not a failure.
-        let _ = self.live.send(envelope.clone());
         if let Some(notice) = AcpNotice::from_envelope(&envelope) {
             let _ = self.notices.send(notice);
         }
@@ -141,11 +162,7 @@ impl AcpEventJournal {
     #[must_use]
     pub fn bounds(&self) -> (u64, u64) {
         let state = self.state.lock();
-        let earliest = state
-            .retained
-            .front()
-            .map_or(state.next_sequence, |event| event.sequence);
-        (earliest, state.next_sequence.saturating_sub(1))
+        (state.earliest(), state.next_sequence.saturating_sub(1))
     }
 
     /// Every event from `from` onwards, then everything that follows.
@@ -158,18 +175,8 @@ impl AcpEventJournal {
         // Subscribing under the lock is what makes the two halves seamless: an
         // append cannot land between the backlog being copied and the live
         // receiver existing.
-        let live = self.live.subscribe();
-        let earliest = state
-            .retained
-            .front()
-            .map_or(state.next_sequence, |event| event.sequence);
-        if from != 0 && from < earliest {
-            return Err(AcpClientError::stream_gap(
-                self.connection_id,
-                from,
-                earliest,
-            ));
-        }
+        let live = state.live.subscribe();
+        self.check_cursor(&state, from)?;
 
         let backlog: Vec<_> = state
             .retained
@@ -177,10 +184,84 @@ impl AcpEventJournal {
             .filter(|event| event.sequence >= from)
             .cloned()
             .collect();
+        let next = backlog
+            .last()
+            .map_or(from.max(state.next_sequence), |event| event.sequence + 1);
         Ok(AcpEventStream {
             backlog: backlog.into_iter(),
             live,
             connection_id: self.connection_id,
+            journal: Arc::downgrade(&self.state),
+            next,
+        })
+    }
+
+    /// The earliest sequence held, or the gap a cursor before it has fallen into.
+    fn check_cursor(&self, state: &JournalState, from: u64) -> Result<u64, AcpClientError> {
+        let earliest = state.earliest();
+        if from != 0 && from < earliest {
+            return Err(AcpClientError::stream_gap(
+                self.connection_id,
+                from,
+                earliest,
+            ));
+        }
+        Ok(earliest)
+    }
+
+    /// One bounded read of what the journal holds from `from` onwards.
+    ///
+    /// `from` has the stream's meaning: the first sequence wanted, zero for
+    /// everything still held, and a dropped cursor is the same gap. `limit` and
+    /// `max_bytes` default and are capped, so no request can make one response
+    /// carry the whole journal. The first event is always included, however
+    /// large, so `next` always moves while events remain.
+    pub fn page(
+        &self,
+        from: u64,
+        limit: Option<usize>,
+        max_bytes: Option<usize>,
+    ) -> Result<AcpEventPage, AcpClientError> {
+        let limit = limit
+            .unwrap_or(PAGE_DEFAULT_EVENTS)
+            .clamp(1, JOURNAL_CAPACITY);
+        let max_bytes = max_bytes
+            .unwrap_or(PAGE_DEFAULT_BYTES)
+            .clamp(1, PAGE_MAX_BYTES);
+        // Cloned under the lock and measured outside it: serializing here
+        // would hold up `append`, which the SDK reader calls.
+        let (candidates, earliest, latest) = {
+            let state = self.state.lock();
+            let earliest = self.check_cursor(&state, from)?;
+            let candidates: Vec<_> = state
+                .retained
+                .iter()
+                .filter(|event| event.sequence >= from)
+                .take(limit)
+                .cloned()
+                .collect();
+            (candidates, earliest, state.next_sequence.saturating_sub(1))
+        };
+
+        let mut events = Vec::with_capacity(candidates.len());
+        let mut bytes = 0usize;
+        for event in candidates {
+            let size = serde_json::to_vec(&event).map_or(0, |json| json.len());
+            if !events.is_empty() && bytes.saturating_add(size) > max_bytes {
+                break;
+            }
+            bytes = bytes.saturating_add(size);
+            events.push(event);
+        }
+        let next = events
+            .last()
+            .map_or(from.max(earliest), |event: &AcpEventEnvelope| {
+                event.sequence + 1
+            });
+        Ok(AcpEventPage {
+            events,
+            next,
+            latest,
         })
     }
 }
@@ -188,18 +269,178 @@ impl AcpEventJournal {
 impl AcpEventStream {
     /// The next event, or `None` once the connection can produce no more.
     ///
-    /// A subscriber that fell behind the live buffer is told it has a gap
-    /// instead of being handed the events that survived, for the same reason
-    /// the journal refuses a cursor it no longer holds.
+    /// A subscriber that fell behind the live buffer resumes from the journal,
+    /// which still holds what it missed. Only a subscriber that fell behind the
+    /// journal itself is told it has a gap, for the same reason the journal
+    /// refuses a cursor it no longer holds. Cancel-safe: the resume has no
+    /// await point.
     pub async fn recv(&mut self) -> Option<Result<AcpEventEnvelope, AcpClientError>> {
-        if let Some(event) = self.backlog.next() {
-            return Some(Ok(event));
+        loop {
+            if let Some(event) = self.backlog.next() {
+                self.next = event.sequence + 1;
+                return Some(Ok(event));
+            }
+            match self.live.recv().await {
+                Ok(event) => {
+                    self.next = event.sequence + 1;
+                    return Some(Ok(event));
+                }
+                Err(broadcast::error::RecvError::Closed) => return None,
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    if let Err(gap) = self.resume_from_journal() {
+                        return Some(Err(gap));
+                    }
+                }
+            }
         }
-        match self.live.recv().await {
-            Ok(event) => Some(Ok(event)),
-            Err(broadcast::error::RecvError::Closed) => None,
-            Err(broadcast::error::RecvError::Lagged(_)) => {
-                Some(Err(AcpClientError::stream_lagged(self.connection_id)))
+    }
+
+    /// Replace the lagged receiver with a fresh one plus the journal's copy of
+    /// everything from `next`, taken together under the lock.
+    fn resume_from_journal(&mut self) -> Result<(), AcpClientError> {
+        let Some(journal) = self.journal.upgrade() else {
+            // The journal is gone, so the missed events cannot be replayed.
+            // Reading the lagged receiver on would skip them silently.
+            return Err(AcpClientError::stream_gap(
+                self.connection_id,
+                self.next,
+                self.next,
+            ));
+        };
+        let state = journal.lock();
+        let earliest = state.earliest();
+        if self.next < earliest {
+            return Err(AcpClientError::stream_gap(
+                self.connection_id,
+                self.next,
+                earliest,
+            ));
+        }
+        self.live = state.live.subscribe();
+        let backlog: Vec<_> = state
+            .retained
+            .iter()
+            .filter(|event| event.sequence >= self.next)
+            .cloned()
+            .collect();
+        self.backlog = backlog.into_iter();
+        Ok(())
+    }
+
+    /// The next frame a subscriber is sent. A gap or an end is the last one.
+    ///
+    /// Cancel-safe, like [`Self::recv`], so a transport can race it against
+    /// its own close.
+    pub async fn next_frame(&mut self) -> AcpStreamFrame {
+        match self.recv().await {
+            Some(Ok(envelope)) => AcpStreamFrame::Event(Box::new(envelope)),
+            Some(Err(gap)) => AcpStreamFrame::Gap(gap),
+            None => AcpStreamFrame::End,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn journal() -> AcpEventJournal {
+        let (notices, _) = broadcast::channel(4);
+        AcpEventJournal::new(AcpConnectionId::new(), 1, notices)
+    }
+
+    fn append_many(journal: &AcpEventJournal, count: usize) {
+        for _ in 0..count {
+            journal.append(None, None, AcpClientEvent::TurnStarted);
+        }
+    }
+
+    /// Catches: a reader that lags the 256-event live broadcast being cut off
+    /// with a gap while the 1024-event journal still holds what it missed.
+    #[tokio::test]
+    async fn a_reader_that_lags_the_live_buffer_resumes_from_the_journal() {
+        let journal = journal();
+        let mut stream = journal.subscribe(0).expect("subscribe");
+        let total = LIVE_CAPACITY * 3;
+        assert!(total < JOURNAL_CAPACITY);
+        append_many(&journal, total);
+
+        for expected in 1..=total as u64 {
+            let event = stream
+                .recv()
+                .await
+                .expect("the stream stays open")
+                .unwrap_or_else(|gap| panic!("event {expected}: unexpected gap {gap:?}"));
+            assert_eq!(
+                event.sequence, expected,
+                "events arrive in order, none lost"
+            );
+        }
+    }
+
+    /// Catches: a reader that fell behind the journal itself being resumed
+    /// past the hole instead of told about it.
+    #[tokio::test]
+    async fn a_reader_that_falls_behind_the_journal_gets_the_gap() {
+        let journal = journal();
+        let mut stream = journal.subscribe(0).expect("subscribe");
+        append_many(&journal, JOURNAL_CAPACITY + LIVE_CAPACITY);
+
+        let gap = stream
+            .recv()
+            .await
+            .expect("the stream reports the gap")
+            .expect_err("events 1.. are gone");
+        assert!(matches!(
+            gap.code,
+            super::super::AcpClientErrorCode::StreamGap
+        ));
+    }
+
+    /// Catches: resuming after a lag duplicating or skipping the event that
+    /// was delivered live just before the lag was noticed.
+    #[tokio::test]
+    async fn resuming_after_a_lag_keeps_following_live_events() {
+        let journal = journal();
+        let mut stream = journal.subscribe(0).expect("subscribe");
+        append_many(&journal, LIVE_CAPACITY * 2);
+        for expected in 1..=(LIVE_CAPACITY * 2) as u64 {
+            assert_eq!(stream.recv().await.unwrap().unwrap().sequence, expected);
+        }
+        let live = journal.append(None, None, AcpClientEvent::TurnStarted);
+        assert_eq!(
+            stream.recv().await.unwrap().unwrap().sequence,
+            live.sequence
+        );
+    }
+
+    /// Catches: a reader that lags while its connection closes (the journal is
+    /// dropped) being handed the tail of the closed live buffer past the hole,
+    /// so it ends cleanly having silently lost the events in between.
+    #[tokio::test]
+    async fn a_lagging_reader_whose_journal_is_dropped_never_skips_silently() {
+        let journal = journal();
+        let mut stream = journal.subscribe(0).expect("subscribe");
+        let total = LIVE_CAPACITY * 2;
+        append_many(&journal, total);
+        drop(journal);
+
+        let mut expected = 1u64;
+        loop {
+            match stream.recv().await {
+                Some(Ok(event)) => {
+                    assert_eq!(event.sequence, expected, "an event after a hole, no gap");
+                    expected += 1;
+                }
+                Some(Err(_gap)) => break,
+                None => {
+                    assert_eq!(
+                        expected,
+                        total as u64 + 1,
+                        "ended cleanly after losing events"
+                    );
+                    break;
+                }
             }
         }
     }

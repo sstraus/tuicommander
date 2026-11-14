@@ -148,6 +148,19 @@ pub(crate) fn bind_pty_identity(
 ) {
     let identity = tuic_session.unwrap_or(session_id);
     cmd.env("TUIC_SESSION", identity);
+    // A resumed suspended tab keeps its fixed capability set under the same
+    // identity (see `cleanup_session_state`); the pre-push hook reads it here.
+    if tuic_session.is_some()
+        && !state.agent_capabilities.contains_key(identity)
+        && let Some(set) = crate::agent_capabilities::load(&state.data_dir, identity)
+    {
+        state.agent_capabilities.insert(identity.to_owned(), set);
+    }
+    if let Some(set) = state.agent_capabilities.get(identity) {
+        cmd.env(crate::agent_capabilities::ENV_VAR, set.env_value());
+    } else {
+        cmd.env_remove(crate::agent_capabilities::ENV_VAR);
+    }
     match crate::attachments::prepare_session_directory(&state.data_dir, "pty", session_id) {
         Ok(directory) => {
             cmd.env("TUIC_ATTACHMENTS_DIR", &directory);
@@ -1181,6 +1194,25 @@ impl vte::Perform for IntentBreaks {
     }
 }
 
+/// Delivered source ownership, not a new state on the terminal protocol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NativeActivity {
+    Unseen,
+    CompletionOnly,
+    Busy,
+    Idle,
+}
+
+impl NativeActivity {
+    pub(crate) fn activity(self) -> Option<u8> {
+        match self {
+            Self::Busy => Some(SHELL_BUSY),
+            Self::Idle => Some(SHELL_IDLE),
+            Self::Unseen | Self::CompletionOnly => None,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct SilenceState {
     /// A title-less marker is kept until a real line or turn boundary closes it.
@@ -1243,6 +1275,9 @@ pub(crate) struct SilenceState {
     /// before the next parse. Same "the user is engaging again" epoch as
     /// `surfaced_tool_errors`, for the parser-side half of the same dedup.
     parser_dedup_reset_pending: bool,
+    /// A real choice answer must release reader-owned permission correlation.
+    /// Tool activity and arbitrary keystrokes never set this input handoff.
+    pub(crate) choice_input_resolved_pending: bool,
     /// Parsed `suggest:` items awaiting silence-based flush. The parser detects
     /// the token synchronously with output, but we hold the event here until
     /// `check_suggest` confirms the turn has ended (`SILENCE_SUGGEST_THRESHOLD`
@@ -1281,13 +1316,10 @@ pub(crate) struct SilenceState {
     /// records `Evidence` here and is arbitrated by `decide()`, instead of
     /// each call site toggling its own subset of the old flags.
     pub(super) evidence: TurnEvidence,
-    /// True only after OSC 7770 `state=` was observed (OSC 133 shell markers do
-    /// not prove that an agent's configured hooks are actually running). This
-    /// is session-lifetime latch metadata, not per-turn evidence — it never
-    /// resets, so it does not belong in `TurnEvidence`.
-    pub(super) hook_state_seen: bool,
-    /// The latest agent hook, retained across a submitted-input evidence reset.
-    last_hook_state: Option<u8>,
+    /// Latest native turn state, after a delivered busy establishes a complete
+    /// turn source. A legacy completion-only notifier cannot disable adapters.
+    /// Foreground identity withdrawal retires this authority.
+    pub(crate) native_state: NativeActivity,
     /// Last screen classification and when it was computed, shared between the
     /// reader chunk path (which computes it fresh on every chunk) and the
     /// silence timer (which reuses this instead of re-classifying, so
@@ -1392,6 +1424,7 @@ impl SilenceState {
             pending_tool_error: None,
             surfaced_tool_errors: std::collections::HashSet::new(),
             parser_dedup_reset_pending: false,
+            choice_input_resolved_pending: false,
             pending_suggest_items: None,
             pending_suggest_turn_epoch: 0,
             pending_suggest_emitted: false,
@@ -1399,8 +1432,7 @@ impl SilenceState {
             completion_declared: false,
             completion_turn_epoch: 0,
             evidence: TurnEvidence::default(),
-            hook_state_seen: false,
-            last_hook_state: None,
+            native_state: NativeActivity::Unseen,
             cached_screen_activity: AgentScreenActivity::Unknown,
             last_ready_screen_offset: 0,
             last_working_screen_offset: 0,
@@ -1639,11 +1671,23 @@ impl SilenceState {
         self.busy_source_is("user-submit")
     }
 
+    /// Completion-only notifiers can suppress stale prose questions without
+    /// claiming to supply the missing busy half of a native turn protocol.
+    pub(super) fn native_state_received(&self) -> bool {
+        self.native_state != NativeActivity::Unseen
+    }
+
     pub(super) fn note_explicit_state(&mut self, state: u8, hook_state: bool) {
         self.invalidate_injection_claim();
-        self.hook_state_seen |= hook_state;
+        // A completion-only notifier is not a native turn protocol. Activate
+        // native authority on busy, then retain it across idle and submissions.
         if hook_state {
-            self.last_hook_state = Some(state);
+            self.native_state = match state {
+                SHELL_BUSY => NativeActivity::Busy,
+                SHELL_IDLE if self.native_state.activity().is_some() => NativeActivity::Idle,
+                SHELL_IDLE => NativeActivity::CompletionOnly,
+                _ => self.native_state,
+            };
         }
         self.screen_ready_pending_since = None;
         match state {
@@ -1720,10 +1764,17 @@ impl SilenceState {
         // `SilenceState`, and a `SilenceState` carries no agent type, so they
         // must all agree; widening this guard turns grok green and goose and
         // opencode red, which moves the contradiction instead of resolving it.
-        if self.evidence.busy.is_some_and(|busy| {
-            busy.rank == EvidenceRank::Protocol
-                && (busy.source != "user-submit" || !self.evidence.activity_seen)
-        }) {
+        //
+        // An Esc TUIC wrote is the exception: Claude emits no Stop hook when
+        // Esc cancels its turn, so nothing protocol-ranked would ever close it.
+        // A stable Ready screen after our own interrupt is the end of that turn
+        // (#2913-8d0a); a still-running turn shows a working row, not Ready.
+        if !self.interrupt_pending()
+            && self.evidence.busy.is_some_and(|busy| {
+                busy.rank == EvidenceRank::Protocol
+                    && (busy.source != "user-submit" || !self.evidence.activity_seen)
+            })
+        {
             self.screen_ready_pending_since
                 .get_or_insert_with(std::time::Instant::now);
             return false;
@@ -1749,11 +1800,17 @@ impl SilenceState {
         true
     }
 
+    /// An Esc was written and its interrupted screen has not settled yet.
+    pub(crate) fn interrupt_pending(&self) -> bool {
+        self.interrupt_requested_at
+            .is_some_and(|at| at.elapsed() < INTERRUPT_PENDING_TTL)
+    }
+
     pub(super) fn note_interrupted_screen(&mut self) -> bool {
-        let pending = self
-            .interrupt_requested_at
-            .is_some_and(|at| at.elapsed() < INTERRUPT_PENDING_TTL);
-        if pending {
+        if self.interrupt_pending() {
+            if self.native_state == NativeActivity::Busy {
+                self.native_state = NativeActivity::Idle;
+            }
             self.evidence
                 .force_idle(EvidenceRank::Screen, "interrupted-screen");
             self.last_status_line_at = None;
@@ -1807,8 +1864,11 @@ impl SilenceState {
         })
     }
 
+    /// A completion-only notifier cannot acknowledge a new model turn. Preserve
+    /// its legacy recovery for an unconsumed submission on a hidden composer.
+    /// A complete native source never uses silence to decide turn state.
     pub(super) fn unacknowledged_submission_is_stale(&self) -> bool {
-        self.last_hook_state == Some(SHELL_IDLE)
+        self.native_state == NativeActivity::CompletionOnly
             && !self.injection_delivery_uncertain
             && self.evidence.busy.is_some_and(|busy| {
                 busy.source == "user-submit"
@@ -2398,6 +2458,9 @@ pub(super) fn try_shell_transition_locked<F: FnOnce()>(
     }
     // Ref dropped here — post-transition work below re-enters shell_states.
     if ok {
+        if new == SHELL_IDLE {
+            crate::api_retry::note_idle(state, session_id);
+        }
         if new == SHELL_BUSY
             && let Some(silence) = silence_state.as_mut()
         {
@@ -2444,26 +2507,27 @@ pub(super) fn try_shell_transition_locked<F: FnOnce()>(
                     .is_some_and(|silence| silence.completion_declared_for_epoch(turn_epoch))
             });
             let is_agent = session_lifecycle.is_some_and(|(is_agent, _)| is_agent);
-            let has_background_work = state
-                .session_maps
-                .session_states
-                .get(session_id)
-                .is_some_and(|session| session.background_work);
-            let background_probe_pending = state
-                .session_maps
-                .session_states
-                .get(session_id)
-                .is_some_and(|session| session.has_pending_background_probe());
+            let native_state = silence_state
+                .as_ref()
+                .is_some_and(|silence| silence.native_state.activity().is_some());
+            let has_background_work = !native_state
+                && state
+                    .session_maps
+                    .session_states
+                    .get(session_id)
+                    .is_some_and(|session| session.background_work);
+            let background_probe_pending = !native_state
+                && state
+                    .session_maps
+                    .session_states
+                    .get(session_id)
+                    .is_some_and(|session| session.has_pending_background_probe());
             if is_agent && !completion_declared && !has_background_work && !background_probe_pending
             {
                 parent_dispatch = enqueue_state_change_to_parent(
                     state,
                     session_id,
-                    serde_json::json!({
-                        "type": "state_change",
-                        "state": "idle",
-                        "session_id": session_id,
-                    }),
+                    turn_end_payload(state, session_id),
                 );
             }
         }
@@ -2620,6 +2684,9 @@ pub(super) fn apply_working_evidence(
         || (agent_type.as_deref() == Some("codex") && source == "working-screen-movement");
     let (reopened_completion, evidence_snapshot) = {
         let mut sl = silence.lock();
+        if agent_type.is_some() && sl.native_state.activity().is_some() {
+            return;
+        }
         let turn_completed = state
             .session_maps
             .session_states
@@ -2874,6 +2941,19 @@ fn transition_explicit_shell_state_impl<F: FnOnce()>(
         .map(|entry| Arc::clone(entry.value()));
     let (transitioned, parent_dispatch) = {
         let mut silence_guard = silence.as_ref().map(|silence| silence.lock());
+        // OSC 133 belongs to the shell command, not a native agent turn.
+        if !hook_state
+            && silence_guard
+                .as_ref()
+                .is_some_and(|silence| silence.native_state.activity().is_some())
+            && state
+                .session_maps
+                .session_states
+                .get(session_id)
+                .is_some_and(|session| session.agent_type.is_some())
+        {
+            return;
+        }
         if target == SHELL_IDLE
             && evidence_turn_epoch.is_some_and(|observed| {
                 state
@@ -3135,14 +3215,20 @@ pub(super) fn emit_pending_suggest_if_idle(
         .session_maps
         .session_states
         .get(session_id)
-        .map(|session| (session.turn_epoch, session.background_work))
+        .map(|session| {
+            (
+                session.turn_epoch,
+                session.background_work && silence_state.native_state.activity().is_none(),
+            )
+        })
     else {
         return false;
     };
     // A ready agent can finish its turn while descendants keep the shell busy.
     // Publish choices independently; retain the payload for the existing
     // completion gate and background-settlement path.
-    let agent_is_ready = silence_state.cached_screen_activity == AgentScreenActivity::Ready
+    let agent_is_ready = silence_state.native_state.activity().is_none()
+        && silence_state.cached_screen_activity == AgentScreenActivity::Ready
         && silence_state.last_output_at.elapsed() >= AGENT_READY_CONFIRM;
     if !shell_is_idle && !agent_is_ready {
         return false;
@@ -3276,7 +3362,7 @@ fn remove_live_session_state(session_id: &str, state: &AppState) {
     if let Err(error) = crate::stories::StoryStore::release_closed_session(session_id) {
         tracing::warn!(session_id = %session_id, error = %error, "Could not release story claim for closed session");
     }
-    state.suspend_metadata.remove(session_id);
+    state.chat_views.forget_questions(session_id);
     state.session_maps.attachment_launch_dirs.remove(session_id);
     state.ws_clients.remove(session_id);
     // Drop the per-session PTY event channel alongside ws_clients. Any final
@@ -3289,9 +3375,11 @@ fn remove_live_session_state(session_id: &str, state: &AppState) {
     state.grid.gates.remove(session_id);
     state.grid.pending_scroll.remove(session_id);
     state.session_maps.kitty_states.remove(session_id);
+    state.session_maps.terminal_replies.remove(session_id);
     state.session_maps.input_buffers.remove(session_id);
     state.session_maps.input_transactions.remove(session_id);
     state.session_maps.silence_states.remove(session_id);
+    state.session_maps.hook_inboxes.remove(session_id);
     state.session_maps.shell_states.remove(session_id);
     state.session_maps.last_prompts.remove(session_id);
     state.session_maps.pty_descriptions.remove(session_id);
@@ -3313,7 +3401,7 @@ fn remove_live_session_state(session_id: &str, state: &AppState) {
     state.pending_injections.remove(session_id);
     state.recent_queue_keys.remove(session_id);
     state.pending_initial_prompts.remove(session_id);
-    state.managed_trust_dialogs.remove(session_id);
+    state.managed_first_run.remove(session_id);
     state.active_agent_waiters.remove(session_id);
     if !state.hibernated_peers.contains(session_id) {
         crate::mcp_http::remote_peer::unregister_peer(state, session_id);
@@ -3322,6 +3410,12 @@ fn remove_live_session_state(session_id: &str, state: &AppState) {
         state.agent_inbox_evictions.remove(session_id);
         // The inbox read position is meaningless once the inbox is gone.
         state.agent_read_cursor.remove(session_id);
+        // A suspended tab resumes under the same identity, so its fixed
+        // capabilities stay with it, like its inbox.
+        state.agent_capabilities.remove(session_id);
+        state
+            .capability_denials_mailed
+            .retain(|(denied, _)| denied != session_id);
     }
     #[cfg(unix)]
     state.session_maps.standby_sessions.remove(session_id);
@@ -3339,9 +3433,13 @@ fn remove_live_session_state(session_id: &str, state: &AppState) {
     // live MCP session, no child" too weak a test for deletion. The real fix is a
     // periodic sweep over ALL peers with a mail-retention rule, which is a policy
     // decision, not a cleanup tweak.
-    state.session_maps.session_parent.remove(session_id);
+    // `session_parent` is NOT removed here: the reader thread publishes the
+    // `exited` event to this parent in `mark_session_exited`, and kill/close run
+    // this cleanup before that thread reaches EOF. `mark_session_exited` and
+    // `remove_post_mortem_session_state` remove it (#2788-4bd6).
     state.keep_open_sessions.remove(session_id);
     state.blocked_children.remove(session_id);
+    state.reported_children.remove(session_id);
     // mcp_to_session maps mcp_session_id → tuic_session. The reverse index
     // session_to_mcp lets us drop O(k) entries (k = mcp sessions for this
     // tuic_session, typically 1) instead of scanning every entry.
@@ -3367,6 +3465,10 @@ pub(super) fn remove_post_mortem_session_state(session_id: &str, state: &AppStat
     let raw_removed = state.grid.pty_raw_rings.remove(session_id).is_some();
     state.session_maps.last_output_ms.remove(session_id);
     state.session_maps.exit_codes.remove(session_id);
+    state.session_maps.exit_reasons.remove(session_id);
+    state.session_maps.session_parent.remove(session_id);
+    // Kept past exit so a `child_report` can still name the resume handle.
+    state.suspend_metadata.remove(session_id);
     state.session_maps.term_aliases.remove(session_id);
     state.session_maps.marker_stats.remove(session_id);
     state.session_maps.session_visibility.remove(session_id);
@@ -3387,6 +3489,7 @@ fn trim_unused_session_heap() {
 }
 
 /// Remove the live session and transfer any pending child wait out of its maps.
+#[cfg(test)]
 fn remove_pty_session(session_id: &str, state: &AppState) {
     let Some((_, session)) = state.session_maps.sessions.remove(session_id) else {
         return;
@@ -3400,6 +3503,14 @@ fn remove_pty_session(session_id: &str, state: &AppState) {
 
 /// Release terminal resources without abandoning an unreaped child.
 fn release_pty_session(session_id: &str, session: PtySession) {
+    release_pty_session_with_exit(session_id, session, |_| {});
+}
+
+fn release_pty_session_with_exit(
+    session_id: &str,
+    session: PtySession,
+    on_exit: impl FnOnce(Option<portable_pty::ExitStatus>) + Send + 'static,
+) {
     // Moving only the child drops the master, writer and session metadata here.
     // EOF can precede process exit: dropping a std::process::Child does not wait
     // for it, and one try_wait(None) must not abandon its eventual zombie.
@@ -3408,7 +3519,10 @@ fn release_pty_session(session_id: &str, session: PtySession) {
     drop(session.master);
     drop(session.writer);
     match child.try_wait() {
-        Ok(Some(_)) => return,
+        Ok(Some(status)) => {
+            on_exit(Some(status));
+            return;
+        }
         Ok(None) => {}
         Err(error) => {
             tracing::warn!(source = "pty", session_id, %error, "Poll removed PTY child failed; waiting for it");
@@ -3418,13 +3532,17 @@ fn release_pty_session(session_id: &str, session: PtySession) {
     std::thread::spawn(move || {
         // No AppState, map guard, session lock or PTY handle survives here. A
         // process that closed its terminal but is still alive cannot stall other
-        // sessions or keep its terminal buffers resident while we wait for it.
+        // sessions. Its outcome callback holds only a weak AppState reference.
         loop {
             match child.wait() {
-                Ok(_) => break,
+                Ok(status) => {
+                    on_exit(Some(status));
+                    break;
+                }
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(error) => {
                     tracing::warn!(source = "pty", session_id, %error, "Wait for removed PTY child failed");
+                    on_exit(None);
                     break;
                 }
             }
@@ -3470,34 +3588,26 @@ pub(super) fn tombstone_transient_cleanup(session_id: &str, state: &AppState) {
 /// a task handle worth polling: the outcome is recorded even if no client was
 /// waiting when the agent finished.
 ///
-/// A missing exit code is read as success — the session is gone and we have no
-/// evidence of failure, so an orchestrator should collect a result rather than
-/// see a phantom error.
+/// Only an observed zero exit is success. EOF without a wait status is not a
+/// completion receipt, and a failed task still carries the captured exit code.
 fn finish_session_tasks(state: &AppState, session_id: &str, exit_code: Option<i32>) {
-    let failed = exit_code.is_some_and(|code| code != 0);
     for task_id in state.tasks.live_ids_for_session(session_id) {
-        let (status, update) = if failed {
-            (
-                crate::tasks::TaskStatus::Failed,
-                crate::tasks::TaskUpdate {
-                    error: Some(format!(
-                        "agent session exited with code {}",
-                        exit_code.unwrap_or_default()
-                    )),
-                    ..Default::default()
-                },
-            )
+        let status = if exit_code == Some(0) {
+            crate::tasks::TaskStatus::Completed
         } else {
-            (
-                crate::tasks::TaskStatus::Completed,
-                crate::tasks::TaskUpdate {
-                    result: Some(serde_json::json!({
-                        "session_id": session_id,
-                        "exit_code": exit_code,
-                    })),
-                    ..Default::default()
-                },
-            )
+            crate::tasks::TaskStatus::Failed
+        };
+        let update = crate::tasks::TaskUpdate {
+            result: Some(serde_json::json!({
+                "session_id": session_id,
+                "exit_code": exit_code,
+            })),
+            error: match exit_code {
+                Some(0) => None,
+                Some(code) => Some(format!("agent session exited with code {code}")),
+                None => Some("agent session exited without an available process status".into()),
+            },
+            ..Default::default()
         };
         if let Err(e) = state.tasks.set_status(&task_id, status, update) {
             // Terminal already (a cancel that raced the exit) is expected, not an
@@ -3507,28 +3617,80 @@ fn finish_session_tasks(state: &AppState, session_id: &str, exit_code: Option<i3
     }
 }
 
+/// Shell convention: a signal death is `128 + signum` (SIGKILL = 137); portable-pty
+/// alone reports 1, the same as `exit(1)`. `strsignal` text carries the number on
+/// macOS ("Killed: 9") but not on Linux ("Killed"), so fall back to the name.
+fn shell_exit_code(status: &portable_pty::ExitStatus) -> i32 {
+    let Some(sig) = status.signal() else {
+        return status.exit_code() as i32;
+    };
+    let named = match sig.split(':').next().unwrap_or(sig).trim() {
+        "Hangup" => 1,
+        "Interrupt" => 2,
+        "Quit" => 3,
+        "Killed" => 9,
+        "Terminated" => 15,
+        _ => 0,
+    };
+    let signum = match parse_signal_number(sig) {
+        0 => named,
+        number => number,
+    };
+    128 + signum
+}
+
+/// Record why TUIC itself ends a session. Must run BEFORE the first signal: the
+/// reader thread publishes the `exited` state change as soon as the child dies.
+fn record_teardown_reason(state: &AppState, session_id: &str, reason: &str) {
+    state
+        .session_maps
+        .exit_reasons
+        .insert(session_id.to_string(), reason.to_string());
+}
+
+/// Record the exit code of a session TUIC itself ended.
+fn record_teardown_exit(state: &AppState, session_id: &str, status: &portable_pty::ExitStatus) {
+    state
+        .session_maps
+        .exit_codes
+        .insert(session_id.to_string(), shell_exit_code(status));
+}
+
 pub(crate) fn mark_session_exited(session_id: &str, state: &Arc<AppState>) {
-    // Capture exit code before dropping the session entry.
-    // portable_pty::ExitStatus carries both exit_code() and signal().
-    // Signal-killed processes get 128+signum (shell convention) so the
-    // caller can distinguish SIGKILL (137) from normal exit(1).
-    if let Some(entry) = state.session_maps.sessions.get(session_id)
-        && let Ok(Some(status)) = entry.value().lock()._child.try_wait()
+    // EOF can precede wait readiness. One owner removes the terminal resources
+    // immediately, then publishes the outcome only after its OS wait completes.
+    if !state
+        .session_maps
+        .pending_exits
+        .insert(session_id.to_string())
     {
-        let code = if let Some(sig) = status.signal() {
-            let signum = parse_signal_number(sig);
-            128 + signum
-        } else {
-            status.exit_code() as i32
-        };
-        state
-            .session_maps
-            .exit_codes
-            .insert(session_id.to_string(), code);
+        return;
     }
     flush_open_intent_before_session_removal(session_id, state);
-    remove_pty_session(session_id, state);
+    let session = state.session_maps.sessions.remove(session_id);
+    tombstone_transient_cleanup(session_id, state);
+    if let Some((_, session)) = session {
+        state
+            .metrics
+            .active_sessions
+            .fetch_sub(1, Ordering::Relaxed);
+        let weak = Arc::downgrade(state);
+        let sid = session_id.to_string();
+        release_pty_session_with_exit(session_id, session.into_inner(), move |status| {
+            if let Some(state) = weak.upgrade() {
+                if let Some(status) = status {
+                    record_teardown_exit(&state, &sid, &status);
+                }
+                publish_session_exit(&sid, &state);
+            }
+        });
+    } else {
+        // Explicit close/kill already owns the child wait and records its code.
+        publish_session_exit(session_id, state);
+    }
+}
 
+fn publish_session_exit(session_id: &str, state: &Arc<AppState>) {
     // Notify orchestrator (if any) that this agent has exited.
     let exit_code = state
         .session_maps
@@ -3536,6 +3698,7 @@ pub(crate) fn mark_session_exited(session_id: &str, state: &Arc<AppState>) {
         .get(session_id)
         .map(|e| *e.value());
     finish_session_tasks(state, session_id, exit_code);
+    crate::agent_health::report_exit(state, session_id, exit_code);
     push_state_change_to_parent(
         state,
         session_id,
@@ -3544,36 +3707,23 @@ pub(crate) fn mark_session_exited(session_id: &str, state: &Arc<AppState>) {
             "state": "exited",
             "session_id": session_id,
             "exit_code": exit_code,
+            "exit_reason": state
+                .session_maps
+                .exit_reasons
+                .get(session_id)
+                .map(|reason| reason.value().clone()),
         }),
     );
 
-    // A managed workflow child may exit without calling workflow_report. Persist
-    // the interruption before presenting another run state; exit code zero is
-    // not evidence that its story criteria passed.
-    if crate::config::config_dir()
-        .join("workflow_runs.sqlite3")
-        .is_file()
-    {
-        match crate::workflows::RunStore::open()
-            .and_then(|store| store.interrupt_agent_session(session_id))
-        {
-            Ok(changed_runs) => {
-                for run in changed_runs {
-                    crate::workflows::emit_run_changed(state, &run.project, &run.id, run.sequence);
-                }
-            }
-            Err(error) => {
-                tracing::warn!(source = "workflows", session_id, %error, "record workflow agent exit")
-            }
-        }
-    }
+    // The exited event is out; the parent link has no further use.
+    state.session_maps.session_parent.remove(session_id);
 
     // SIMP-1: drain HTML tabs registered by this session and emit close.
     // Same helper used by `session(close)` and `session(kill)` so all three
     // exit paths drain `session_html_tabs` identically (no orphan tabs).
     crate::mcp_http::mcp_transport::emit_close_html_tabs(state, session_id);
 
-    tombstone_transient_cleanup(session_id, state);
+    state.session_maps.pending_exits.remove(session_id);
 }
 
 /// Time a tombstoned session's buffers remain readable after process exit.
@@ -3619,7 +3769,10 @@ pub(super) fn aged_out_tombstones(state: &AppState, now_ms: u64) -> Vec<String> 
 pub(super) fn reap_tombstones(state: &AppState, candidates: &[String]) {
     let mut released_payload = false;
     for id in candidates {
-        if state.session_maps.sessions.contains_key(id) {
+        if state.session_maps.sessions.contains_key(id)
+            || state.session_maps.pending_exits.contains(id)
+            || state.tasks.retains_session_output(id)
+        {
             continue;
         }
         released_payload |= remove_post_mortem_session_state(id, state);
@@ -4197,6 +4350,8 @@ pub(crate) fn close_pty_core_with_reason(
         "Closing session: sending Ctrl-C"
     );
 
+    record_teardown_reason(state, session_id, reason);
+
     // Teardown must never enter the writer path: either the mutex or a kernel
     // write can be stuck behind a child that no longer drains its terminal.
     // Deliver the interrupt out of band, then retain the existing kill deadline.
@@ -4238,10 +4393,7 @@ pub(crate) fn close_pty_core_with_reason(
 
     // Capture exit code for the tombstone before dropping the child handle.
     if let Ok(Some(status)) = session._child.try_wait() {
-        state
-            .session_maps
-            .exit_codes
-            .insert(session_id.to_string(), status.exit_code() as i32);
+        record_teardown_exit(state, session_id, &status);
     }
 
     // Preserve output_buffers, vt_log_buffers, last_output_ms, exit_codes.
@@ -4281,6 +4433,19 @@ pub(crate) fn kill_pty_core(state: &AppState, session_id: &str) -> bool {
         "Killing session: sending SIGKILL"
     );
 
+    record_teardown_reason(state, session_id, "kill_requested");
+    // The session is already out of the map, so the reader's mark_session_exited
+    // cannot try_wait. Pre-record the platform's kill code; the reaped status
+    // overwrites it below. portable-pty uses TerminateProcess(..., 1) on Windows.
+    #[cfg(unix)]
+    let kill_exit_code = 128 + libc::SIGKILL;
+    #[cfg(windows)]
+    let kill_exit_code = 1;
+    state
+        .session_maps
+        .exit_codes
+        .insert(session_id.to_string(), kill_exit_code);
+
     // Nuke the agent's foreground process group first; SIGKILL on the shell
     // alone leaves the agent (a grandchild) orphaned. See
     // kill_foreground_process_group.
@@ -4295,10 +4460,7 @@ pub(crate) fn kill_pty_core(state: &AppState, session_id: &str) -> bool {
     wait_for_pty_child(session._child.as_mut(), session_id);
 
     if let Ok(Some(status)) = session._child.try_wait() {
-        state
-            .session_maps
-            .exit_codes
-            .insert(session_id.to_string(), status.exit_code() as i32);
+        record_teardown_exit(state, session_id, &status);
     }
 
     tombstone_transient_cleanup(session_id, state);

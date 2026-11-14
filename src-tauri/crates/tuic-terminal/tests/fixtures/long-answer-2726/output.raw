@@ -1,0 +1,1156 @@
+7[r8[?25h[?25l[?2004h[?2031h[?1004h[<u[>5u[>4;2m[>4m[<u[?1004l[?2031l[?2004l[>0q[?u]7501;?[c[?2004h[?2031h[?1004h[<u[>5u[>4;2m]0;✳ Claude Code]9;4;0;[?2026h[38;2;215;119;87m ▐[48;2;0;0;0m▛███▛█[12G[39m[49m[1mClaude[19GCode[24G[22m[38;2;153;153;153mv2.1.316[39m
+[38;2;215;119;87m▝▜[48;2;0;0;0m█████[49m█▀[12G[38;2;153;153;153mSonnet[19G5.5[23G·[25GClaude[32GUltra[39m
+[38;2;215;119;87m ▝▝[7G▝▝[12G[38;2;153;153;153m~/Gits/personal/tuicommander__wt/fix-2726-long-answer-rows[39m
+
+
+[48;2;55;55;55m[38;2;153;153;153m❯ [38;2;255;255;255mDo not use any tools. This is a terminal rendering probe. Write a long answer of exactly 160 [39m     [49m
+[48;2;55;55;55m  [38;2;255;255;255mnumbered prose lines, each starting ROW001 through ROW160 in order. Each line must contain its [39m   [49m
+[48;2;55;55;55m  [38;2;255;255;255mmarker and a short sentence. After ROW020 include a fenced shell code block with echo CODE021 [39m    [49m
+[48;2;55;55;55m  [38;2;255;255;255mthrough echo CODE030 on separate lines. After ROW050 include 12 bullet list entries with markers [39m [49m
+[48;2;55;55;55m  [38;2;255;255;255mBULLET001 through BULLET012. Finish with END2726. Do not summarize or omit any lines.[39m             [49m
+
+[38;2;215;119;87m·[3GSprouting…[39m
+
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+❯ [7m [27m
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[81G◐[83Gmedium[90G·[92G/effort[39m
+[2C[3A[?2026l]0;◐ Claude Code]9;4;3;[?2026h[2D[3B[13C[6A[38;2;153;153;153m(running SessionStart hooks… 1/5 · 0s)[3B❯ [39m
+
+
+[2C[3A[?2026l[>0q[c[?2026h[2D[3B[42C[6A[38;2;153;153;153m3[39m
+
+
+
+
+
+[2C[3A[?2026l[?2026h[2D[3B[6A[38;2;215;119;87m✢[39m
+
+
+
+
+
+[2C[3A[?2026l[?2026h[2D[3B[2C[1A[38;2;153;153;153mSonnet 5.5 · ctx ? · medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m[K
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[81G[38;2;153;153;153m◐[83Gmedium[90G·[92G/effort[39m
+[2C[5A[?2026l[?2026h[2D[5B[42C[8A[38;2;153;153;153m4[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✳[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✶[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✻[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✽[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l]0;◑ Claude Code[?2026h[2D[5B[48C[8A[38;2;153;153;153m1[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✻[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[22C[8A[38;2;153;153;153mUserPromptSubmit hooks…[47G0/2 · 1s)[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✶[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[46C[8A[38;2;153;153;153m1[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✳[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[13C[8A[K
+
+
+
+
+
+
+
+[2C[5A[?2026l]0;◑ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[5B[6A[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… [39m
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✢[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m·[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[11C[8A[38;2;235;159;127m…[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l]0;◐ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[5B[8A[38;2;215;119;87m✢[11G[38;2;235;159;127mg[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✳[10G[38;2;235;159;127mn[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✶[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✻[9G[38;2;235;159;127mi[12G[38;2;215;119;87m…[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✽[8G[38;2;235;159;127mt[11G[38;2;215;119;87mg[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l]0;◑ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[5B[6C[8A[38;2;235;159;127mu[10G[38;2;215;119;87mn[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[H[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[H[48;2;55;55;55m  [38;2;255;255;255mmarker and a short sentence. After ROW020 include a fenced shell code block with echo CODE021 [39m    [49m
+[48;2;55;55;55m  [38;2;255;255;255mthrough echo CODE030 on separate lines. After ROW050 include 12 bullet list entries with markers [39m [49m
+[48;2;55;55;55m  [38;2;255;255;255mBULLET001 through BULLET012. Finish with END2726. Do not summarize or omit any lines.[39m             [49m
+
+[38;2;215;119;87m✽[3GSpro[38;2;235;159;127muti[38;2;215;119;87mng…[39m
+
+[38;2;136;136;136m 2578-69b4[12GPlans[18Gand[22GStories:[31Gmove[36Gstories[44Gbetween[52Gphases[59Gby[62Gdrag[67Gand[71Gdrop[76Gand[80Gfrom[85Gthe[89Glist-peac…[100G─[39m
+[38;2;153;153;153m❯ [39m[7m [27m
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G?[22G·[24Gmedium[31G·[33Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[85G·[87G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[81G[38;2;153;153;153m◐[83Gmedium[90G·[92G/effort[39m
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✻[6G[38;2;235;159;127mo[9G[38;2;215;119;87mi[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✶[5G[38;2;235;159;127mr[8G[38;2;215;119;87mt[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✳[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✢[4G[38;2;235;159;127mp[7G[38;2;215;119;87mu[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m·[3G[38;2;235;159;127mS[6G[38;2;215;119;87mo[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l]0;◐ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[5B[4C[8A[38;2;215;119;87mr[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✢[4Gp[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✳[3GS[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✶[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✻[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✽[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l]0;◑ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[5B[8A[38;2;215;119;87m✻[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✶[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✳[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✢[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m·[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l]0;◐ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[5B[8A[38;2;215;119;87m✢[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✳[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✶[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✻[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✽[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l]0;◑ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[5B[H[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[H[38;2;215;119;87m ▐[48;2;0;0;0m▛███▛█[12G[39m[49m[1mClaude[19GCode[24G[22m[38;2;153;153;153mv2.1.316[39m
+[38;2;215;119;87m▝▜[48;2;0;0;0m█████[49m█▀[12G[38;2;153;153;153mSonnet[19G5.5[23G·[25GClaude[32GUltra[39m
+[38;2;215;119;87m ▝▝[7G▝▝[12G[38;2;153;153;153m~/Gits/personal/tuicommander__wt/fix-2726-long-answer-rows[39m
+
+
+[48;2;55;55;55m[38;2;153;153;153m❯ [38;2;255;255;255mDo not use any tools. This is a terminal rendering probe. Write a long answer of exactly 160 [39m     [49m
+[48;2;55;55;55m  [38;2;255;255;255mnumbered prose lines, each starting ROW001 through ROW160 in order. Each line must contain its [39m   [49m
+[48;2;55;55;55m  [38;2;255;255;255mmarker and a short sentence. After ROW020 include a fenced shell code block with echo CODE021 [39m    [49m
+[48;2;55;55;55m  [38;2;255;255;255mthrough echo CODE030 on separate lines. After ROW050 include 12 bullet list entries with markers [39m [49m
+[48;2;55;55;55m  [38;2;255;255;255mBULLET001 through BULLET012. Finish with END2726. Do not summarize or omit any lines.[39m             [49m
+
+[38;2;215;119;87m✽[3GSprouting…[39m
+
+[38;2;136;136;136m 2578-69b4[12GPlans[18Gand[22GStories:[31Gmove[36Gstories[44Gbetween[52Gphases[59Gby[62Gdrag[67Gand[71Gdrop[76Gand[80Gfrom[85Gthe[89Glist-peac…[100G─[39m
+[38;2;153;153;153m❯ [39m[7m [27m
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G?[22G·[24Gmedium[31G·[33Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[85G·[87G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[81G[38;2;153;153;153m◐[83Gmedium[90G·[92G/effort[39m
+[2C[5A[?2026l[?2026h[2D[5B[2C[8A[38;2;215;119;87mMa[6Ginating… [39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[14C[8A[38;2;153;153;153m(7s · [38;2;177;177;177mthinking[38;2;153;153;153m)[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✻[21G[38;2;181;181;181mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✶[21G[38;2;185;185;185mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✳[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✢[21G[38;2;181;181;181mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l]0;◐ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[5B[8A[38;2;215;119;87m·[21G[38;2;177;177;177mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[20C[8A[38;2;173;173;173mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[20C[8A[38;2;165;165;165mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[15C[8A[38;2;153;153;153m8[21G[38;2;161;161;161mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✢[13G[38;2;235;159;127m…[21G[38;2;157;157;157mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✳[12G[38;2;235;159;127mg[21G[38;2;153;153;153mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✶[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[10C[8A[38;2;235;159;127mn[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✻[21G[38;2;157;157;157mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l]0;◑ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[5B[8A[38;2;215;119;87m✽[10G[38;2;235;159;127mi[13G[38;2;215;119;87m…[21G[38;2;161;161;161mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[20C[8A[38;2;165;165;165mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8C[8A[38;2;235;159;127mt[12G[38;2;215;119;87mg[16G[38;2;153;153;153m9[21G[38;2;173;173;173mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[20C[8A[38;2;177;177;177mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✻[8G[38;2;235;159;127ma[11G[38;2;215;119;87mn[21G[38;2;181;181;181mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✶[7G[38;2;235;159;127mn[10G[38;2;215;119;87mi[21G[38;2;185;185;185mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✳[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m✢[6G[38;2;235;159;127mi[9G[38;2;215;119;87mt[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l]0;◐ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[5B[20C[8A[38;2;181;181;181mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[8A[38;2;215;119;87m·[5G[38;2;235;159;127mr[8G[38;2;215;119;87ma[21G[38;2;177;177;177mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[20C[8A[38;2;169;169;169mthinking[39m
+
+
+
+
+
+
+
+[2C[5A[?2026l[?2026h[2D[5B[2K[G[1A[K[2C[4A[?2026l[?2026h[2D[4B[20C[7A[38;2;153;153;153mthought for 3s)[39m
+
+
+
+
+
+
+[2C[4A[?2026l[?2026h[2D[4B[3C[7A[38;2;235;159;127ma[7G[38;2;215;119;87mn[16G[38;2;153;153;153m10s · ↓[39m [38;2;153;153;153m25 [28Gokens · thought for 3s)[39m
+
+
+
+
+
+
+[2C[4A[?2026l[?2026h[2D[4B[7A[38;2;255;255;255m⏺[3G[39m[K[2B[38;2;215;119;87m·[39m [38;2;215;119;87mM[38;2;235;159;127mari[38;2;215;119;87mnating… [38;2;153;153;153m(10s · ↓[39m [38;2;153;153;153m25 tokens · thought for 3s)[39m[K[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G?[22G·[24Gmedium[31G·[33Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[85G·[87G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[23C[7A[38;2;153;153;153m50[39m
+
+
+
+
+
+
+[2C[4A[?2026l[?2026h[2D[4B[2K[1A[2K[G[1A[2C[7AROW001[10GThe[14Gfirst[20Grow[24Gopens[30Gthe[34Gprobe.[2B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… ─[1B[38;2;153;153;153m❯ [39m[7m [1B[27m[38;2;136;136;136m───────────────────────────────────────────────────────────────────────────────────────────────────[1B[39m  [38;2;153;153;153mSonnet 5.5 · ctx ? · medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[1B[39m  [38;2;72;150;140m⏸ plan mode on[38;2;153;153;153m (shift+tab to cycle)[39m[K[1B[K[1B[K[1A[2C[4A[?2026l[?2026h[2D[4B[19C[2A[38;2;153;153;153m7% (73k/1M) · medium · person[50Gl/tuicommander__wt/fix[73G2726-long-answer-rows · $0[39m
+
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW002[10GThe[14Gsecond[21Grow[25Gkeeps[31Gthe[35Gorder.[1B  ROW003 The third row stays short.[K[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW004[10GThe[14Gfourth[21Grow[25Gfollows[33Gplainly.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l]0;◑ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[4B[2C[6AROW005[10GThe[14Gfifth[20Grow[24Gmarks[30Ga[32Gsmall[38Gstep.[1B  ROW006 The sixth row holds its place.[K[1B  ROW007[10GThe[14Gseventh[22Grow[26Gkeeps[32Ggoing.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW008[10GThe[14Geighth[21Grow[25Gis[28Gstill[34Ghere.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[H[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[H
+[48;2;55;55;55m[38;2;153;153;153m❯ [38;2;255;255;255mDo not use any tools. This is a terminal rendering probe. Write a long answer of exactly 160 numbered prose lines, each starting ROW001 through ROW160 in order. [39m  [49m
+[48;2;55;55;55m  [38;2;255;255;255mEach line must contain its marker and a short sentence. After ROW020 include a fenced shell code block with echo CODE021 through echo CODE030 on separate lines. [39m  [49m
+[48;2;55;55;55m  [38;2;255;255;255mAfter ROW050 include 12 bullet list entries with markers BULLET001 through BULLET012. Finish with END2726. Do not summarize or omit any lines.[39m                     [49m
+
+[38;2;255;255;255m⏺[3G[39mROW001[10GThe[14Gfirst[20Grow[24Gopens[30Gthe[34Gprobe.
+[3GROW002[10GThe[14Gsecond[21Grow[25Gkeeps[31Gthe[35Gorder.
+[3GROW003[10GThe[14Gthird[20Grow[24Gstays[30Gshort.
+[3GROW004[10GThe[14Gfourth[21Grow[25Gfollows[33Gplainly.
+[3GROW005[10GThe[14Gfifth[20Grow[24Gmarks[30Ga[32Gsmall[38Gstep.
+[3GROW006[10GThe[14Gsixth[20Grow[24Gholds[30Gits[34Gplace.
+[3GROW007[10GThe[14Gseventh[22Grow[26Gkeeps[32Ggoing.
+[3GROW008[10GThe[14Geighth[21Grow[25Gis[28Gstill[34Ghere.
+
+[38;2;136;136;136m────────────────────────────────────────────────────────[58G2578-69b4[68GPlans[74Gand[78GStories:[87Gmove[92Gstories[100Gbetween[108Gphases[115Gby[118Gdrag[123Gand[127Gdrop[132Gand[136Gfrom[141Gthe[145Glist-peaceful-curry[165G─[39m
+[38;2;153;153;153m❯ [39m[7m [27m
+[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW009[10GThe[14Gninth[20Grow[24Gadds[29Gno[32Gsurprise.[1B  ROW010 The tenth row reaches a round number.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW011[10GThe[14Geleventh[23Grow[27Gcontinues[37Gthe[41Gcount.[1B  ROW012 The twelfth row stays in order.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW013[10GThe[14Gthirteenth[25Grow[29Gis[32Gplain[38Gprose.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW014[10GThe[14Gfourteenth[25Grow[29Grepeats[37Gthe[41Gshape.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l]0;◐ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[4B[2C[6AROW015[10GThe[14Gfifteenth[24Grow[28Gsits[33Gat[36Gthe[40Gmidpoint[49Gof[52Gthis[57Gstretch.[1B  ROW016 The sixteenth row keeps steady.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW017[10GThe[14Gseventeenth[26Grow[30Gremains[38Gbrief.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW018[10GThe[14Geighteenth[25Grow[29Gis[32Gnearly[39Gthere.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW019[10GThe[14Gnineteenth[25Grow[29Gprecedes[38Gthe[42Gedge.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW020[10GThe[14Gtwentieth[24Grow[28Gends[33Gthis[38Gopening[46Gblock.[1B[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6A[36mecho[8G[39mCODE021[1B  [36mecho[39m CODE022[K[1B  [36mecho[8G[39mCODE023[1B  [36mecho[39m CODE024[K[2C[1B[36mecho[39m CODE025[K[2C[1B[36mecho[39m CODE026[K
+[3G[36mecho[8G[39mCODE027
+[3G[36mecho[8G[39mCODE028
+
+[38;2;136;136;136m────────────────────────────────────────────────────────[58G2578-69b4[68GPlans[74Gand[78GStories:[87Gmove[92Gstories[100Gbetween[108Gphases[115Gby[118Gdrag[123Gand[127Gdrop[132Gand[136Gfrom[141Gthe[145Glist-peaceful-curry[165G─[39m
+[38;2;153;153;153m❯ [39m[7m [27m
+[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6A[36mecho[8G[39mCODE029[1B  [36mecho[39m CODE030[K[1B[K[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K
+[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l]0;◑ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[4B[2C[6AROW021[10GThe[14Gtwenty-first[27Grow[31Gfollows[39Gthe[43Gcode[48Gblock.[1B  ROW022 The twenty-second row resumes the prose.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW023[10GThe[14Gtwenty-third[27Grow[31Gstays[37Gbrief.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW024[10GThe[14Gtwenty-fourth[28Grow[32Gkeeps[38Gthe[42Gorder.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW025[10GThe[14Gtwenty-fifth[27Grow[31Gmarks[37Ga[39Gquarter[47Gof[50Gthe[54Gway[58Gto[61Gone[65Ghundred.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW026[10GThe[14Gtwenty-sixth[27Grow[31Gcontinues.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW027[10GThe[14Gtwenty-seventh[29Grow[33Gis[36Gplain.[1B  ROW028 The twenty-eighth row holds steady.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l]0;◐ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[4B[2C[6AROW029[10GThe[14Gtwenty-ninth[27Grow[31Gnears[37Gthirty.[1B  ROW030 The thirtieth row is a round number.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW031[10GThe[14Gthirty-first[27Grow[31Gcarries[39Gon.[1B  ROW032 The thirty-second row stays short.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW033[10GThe[14Gthirty-third[27Grow[31Grepeats[39Gthe[43Gform.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW034[10GThe[14Gthirty-fourth[28Grow[32Gis[35Gstill[41Gprose.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW035[10GThe[14Gthirty-fifth[27Grow[31Gkeeps[37Gcounting.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW036[10GThe[14Gthirty-sixth[27Grow[31Gremains[39Gin[42Gsequence.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l]0;◑ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[4B[2C[6AROW037[10GThe[14Gthirty-seventh[29Grow[33Gadds[38Gnothing[46Gnew.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW038[10GThe[14Gthirty-eighth[28Grow[32Gis[35Gsteady.[1B  ROW039 The thirty-ninth row nears forty.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW040[10GThe[14Gfortieth[23Grow[27Gis[30Ganother[38Ground[44Gnumber.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW041[10GThe[14Gforty-first[26Grow[30Gcontinues[40Gthe[44Grun.[1B  ROW042 The forty-second row stays in order.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW043[10GThe[14Gforty-third[26Grow[30Gis[33Gbrief.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW044[10GThe[14Gforty-fourth[27Grow[31Gkeeps[37Gthe[41Gpace.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[H[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[H[3G[36mecho[8G[39mCODE023
+[3G[36mecho[8G[39mCODE024
+[3G[36mecho[8G[39mCODE025
+[3G[36mecho[8G[39mCODE026
+[3G[36mecho[8G[39mCODE027
+[3G[36mecho[8G[39mCODE028
+[3G[36mecho[8G[39mCODE029
+[3G[36mecho[8G[39mCODE030
+
+[3GROW021[10GThe[14Gtwenty-first[27Grow[31Gfollows[39Gthe[43Gcode[48Gblock.
+[3GROW022[10GThe[14Gtwenty-second[28Grow[32Gresumes[40Gthe[44Gprose.
+[3GROW023[10GThe[14Gtwenty-third[27Grow[31Gstays[37Gbrief.
+[3GROW024[10GThe[14Gtwenty-fourth[28Grow[32Gkeeps[38Gthe[42Gorder.
+[3GROW025[10GThe[14Gtwenty-fifth[27Grow[31Gmarks[37Ga[39Gquarter[47Gof[50Gthe[54Gway[58Gto[61Gone[65Ghundred.
+[3GROW026[10GThe[14Gtwenty-sixth[27Grow[31Gcontinues.
+[3GROW027[10GThe[14Gtwenty-seventh[29Grow[33Gis[36Gplain.
+[3GROW028[10GThe[14Gtwenty-eighth[28Grow[32Gholds[38Gsteady.
+[3GROW029[10GThe[14Gtwenty-ninth[27Grow[31Gnears[37Gthirty.
+[3GROW030[10GThe[14Gthirtieth[24Grow[28Gis[31Ga[33Ground[39Gnumber.
+[3GROW031[10GThe[14Gthirty-first[27Grow[31Gcarries[39Gon.
+[3GROW032[10GThe[14Gthirty-second[28Grow[32Gstays[38Gshort.
+[3GROW033[10GThe[14Gthirty-third[27Grow[31Grepeats[39Gthe[43Gform.
+[3GROW034[10GThe[14Gthirty-fourth[28Grow[32Gis[35Gstill[41Gprose.
+[3GROW035[10GThe[14Gthirty-fifth[27Grow[31Gkeeps[37Gcounting.
+[3GROW036[10GThe[14Gthirty-sixth[27Grow[31Gremains[39Gin[42Gsequence.
+[3GROW037[10GThe[14Gthirty-seventh[29Grow[33Gadds[38Gnothing[46Gnew.
+[3GROW038[10GThe[14Gthirty-eighth[28Grow[32Gis[35Gsteady.
+[3GROW039[10GThe[14Gthirty-ninth[27Grow[31Gnears[37Gforty.
+[3GROW040[10GThe[14Gfortieth[23Grow[27Gis[30Ganother[38Ground[44Gnumber.
+[3GROW041[10GThe[14Gforty-first[26Grow[30Gcontinues[40Gthe[44Grun.
+[3GROW042[10GThe[14Gforty-second[27Grow[31Gstays[37Gin[40Gorder.
+[3GROW043[10GThe[14Gforty-third[26Grow[30Gis[33Gbrief.
+[3GROW044[10GThe[14Gforty-fourth[27Grow[31Gkeeps[37Gthe[41Gpace.
+
+[38;2;136;136;136m────────────────────────────────────────────────────────[58G2578-69b4[68GPlans[74Gand[78GStories:[87Gmove[92Gstories[100Gbetween[108Gphases[115Gby[118Gdrag[123Gand[127Gdrop[132Gand[136Gfrom[141Gthe[145Glist-peaceful-curry[165G─[39m
+[38;2;153;153;153m❯ [39m[7m [27m
+[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW045[10GThe[14Gforty-fifth[26Grow[30Gis[33Gplain.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l]0;◐ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[4B[2C[6AROW046[10GThe[14Gforty-sixth[26Grow[30Gfollows[38Gon.[1B  ROW047 The forty-seventh row stays short.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW048[10GThe[14Gforty-eighth[27Grow[31Gholds[37Gits[41Gplace.[1B  ROW049 The forty-ninth row precedes the list.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW050[10GThe[14Gfiftieth[23Grow[27Gcomes[33Gright[39Gbefore[46Gthe[50Gbullets.[1B[K[1B  -[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K
+[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[4C[7ABULLET001[15GThe[19Gfirst[25Gbullet[32Gopens[38Gthe[42Glist.[2C[1B-[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[4C[7ABULLET002[15GThe[19Gsecond[26Gbullet[33Gfollows[41Git.[2C[1B-[5GBULLET003[15GThe[19Gthird[25Gbullet[32Gstays[38Gshort.[1B  -[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[4C[7ABULLET004[15GThe[19Gfourth[26Gbullet[33Gkeeps[39Gthe[43Gorder.[2C[1B-[5GBULLET005[15GThe[19Gfifth[25Gbullet[32Gis[35Gplain.[1B  -[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l]0;◑ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[4B[4C[7ABULLET006[15GThe[19Gsixth[25Gbullet[32Gmarks[38Gthe[42Gmidpoint.[2C[1B-[5GBULLET007[15GThe[19Gseventh[27Gbullet[34Gcontinues.[1B  -[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[4C[7ABULLET008[15GThe[19Geighth[26Gbullet[33Gholds[39Gsteady.[2C[1B-[5GBULLET009[15GThe[19Gninth[25Gbullet[32Gis[35Gbrief.[1B  -[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[4C[7ABULLET010[15GThe[19Gtenth[25Gbullet[32Gnears[38Gthe[42Gend.[2C[1B-[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[4C[7ABULLET011[15GThe[19Geleventh[28Gbullet[35Gis[38Galmost[45Glast.[2C[1B-[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[4C[7ABULLET012[15GThe[19Gtwelfth[27Gbullet[34Gcloses[41Gthe[45Glist.[2B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW051[10GThe[14Gfifty-first[26Grow[30Gresumes[38Gafter[44Gthe[48Gbullets.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW052[10GThe[14Gfifty-second[27Grow[31Gkeeps[37Gthe[41Gorder.[1B  ROW053 The fifty-third row stays short.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l]0;◐ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[4B[2C[6AROW054[10GThe[14Gfifty-fourth[27Grow[31Gis[34Gplain[40Gprose.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW055[10GThe[14Gfifty-fifth[26Grow[30Gcontinues.[1B  ROW056 The fifty-sixth row holds steady.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW057[10GThe[14Gfifty-seventh[28Grow[32Gis[35Gbrief.[1B  ROW058 The fifty-eighth row follows on.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW059[10GThe[14Gfifty-ninth[26Grow[30Gnears[36Gsixty.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW060[10GThe[14Gsixtieth[23Grow[27Gis[30Ga[32Ground[38Gnumber.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW061[10GThe[14Gsixty-first[26Grow[30Gcarries[38Gon.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW062[10GThe[14Gsixty-second[27Grow[31Gstays[37Gin[40Gsequence.[1B  ROW063 The sixty-third row is short.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW064[10GThe[14Gsixty-fourth[27Grow[31Grepeats[39Gthe[43Gform.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l]0;◑ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[4B[2C[6AROW065[10GThe[14Gsixty-fifth[26Grow[30Gkeeps[36Gcounting.[1B  ROW066 The sixty-sixth row is steady.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW067[10GThe[14Gsixty-seventh[28Grow[32Gadds[37Gnothing[45Gnew.[1B  ROW068 The sixty-eighth row stays plain.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW069[10GThe[14Gsixty-ninth[26Grow[30Gnears[36Gseventy.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW070[10GThe[14Gseventieth[25Grow[29Gis[32Ga[34Ground[40Gnumber.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW071[10GThe[14Gseventy-first[28Grow[32Gcontinues[42Gthe[46Grun.[1B  ROW072 The seventy-second row stays in order.[K[1B[K[56C[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW073[10GThe[14Gseventy-third[28Grow[32Gis[35Gbrief.[1B[K[1B[38;2;136;136;136m──────────────────────────────────────────────────────── 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[H[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[H[3GROW067[10GThe[14Gsixty-seventh[28Grow[32Gadds[37Gnothing[45Gnew.
+[3GROW068[10GThe[14Gsixty-eighth[27Grow[31Gstays[37Gplain.
+[3GROW069[10GThe[14Gsixty-ninth[26Grow[30Gnears[36Gseventy.
+[3GROW070[10GThe[14Gseventieth[25Grow[29Gis[32Ga[34Ground[40Gnumber.
+[3GROW071[10GThe[14Gseventy-first[28Grow[32Gcontinues[42Gthe[46Grun.
+[3GROW072[10GThe[14Gseventy-second[29Grow[33Gstays[39Gin[42Gorder.
+[3GROW073[10GThe[14Gseventy-third[28Grow[32Gis[35Gbrief.
+
+[38;2;136;136;136m 2578-69b4[12GPlans[18Gand[22GStories:[31Gmove[36Gstories[44Gbetween[52Gphases[59Gby[62Gdrag[67Gand[71Gdrop[76Gan…[80G─[39m
+[38;2;153;153;153m❯ [39m[7m [27m
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW074[10GThe[14Gseventy-fourth[29Grow[33Gkeeps[39Gthe[43Gpace.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l]0;◐ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[4B[2C[6AROW075[10GThe[14Gseventy-fifth[28Grow[32Gis[35Gthree[41Gquarters[50Gof[53Gone[57Ghundred.[1B  ROW076 The seventy-sixth row follows on.[K[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW077[10GThe[14Gseventy-seventh[30Grow[34Gstays[40Gshort.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW078[10GThe[14Gseventy-eighth[29Grow[33Gholds[39Gits[43Gplace.[1B  ROW079 The seventy-ninth row nears eighty.[K[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW080[10GThe[14Geightieth[24Grow[28Gis[31Ga[33Ground[39Gnumber.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW081[10GThe[14Geighty-first[27Grow[31Gcarries[39Gon.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW082[10GThe[14Geighty-second[28Grow[32Gstays[38Gsteady.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW083[10GThe[14Geighty-third[27Grow[31Gis[34Gplain.[1B  ROW084 The eighty-fourth row keeps counting.[K[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW085[10GThe[14Geighty-fifth[27Grow[31Gis[34Gbrief.[1B  ROW086 The eighty-sixth row follows the order.[K[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l]0;◑ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[4B[2C[6AROW087[10GThe[14Geighty-seventh[29Grow[33Gstays[39Gshort.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW088[10GThe[14Geighty-eighth[28Grow[32Grepeats[40Gthe[44Gform.[1B  ROW089 The eighty-ninth row nears ninety.[K[1B  ROW090[10GThe[14Gninetieth[24Grow[28Gis[31Ga[33Ground[39Gnumber.[1B  ROW091 The ninety-first row continues.[K[2C[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… ─[39m
+[38;2;153;153;153m❯ [39m[7m [27m
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW092[10GThe[14Gninety-second[28Grow[32Gstays[38Gin[41Gorder.[1B  ROW093 The ninety-third row is plain.[K[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW094[10GThe[14Gninety-fourth[28Grow[32Gholds[38Gsteady.[1B  ROW095 The ninety-fifth row is brief.[K[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW096[10GThe[14Gninety-sixth[27Grow[31Gfollows[39Gon.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l]0;◐ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[4B[2C[6AROW097[10GThe[14Gninety-seventh[29Grow[33Gstays[39Gshort.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW098[10GThe[14Gninety-eighth[28Grow[32Gkeeps[38Gthe[42Gpace.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW099[10GThe[14Gninety-ninth[27Grow[31Gprecedes[40Gone[44Ghundred.[1B  ROW100 The one hundredth row is a milestone.[K[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW101[10GThe[14Grow[18Gafter[24Gthe[28Gmilestone[38Gcontinues.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW102[10GThe[14Gnext[19Grow[23Gstays[29Gin[32Gorder.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW103[10GThis[15Grow[19Gis[22Gplain[28Gprose.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW104[10GThis[15Grow[19Gholds[25Gsteady.[1B  ROW105 This row keeps counting.[K[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l]0;◑ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[4B[2C[6AROW106[10GThis[15Grow[19Gis[22Gbrief.[1B  ROW107 This row follows on.[K[1B  ROW108[10GThis[15Grow[19Gstays[25Gshort.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW109[10GThis[15Grow[19Gnears[25Gone[29Ghundred[37Gten.[1B  ROW110 This row is a round number.[K[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW111[10GThis[15Grow[19Gcarries[27Gon.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW112[10GThis[15Grow[19Gstays[25Gin[28Gsequence.[1B  ROW113 This row is plain.[K[1B  ROW114[10GThis[15Grow[19Grepeats[27Gthe[31Gform.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop an… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW115[10GThis[15Grow[19Gkeeps[25Gthe[29Gpace.[1B  ROW116 This row is steady.[K[1B  ROW117[10GThis[15Grow[19Gadds[24Gnothing[32Gnew.[1B  ROW118 This row stays brief.[K[2C[1BROW119 This row nears one hundred twenty.[K[2C[1BROW120 This row is a round number.[K
+
+[38;2;136;136;136m 2578-69b4[12GPlans[18Gand[22GStories:[31Gmove[36Gstories[44Gbetween[52Gphases[59Gby[62Gdrag[67Gand[71Gdrop[76Gan…[80G─[39m
+[38;2;153;153;153m❯ [39m[7m [27m
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l]0;◐ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[4B[H[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[H[3GROW104[10GThis[15Grow[19Gholds[25Gsteady.
+[3GROW105[10GThis[15Grow[19Gkeeps[25Gcounting.
+[3GROW106[10GThis[15Grow[19Gis[22Gbrief.
+[3GROW107[10GThis[15Grow[19Gfollows[27Gon.
+[3GROW108[10GThis[15Grow[19Gstays[25Gshort.
+[3GROW109[10GThis[15Grow[19Gnears[25Gone[29Ghundred[37Gten.
+[3GROW110[10GThis[15Grow[19Gis[22Ga[24Ground[30Gnumber.
+[3GROW111[10GThis[15Grow[19Gcarries[27Gon.
+[3GROW112[10GThis[15Grow[19Gstays[25Gin[28Gsequence.
+[3GROW113[10GThis[15Grow[19Gis[22Gplain.
+[3GROW114[10GThis[15Grow[19Grepeats[27Gthe[31Gform.
+[3GROW115[10GThis[15Grow[19Gkeeps[25Gthe[29Gpace.
+[3GROW116[10GThis[15Grow[19Gis[22Gsteady.
+[3GROW117[10GThis[15Grow[19Gadds[24Gnothing[32Gnew.
+[3GROW118[10GThis[15Grow[19Gstays[25Gbrief.
+[3GROW119[10GThis[15Grow[19Gnears[25Gone[29Ghundred[37Gtwenty.
+[3GROW120[10GThis[15Grow[19Gis[22Ga[24Ground[30Gnumber.
+
+[38;2;136;136;136m 2578-69b4[12GPlans[18Gand[22GStories:[31Gmove[36Gstories[44Gbetween[52Gphases[59Gby[62Gdrag[67Gand[71Gdrop[76Gand[80Gfrom[85Gthe[89Glist-peac…[100G─[39m
+[38;2;153;153;153m❯ [39m[7m [27m
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW121[10GThis[15Grow[19Gcontinues[29Gthe[33Grun.[1B  ROW122 This row stays in order.[K[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW123[10GThis[15Grow[19Gis[22Gshort.[1B  ROW124 This row holds its place.[K[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW125[10GThis[15Grow[19Gis[22Gfive[27Gquarters[36Gof[39Gone[43Ghundred.[1B  ROW126 This row follows on.[K[1B  ROW127[10GThis[15Grow[19Gstays[25Gplain.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW128[10GThis[15Grow[19Gkeeps[25Gcounting.[1B  ROW129 This row nears one hundred thirty.[K[1B  ROW130[10GThis[15Grow[19Gis[22Ga[24Ground[30Gnumber.[1B  ROW131 This row carries on.[K[2C[1BROW132 This row stays steady.[K[2C[1BROW133 This row is brief.[K
+[3GROW134[10GThis[15Grow[19Gfollows[27Gthe[31Gorder.
+
+[38;2;136;136;136m 2578-69b4[12GPlans[18Gand[22GStories:[31Gmove[36Gstories[44Gbetween[52Gphases[59Gby[62Gdrag[67Gand[71Gdrop[76Gand[80Gfrom[85Gthe[89Glist-peac…[100G─[39m
+[38;2;153;153;153m❯ [39m[7m [27m
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW135[10GThis[15Grow[19Gis[22Gplain[28Gprose.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW136[10GThis[15Grow[19Grepeats[27Gthe[31Gform.[1B  ROW137 This row stays short.[K[1B  ROW138[10GThis[15Grow[19Gholds[25Gsteady.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l]0;◑ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[4B[2C[6AROW139[10GThis[15Grow[19Gnears[25Gone[29Ghundred[37Gforty.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW140[10GThis[15Grow[19Gis[22Ga[24Ground[30Gnumber.[1B  ROW141 This row continues.[K[1B  ROW142[10GThis[15Grow[19Gstays[25Gin[28Gorder.[1B  ROW143 This row is plain.[K[2C[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… ─[39m
+[38;2;153;153;153m❯ [39m[7m [27m
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW144[10GThis[15Grow[19Gkeeps[25Gthe[29Gpace.[1B  ROW145 This row is brief.[K[1B  ROW146[10GThis[15Grow[19Gfollows[27Gon.[1B  ROW147 This row stays short.[K[2C[1BROW148 This row holds its place.[K[2C[1B[K
+[38;2;136;136;136m 2578-69b4[12GPlans[18Gand[22GStories:[31Gmove[36Gstories[44Gbetween[52Gphases[59Gby[62Gdrag[67Gand[71Gdrop[76Gand[80Gfrom[85Gthe[89Glist-peac…[100G─[39m
+[38;2;153;153;153m❯ [39m[7m [27m
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW149[10GThis[15Grow[19Gnears[25Gone[29Ghundred[37Gfifty.[1B  ROW150 This row is a round number.[K[1B  ROW151[10GThis[15Grow[19Gcarries[27Gon.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW152[10GThis[15Grow[19Gstays[25Gsteady.[1B  ROW153 This row is plain.[K[1B  ROW154[10GThis[15Grow[19Gkeeps[25Gcounting.[1B  ROW155 This row is brief.[K[2C[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… ─[39m
+[38;2;153;153;153m❯ [39m[7m [27m
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l]0;◐ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry[?2026h[2D[4B[2C[6AROW156[10GThis[15Grow[19Gfollows[27Gthe[31Gorder.[1B  ROW157 This row stays short.[K[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… [1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW158[10GThis[15Grow[19Gis[22Gnearly[29Glast.[1B[K[1B[38;2;136;136;136m 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peac… ─[1B[38;2;153;153;153m❯ [39m[7m [27m[K[1B[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[2C[1B[38;2;153;153;153mSonnet 5.5 · ctx 7% (73k/1M)[32G· medium · personal/tuicommander__wt/fix-2726-long-answer-rows · $0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[2C[6AROW159[10GThis[15Grow[19Gprecedes[28Gthe[32Gfinal[38Gone.[1B  ROW160 This is the final numbered row.[K[1B[K[1B  END2726[K[2C[1B[K[1B[38;2;215;119;87m✻[3G[38;2;218;124;92mMarinating…[38;2;215;119;87m [38;2;153;153;153m(running S[26Gop[29Gh[31Goks… 0/3 · 25s · ↓[50G3.4k tokens)[39m
+
+[38;2;136;136;136m 2578-69b4[12GPlans[18Gand[22GStories:[31Gmove[36Gstories[44Gbetween[52Gphases[59Gby[62Gdrag[67Gand[71Gdrop[76Gand[80Gfrom[85Gthe[89Glist-peac…[100G─[39m
+[38;2;153;153;153m❯ [39m[7m [27m
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[7A[38;2;215;119;87m✶[3GMarinating…[39m
+
+
+
+
+
+
+[2C[4A[?2026l[?2026h[2D[4B[35C[7A[38;2;153;153;153m1[39m
+
+
+
+
+
+
+[2C[4A[?2026l[?2026h[2D[4B[7A[38;2;215;119;87m✳[39m
+
+
+
+
+
+
+[2C[4A[?2026l[?2026h[2D[4B[7A[38;2;215;119;87m✢[39m
+
+
+
+
+
+
+[2C[4A[?2026l[?2026h[2D[4B[2C[7A[38;2;218;124;92mMarinating…[39m
+
+
+
+
+
+
+[2C[4A[?2026l[?2026h[2D[4B[97C[2A[38;2;153;153;153m…[39m
+
+[2C[4A[?2026l[?2026h[2D[4B[35C[7A[38;2;153;153;153m2[39m
+
+
+
+
+
+
+[2C[4A[?2026l]0;✳ 2578-69b4 Plans and Stories: move stories between phases by drag and drop and from the list-peaceful-curry]9;4;0;[?2026h[2D[4B[7A[38;2;153;153;153m✻[3GCogitated for 25s · done 6:42 PM[39m[K[3B❯ 
+
+
+
+[2C[4A[?2026l[?2026h[2D[4B[H[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[H[3GROW154[10GThis[15Grow[19Gkeeps[25Gcounting.
+[3GROW155[10GThis[15Grow[19Gis[22Gbrief.
+[3GROW156[10GThis[15Grow[19Gfollows[27Gthe[31Gorder.
+[3GROW157[10GThis[15Grow[19Gstays[25Gshort.
+[3GROW158[10GThis[15Grow[19Gis[22Gnearly[29Glast.
+[3GROW159[10GThis[15Grow[19Gprecedes[28Gthe[32Gfinal[38Gone.
+[3GROW160[10GThis[15Gis[18Gthe[22Gfinal[28Gnumbered[37Grow.
+
+[3GEND2726
+
+[38;2;153;153;153m✻[3GCogitated[13Gfor[17G25s[21G·[23Gdone[28G6:42[33GPM[39m
+
+[38;2;136;136;136m────────────────────────────────────────────────────────[58G2578-69b4[68GPlans[74Gand[78GStories:[87Gmove[92Gstories[100Gbetween[108Gphases[115Gby[118Gdrag[123Gand[127Gdrop[132Gand[136Gfrom[141Gthe[145Glist-peaceful-curry[165G─[39m
+❯ [7m [27m
+[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0.27[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[H[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[H[3GROW132[10GThis[15Grow[19Gstays[25Gsteady.
+[3GROW133[10GThis[15Grow[19Gis[22Gbrief.
+[3GROW134[10GThis[15Grow[19Gfollows[27Gthe[31Gorder.
+[3GROW135[10GThis[15Grow[19Gis[22Gplain[28Gprose.
+[3GROW136[10GThis[15Grow[19Grepeats[27Gthe[31Gform.
+[3GROW137[10GThis[15Grow[19Gstays[25Gshort.
+[3GROW138[10GThis[15Grow[19Gholds[25Gsteady.
+[3GROW139[10GThis[15Grow[19Gnears[25Gone[29Ghundred[37Gforty.
+[3GROW140[10GThis[15Grow[19Gis[22Ga[24Ground[30Gnumber.
+[3GROW141[10GThis[15Grow[19Gcontinues.
+[3GROW142[10GThis[15Grow[19Gstays[25Gin[28Gorder.
+[3GROW143[10GThis[15Grow[19Gis[22Gplain.
+[3GROW144[10GThis[15Grow[19Gkeeps[25Gthe[29Gpace.
+[3GROW145[10GThis[15Grow[19Gis[22Gbrief.
+[3GROW146[10GThis[15Grow[19Gfollows[27Gon.
+[3GROW147[10GThis[15Grow[19Gstays[25Gshort.
+[3GROW148[10GThis[15Grow[19Gholds[25Gits[29Gplace.
+[3GROW149[10GThis[15Grow[19Gnears[25Gone[29Ghundred[37Gfifty.
+[3GROW150[10GThis[15Grow[19Gis[22Ga[24Ground[30Gnumber.
+[3GROW151[10GThis[15Grow[19Gcarries[27Gon.
+[3GROW152[10GThis[15Grow[19Gstays[25Gsteady.
+[3GROW153[10GThis[15Grow[19Gis[22Gplain.
+[3GROW154[10GThis[15Grow[19Gkeeps[25Gcounting.
+[3GROW155[10GThis[15Grow[19Gis[22Gbrief.
+[3GROW156[10GThis[15Grow[19Gfollows[27Gthe[31Gorder.
+[3GROW157[10GThis[15Grow[19Gstays[25Gshort.
+[3GROW158[10GThis[15Grow[19Gis[22Gnearly[29Glast.
+[3GROW159[10GThis[15Grow[19Gprecedes[28Gthe[32Gfinal[38Gone.
+[3GROW160[10GThis[15Gis[18Gthe[22Gfinal[28Gnumbered[37Grow.
+
+[3GEND2726
+
+[38;2;153;153;153m✻[3GCogitated[13Gfor[17G25s[21G·[23Gdone[28G6:42[33GPM[39m
+
+[38;2;136;136;136m────────────────────────────────────────────────────────[58G2578-69b4[68GPlans[74Gand[78GStories:[87Gmove[92Gstories[100Gbetween[108Gphases[115Gby[118Gdrag[123Gand[127Gdrop[132Gand[136Gfrom[141Gthe[145Glist-peaceful-curry[165G─[39m
+❯ [7m [27m
+[38;2;136;136;136m─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$0.27[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l[?2026h[2D[4B[H[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[2K[1B[H[3GROW146[10GThis[15Grow[19Gfollows[27Gon.
+[3GROW147[10GThis[15Grow[19Gstays[25Gshort.
+[3GROW148[10GThis[15Grow[19Gholds[25Gits[29Gplace.
+[3GROW149[10GThis[15Grow[19Gnears[25Gone[29Ghundred[37Gfifty.
+[3GROW150[10GThis[15Grow[19Gis[22Ga[24Ground[30Gnumber.
+[3GROW151[10GThis[15Grow[19Gcarries[27Gon.
+[3GROW152[10GThis[15Grow[19Gstays[25Gsteady.
+[3GROW153[10GThis[15Grow[19Gis[22Gplain.
+[3GROW154[10GThis[15Grow[19Gkeeps[25Gcounting.
+[3GROW155[10GThis[15Grow[19Gis[22Gbrief.
+[3GROW156[10GThis[15Grow[19Gfollows[27Gthe[31Gorder.
+[3GROW157[10GThis[15Grow[19Gstays[25Gshort.
+[3GROW158[10GThis[15Grow[19Gis[22Gnearly[29Glast.
+[3GROW159[10GThis[15Grow[19Gprecedes[28Gthe[32Gfinal[38Gone.
+[3GROW160[10GThis[15Gis[18Gthe[22Gfinal[28Gnumbered[37Grow.
+
+[3GEND2726
+
+[38;2;153;153;153m✻[3GCogitated[13Gfor[17G25s[21G·[23Gdone[28G6:42[33GPM[39m
+
+[38;2;136;136;136m 2578-69b4[12GPlans[18Gand[22GStories:[31Gmove[36Gstories[44Gbetween[52Gphases[59Gby[62Gdrag[67Gand[71Gdrop[76Gand[80Gfrom[85Gthe[89Glist-peac…[100G─[39m
+❯ [7m [27m
+[38;2;136;136;136m────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[3G[38;2;153;153;153mSonnet[10G5.5[14G·[16Gctx[20G7%[23G(73k/1M)[32G·[34Gmedium[41G·[43Gpersonal/tuicommander__wt/fix-2726-long-answer-rows[95G·[97G$…[39m
+[3G[38;2;72;150;140m⏸[5Gplan[10Gmode[15Gon[38;2;153;153;153m (shift+tab[29Gto[32Gcycle)[39m
+[2C[4A[?2026l

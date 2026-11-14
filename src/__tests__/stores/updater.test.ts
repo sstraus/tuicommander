@@ -15,6 +15,8 @@ function hangingPromise(): Promise<null> & { settle: () => void } {
 const mockCheck = vi.fn();
 const mockRelaunch = vi.fn().mockResolvedValue(undefined);
 const mockRpc = vi.fn().mockResolvedValue(undefined);
+const mockInstallUpdate = vi.fn().mockResolvedValue(undefined);
+vi.mock("../../utils/installUpdate", () => ({ installUpdate: mockInstallUpdate }));
 
 vi.mock("@tauri-apps/plugin-updater", () => ({
 	check: mockCheck,
@@ -61,6 +63,7 @@ describe("updaterStore", () => {
 		mockCheck.mockReset();
 		mockRelaunch.mockReset().mockResolvedValue(undefined);
 		mockRpc.mockReset().mockResolvedValue(undefined);
+		mockInstallUpdate.mockReset().mockResolvedValue(undefined);
 		mockSettingsState.updateChannel = "stable";
 		mockSettingsState.deferUpdateRelaunch = true;
 		mockTerminals.clear();
@@ -302,7 +305,7 @@ describe("updaterStore", () => {
 			expect(store.state.version).toBe("2.0.0");
 			expect(store.state.downloadUrl).toBeNull();
 			await store.downloadAndInstall();
-			expect(install).toHaveBeenCalledOnce();
+			expect(mockInstallUpdate).toHaveBeenCalledOnce();
 			expect(mockRelaunch).toHaveBeenCalledOnce();
 		});
 
@@ -549,6 +552,25 @@ describe("updaterStore", () => {
 	});
 
 	describe("downloadAndInstall()", () => {
+		// Catches: bypassing the TUIC installer silently drops the underlying IO cause.
+		it("native installer failure keeps the complete cause and never relaunches", async () => {
+			mockCheck.mockResolvedValue({
+				rid: 7,
+				version: "2.0.1",
+				body: null,
+				downloadAndInstall: vi.fn().mockResolvedValue(undefined),
+			});
+			const message = "failed to unpack executable\nCaused by: Permission denied (os error 13)";
+			mockInstallUpdate.mockRejectedValue(message);
+			await testInScopeAsync(async () => {
+				await store.checkForUpdate();
+				await store.downloadAndInstall();
+				expect(store.state.error).toBe(message);
+				expect(store.state.downloading).toBe(false);
+				expect(mockRelaunch).not.toHaveBeenCalled();
+			});
+		});
+
 		it("is a no-op when no pending update", async () => {
 			await testInScopeAsync(async () => {
 				await store.downloadAndInstall();
@@ -558,14 +580,11 @@ describe("updaterStore", () => {
 
 		it("sets downloading=true and tracks progress", async () => {
 			let capturedCallback: ((event: { event: string; data: unknown }) => void) | undefined;
-			const fakeUpdate = {
-				version: "1.0.0",
-				body: null,
-				downloadAndInstall: vi.fn((cb: (event: { event: string; data: unknown }) => void) => {
-					capturedCallback = cb;
-					return Promise.resolve();
-				}),
-			};
+			const fakeUpdate = { rid: 7, version: "1.0.0", body: null };
+			mockInstallUpdate.mockImplementation((_update, cb: (event: { event: string; data: unknown }) => void) => {
+				capturedCallback = cb;
+				return Promise.resolve();
+			});
 			mockCheck.mockResolvedValue(fakeUpdate);
 
 			await testInScopeAsync(async () => {
@@ -614,6 +633,7 @@ describe("updaterStore", () => {
 				downloadAndInstall: vi.fn().mockRejectedValue(new Error("disk full")),
 			};
 			mockCheck.mockResolvedValue(fakeUpdate);
+			mockInstallUpdate.mockRejectedValue(new Error("disk full"));
 
 			await testInScopeAsync(async () => {
 				await store.checkForUpdate();

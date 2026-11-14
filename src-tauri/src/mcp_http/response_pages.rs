@@ -218,6 +218,11 @@ pub(super) fn compact(row: &Value) -> Value {
         "shell_state",
         "agent_state",
         "activity_age_ms",
+        "stage",
+        "stage_reason",
+        "report",
+        "report_at",
+        "report_message_id",
     ];
     let mut result = serde_json::Map::new();
     for key in keys {

@@ -24,7 +24,7 @@ pub(super) async fn get_session_usage(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Response {
-    Json(crate::session_usage::get_session_usage_impl(&state, &id).await).into_response()
+    Json(Box::pin(crate::session_usage::get_session_usage_impl(&state, &id)).await).into_response()
 }
 
 pub(super) async fn get_prompt_receipt(
@@ -180,6 +180,7 @@ pub(crate) fn local_session_rows(state: &AppState) -> Vec<SessionInfo> {
                     .get(&session_id)
                     .map(|value| value.value().clone())
                     .filter(|parent| !super::mcp_transport::is_pending_parent(parent)),
+                agent_report: Default::default(),
                 state: None,
                 connection_id: None,
                 session_id,
@@ -189,6 +190,12 @@ pub(crate) fn local_session_rows(state: &AppState) -> Vec<SessionInfo> {
             drop(session);
             drop(entry);
             row.state = state.session_state_with_shell(&row.session_id);
+            row.agent_report = state.agent_reports.view(
+                state,
+                &row.session_id,
+                row.tuic_session.as_deref(),
+                row.state.as_ref(),
+            );
             Some(row)
         })
         .collect()
@@ -256,6 +263,19 @@ pub(super) async fn enqueue_command(
     Json(body): Json<EnqueueCommandRequest>,
 ) -> impl IntoResponse {
     let outcome = tokio::task::spawn_blocking(move || {
+        if let Some(origin) = body.automatic_completion_origin.as_deref() {
+            if body.expected_draft.is_some() {
+                return Err("Automatic completion cannot own a user draft".to_owned());
+            }
+            // A result never restores a suspended session just to wake it.
+            return crate::pty::enqueue_automatic_completion(
+                &state,
+                &session_id,
+                &body.text,
+                body.idempotency_key.as_deref(),
+                origin,
+            );
+        }
         if let Some(draft) = body.expected_draft.as_deref() {
             return crate::pty::enqueue_owned_draft(&state, &session_id, &body.text, draft);
         }
@@ -512,6 +532,9 @@ pub(crate) fn apply_input_bookkeeping(state: &Arc<AppState>, session_id: &str, d
     if buffer_content.is_empty() {
         crate::pty::flush_pending_injections(state, session_id);
     }
+    if line_submitted {
+        crate::boss_attention::changed(state);
+    }
 }
 
 pub(super) async fn set_session_name(
@@ -605,6 +628,7 @@ pub(super) async fn get_output(
             "limit": query.limit, "from_line": query.from_line,
             "since_cursor": query.since_cursor, "from_byte": query.from_byte,
             "byte_budget": query.byte_budget, "continuation": query.continuation,
+            "literal": query.literal,
         });
         args.as_object_mut()
             .expect("output arguments")
@@ -826,6 +850,7 @@ pub(crate) struct RequestedIdentity {
     pub alias: Option<String>,
     pub startup_command: Option<String>,
     pub agent_type: Option<String>,
+    pub restored: bool,
 }
 
 struct PtyLaunch {
@@ -952,6 +977,18 @@ fn spawn_pty_launch_with_emitter(
         Some(id) if !id.is_empty() && !state.session_maps.sessions.contains_key(&id) => id,
         _ => Uuid::new_v4().to_string(),
     };
+    if !requested.restored {
+        crate::agent_capabilities::save_root(
+            &state.data_dir,
+            requested.tuic_session.as_deref().unwrap_or(&session_id),
+        )
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error":error})),
+            )
+        })?;
+    }
     let (pair, child) = crate::pty::spawn_pty_pair_with_retry(
         PtySize {
             rows,
@@ -1106,6 +1143,34 @@ pub(super) async fn create_session(
             Json(serde_json::json!({"error": msg})),
         );
     }
+    if !body.restored
+        && let Some(identity) = body.tuic_session.as_deref().or(body.session_id.as_deref())
+        && (state.restorable_terminals.contains(identity)
+            || !matches!(crate::session_wake::retained(identity), Ok(None)))
+    {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error":"Identity belongs to a retained terminal"})),
+        );
+    }
+    let restore_identity = if body.restored {
+        match body.tuic_session.as_deref() {
+            Some(identity) if state.restorable_terminals.remove(identity).is_some() => {
+                Some(identity.to_owned())
+            }
+            _ => {
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(
+                        serde_json::json!({"error":"Restore identity is not a retained saved terminal"}),
+                    ),
+                );
+            }
+        }
+    } else {
+        None
+    };
+    let restore_state = state.clone();
     let shell = resolve_shell(body.shell);
 
     let spawn = tokio::task::spawn_blocking(move || {
@@ -1118,6 +1183,8 @@ pub(super) async fn create_session(
             None,
             RequestedIdentity {
                 session_id: body.session_id,
+                tuic_session: body.tuic_session,
+                restored: body.restored,
                 alias: body.alias,
                 ..Default::default()
             },
@@ -1135,7 +1202,61 @@ pub(super) async fn create_session(
             StatusCode::CREATED,
             Json(serde_json::json!({"session_id": session_id})),
         ),
-        Err(err) => err,
+        Err(err) => {
+            if let Some(identity) = restore_identity {
+                restore_state.restorable_terminals.insert(identity);
+            }
+            err
+        }
+    }
+}
+
+/// `POST /sessions/{id}/hook` — the agent hook side channel (#2749-bee7).
+/// `{id}` is the hook's `$TUIC_SESSION`; the body is OSC 7770 hook frames.
+/// Served only on the local IPC socket (the named pipe on Windows). Answers
+/// after the frames are processed.
+///
+/// `tuic agent-state` adds `x-tuic-hook-stamp` (its process-start
+/// `hook_clock` reading) and `x-tuic-hook-pid`; a stale or repeated stamped
+/// post answers 409 and is not processed (#2632-97ef).
+pub(super) async fn post_hook_frames(
+    State(state): State<Arc<AppState>>,
+    Path(tuic_session): Path<String>,
+    headers: axum::http::HeaderMap,
+    body: String,
+) -> StatusCode {
+    use crate::pty::HookDelivery;
+    let Ok(stamp) = hook_stamp(&headers) else {
+        return StatusCode::BAD_REQUEST;
+    };
+    let delivery = tokio::task::spawn_blocking(move || {
+        crate::pty::deliver_hook_frames(&state, &tuic_session, &body, stamp)
+    })
+    .await;
+    match delivery {
+        Ok(HookDelivery::Delivered) => StatusCode::NO_CONTENT,
+        Ok(HookDelivery::UnknownSession) => StatusCode::NOT_FOUND,
+        Ok(HookDelivery::Rejected) => StatusCode::BAD_REQUEST,
+        Ok(HookDelivery::Stale) => StatusCode::CONFLICT,
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
+/// The optional ordering stamp of a hook post; `Err` when only one half is
+/// present or either does not parse.
+fn hook_stamp(headers: &axum::http::HeaderMap) -> Result<Option<crate::pty::HookStamp>, ()> {
+    let field = |name: &str| {
+        headers
+            .get(name)
+            .map(|value| value.to_str().map_err(|_| ()))
+    };
+    match (field("x-tuic-hook-stamp"), field("x-tuic-hook-pid")) {
+        (None, None) => Ok(None),
+        (Some(at), Some(pid)) => Ok(Some(crate::pty::HookStamp {
+            at: at?.parse().map_err(|_| ())?,
+            pid: pid?.parse().map_err(|_| ())?,
+        })),
+        _ => Err(()),
     }
 }
 
@@ -1356,6 +1477,29 @@ pub(super) async fn create_session_with_worktree(
         );
     }
 
+    if let Some(identity) = body
+        .config
+        .tuic_session
+        .as_deref()
+        .or(body.config.session_id.as_deref())
+        && (state.restorable_terminals.contains(identity)
+            || !matches!(crate::session_wake::retained(identity), Ok(None)))
+    {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error":"Identity belongs to a retained terminal"})),
+        );
+    }
+
+    if body.config.restored {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(
+                serde_json::json!({"error":"Restore an existing terminal without creating a worktree"}),
+            ),
+        );
+    }
+
     // Create the worktree first
     let wt_config = crate::worktree::WorktreeConfig {
         task_name: body.branch_name.clone(),
@@ -1425,6 +1569,8 @@ pub(super) async fn create_session_with_worktree(
             Some(worktree),
             RequestedIdentity {
                 session_id: body.config.session_id,
+                tuic_session: body.config.tuic_session,
+                restored: body.config.restored,
                 alias: body.config.alias,
                 ..Default::default()
             },
@@ -2256,7 +2402,18 @@ fn trim_screen_chrome(rows: &[String]) -> TrimResult {
                     || footer.starts_with("Esc to ")
                     || footer.contains(" · "))
         });
-    if interaction_footer {
+    // A picker taller than the screen scrolls its footer off, so the footer test
+    // cannot see it. Its Search box is the other native marker: while no empty
+    // composer row follows the box, the picker is the open interaction.
+    let open_picker = rows
+        .iter()
+        .rposition(|row| row.trim_start().starts_with("│ ⌕"))
+        .is_some_and(|box_row| {
+            !rows[box_row + 1..]
+                .iter()
+                .any(|row| crate::chrome::is_agent_prompt_row(row))
+        });
+    if interaction_footer || open_picker {
         return TrimResult { cutoff: rows.len() };
     }
     let refs: Vec<&str> = rows.iter().map(|s| s.as_str()).collect();
@@ -2612,6 +2769,16 @@ pub(super) async fn chat_view(
     )
 }
 
+/// The whole text of one message the chat stream capped.
+pub(super) async fn chat_view_full_text(
+    State(state): State<Arc<AppState>>,
+    Path((session_id, message_id)): Path<(String, String)>,
+) -> Response {
+    super::json_result(
+        crate::chat_view::chat_view_full_text_blocking(state, session_id, message_id).await,
+    )
+}
+
 /// Snapshot candidates travel in a body, never a URL (prompts can be long or secret).
 pub(super) async fn chat_view_with_pending(
     State(state): State<Arc<AppState>>,
@@ -2724,6 +2891,127 @@ pub(super) async fn get_session_shell_family(
 
 #[cfg(test)]
 mod tests {
+
+    // Catches: consuming the frontend snapshot before POST makes a real saved tab unrestorable.
+    #[tokio::test]
+    async fn post_sessions_accepts_saved_identity_once() {
+        use tower::ServiceExt;
+        let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _config = crate::config::set_config_dir_override(root.path().to_path_buf());
+        let identity = uuid::Uuid::new_v4().to_string();
+        std::fs::write(crate::config::repository_file(), serde_json::json!({"repos":{"repo":{"workspaces":{"main":{"savedTerminals":[{"tuicSession":identity}]}}}}}).to_string()).unwrap();
+        let state = super::super::tests::test_state();
+        crate::agent_capabilities::save_root(&state.data_dir, &identity).unwrap();
+        // The frontend consumes the disk snapshot before the terminal mounts.
+        std::fs::write(crate::config::repository_file(), r#"{"repos":{}}"#).unwrap();
+        let app = super::super::build_router(state.clone(), false, true);
+        let request =
+            || {
+                let mut req = axum::http::Request::post("/sessions")
+                    .header("content-type", "application/json")
+                    .body(axum::body::Body::from(
+                        serde_json::json!({"tuic_session":identity,"restored":true}).to_string(),
+                    ))
+                    .unwrap();
+                req.extensions_mut().insert(axum::extract::ConnectInfo(
+                    std::net::SocketAddr::from(([127, 0, 0, 1], 1234)),
+                ));
+                req
+            };
+        let mut new_claim = axum::http::Request::post("/sessions")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(
+                serde_json::json!({"tuic_session":identity,"restored":false}).to_string(),
+            ))
+            .unwrap();
+        new_claim
+            .extensions_mut()
+            .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                [127, 0, 0, 1],
+                1234,
+            ))));
+        let new_status = app.clone().oneshot(new_claim).await.unwrap().status();
+        let mut session_id_claim = axum::http::Request::post("/sessions")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(
+                serde_json::json!({"session_id":identity}).to_string(),
+            ))
+            .unwrap();
+        session_id_claim
+            .extensions_mut()
+            .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                [127, 0, 0, 1],
+                1234,
+            ))));
+        let session_id_status = app
+            .clone()
+            .oneshot(session_id_claim)
+            .await
+            .unwrap()
+            .status();
+        let mut worktree_claim = axum::http::Request::post("/sessions/worktree")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(serde_json::json!({"config":{"tuic_session":identity},"base_repo":"/missing", "branch_name":"test"}).to_string())).unwrap();
+        worktree_claim
+            .extensions_mut()
+            .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                [127, 0, 0, 1],
+                1234,
+            ))));
+        let worktree_status = app.clone().oneshot(worktree_claim).await.unwrap().status();
+        let first = app.clone().oneshot(request()).await.unwrap().status();
+        let second = app.oneshot(request()).await.unwrap().status();
+        for session in state
+            .session_maps
+            .sessions
+            .iter()
+            .map(|entry| entry.key().clone())
+            .collect::<Vec<_>>()
+        {
+            crate::pty::close_pty_core(&state, &session, false);
+        }
+        assert_eq!(new_status, axum::http::StatusCode::FORBIDDEN);
+        assert_eq!(worktree_status, axum::http::StatusCode::FORBIDDEN);
+        assert_eq!(session_id_status, axum::http::StatusCode::FORBIDDEN);
+        assert_eq!(first, axum::http::StatusCode::CREATED);
+        assert_eq!(second, axum::http::StatusCode::FORBIDDEN);
+    }
+
+    // Catches: a caller invents restored=true to bind an unretained root identity.
+    #[tokio::test]
+    async fn post_sessions_rejects_unretained_restore_identity() {
+        use tower::ServiceExt;
+        let state = super::super::tests::test_state();
+        let identity = uuid::Uuid::new_v4().to_string();
+        crate::agent_capabilities::save_root(&state.data_dir, &identity).unwrap();
+        let mut request = axum::http::Request::post("/sessions")
+            .header("content-type", "application/json")
+            .body(axum::body::Body::from(
+                serde_json::json!({"tuic_session":identity,"restored":true}).to_string(),
+            ))
+            .unwrap();
+        request
+            .extensions_mut()
+            .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                [127, 0, 0, 1],
+                1234,
+            ))));
+        let response = super::super::build_router(state.clone(), false, true)
+            .oneshot(request)
+            .await
+            .unwrap();
+        let status = response.status();
+        for session in state
+            .session_maps
+            .sessions
+            .iter()
+            .map(|entry| entry.key().clone())
+            .collect::<Vec<_>>()
+        {
+            crate::pty::close_pty_core(&state, &session, false);
+        }
+        assert_eq!(status, axum::http::StatusCode::FORBIDDEN);
+    }
     // Catches: POST /sessions binds the PTY key but publishes null to native
     // tabs, so later worktree declarations cannot find the caller.
     #[cfg(feature = "desktop")]
@@ -3087,6 +3375,37 @@ mod tests {
         assert_eq!(*bytes.lock().unwrap(), b"\x15BG DONE\r");
     }
 
+    // Catches: HTTP drops typed origin and treats an old completion as explicit input,
+    // or restores a missing/suspended session solely to deliver that completion.
+    #[tokio::test]
+    async fn revoked_automatic_completion_http_retains_without_restoring_a_session() {
+        let state = super::super::tests::test_state();
+        let request = serde_json::from_value(serde_json::json!({
+            "text": "OLD-AUTOMATIC-RESULT",
+            "automaticCompletionOrigin": "revoked-origin",
+            "idempotencyKey": "old-job"
+        }))
+        .unwrap();
+        let response = enqueue_command(
+            State(state.clone()),
+            Path("missing-session".into()),
+            Json(request),
+        )
+        .await
+        .into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            body,
+            serde_json::json!({"accepted":true,"typed":false,"retained":true,"queued":0})
+        );
+        assert!(!state.session_maps.sessions.contains_key("missing-session"));
+        assert!(crate::pty::list_queued_commands(&state, "missing-session").is_empty());
+    }
+
     /// A silent agent may use the full confirmation window, but the async
     /// request handler must yield its runtime worker during that window.
     #[cfg(unix)]
@@ -3121,6 +3440,7 @@ mod tests {
             Path(sid.into()),
             Json(EnqueueCommandRequest {
                 text: "wake".into(),
+                automatic_completion_origin: None,
                 expected_draft: None,
                 idempotency_key: None,
             }),
@@ -3610,6 +3930,9 @@ mod tests {
                     selection_mode: None,
                     dismiss_key: None,
                     amend_key: None,
+                    header: None,
+                    question_index: None,
+                    question_count: None,
                 }),
                 ..Default::default()
             }
@@ -4082,6 +4405,53 @@ mod tests {
         assert!(trim_screen_chrome(&dismissed).cutoff < dismissed.len());
     }
 
+    // Catches: a picker taller than the phone screen (footer scrolled off) is
+    // trimmed at its Search box because only the visible footer disabled the trim.
+    #[test]
+    fn captured_claude_resume_taller_than_screen_keeps_session_rows_2834() {
+        let capture = crate::pty_capture::decode_capture(include_bytes!(
+            "../fixtures/agent_prompts/claude-mobile-resume-2834.tcap"
+        ))
+        .expect("real Claude 2.1.316 resume capture at 30x50");
+        let (rows, cols) = capture.geometry.expect("captured terminal geometry");
+        let mut grid = crate::state::VtLogBuffer::new(rows, cols, 2000);
+        let mut utf8 = crate::state::Utf8ReadBuffer::new();
+        let mut escape = crate::state::EscapeAwareBuffer::new();
+        let mut checked = false;
+        for record in capture.records {
+            if record.direction != crate::pty_capture::CaptureDirection::Output {
+                continue;
+            }
+            let data = utf8.push(&record.data);
+            let data = escape.push(&data);
+            let (clean, _) = crate::state::strip_kitty_sequences(&data);
+            grid.process(clean.as_bytes());
+            let screen = grid.screen_rows();
+            if !screen
+                .iter()
+                .any(|row| row.contains("❯ Reply with the single word beta"))
+            {
+                continue;
+            }
+            checked = true;
+            let visible = &screen[..trim_screen_chrome(&screen).cutoff];
+            assert!(
+                visible
+                    .iter()
+                    .any(|row| row.contains("Reply with the single word beta")),
+                "HTTP screen lost the session rows: {visible:#?}"
+            );
+            let streamed = poll_screen(&grid, 0, true).screen.expect("log-WS screen");
+            assert!(
+                streamed
+                    .iter()
+                    .any(|row| row.text().contains("Reply with the single word beta")),
+                "log-WS screen lost the session rows"
+            );
+        }
+        assert!(checked, "capture must contain the populated picker");
+    }
+
     // Catches: selection markers and modal rules mistaken for composer chrome,
     // dropping the options from both mobile screen transports.
     fn assert_captured_mobile_dialog(capture: &[u8], expected: &[&str]) {
@@ -4528,7 +4898,7 @@ mod tests {
         );
         state.grid.frame_dirty.insert(
             session_id.to_string(),
-            Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            Arc::new(crate::pty::frame_priority::FrameDirty::new(false)),
         );
         let vt = state
             .grid

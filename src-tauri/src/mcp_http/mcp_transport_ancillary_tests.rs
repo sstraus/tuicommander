@@ -322,6 +322,52 @@ async fn mcp_branch_delete_refuses_unique_checked_out_current_and_missing_branch
     assert!(linked.exists(), "a checked-out worktree must remain");
 }
 
+// Catches: an MCP fingerprint being treated as proof of owner confirmation.
+#[tokio::test]
+async fn mcp_detached_force_cannot_remove_dirty_work_2926() {
+    let repo = tuic_git::test_fixtures::setup_test_repo_at(
+        tempfile::TempDir::new_in(tuic_test_support::non_temporary_fixture_root()).unwrap(),
+    );
+    let linked = repo.path().join("detached-2926");
+    crate::git_cli::git_cmd(repo.path())
+        .args([
+            "worktree",
+            "add",
+            "--detach",
+            &linked.to_string_lossy(),
+            "HEAD",
+        ])
+        .run()
+        .unwrap();
+    std::fs::write(linked.join("untracked"), "reviewed").unwrap();
+    let state = test_state();
+    let path = repo.path().to_string_lossy();
+    let checkout = linked.to_string_lossy();
+    let fingerprint = tuic_git::worktree::dirty_fingerprint_at(&linked).unwrap().0;
+    let request = |force: bool, fingerprint: &str| serde_json::json!({"action":"worktree_remove", "path":path, "worktree_path":checkout, "force":force, "expected_fingerprint":fingerprint});
+    assert!(
+        handle_worktree(&state, &request(false, &fingerprint), false)
+            .await
+            .get("error")
+            .is_some()
+    );
+    std::fs::write(linked.join("new"), "new work").unwrap();
+    assert!(
+        handle_worktree(&state, &request(true, &fingerprint), false)
+            .await
+            .get("error")
+            .is_some()
+    );
+    assert!(linked.exists());
+    let fresh = tuic_git::worktree::dirty_fingerprint_at(&linked).unwrap().0;
+    let result = handle_worktree(&state, &request(true, &fresh), false).await;
+    assert!(result.get("error").is_some(), "{result}");
+    assert_eq!(
+        std::fs::read_to_string(linked.join("untracked")).unwrap(),
+        "reviewed"
+    );
+}
+
 #[tokio::test]
 async fn mcp_worktree_remove_defaults_to_non_force_and_keeps_dirty_work() {
     let config = tempfile::tempdir().unwrap();
@@ -653,6 +699,12 @@ async fn native_mcp_worktree_list_reuses_merge_proofs_for_forty_worktrees() {
     );
 
     // Catches: the empty-index fast path changes the established fingerprint bytes.
+    // Since 2875 the digest starts with the copy inventory; these checkouts have no
+    // copy receipt, so an untracked file is uncertain-no-copy-proof.
+    let copies = [
+        r#"[{"path":"untracked.txt","classification":"uncertain-no-copy-proof"}]"#,
+        "[]",
+    ];
     for index in [0, 1] {
         use sha2::Digest;
         let checkout = &checkouts[index];
@@ -661,6 +713,7 @@ async fn native_mcp_worktree_list_reuses_merge_proofs_for_forty_worktrees() {
             .args([
                 "status",
                 "--porcelain",
+                "-z",
                 "--untracked-files=all",
                 "--ignore-submodules=none",
             ])
@@ -677,6 +730,7 @@ async fn native_mcp_worktree_list_reuses_merge_proofs_for_forty_worktrees() {
             .run()
             .unwrap()
             .stdout;
+        digest.update(copies[index].as_bytes());
         digest.update(status.as_bytes());
         digest.update([0]);
         digest.update(head.trim().as_bytes());
@@ -950,10 +1004,108 @@ async fn remote_mcp_update_requires_confirmation_fields() {
 #[test]
 fn story_tool_refuses_an_unbound_caller() {
     let state = test_state();
+    let result = handle_story(&state, &serde_json::json!({"action": "list_plans"}), None);
+    assert_eq!(
+        result["error"],
+        "story requires a bound live managed session"
+    );
+}
+
+// Catches: ACP implementers can report completion but cannot submit the native story for review.
+#[tokio::test]
+async fn acp_story_tool_checks_criteria_and_submits_review_with_project_scope() {
+    let config = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+    let state = test_state();
+    let peer = TEST_UUID_A;
+    let _journal = state.acp.test_peer_journal(peer);
+    let connection = state.acp.peer_snapshot(peer).unwrap();
+    let project = state.acp.peer_root(peer).unwrap();
+    let project = project.to_string_lossy();
+    state.mcp.acp_origins.insert(
+        "acp-story-mcp".into(),
+        crate::acp::AcpMcpOrigin {
+            peer_id: Some(peer.into()),
+            connection_id: connection.connection_id,
+            generation: connection.generation,
+        },
+    );
+    let store = crate::stories::StoryStore::open().unwrap();
+    let plan = store
+        .create_plan(crate::stories::NewPlan {
+            project: project.into_owned(),
+            title: "ACP delivery".into(),
+            source: "plan.md".into(),
+        })
+        .unwrap();
+    let story = store
+        .create_story(crate::stories::NewStory {
+            plan_id: plan.id,
+            title: "Submit the actual candidate".into(),
+            criteria: vec!["Actual candidate passes".into()],
+            priority: 1,
+            story_type: None,
+            origin: crate::stories::StoryOrigin::Native,
+            file_scope: vec![],
+        })
+        .unwrap();
+    let mut story = store
+        .transition(
+            &story.id,
+            story.revision,
+            crate::stories::StoryCommand::StartManual,
+        )
+        .unwrap();
+    for command in [
+        serde_json::json!({"check_criterion": 0}),
+        serde_json::json!("submit_review"),
+    ] {
+        let result = handle_story(
+            &state,
+            &serde_json::json!({
+                "action": "transition", "story_id": story.id,
+                "expected_revision": story.revision, "command": command,
+            }),
+            Some("acp-story-mcp"),
+        );
+        assert_eq!(
+            result["Ok"]["type"], "story",
+            "ACP native transition refused: {result}"
+        );
+        story = store.get_story(&story.id).unwrap();
+    }
+    assert_eq!(story.status, crate::stories::StoryStatus::Review);
+    assert!(story.checked[0]);
+    let foreign = store
+        .create_plan(crate::stories::NewPlan {
+            project: config.path().to_string_lossy().into_owned(),
+            title: "Foreign".into(),
+            source: "foreign.md".into(),
+        })
+        .unwrap();
     let result = handle_story(
         &state,
-        &serde_json::json!({"input": {"action": "list_plans"}}),
-        None,
+        &serde_json::json!({
+            "action": "plan_view", "plan_id": foreign.id,
+        }),
+        Some("acp-story-mcp"),
+    );
+    assert!(
+        result["Err"]
+            .as_str()
+            .is_some_and(|error| error.contains("project")),
+        "{result}"
+    );
+    state
+        .mcp
+        .acp_origins
+        .get_mut("acp-story-mcp")
+        .unwrap()
+        .generation += 1;
+    let result = handle_story(
+        &state,
+        &serde_json::json!({"action": "list_plans"}),
+        Some("acp-story-mcp"),
     );
     assert_eq!(
         result["error"],
@@ -961,10 +1113,12 @@ fn story_tool_refuses_an_unbound_caller() {
     );
 }
 
-// Catches: the MCP workflow envelope dropping the typed amendment or caller project.
+// Catches: story operations still reachable only through workflow after the split, the native
+// story tool dropping the typed amendment or caller project, or workflow action=story silently
+// accepted as an alias (story 2804).
 #[cfg(unix)]
 #[tokio::test]
-async fn update_story_mcp_persists_priority_for_bound_caller() {
+async fn story_tool_persists_update_and_workflow_refuses_the_story_action() {
     let config = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
     let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
     let project = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
@@ -1004,14 +1158,29 @@ async fn update_story_mcp_persists_priority_for_bound_caller() {
             file_scope: vec![],
         })
         .unwrap();
-    let result = handle_mcp_tool_call(
+    let addr = "127.0.0.1:12345".parse().unwrap();
+    let refused = handle_mcp_tool_call(
         &state,
-        "127.0.0.1:12345".parse().unwrap(),
+        addr,
         "workflow",
         &serde_json::json!({"action": "story", "input": {
             "action": "update_story", "story_id": story.id,
-            "expected_revision": story.revision, "patch": {"priority": 3}
+            "expected_revision": story.revision, "patch": {"priority": 2}
         }}),
+        Some("update-story-mcp"),
+    )
+    .await;
+    assert_eq!(refused["code"], "invalid_arguments", "{refused}");
+    assert_eq!(refused["effect"], "not_started", "{refused}");
+    assert_eq!(stories.get_story(&story.id).unwrap().priority, 1);
+    let result = handle_mcp_tool_call(
+        &state,
+        addr,
+        "story",
+        &serde_json::json!({
+            "action": "update_story", "story_id": story.id,
+            "expected_revision": story.revision, "patch": {"priority": 3}
+        }),
         Some("update-story-mcp"),
     )
     .await;
@@ -1042,7 +1211,7 @@ fn story_tool_lists_plans_for_a_bound_caller() {
         .expect("watch project");
     let created = handle_story(
         &state,
-        &serde_json::json!({"input": {"action": "create_plan", "title": "Bound plan", "source": "plan.md"}}),
+        &serde_json::json!({"action": "create_plan", "title": "Bound plan", "source": "plan.md"}),
         Some(mcp_sid),
     );
     assert_eq!(created["Ok"]["type"], "plan", "unexpected result {created}");
@@ -1056,7 +1225,7 @@ fn story_tool_lists_plans_for_a_bound_caller() {
         .expect("foreign plan");
     let result = handle_story(
         &state,
-        &serde_json::json!({"input": {"action": "list_plans"}}),
+        &serde_json::json!({"action": "list_plans"}),
         Some(mcp_sid),
     );
     assert_eq!(result["Ok"]["type"], "plans", "unexpected result {result}");
@@ -1070,66 +1239,6 @@ fn story_tool_lists_plans_for_a_bound_caller() {
         titles,
         ["Bound plan"],
         "the caller's tab project scopes the list"
-    );
-}
-
-#[test]
-fn workflow_tools_refuse_an_unbound_caller() {
-    let state = test_state();
-    let create = handle_workflow_story_create(&state, &serde_json::json!({"input": {}}), None);
-    assert_eq!(
-        create["error"],
-        "workflow story creation requires a bound live managed session"
-    );
-    let report = handle_workflow_report(&state, &serde_json::json!({"input": {}}), None);
-    assert_eq!(
-        report["error"],
-        "workflow report requires a bound live managed session"
-    );
-    let launch = handle_workflow_launch(
-        &state,
-        "127.0.0.1:0".parse().unwrap(),
-        &serde_json::json!({"input": {
-            "runId": "run",
-            "attemptId": "attempt",
-            "worktreePath": "/tmp/worktree",
-            "agentType": "claude"
-        }}),
-        None,
-    );
-    assert_eq!(
-        launch["error"],
-        "workflow launch requires a bound live managed session"
-    );
-}
-
-#[test]
-fn workflow_coordinator_wake_buffers_only_a_durable_event_cursor() {
-    let state = test_state();
-    assert!(!queue_workflow_coordinator_wake(
-        &state,
-        TEST_UUID_A,
-        "worker-pty",
-        "run-1",
-        "story-1",
-        6,
-    ));
-    register_peer(&state, TEST_UUID_A, "coordinator", "mcp-coordinator");
-    assert!(queue_workflow_coordinator_wake(
-        &state,
-        TEST_UUID_A,
-        "worker-pty",
-        "run-1",
-        "story-1",
-        7,
-    ));
-    let inbox = state.agent_inbox.get(TEST_UUID_A).unwrap();
-    assert_eq!(inbox.len(), 1);
-    let message = &inbox[0];
-    assert_eq!(message.from_tuic_session, "worker-pty");
-    assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&message.content).unwrap(),
-        serde_json::json!({"type": "workflow_event", "runId": "run-1", "storyId": "story-1", "sequence": 7})
     );
 }
 
@@ -2144,7 +2253,6 @@ async fn await_pending_confirm(state: &Arc<AppState>) -> String {
 #[tokio::test]
 async fn confirm_returns_the_answer_a_client_gave() {
     let state = test_state();
-    let addr = "127.0.0.1:0".parse().unwrap();
 
     let answering = state.clone();
     tokio::spawn(async move {
@@ -2154,7 +2262,6 @@ async fn confirm_returns_the_answer_a_client_gave() {
 
     let result = handle_confirm(
         &state,
-        addr,
         &serde_json::json!({"title": "Delete branch?", "message": "git branch -D wip"}),
         None,
     )
@@ -2170,7 +2277,6 @@ async fn confirm_returns_the_answer_a_client_gave() {
 #[tokio::test]
 async fn confirm_reaches_every_client_over_the_event_bus() {
     let state = test_state();
-    let addr = "127.0.0.1:0".parse().unwrap();
     // Subscribing before the call is what a remote SSE client does; without
     // this bus hop a phone would never learn an agent is waiting on it.
     let mut rx = state.event_bus.subscribe();
@@ -2183,7 +2289,6 @@ async fn confirm_reaches_every_client_over_the_event_bus() {
 
     let _ = handle_confirm(
         &state,
-        addr,
         &serde_json::json!({"title": "Force push?", "message": "to main"}),
         None,
     )
@@ -2224,11 +2329,9 @@ async fn confirm_reaches_every_client_over_the_event_bus() {
 #[tokio::test(start_paused = true)]
 async fn confirm_gives_up_when_nobody_answers() {
     let state = test_state();
-    let addr = "127.0.0.1:0".parse().unwrap();
 
     let result = handle_confirm(
         &state,
-        addr,
         &serde_json::json!({"title": "Drop the table?"}),
         None,
     )
@@ -2252,7 +2355,6 @@ async fn confirm_gives_up_when_nobody_answers() {
 #[tokio::test]
 async fn answering_a_confirm_twice_resolves_it_once() {
     let state = test_state();
-    let addr = "127.0.0.1:0".parse().unwrap();
     let mut rx = state.event_bus.subscribe();
 
     let answering = state.clone();
@@ -2264,13 +2366,7 @@ async fn answering_a_confirm_twice_resolves_it_once() {
         crate::mcp_http::resolve_mcp_confirm(&answering, &id, false);
     });
 
-    let result = handle_confirm(
-        &state,
-        addr,
-        &serde_json::json!({"title": "Proceed?"}),
-        None,
-    )
-    .await;
+    let result = handle_confirm(&state, &serde_json::json!({"title": "Proceed?"}), None).await;
 
     assert_eq!(result["confirmed"], true);
     let resolutions = std::iter::from_fn(|| rx.try_recv().ok())
@@ -2280,38 +2376,10 @@ async fn answering_a_confirm_twice_resolves_it_once() {
 }
 
 #[tokio::test]
-async fn confirm_refuses_a_non_loopback_caller() {
-    let state = test_state();
-    let addr = "192.168.1.50:9876".parse().unwrap();
-
-    let result = handle_confirm(
-        &state,
-        addr,
-        &serde_json::json!({"title": "Proceed?"}),
-        None,
-    )
-    .await;
-
-    assert!(
-        result["error"]
-            .as_str()
-            .is_some_and(|e| e.contains("localhost"))
-    );
-    assert!(state.confirm_responses.is_empty());
-}
-
-#[tokio::test]
 async fn confirm_requires_a_title() {
     let state = test_state();
-    let addr = "127.0.0.1:0".parse().unwrap();
 
-    let result = handle_confirm(
-        &state,
-        addr,
-        &serde_json::json!({"message": "no title"}),
-        None,
-    )
-    .await;
+    let result = handle_confirm(&state, &serde_json::json!({"message": "no title"}), None).await;
 
     assert!(
         result["error"]
@@ -2452,138 +2520,18 @@ async fn work_item_rejects_credentials_in_provider_payload() {
     assert!(!response.to_string().contains("account-secret-sentinel"));
 }
 
-// Catches: proposal_create routed to ordinary create_story, losing retry deduplication.
-#[cfg(unix)]
-#[tokio::test]
-async fn workflow_proposal_create_retries_create_one_story() {
-    use crate::stories::{NewPlan, NewStory, StoryOrigin, StoryStore};
-    use crate::workflows::{
-        AgentBinding, EffectKind, RunCommand, RunLimits, RunStore, WorkflowKind, WorkflowStore,
-    };
-    let config = tempfile::tempdir().unwrap();
-    let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
-    let project = tempfile::tempdir().unwrap();
-    let path = project
-        .path()
-        .canonicalize()
-        .unwrap()
-        .to_string_lossy()
-        .to_string();
-    let state = test_state();
-    state
-        .mcp
-        .to_session
-        .insert("proposal-mcp".into(), TEST_UUID_A.into());
-    insert_managed_test_session(&state, "proposal-pty", &path);
-    state.bind_live_pty(TEST_UUID_A, "proposal-pty");
-    crate::repo_watcher::start_watching(&path, &state).unwrap();
-    let stories = StoryStore::open().unwrap();
-    let plan = stories
-        .create_plan(NewPlan {
-            project: path.clone(),
-            title: "Proposals".into(),
-            source: "plan.md".into(),
-        })
-        .unwrap();
-    let template = WorkflowStore::open()
-        .unwrap()
-        .seed_templates(&path)
-        .unwrap()
-        .into_iter()
-        .find(|d| d.kind == WorkflowKind::Plan)
-        .unwrap();
-    let runs = RunStore::open().unwrap();
-    let run = runs
-        .start_plan(&path, &plan.id, &template.id, 1, RunLimits::default())
-        .unwrap();
-    let started = runs
-        .command(
-            &run.id,
-            "coordinate",
-            RunCommand::StartPlanAgent {
-                node_id: "coordinate".into(),
-            },
-        )
-        .unwrap();
-    let attempt = started.snapshot.attempts.last().unwrap();
-    let reserved = runs
-        .command(
-            &run.id,
-            "spawn",
-            RunCommand::ReserveEffect {
-                key: format!("spawn:{}", attempt.id),
-                kind: EffectKind::SpawnAgent,
-            },
-        )
-        .unwrap();
-    runs.bind_agent(
-        &run.id,
-        &attempt.id,
-        AgentBinding {
-            acp: None,
-            launch_id: None,
-            session_id: "proposal-pty".into(),
-            task_id: None,
-            effect_id: reserved.snapshot.effects.last().unwrap().id.clone(),
-            prompt_contract_version: 1,
-            prompt_sha256: "a".repeat(64),
-            audit_preview: "coordinate".into(),
-        },
-    )
-    .unwrap();
-    let story = NewStory {
-        story_type: None,
-        plan_id: plan.id.clone(),
-        title: "One proposal".into(),
-        criteria: vec!["Delivered".into()],
-        priority: 2,
-        origin: StoryOrigin::PlanStep { step: "one".into() },
-        file_scope: vec![],
-    };
-    let args = serde_json::json!({"action":"proposal_create", "input":{"runId":run.id,"proposalKey":"one","story":story}});
-    let addr = "127.0.0.1:12345".parse().unwrap();
-    let first = handle_mcp_tool_call(&state, addr, "workflow", &args, Some("proposal-mcp")).await;
-    assert!(
-        first["story"]["id"].is_string(),
-        "proposal must be created: {first}"
-    );
-    let retry = handle_mcp_tool_call(&state, addr, "workflow", &args, Some("proposal-mcp")).await;
-    assert_eq!(retry["story"]["id"], first["story"]["id"], "{retry}");
-    assert_eq!(stories.list_stories(&plan.id).unwrap().len(), 1);
-    let mut conflict = args.clone();
-    conflict["input"]["story"]["title"] = serde_json::json!("Different proposal");
-    let rejected =
-        handle_mcp_tool_call(&state, addr, "workflow", &conflict, Some("proposal-mcp")).await;
-    assert!(
-        rejected["error"].is_string(),
-        "conflicting key reuse must fail: {rejected}"
-    );
-    state
-        .mcp
-        .to_session
-        .insert("other-mcp".into(), TEST_UUID_B.into());
-    insert_managed_test_session(&state, "other-pty", &path);
-    state.bind_live_pty(TEST_UUID_B, "other-pty");
-    let rejected = handle_mcp_tool_call(&state, addr, "workflow", &args, Some("other-mcp")).await;
-    assert!(
-        rejected["error"].as_str().unwrap().contains("coordinator"),
-        "{rejected}"
-    );
-    assert_eq!(stories.list_stories(&plan.id).unwrap().len(), 1);
-}
-
 // Catches: an optional-field bag accepts malformed or cross-action inputs before owner effects.
 #[tokio::test]
 async fn workflow_typed_actions_reject_invalid_inputs_before_effects() {
     let state = test_state();
     let addr = "127.0.0.1:12345".parse().unwrap();
     for args in [
-        serde_json::json!({"action":"story","input":{"action":"create_story"}}),
+        serde_json::json!({"action":"story","input":{"action":"list_plans"}}),
         serde_json::json!({"action":"run","input":{"action":"get","run_id":4}}),
         serde_json::json!({"action":"proposal_create","input":{"runId":"run","proposalKey":"key","story":{}}}),
         serde_json::json!({"action":"report","input":{"runId":"run","outcome":"invented"}}),
         serde_json::json!({"action":"launch","input":{"runId":"run","attemptId":"attempt","worktreePath":"/repo","agentType":false}}),
-        serde_json::json!({"action":"story","input":{"action":"list_plans"},"runId":"extra"}),
+        serde_json::json!({"action":"run","input":{"action":"get","run_id":"run"},"runId":"extra"}),
         serde_json::json!({"action":"automation","input":{"action":"list"}}),
     ] {
         let result = handle_mcp_tool_call(&state, addr, "workflow", &args, None).await;
@@ -2591,81 +2539,27 @@ async fn workflow_typed_actions_reject_invalid_inputs_before_effects() {
         assert_eq!(result["effect"], "not_started", "{args}: {result}");
     }
     // A valid nested action reaches its existing owner, rather than a different service.
-    for (action, input, error) in [
-        (
-            "story",
-            serde_json::json!({"action":"list_plans"}),
-            "story requires a bound live managed session",
-        ),
-        (
-            "run",
-            serde_json::json!({"action":"get","run_id":"missing"}),
-            "workflow_run requires a bound live managed session",
-        ),
-        (
-            "report",
-            serde_json::json!({"contractVersion":1,"runId":"run","storyId":"story","storyRevision":1,"attemptId":"attempt","generation":1,"outcome":"completed","summary":"Done","criterionResults":[],"evidence":[]}),
-            "workflow report requires a bound live managed session",
-        ),
-        (
-            "launch",
-            serde_json::json!({"runId":"run","attemptId":"attempt","worktreePath":"/repo","agentType":"claude"}),
-            "workflow launch requires a bound live managed session",
-        ),
-    ] {
-        let result = handle_mcp_tool_call(
-            &state,
-            addr,
-            "workflow",
-            &serde_json::json!({"action":action,"input":input}),
-            None,
-        )
-        .await;
-        assert_eq!(result["error"], error, "{result}");
-    }
+    let result = handle_mcp_tool_call(
+        &state,
+        addr,
+        "workflow",
+        &serde_json::json!({"action":"neutral","input":{"action":"list_drafts"}}),
+        None,
+    )
+    .await;
+    assert_eq!(
+        result["error"], "neutral workflow requires a bound live managed session with a project",
+        "{result}"
+    );
 }
 
-// Catches: the grouped entry bypasses an old member denial, or workflow denial disables the scheduler.
+// Catches: a workflow denial leaving the tool callable, or disabling the scheduler.
 #[tokio::test]
-async fn workflow_denials_preserve_members_and_leave_automations_independent() {
+async fn workflow_denial_leaves_automations_independent() {
     let config = tempfile::tempdir().unwrap();
     let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
     let state = test_state();
     let addr = "127.0.0.1:12345".parse().unwrap();
-    for (action, member) in [
-        ("story", "story"),
-        ("run", "workflow_run"),
-        ("proposal_create", "workflow_story_create"),
-        ("report", "workflow_report"),
-        ("launch", "workflow_launch"),
-    ] {
-        state.config.write().mcp_capabilities =
-            crate::mcp_capabilities::McpCapabilities::from_legacy(&[member.into()]);
-        let result = handle_mcp_tool_call(
-            &state,
-            addr,
-            "workflow",
-            &serde_json::json!({"action":action,"input":{}}),
-            None,
-        )
-        .await;
-        assert_eq!(
-            result["error"], "Tool 'workflow' is disabled by configuration",
-            "{member}: {result}"
-        );
-        let tools = filtered_native_tools(&state);
-        let workflow = tools
-            .iter()
-            .find(|tool| tool["name"] == "workflow")
-            .unwrap();
-        assert!(
-            !workflow["inputSchema"]["properties"]["action"]["enum"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|advertised| advertised == action)
-        );
-    }
     state.config.write().mcp_capabilities.denied = vec!["workflow".into()];
     let tools = filtered_native_tools(&state);
     assert!(!tools.iter().any(|tool| tool["name"] == "workflow"));
@@ -2683,7 +2577,7 @@ async fn workflow_denials_preserve_members_and_leave_automations_independent() {
         &state,
         addr,
         "workflow",
-        &serde_json::json!({"action":"story","input":{"action":"list_plans"}}),
+        &serde_json::json!({"action":"neutral","input":{"action":"list_drafts"}}),
         None,
     )
     .await;
@@ -2691,6 +2585,24 @@ async fn workflow_denials_preserve_members_and_leave_automations_independent() {
         denied["error"],
         "Tool 'workflow' is disabled by configuration"
     );
+    // Stories are their own tool: a workflow denial leaves them, a story denial hides them.
+    assert!(tools.iter().any(|tool| tool["name"] == "story"));
+    state.config.write().mcp_capabilities =
+        crate::mcp_capabilities::McpCapabilities::from_legacy(&["story".into()]);
+    assert!(
+        !filtered_native_tools(&state)
+            .iter()
+            .any(|tool| tool["name"] == "story")
+    );
+    let story = handle_mcp_tool_call(
+        &state,
+        addr,
+        "story",
+        &serde_json::json!({"action":"list_plans"}),
+        None,
+    )
+    .await;
+    assert_eq!(story["error"], "Tool 'story' is disabled by configuration");
 }
 
 fn register_git_repo(root: &std::path::Path, name: &str) -> String {

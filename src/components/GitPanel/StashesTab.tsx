@@ -1,11 +1,14 @@
 import { type Component, createEffect, createSignal, For, on, Show } from "solid-js";
+import { useSmartPrompts } from "../../hooks/useSmartPrompts";
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
+import { promptLibraryStore } from "../../stores/promptLibrary";
 import { repositoriesStore } from "../../stores/repositories";
 import { cx } from "../../utils";
 import { ConfirmDialog } from "../ConfirmDialog/ConfirmDialog";
 import { Button } from "../ui/Button";
 import s from "./StashesTab.module.css";
+import { checkStash } from "./stashCheck";
 
 /** Mirrors the Rust StashEntry struct from git.rs */
 interface StashEntry {
@@ -35,6 +38,9 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
 	const [diffs, setDiffs] = createSignal<Record<string, string>>({});
 	const [diffLoading, setDiffLoading] = createSignal<Record<string, boolean>>({});
 	const [focusedIndex, setFocusedIndex] = createSignal(-1);
+	const { executeSmartPrompt, canExecute } = useSmartPrompts();
+	const [checking, setChecking] = createSignal(false);
+	const [checkNotes, setCheckNotes] = createSignal<Record<string, string>>({});
 
 	// Confirm dialog state
 	const [confirmVisible, setConfirmVisible] = createSignal(false);
@@ -83,6 +89,35 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
 			appLogger.error("git", `${command} failed`, err);
 		} finally {
 			setBusyRef(null);
+		}
+	}
+
+	/** Check one stash, or every listed stash when `refs` has several. Stashes are
+	 *  checked oldest first (highest index): a drop shifts only higher indexes, already done. */
+	async function handleCheck(refs: string[]) {
+		const repoPath = props.repoPath;
+		const prompt = promptLibraryStore.getSmartById("smart-stash-check");
+		if (!repoPath || !prompt) return;
+		const gate = canExecute(prompt);
+		if (!gate.ok) {
+			setCheckNotes({ "": gate.reason ?? "Cannot run the stash check" });
+			return;
+		}
+		setChecking(true);
+		setCheckNotes({});
+		try {
+			for (const ref of refs) {
+				try {
+					const r = await checkStash(repoPath, ref, prompt, executeSmartPrompt);
+					setCheckNotes((prev) => ({ ...prev, [ref]: r.summary }));
+					if (r.dropped) await fetchStashes(repoPath);
+				} catch (err) {
+					appLogger.error("git", `Stash check failed for ${ref}`, err);
+					setCheckNotes((prev) => ({ ...prev, [ref]: `kept: ${String(err)}` }));
+				}
+			}
+		} finally {
+			setChecking(false);
 		}
 	}
 
@@ -182,6 +217,24 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
 			<Show when={!loading()} fallback={<div class={s.empty}>Loading stashes...</div>}>
 				<Show when={stashes().length > 0} fallback={<div class={s.empty}>No stashes</div>}>
 					<div class={s.scrollContainer}>
+						<div class={s.stashActions}>
+							<Button
+								size="compact"
+								disabled={checking()}
+								onClick={() =>
+									void handleCheck(
+										stashes()
+											.map((x) => x.ref_name)
+											.reverse(),
+									)
+								}
+							>
+								Check all
+							</Button>
+							<Show when={checkNotes()[""]}>
+								<span>{checkNotes()[""]}</span>
+							</Show>
+						</div>
 						<For each={stashes()}>
 							{(stash, i) => {
 								const isBusy = () => busyRef() === stash.ref_name;
@@ -210,6 +263,13 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
 											</Button>
 											<Button
 												size="compact"
+												onClick={() => void handleCheck([stash.ref_name])}
+												disabled={isBusy() || checking()}
+											>
+												Check
+											</Button>
+											<Button
+												size="compact"
 												variant="danger"
 												onClick={() => handleDrop(stash.ref_name)}
 												disabled={isBusy()}
@@ -226,6 +286,9 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
 												Show diff
 											</Button>
 										</div>
+										<Show when={checkNotes()[stash.ref_name]}>
+											<div class={s.diffLoading}>{checkNotes()[stash.ref_name]}</div>
+										</Show>
 										{/* Expandable diff preview */}
 										<Show when={isExpanded()}>
 											<div class={s.diffPreview}>

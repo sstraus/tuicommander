@@ -3,45 +3,54 @@ import { createComponent, createRoot } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastList } from "../../components/ToastContainer/ToastList";
 
-const { mockContextActions, mockGetActionEntries, mockPluginStore, mockPrompt, mockRepositories, mockTerminals } =
-	vi.hoisted(() => ({
-		mockContextActions: { getActions: vi.fn() },
-		mockGetActionEntries: vi.fn(),
-		mockPluginStore: {
-			state: { plugins: [] as Array<Record<string, unknown>> },
-			getPlugin: vi.fn(),
-			setEnabled: vi.fn().mockResolvedValue(undefined),
-		},
-		mockPrompt: { id: "prompt-1", name: "Review", shortcut: "Cmd+R" },
-		mockRepositories: {
-			state: {
-				repositories: {
-					"/active": {
-						path: "/active",
-						displayName: "Active",
-						parked: false,
-						activeWorkspaceId: "main",
-						workspaces: { main: {} },
-					},
-					"/parked": {
-						path: "/parked",
-						displayName: "Parked",
-						parked: true,
-						activeWorkspaceId: "dev",
-						workspaces: { dev: {} },
-					},
+const {
+	mockReveal,
+	mockContextActions,
+	mockGetActionEntries,
+	mockPluginStore,
+	mockPrompt,
+	mockRepositories,
+	mockTerminals,
+} = vi.hoisted(() => ({
+	mockReveal: vi.fn(),
+	mockContextActions: { getActions: vi.fn() },
+	mockGetActionEntries: vi.fn(),
+	mockPluginStore: {
+		state: { plugins: [] as Array<Record<string, unknown>> },
+		getPlugin: vi.fn(),
+		setEnabled: vi.fn().mockResolvedValue(undefined),
+	},
+	mockPrompt: { id: "prompt-1", name: "Review", shortcut: "Cmd+R" },
+	mockRepositories: {
+		state: {
+			repositories: {
+				"/active": {
+					path: "/active",
+					displayName: "Active",
+					parked: false,
+					activeWorkspaceId: "main",
+					workspaces: { main: {} },
 				},
-				groups: { group: { id: "group", name: "Team", repoOrder: ["/active"] } },
+				"/parked": {
+					path: "/parked",
+					displayName: "Parked",
+					parked: true,
+					activeWorkspaceId: "dev",
+					workspaces: { dev: {} },
+				},
 			},
-			setActive: vi.fn(),
-			setPark: vi.fn(),
-			isGroupFullyParked: vi.fn(() => false),
-			setParkGroup: vi.fn(),
+			groups: { group: { id: "group", name: "Team", repoOrder: ["/active"] } },
 		},
-		mockTerminals: { state: { activeId: "term-1" as string | null }, get: vi.fn(), findTerminalWithSession: vi.fn() },
-	}));
+		setActive: vi.fn(),
+		setPark: vi.fn(),
+		isGroupFullyParked: vi.fn(() => false),
+		setParkGroup: vi.fn(),
+	},
+	mockTerminals: { state: { activeId: "term-1" as string | null }, get: vi.fn(), findTerminalWithSession: vi.fn() },
+}));
 
 vi.mock("../../actions/actionRegistry", () => ({ getActionEntries: mockGetActionEntries }));
+vi.mock("../../utils/revealRepoInSidebar", () => ({ revealRepoInSidebar: mockReveal }));
 vi.mock("../../stores/appLogger", () => ({ appLogger: { error: vi.fn(), warn: vi.fn() } }));
 vi.mock("../../stores/commandPalette", () => ({ commandPaletteStore: { openWithQuery: vi.fn() } }));
 vi.mock("../../stores/contextMenuActionsStore", () => ({ contextMenuActionsStore: mockContextActions }));
@@ -260,6 +269,9 @@ describe("useCommandPaletteActions", () => {
 		byId("plugin-action:inspect");
 		await Promise.resolve();
 
+		// catches: Ctrl+P picks a repo (tab opens) but the sidebar is not revealed
+		expect(mockReveal).toHaveBeenNthCalledWith(1, "/active");
+		expect(mockReveal).toHaveBeenNthCalledWith(2, "/parked");
 		expect(gitOps.handleBranchSelect).toHaveBeenNthCalledWith(1, "/active", "main");
 		expect(gitOps.handleBranchSelect).toHaveBeenNthCalledWith(2, "/parked", "dev");
 		expect(mockPluginStore.setEnabled).toHaveBeenCalledWith("plugin-1", false);

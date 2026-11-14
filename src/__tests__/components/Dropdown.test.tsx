@@ -1,6 +1,6 @@
 import { fireEvent, render } from "@solidjs/testing-library";
 import type { JSX } from "solid-js";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { DropdownItem } from "../../components/ui/Dropdown";
 import { Dropdown } from "../../components/ui/Dropdown";
 
@@ -118,3 +118,8 @@ describe("Dropdown", () => {
 		expect(dividers.length).toBe(1);
 	});
 });
+
+// Settle the shared UI persistence owner imported by the control utilities.
+import { activityStore } from "../../stores/activityStore";
+
+beforeAll(() => activityStore.hydrate());

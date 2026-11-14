@@ -179,7 +179,7 @@ impl PluginSettings {
         policy: Arc<super::policy::Policy>,
         approval: Option<&str>,
     ) -> Result<Reply, Failure> {
-        caller.check(!matches!(request, Request::Get { .. }))?;
+        caller.check()?;
         let id = request
             .store()
             .strip_prefix("plugins.")

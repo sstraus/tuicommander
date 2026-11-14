@@ -415,6 +415,18 @@ fn claude_session_for_pid(pid: u32, cwd: &str, config_dir: Option<&str>) -> Opti
     verify_claude_session(&session_id, cwd, config_dir).then_some(session_id)
 }
 
+/// The session id and transcript of the Claude process `pid`, from its own pid
+/// registry only. The newest-file fallback of discovery is never a binding.
+pub(crate) fn claude_transcript_for_pid(
+    pid: u32,
+    cwd: &str,
+    config_dir: Option<&str>,
+) -> Option<(String, PathBuf)> {
+    let session = claude_session_for_pid(pid, cwd, config_dir)?;
+    let path = claude_project_dir_path(cwd, config_dir)?.join(format!("{session}.jsonl"));
+    Some((session, path))
+}
+
 /// Resolve the Claude session running in a terminal.
 ///
 /// Prefers the exact pid→session binding Claude registers on disk. Only when that
@@ -1383,7 +1395,7 @@ fn discover_ego_session(agent_pid: Option<u32>, ego_home: Option<&str>) -> Optio
 
 /// The provider half of `<sessions>/<session_id>/manifest.json`'s `model`
 /// (`provider/model`, split on the first `/` exactly as ego does).
-fn ego_session_provider(sessions_dir: &Path, session_id: &str) -> Option<String> {
+pub(crate) fn ego_session_provider(sessions_dir: &Path, session_id: &str) -> Option<String> {
     let manifest =
         std::fs::read_to_string(sessions_dir.join(session_id).join("manifest.json")).ok()?;
     let manifest: serde_json::Value = serde_json::from_str(&manifest).ok()?;

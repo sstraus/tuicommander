@@ -66,6 +66,21 @@ fn offline_current_tool_list_is_a_complete_private_cache_result() {
     assert_eq!(result["result"]["cacheScope"], "private");
 }
 
+/// Catches: the offline bridge claims that a method the online server supports
+/// does not exist (-32601), so the client drops TUIC as a server without MCP
+/// 2026-07-28 instead of retrying later (story 3044-ddeb).
+#[test]
+fn offline_handshake_methods_answer_unavailable_not_method_not_found() {
+    for method in ["server/discover", "ping"] {
+        let response = offline_response(method, "2026-07-28");
+        assert_eq!(response["error"]["code"], -32000, "{method}: {response}");
+        assert_eq!(
+            response["error"]["message"], "TUICommander MCP is unavailable",
+            "{method}: {response}"
+        );
+    }
+}
+
 #[test]
 fn offline_legacy_tool_list_keeps_its_shape() {
     let result = offline_response("tools/list", "2025-11-25");

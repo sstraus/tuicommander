@@ -178,156 +178,171 @@ describe("FileBrowserPanel external filesystem refresh", () => {
 		"non-git root",
 		"collapsed parent",
 		"overlapping client loses its watcher when another tree collapses",
-	])("%s — catches unwatched expanded children and stale collapsed caches", async (scenario) => {
-		const scratch = join(process.cwd(), ".tmp", "file-tree-external");
-		mkdirSync(scratch, { recursive: true });
-		const root = mkdtempSync(join(scratch, "tree-"));
-		const nested = scenario === "non-git root with nested git repo";
-		const parent = nested ? "work/people/v2" : "people/v2";
-		mkdirSync(join(root, parent), { recursive: true });
-		if (nested || scenario === "git root") {
-			execFileSync("git", ["-c", "init.defaultBranch=main", "init", "-q", nested ? join(root, "work") : root]);
-		}
-		writeFileSync(join(root, parent, "existing.md"), "existing");
-		const watchers = new Map<string, { watcher: FSWatcher; subscribers: number }>();
-		const observed = new Set<string>();
-		const notifications = new Map<string, () => void>();
-		const mutateAndWaitForNotification = async (path: string, mutate: () => void) => {
-			// Native delivery is setup, not the cache-refresh assertion. In a loaded
-			// suite fs.watch may deliver after waitFor's UI deadline has expired.
-			// A rendered row does not prove its watch is installed yet. Arm before
-			// mutating so fast delivery cannot be missed. Ancestor events also reload
-			// this subtree; native filenames are optional and are not required here.
-			// The test harness still catches a missing native notification.
-			await waitFor(() => expect(watchers.has(path)).toBe(true));
-			const notified = new Promise<void>((resolve) => notifications.set(path, resolve));
-			mutate();
-			await notified;
-		};
-		// Real disk and native nonrecursive watches implement the transport boundary.
-		// No test-sent dir-changed event or repository revision can repair the tree.
-		mockInvoke.mockImplementation(async (cmd, args) => {
-			if (cmd === "start_dir_watcher") {
-				const path = String(args?.path);
-				const shared = watchers.get(path);
-				if (shared) shared.subscribers += 1;
-				else {
-					watchers.set(path, {
-						watcher: watch(path, { recursive: false }, () => {
-							observed.add(path);
-							emitEvent("dir-changed", { dir_path: path });
-							for (const [changedPath, notify] of notifications) {
-								if (changedPath === path || changedPath.startsWith(`${path}${sep}`)) {
-									notify();
-									notifications.delete(changedPath);
-								}
-							}
-						}),
-						subscribers: 1,
-					});
+	])(
+		"%s — catches unwatched expanded children and stale collapsed caches",
+		async (scenario) => {
+			const scratch = join(process.cwd(), ".tmp", "file-tree-external");
+			mkdirSync(scratch, { recursive: true });
+			const root = mkdtempSync(join(scratch, "tree-"));
+			const nested = scenario === "non-git root with nested git repo";
+			const parent = nested ? "work/people/v2" : "people/v2";
+			mkdirSync(join(root, parent), { recursive: true });
+			if (nested || scenario === "git root") {
+				execFileSync("git", ["-c", "init.defaultBranch=main", "init", "-q", nested ? join(root, "work") : root]);
+			}
+			writeFileSync(join(root, parent, "existing.md"), "existing");
+			const watchers = new Map<string, { watcher: FSWatcher; subscribers: number }>();
+			const observed = new Set<string>();
+			const notifications = new Map<string, () => void>();
+			const mutateAndWaitForNotification = async (path: string, mutate: () => void) => {
+				// Native delivery is setup, not the cache-refresh assertion. In a loaded
+				// suite fs.watch may deliver after waitFor's UI deadline has expired.
+				// A rendered row does not prove its watch is installed yet. Arm before
+				// mutating so fast delivery cannot be missed. Ancestor events also reload
+				// this subtree; native filenames are optional and are not required here.
+				// The test harness still catches a missing native notification.
+				await waitFor(() => expect(watchers.has(path)).toBe(true));
+				const notified = new Promise<void>((resolve) => notifications.set(path, resolve));
+				mutate();
+				// The OS may deliver a change late or drop it under load: fs.watch returns
+				// before FSEvents is armed, and a busy machine loses events. Touch the
+				// watched directory until one event arrives. The tree reloads from disk,
+				// which already holds the mutation, so the UI assertions stay meaningful.
+				for (let nudge = 0; ; nudge += 1) {
+					const arrived = await Promise.race([
+						notified.then(() => true),
+						new Promise<boolean>((r) => setTimeout(r, 250, false)),
+					]);
+					if (arrived) break;
+					writeFileSync(join(path, ".watch-nudge"), String(nudge));
 				}
-				return Promise.resolve();
-			}
-			if (cmd === "stop_dir_watcher") {
-				const path = String(args?.path);
-				const shared = watchers.get(path);
-				if (shared && --shared.subscribers === 0) {
-					shared.watcher.close();
-					watchers.delete(path);
-				}
-				return Promise.resolve();
-			}
-			if (cmd === "list_directory") {
-				const subdir = String(args?.subdir);
-				const path = join(String(args?.repoPath), subdir);
-				return Promise.resolve(
-					readdirSync(path, { withFileTypes: true })
-						.filter((entry) => entry.name !== ".git")
-						.map((entry) => ({
-							name: entry.name,
-							path: relative(String(args?.repoPath), join(path, entry.name)).replaceAll("\\", "/"),
-							is_dir: entry.isDirectory(),
-							size: statSync(join(path, entry.name)).size,
-							modified_at: 0,
-							git_status: "",
-							is_ignored: false,
-						})),
-				);
-			}
-			return Promise.resolve();
-		});
-		const view = render(() => (
-			<FileBrowserPanel visible={true} repoPath={root} onClose={() => {}} onFileOpen={() => {}} />
-		));
-		let secondView: ReturnType<typeof render> | undefined;
-		// A queued native event can briefly rewatch a descendant after its rename.
-		// Capture only these expected ENOENT warnings and reject any other warning.
-		const warnings = vi.spyOn(appLogger, "warn").mockImplementation(() => {});
-		try {
-			clickTreeViewButton(view.container);
-			for (const name of parent.split("/")) {
-				await waitFor(() => expect(view.queryByText(name)).not.toBeNull());
-				clickRow(view.container, name);
-			}
-			await waitFor(() => expect(view.queryByText("existing.md")).not.toBeNull());
-			if (scenario.startsWith("overlapping client")) {
-				// Desktop tree and phone/browser listing share the Rust path-keyed map.
-				secondView = render(() => (
-					<FileBrowserPanel visible={true} repoPath={join(root, parent)} onClose={() => {}} onFileOpen={() => {}} />
-				));
-				await waitFor(() => expect(within(secondView!.container).queryByText("existing.md")).not.toBeNull());
-				clickRow(view.container, "v2");
-			}
-			if (scenario === "collapsed parent") clickRow(view.container, "v2");
-			const createRoles = () => {
-				mkdirSync(join(root, parent, "roles", "drafts"), { recursive: true });
-				writeFileSync(join(root, parent, "roles", "drafts", "architect.md"), "architect");
 			};
-			if (scenario === "collapsed parent") {
-				createRoles();
-				clickRow(view.container, "v2");
-			} else {
-				await mutateAndWaitForNotification(join(root, parent), createRoles);
-			}
-			const targetContainer = (secondView ?? view).container;
-			const target = within(targetContainer);
-			await waitFor(() => expect(target.queryByText("roles")).not.toBeNull(), { timeout: 3000 });
-			clickRow(targetContainer, "roles");
-			await waitFor(() => expect(target.queryByText("drafts")).not.toBeNull());
-			clickRow(targetContainer, "drafts");
-			await waitFor(() => expect(target.queryByText("architect.md")).not.toBeNull());
-			await mutateAndWaitForNotification(join(root, parent), () => {
-				renameSync(join(root, parent, "roles"), join(root, parent, "team"));
+			// Real disk and native nonrecursive watches implement the transport boundary.
+			// No test-sent dir-changed event or repository revision can repair the tree.
+			mockInvoke.mockImplementation(async (cmd, args) => {
+				if (cmd === "start_dir_watcher") {
+					const path = String(args?.path);
+					const shared = watchers.get(path);
+					if (shared) shared.subscribers += 1;
+					else {
+						watchers.set(path, {
+							watcher: watch(path, { recursive: false }, () => {
+								observed.add(path);
+								emitEvent("dir-changed", { dir_path: path });
+								for (const [changedPath, notify] of notifications) {
+									if (changedPath === path || changedPath.startsWith(`${path}${sep}`)) {
+										notify();
+										notifications.delete(changedPath);
+									}
+								}
+							}),
+							subscribers: 1,
+						});
+					}
+					return Promise.resolve();
+				}
+				if (cmd === "stop_dir_watcher") {
+					const path = String(args?.path);
+					const shared = watchers.get(path);
+					if (shared && --shared.subscribers === 0) {
+						shared.watcher.close();
+						watchers.delete(path);
+					}
+					return Promise.resolve();
+				}
+				if (cmd === "list_directory") {
+					const subdir = String(args?.subdir);
+					const path = join(String(args?.repoPath), subdir);
+					return Promise.resolve(
+						readdirSync(path, { withFileTypes: true })
+							.filter((entry) => entry.name !== ".git")
+							.map((entry) => ({
+								name: entry.name,
+								path: relative(String(args?.repoPath), join(path, entry.name)).replaceAll("\\", "/"),
+								is_dir: entry.isDirectory(),
+								size: statSync(join(path, entry.name)).size,
+								modified_at: 0,
+								git_status: "",
+								is_ignored: false,
+							})),
+					);
+				}
+				return Promise.resolve();
 			});
-			await waitFor(
-				() => {
-					expect(target.queryByText("team")).not.toBeNull();
-					expect(target.queryByText("roles")).toBeNull();
-				},
-				{ timeout: 3000 },
-			);
-			// Native backends may report the changed directory or its watched parent.
-			await waitFor(() => expect(observed.size).toBeGreaterThan(0));
-		} finally {
-			secondView?.unmount();
-			view.unmount();
-			const remainingWatches = watchers.size;
-			for (const shared of watchers.values()) shared.watcher.close();
-			rmSync(root, { recursive: true, force: true });
-			const capturedWarnings = [...warnings.mock.calls];
-			warnings.mockRestore();
-			for (const [source, message] of capturedWarnings) {
-				expect(source).toBe("app");
-				expect(message).toContain("Error: ENOENT:");
-				expect(
-					[join(root, parent, "roles"), join(root, parent, "roles", "drafts")].some((path) =>
-						message.startsWith(`Dir watcher failed for ${path}: `),
-					),
-				).toBe(true);
+			const view = render(() => (
+				<FileBrowserPanel visible={true} repoPath={root} onClose={() => {}} onFileOpen={() => {}} />
+			));
+			let secondView: ReturnType<typeof render> | undefined;
+			// A queued native event can briefly rewatch a descendant after its rename.
+			// Capture only these expected ENOENT warnings and reject any other warning.
+			const warnings = vi.spyOn(appLogger, "warn").mockImplementation(() => {});
+			try {
+				clickTreeViewButton(view.container);
+				for (const name of parent.split("/")) {
+					await waitFor(() => expect(view.queryByText(name)).not.toBeNull());
+					clickRow(view.container, name);
+				}
+				await waitFor(() => expect(view.queryByText("existing.md")).not.toBeNull());
+				if (scenario.startsWith("overlapping client")) {
+					// Desktop tree and phone/browser listing share the Rust path-keyed map.
+					secondView = render(() => (
+						<FileBrowserPanel visible={true} repoPath={join(root, parent)} onClose={() => {}} onFileOpen={() => {}} />
+					));
+					await waitFor(() => expect(within(secondView!.container).queryByText("existing.md")).not.toBeNull());
+					clickRow(view.container, "v2");
+				}
+				if (scenario === "collapsed parent") clickRow(view.container, "v2");
+				const createRoles = () => {
+					mkdirSync(join(root, parent, "roles", "drafts"), { recursive: true });
+					writeFileSync(join(root, parent, "roles", "drafts", "architect.md"), "architect");
+				};
+				if (scenario === "collapsed parent") {
+					createRoles();
+					clickRow(view.container, "v2");
+				} else {
+					await mutateAndWaitForNotification(join(root, parent), createRoles);
+				}
+				const targetContainer = (secondView ?? view).container;
+				const target = within(targetContainer);
+				await waitFor(() => expect(target.queryByText("roles")).not.toBeNull(), { timeout: 3000 });
+				clickRow(targetContainer, "roles");
+				await waitFor(() => expect(target.queryByText("drafts")).not.toBeNull());
+				clickRow(targetContainer, "drafts");
+				await waitFor(() => expect(target.queryByText("architect.md")).not.toBeNull());
+				await mutateAndWaitForNotification(join(root, parent), () => {
+					renameSync(join(root, parent, "roles"), join(root, parent, "team"));
+				});
+				await waitFor(
+					() => {
+						expect(target.queryByText("team")).not.toBeNull();
+						expect(target.queryByText("roles")).toBeNull();
+					},
+					{ timeout: 3000 },
+				);
+				// Native backends may report the changed directory or its watched parent.
+				await waitFor(() => expect(observed.size).toBeGreaterThan(0));
+			} finally {
+				secondView?.unmount();
+				view.unmount();
+				const remainingWatches = watchers.size;
+				for (const shared of watchers.values()) shared.watcher.close();
+				rmSync(root, { recursive: true, force: true });
+				const capturedWarnings = [...warnings.mock.calls];
+				warnings.mockRestore();
+				for (const [source, message] of capturedWarnings) {
+					expect(source).toBe("app");
+					expect(message).toContain("Error: ENOENT:");
+					expect(
+						[join(root, parent, "roles"), join(root, parent, "roles", "drafts")].some((path) =>
+							message.startsWith(`Dir watcher failed for ${path}: `),
+						),
+					).toBe(true);
+				}
+				expect(remainingWatches).toBe(0);
 			}
-			expect(remainingWatches).toBe(0);
-		}
-	});
+		},
+		30_000,
+	);
 });
 
 describe("FileBrowserPanel external transfer refresh", () => {

@@ -75,6 +75,8 @@ export interface WorktreeDiagnostic {
 	branch: string | null;
 	state: "missing" | "duplicate_branch";
 	guidance: string;
+	/** The checkout folder exists (repairable); false means only the registration is left (prunable). */
+	checkout_present: boolean;
 }
 
 /** Repository hook for git operations */
@@ -172,6 +174,9 @@ export function useRepository() {
 			dirty_fingerprint?: string;
 			submodule_unpushed_commits?: Array<{ path: string; count: number }>;
 			commit_status: WorkspaceLifecycleStatus["commitStatus"];
+			proof_source?: string;
+			tip?: string;
+			base?: string;
 			removal_safety: WorkspaceLifecycleStatus["removalSafety"];
 			error?: string;
 		}>("get_workspace_lifecycle", { repoPath, workspaceId });
@@ -185,6 +190,9 @@ export function useRepository() {
 			dirtyFingerprint: status.dirty_fingerprint,
 			submoduleUnpushedCommits: status.submodule_unpushed_commits,
 			commitStatus: status.commit_status,
+			proofSource: status.proof_source,
+			tip: status.tip,
+			base: status.base,
 			removalSafety: status.removal_safety,
 			error: status.error,
 		};
@@ -319,7 +327,7 @@ export function useRepository() {
 	async function finalizeMergedWorktree(
 		repoPath: string,
 		workspaceId: string,
-		action: "archive" | "delete",
+		action: "archive" | "delete" | "archive_and_drop_branch",
 		force = false,
 		expectedFingerprint?: string,
 	): Promise<MergeArchiveResult> {
@@ -477,8 +485,24 @@ export function useRepository() {
 		worktreePath: string,
 		safeOnly = false,
 		confirmedSessions: string[] = [],
+		expectedFingerprint?: string,
 	): Promise<void> {
-		await invoke("remove_orphan_worktree", { repoPath, worktreePath, safeOnly, confirmedSessions });
+		await invoke("remove_orphan_worktree", {
+			repoPath,
+			worktreePath,
+			safeOnly,
+			confirmedSessions,
+			expectedFingerprint,
+		});
+	}
+
+	/** Repair (relink) or prune (drop the registration of a deleted folder) one worktree diagnostic. */
+	async function resolveWorktreeDiagnostic(
+		repoPath: string,
+		worktreePath: string,
+		action: "repair" | "prune",
+	): Promise<void> {
+		await invoke("resolve_worktree_diagnostic_cmd", { repoPath, worktreePath, action });
 	}
 
 	/** Merge a PR via GitHub REST API. merge_method: "merge" | "squash" | "rebase" */
@@ -553,6 +577,7 @@ export function useRepository() {
 		pendingOrphanCleanupAnswer,
 		clearOrphanCleanup,
 		removeOrphanWorktree,
+		resolveWorktreeDiagnostic,
 		mergePrViaGithub,
 		listLocalBranches,
 		switchBranch,

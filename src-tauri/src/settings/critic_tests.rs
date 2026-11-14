@@ -32,18 +32,8 @@ async fn committed_24h_session_duration_reads_back_unchanged() {
             value: json!(86_400),
         }],
     };
-    let id = service
-        .execute(request.clone())
-        .await
-        .unwrap_err()
-        .proposal_id
-        .unwrap();
-    let caller = super::policy::Caller::native();
-    assert_eq!(
-        super::policy_tests::answer(state.clone(), caller.clone(), id.clone(), true).await["confirmed"],
-        json!(true)
-    );
-    let result = service.execute_as(request, &caller, Some(&id)).await;
+    // 24h is below the 30-day default, so lowering the lifetime needs no confirmation.
+    let result = service.execute(request).await;
     let revision = match result {
         Ok(Reply::Commit(reply)) => reply.revision,
         Ok(Reply::Snapshot(_)) => panic!("patch returned a snapshot"),

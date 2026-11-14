@@ -65,6 +65,7 @@ pub(crate) fn draft(
         grace_secs: 43200,
         overlap: Overlap::Skip,
         max_duration_secs: 3600,
+        close_on_finish: false,
         precheck: None,
         created_by_session: None,
     };

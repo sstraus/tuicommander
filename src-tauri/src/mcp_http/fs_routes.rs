@@ -122,31 +122,51 @@ pub(super) async fn search_content_all_http(
     json_result(result)
 }
 
-pub(super) async fn fs_read_file_http(Query(q): Query<FsFileQuery>) -> Response {
+pub(super) async fn fs_read_file_http(Query(q): Query<FsReadQuery>) -> Response {
+    if let Err(e) = validate_repo_path(&q.repo_path) {
+        return e.into_response();
+    }
+    if q.offset.is_some() || q.length.is_some() {
+        return json_result(
+            crate::fs::spawn_blocking_fs(move || {
+                crate::fs::range::read(&q.repo_path, &q.file, q.offset.unwrap_or(0), q.length)
+            })
+            .await,
+        );
+    }
+    fs_read_file_full_http(Query(FsFileQuery {
+        repo_path: q.repo_path,
+        file: q.file,
+    }))
+    .await
+}
+
+/// Standard-cap full-text adapter also used by the remote editor route.
+pub(super) async fn fs_read_file_full_http(Query(q): Query<FsFileQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.repo_path) {
         return e.into_response();
     }
     json_result(crate::fs::fs_read_file(q.repo_path, q.file).await)
 }
 
-/// Serve Markdown images through the authenticated HTTP router. Canonical paths
-/// keep both `..` and symlinks from escaping the selected repository.
+/// Serve Markdown images through the authenticated HTTP router. The image path
+/// stays repo-relative; owner symlinks are followed like other repository reads.
 pub(super) async fn markdown_image_http(Query(q): Query<FsFileQuery>) -> Response {
     const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
     if let Err(e) = validate_repo_path(&q.repo_path) {
         return e.into_response();
     }
+    let Ok(relative) = crate::fs::normalize_repo_relative(&q.file) else {
+        return StatusCode::FORBIDDEN.into_response();
+    };
     let root = match tokio::fs::canonicalize(&q.repo_path).await {
         Ok(root) => root,
         Err(_) => return StatusCode::NOT_FOUND.into_response(),
     };
-    let image = match tokio::fs::canonicalize(root.join(&q.file)).await {
+    let image = match tokio::fs::canonicalize(root.join(relative)).await {
         Ok(image) => image,
         Err(_) => return StatusCode::NOT_FOUND.into_response(),
     };
-    if !image.starts_with(&root) {
-        return StatusCode::FORBIDDEN.into_response();
-    }
     let mime = mime_guess::from_path(&image).first_or_octet_stream();
     if mime.type_().as_str() != "image" {
         return StatusCode::UNSUPPORTED_MEDIA_TYPE.into_response();
@@ -174,13 +194,52 @@ pub(super) async fn markdown_image_http(Query(q): Query<FsFileQuery>) -> Respons
 }
 
 /// Repo file read for the code editor, at the larger `MAX_EDITOR_LARGE_FILE_SIZE` cap.
-pub(super) async fn read_editor_file_http(Query(q): Query<FsFileQuery>) -> Response {
+/// `offset`/`length` request one bounded editor page instead.
+pub(super) async fn read_editor_file_http(Query(q): Query<FsReadQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.repo_path) {
         return e.into_response();
+    }
+    if q.offset.is_some() || q.length.is_some() {
+        return read_editor_page_http(q).await;
     }
     // Through the command, so this route and the IPC one make the same threading
     // decision: a 250 MB read belongs on the blocking pool, not the executor.
     json_result(crate::read_editor_file(q.repo_path, q.file).await)
+}
+
+/// Remote (`tuic-remote`) editor read: whole reads keep the standard 10 MB cap,
+/// so no request buffers a large file whole; an explicit page request gets one
+/// bounded page at the editor ceiling, so the phone can open what the desktop opens.
+pub(super) async fn remote_read_editor_file_http(Query(q): Query<FsReadQuery>) -> Response {
+    if let Err(e) = validate_repo_path(&q.repo_path) {
+        return e.into_response();
+    }
+    if q.offset.is_some() || q.length.is_some() {
+        return read_editor_page_http(q).await;
+    }
+    fs_read_file_full_http(Query(FsFileQuery {
+        repo_path: q.repo_path,
+        file: q.file,
+    }))
+    .await
+}
+
+/// One editor page through the IPC command, after the caller validated the repo path.
+async fn read_editor_page_http(q: FsReadQuery) -> Response {
+    json_result(
+        crate::read_editor_file_page(q.repo_path, q.file, q.offset.unwrap_or(0), q.length).await,
+    )
+}
+
+/// One external editor page. The path must be valid (absolute, no traversal),
+/// like the desktop editor's whole external read.
+async fn read_editor_external_page_http(q: FsExternalReadQuery) -> Response {
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
+    json_result(
+        crate::read_editor_file_external_page(q.path, q.offset.unwrap_or(0), q.length).await,
+    )
 }
 
 /// Check if a path falls within any of the given repository roots.
@@ -208,9 +267,8 @@ fn is_within_repo_roots(path: &std::path::Path, roots: &[String]) -> bool {
 /// canonicalizing would break them. The remote caller these routes are exposed to cannot
 /// create symlinks through any gated route, so resolution buys nothing here.
 ///
-/// These routes live in `shared_routes()` and are therefore merged into the remote router
-/// as well as the loopback one. The caller there is a narrower trust level than the desktop
-/// user, which is why this boundary exists at all — see `read_external_file_http`.
+/// Only the absolute-path write, copy, move and transfer routes use this gate; the
+/// absolute-path reads check path syntax alone (`validate_repo_path`).
 fn deny_unless_in_roots(path: &str, roots: &[String]) -> Option<Response> {
     if validate_path_string(path).is_err() {
         return Some(access_denied());
@@ -226,31 +284,41 @@ fn registered_repo_roots() -> Vec<String> {
     crate::config::registered_repo_paths()
 }
 
-pub(super) async fn read_external_file_http(
-    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
-    Query(q): Query<FsExternalFileQuery>,
-) -> Response {
-    // The local browser belongs to the desktop user. Network callers retain
-    // their existing registered-repository boundary, after HTTP authentication.
-    if !addr.ip().is_loopback()
-        && let Some(resp) = deny_unless_in_roots(&q.path, &registered_repo_roots())
-    {
-        return resp;
+/// Absolute-path read for every caller that passed the router's authentication and
+/// Host/Origin boundary: an authenticated phone reads what the desktop reads through
+/// IPC (Boss, 2026-11-01, story 2650-bc7c). Only path syntax is checked here.
+pub(super) async fn read_external_file_http(Query(q): Query<FsExternalFileQuery>) -> Response {
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
     }
     json_result(crate::read_external_file(q.path).await)
 }
 
 /// External (absolute-path) file read for the code editor, at the larger
-/// `MAX_EDITOR_LARGE_FILE_SIZE` cap. This editor route remains repo-root restricted.
+/// `MAX_EDITOR_LARGE_FILE_SIZE` cap. Same boundary as `read_external_file_http`.
 pub(super) async fn read_editor_file_external_http(
-    Query(q): Query<FsExternalFileQuery>,
+    Query(q): Query<FsExternalReadQuery>,
 ) -> Response {
-    if let Some(resp) = deny_unless_in_roots(&q.path, &registered_repo_roots()) {
-        return resp;
+    if q.offset.is_some() || q.length.is_some() {
+        return read_editor_external_page_http(q).await;
+    }
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
     }
     // Through the command, for the same threading-parity reason as
     // `read_editor_file_http`.
     json_result(crate::read_editor_file_external(q.path).await)
+}
+
+/// Remote (`tuic-remote`) external editor read: whole reads keep the standard
+/// 10 MB `/fs/read-external` contract; an explicit page request gets one page.
+pub(super) async fn remote_read_editor_file_external_http(
+    Query(q): Query<FsExternalReadQuery>,
+) -> Response {
+    if q.offset.is_some() || q.length.is_some() {
+        return read_editor_external_page_http(q).await;
+    }
+    read_external_file_http(Query(FsExternalFileQuery { path: q.path })).await
 }
 
 pub(super) async fn write_file_http(Json(body): Json<FsWriteFileRequest>) -> Response {
@@ -375,9 +443,8 @@ pub(super) async fn warm_content_index_http(
 }
 
 /// Write a file at an absolute path (editor saves for files outside any repo).
-/// Gated to registered repo roots for the HTTP boundary, matching external
-/// network reads. Loopback preview reads do not grant write access.
-/// `write_external_file` also confines to $HOME.
+/// Gated to registered repo roots for the HTTP boundary. Unconfined absolute-path
+/// reads do not grant write access. `write_external_file` also confines to $HOME.
 pub(super) async fn write_external_file_http(Json(body): Json<FsExternalWriteRequest>) -> Response {
     if let Some(resp) = deny_unless_in_roots(&body.path, &registered_repo_roots()) {
         return resp;
@@ -485,35 +552,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    #[serial_test::serial]
-    async fn read_external_serves_a_file_inside_a_registered_repo_and_refuses_one_outside() {
-        let cfg = tempfile::TempDir::new().unwrap();
-        let _guard = crate::config::set_config_dir_override(cfg.path().to_path_buf());
-        let repo = tempfile::TempDir::new().unwrap();
-        let outside = tempfile::TempDir::new().unwrap();
-        std::fs::write(repo.path().join("AGENTS.md"), "inside").unwrap();
-        std::fs::write(outside.path().join("secret.md"), "outside").unwrap();
-        write_real_shaped_repositories(cfg.path(), repo.path());
-
-        let get = |p: std::path::PathBuf| {
-            read_external_file_http(
-                axum::extract::ConnectInfo(std::net::SocketAddr::from(([203, 0, 113, 1], 4444))),
-                Query(FsExternalFileQuery {
-                    path: p.to_string_lossy().into_owned(),
-                }),
-            )
-        };
-        assert_eq!(
-            get(repo.path().join("AGENTS.md")).await.status(),
-            StatusCode::OK
-        );
-        assert_eq!(
-            get(outside.path().join("secret.md")).await.status(),
-            StatusCode::FORBIDDEN
-        );
-    }
-
     #[test]
     #[serial_test::serial]
     fn registered_repo_roots_is_empty_when_no_repositories_are_registered() {
@@ -566,8 +604,8 @@ mod tests {
     }
 
     /// The bug this gate exists for: `Path::starts_with` is lexical, so a traversal path
-    /// is "inside" the root by components while the OS resolves it outside. All six
-    /// external-path routes share `deny_unless_in_roots`, so covering it covers them.
+    /// is "inside" the root by components while the OS resolves it outside. The external-path
+    /// write and transfer routes share `deny_unless_in_roots`, so covering it covers them.
     #[test]
     fn gate_rejects_traversal_the_lexical_check_accepts() {
         let roots = vec!["/Users/dev/project-a".to_string()];
@@ -641,4 +679,25 @@ pub(super) async fn start_work_prompt_http(Json(body): Json<StartWorkPromptReque
 pub(super) struct StartWorkPromptRequest {
     repo_path: String,
     input: crate::work_items::start_work_prompt::PromptInput,
+}
+
+#[cfg(test)]
+#[path = "fs_read_range_tests.rs"]
+mod range_tests;
+
+#[cfg(test)]
+#[path = "fs_editor_page_tests.rs"]
+mod editor_page_tests;
+
+pub(super) async fn markdown_review_changed_lines_http(
+    Json(body): Json<MarkdownReviewLinesRequest>,
+) -> Response {
+    json_result(
+        crate::markdown_review::markdown_review_changed_lines(
+            body.path,
+            body.baseline,
+            body.expected,
+        )
+        .await,
+    )
 }

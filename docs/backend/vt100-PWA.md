@@ -69,8 +69,7 @@ Called for every PTY read chunk. Steps:
 
 Changed rows are reported for **both** screens, so parsers still see status lines and
 intent tokens from alternate-screen agents (Claude Code / Ink). Log capture is skipped
-on the alternate screen, while `suppress_capture` is set (a side panel halved the
-width), and for inline TUIs (mouse reporting on the primary screen, e.g.
+on the alternate screen and for inline TUIs (mouse reporting on the primary screen, e.g.
 `grok --no-alt-screen`) — but `scrollback_read` is still advanced so the cursor stays
 in sync.
 
@@ -81,8 +80,11 @@ real line feed at the bottom), but NOT when cursor-based TUI redraws repaint in 
 
 **Key invariant:** `scrollback_read` is monotonically increasing. Each `process()` call
 reads only the delta since the last call. `resize()` re-syncs it to
-`grid.primary_scrollback_count()` — the primary coordinate space — so a resize taken
-while an alt-screen app is active cannot strand the durable-log cursor.
+`grid.primary_screen_origin()` — the primary coordinate space — so a resize taken
+while an alt-screen app is active cannot strand the durable-log cursor. The re-sync
+leaves the rows that the resize itself moved from the viewport into history
+(`last_resize_displaced_rows`) unread, so the next `process()` logs them. Output
+written while the terminal is narrow is logged like any other output (#2726-7833).
 
 ### `TerminalGrid::extract_log_line(&self, line: Line) -> LogLine` — Styled Cell Extraction
 
@@ -465,6 +467,7 @@ The output parser emits `PtyParsed` events. These accumulate into `SessionState`
 | `suggest` | `suggested_actions` |
 | `slash-menu` | `slash_menu_items` |
 | `progress` | `progress` (0-100, None on state=0) |
+| `tool-activity` | `current_tool` (newest live native tool name, None when no call is live) |
 
 **Lifecycle:**
 - Created on `SessionCreated`

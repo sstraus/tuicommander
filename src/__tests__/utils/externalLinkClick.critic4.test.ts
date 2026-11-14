@@ -7,22 +7,40 @@ vi.mock("../../utils/openUrl", () => ({ handleOpenUrl: mockOpenUrl }));
 
 import { handleExternalLinkClick } from "../../utils/externalLinkClick";
 
-function click(href: string): MouseEvent {
+function click(href: string): Pick<MouseEvent, "defaultPrevented"> {
 	document.body.innerHTML = "";
 	const a = document.createElement("a");
 	a.setAttribute("href", href);
 	a.textContent = "x";
 	document.body.appendChild(a);
 	const event = new MouseEvent("click", { bubbles: true, cancelable: true });
-	a.addEventListener("click", handleExternalLinkClick);
+	let defaultPrevented = false;
+	a.addEventListener("click", (e) => {
+		handleExternalLinkClick(e);
+		defaultPrevented = e.defaultPrevented;
+		// Observe the handler first, then stop jsdom's unrelated navigation default action.
+		e.preventDefault();
+	});
 	a.dispatchEvent(event);
-	return event;
+	return { defaultPrevented };
 }
 
 describe("handleExternalLinkClick round 4", () => {
 	beforeEach(() => mockOpenUrl.mockClear());
 	afterEach(() => {
 		document.body.innerHTML = "";
+	});
+
+	it("does not queue jsdom navigation timers for unhandled links", () => {
+		// Catches: anchor default navigation leaves a Timeout after the helper returns.
+		vi.useFakeTimers();
+		try {
+			expect(click("docs/local").defaultPrevented).toBe(false);
+			expect(vi.getTimerCount()).toBe(0);
+		} finally {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+		}
 	});
 
 	it("leaves hrefs the URL parser keeps relative", () => {

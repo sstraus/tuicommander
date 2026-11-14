@@ -43,3 +43,5 @@ mod story796_ego_mcp_over_the_bridge;
 
 #[path = "cases/story2320_connection_env.rs"]
 mod story2320_connection_env;
+#[path = "cases/story2637_chat_activity.rs"]
+mod story2637_chat_activity;

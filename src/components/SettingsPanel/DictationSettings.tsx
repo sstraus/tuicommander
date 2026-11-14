@@ -53,8 +53,7 @@ const AssetDownloadProgress: Component<{ percent: number }> = (props) => (
 /** Single model row in the model selector list */
 const ModelRow: Component<{ model: ModelInfo }> = (props) => {
 	const isSelected = () => dictationStore.state.selectedModel === props.model.name;
-	const isDownloading = () =>
-		dictationStore.state.downloading && dictationStore.state.selectedModel === props.model.name;
+	const isDownloading = () => dictationStore.state.downloadingModel === props.model.name;
 
 	const sizeLabel = () =>
 		props.model.downloaded && props.model.actual_size_mb > 0
@@ -114,6 +113,7 @@ const ModelRow: Component<{ model: ModelInfo }> = (props) => {
 
 /** Dictation settings tab for the Settings panel */
 export const DictationSettings: Component = () => {
+	if (dictationStore.state.unavailable) return <p>Dictation is not available in this build</p>;
 	const [newFrom, setNewFrom] = createSignal("");
 	const [newTo, setNewTo] = createSignal("");
 

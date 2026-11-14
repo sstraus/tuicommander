@@ -1,0 +1,4754 @@
+{
+  "port": 61370,
+  "daemon_pid": 53909,
+  "fixture": {
+    "tracked_files": 101,
+    "ignored_files": 1000,
+    "ignored_bytes": 1024000
+  },
+  "creates": [
+    {
+      "batch": "pilot",
+      "branch": "pilot-0",
+      "seconds": 0.6218772919999997,
+      "rename": {
+        "old_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/__archived/seed",
+        "new_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/pilot-0"
+      },
+      "artifact_inode": 423315148
+    },
+    {
+      "batch": "pilot",
+      "branch": "pilot-1",
+      "seconds": 0.7492895830000004,
+      "rename": {
+        "old_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/__archived/pilot-0",
+        "new_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/pilot-1"
+      },
+      "artifact_inode": 423315148
+    },
+    {
+      "batch": "pilot",
+      "branch": "pilot-2",
+      "seconds": 0.8811567500000006,
+      "rename": {
+        "old_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/__archived/pilot-1",
+        "new_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/pilot-2"
+      },
+      "artifact_inode": 423315148
+    },
+    {
+      "batch": "main",
+      "branch": "main-0",
+      "seconds": 0.6905505840000004,
+      "rename": {
+        "old_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/__archived/pilot-2",
+        "new_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/main-0"
+      },
+      "artifact_inode": 423315148
+    },
+    {
+      "batch": "main",
+      "branch": "main-1",
+      "seconds": 0.7589634590000003,
+      "rename": {
+        "old_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/__archived/main-0",
+        "new_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/main-1"
+      },
+      "artifact_inode": 423315148
+    },
+    {
+      "batch": "main",
+      "branch": "main-2",
+      "seconds": 0.701349875,
+      "rename": {
+        "old_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/__archived/main-1",
+        "new_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/main-2"
+      },
+      "artifact_inode": 423315148
+    },
+    {
+      "batch": "main",
+      "branch": "main-3",
+      "seconds": 0.7055666670000011,
+      "rename": {
+        "old_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/__archived/main-2",
+        "new_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/main-3"
+      },
+      "artifact_inode": 423315148
+    },
+    {
+      "batch": "main",
+      "branch": "main-4",
+      "seconds": 0.6613134580000004,
+      "rename": {
+        "old_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/__archived/main-3",
+        "new_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/main-4"
+      },
+      "artifact_inode": 423315148
+    },
+    {
+      "batch": "main",
+      "branch": "main-5",
+      "seconds": 0.7914345420000011,
+      "rename": {
+        "old_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/__archived/main-4",
+        "new_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/main-5"
+      },
+      "artifact_inode": 423315148
+    },
+    {
+      "batch": "main",
+      "branch": "main-6",
+      "seconds": 0.7211882920000008,
+      "rename": {
+        "old_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/__archived/main-5",
+        "new_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/main-6"
+      },
+      "artifact_inode": 423315148
+    },
+    {
+      "batch": "main",
+      "branch": "main-7",
+      "seconds": 0.6526312909999987,
+      "rename": {
+        "old_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/__archived/main-6",
+        "new_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/main-7"
+      },
+      "artifact_inode": 423315148
+    },
+    {
+      "batch": "main",
+      "branch": "main-8",
+      "seconds": 0.6520877920000032,
+      "rename": {
+        "old_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/__archived/main-7",
+        "new_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/main-8"
+      },
+      "artifact_inode": 423315148
+    },
+    {
+      "batch": "main",
+      "branch": "main-9",
+      "seconds": 0.6460867499999985,
+      "rename": {
+        "old_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/__archived/main-8",
+        "new_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/main-9"
+      },
+      "artifact_inode": 423315148
+    },
+    {
+      "batch": "completion",
+      "branch": "completion-0",
+      "seconds": 0.888786249999999,
+      "rename": {
+        "old_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/__archived/main-9",
+        "new_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/completion-0"
+      },
+      "artifact_inode": 423315148
+    },
+    {
+      "batch": "completion",
+      "branch": "completion-1",
+      "seconds": 0.6795404170000019,
+      "rename": {
+        "old_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/__archived/completion-0",
+        "new_path": "/Users/stefano.straus/Gits/.tmp/feat-1705r-native/repo__wt/completion-1"
+      },
+      "artifact_inode": 423315148
+    }
+  ],
+  "cpu_samples": [
+    {
+      "at": 1791972209.5545049,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 4.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 32.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 33.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 83.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972209.706069,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 3.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 38.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 25.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 55.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972209.8627682,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.1,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 40.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 20.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 39.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972210.033481,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.9,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 52.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 30.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 28.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972210.1951911,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 4.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 54.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 32.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 24.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972210.5266318,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 44.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 22.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 92.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972210.686319,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 46.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 20.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 52.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972210.846933,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.4,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 47.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 21.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 44.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972211.017781,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.2,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 44.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 20.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 39.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972211.2180421,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.9,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 47.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 28.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 37.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972211.393821,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 6.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 35.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 24.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 30.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972211.554871,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 9.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 39.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 27.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 115.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972211.721209,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 5.9,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 43.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 29.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 83.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972211.8828852,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 35.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 22.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 57.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972212.062342,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.0,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 38.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 20.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 39.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972212.2321322,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 3.4,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 33.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 25.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 32.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972212.408602,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.4,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 30.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 23.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 67.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972212.5738292,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 28.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 22.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 111.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972212.735863,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.4,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 31.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 27.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 96.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972212.912402,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.9,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 33.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 25.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 71.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972213.0710258,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.3,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 33.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 21.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 47.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972213.238177,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 38.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 22.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 36.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972213.415453,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.2,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 30.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 20.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 63.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972213.604278,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.4,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 34.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 25.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 116.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972213.765743,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.9,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 33.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 25.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 87.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972213.935607,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 42.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 22.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 47.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972214.101266,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 41.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 24.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 34.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972214.262829,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.4,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 43.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 26.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 31.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972214.43112,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 47.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 26.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 107.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972214.597394,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 52.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 34.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 99.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972214.764137,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 53.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 31.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 72.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972214.924036,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 54.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 28.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 44.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972215.084867,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.9,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 52.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 27.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 37.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972215.244749,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 53.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 24.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 33.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972215.4150689,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 55.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 25.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 90.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972215.577352,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.0,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 44.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 25.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 89.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972215.762678,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.2,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 43.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 28.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 71.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972215.9255521,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.2,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 34.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 27.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 38.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972216.0933492,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.4,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 27.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 25.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 33.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972216.252979,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 26.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 21.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 30.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972216.416471,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 10.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 35.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 23.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 100.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972216.5838451,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 7.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 40.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 26.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 104.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972216.741107,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 5.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 41.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 26.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 73.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972216.917556,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 5.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 48.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 30.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 43.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972217.111778,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 3.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 42.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 26.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 32.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972217.27827,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 4.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 36.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 22.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 28.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972217.447277,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 37.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 22.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 71.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972217.612455,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.1,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 38.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 24.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 99.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972217.7858932,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.0,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 36.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 23.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 99.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972217.945131,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.2,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 38.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 31.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 72.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972218.114659,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 44.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 38.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 60.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972218.276769,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 50.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 37.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 67.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972218.442374,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.9,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 44.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 31.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 96.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972218.609486,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 43.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 33.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 107.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972218.767091,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 47.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 36.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 139.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972218.921648,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 3.1,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 46.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 44.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 86.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972219.0841222,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 9.2,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 53.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 62.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 62.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972219.2415109,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 10.4,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 54.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 67.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 51.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972219.3987021,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 11.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 49.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 66.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 42.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972219.562797,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 10.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 48.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 63.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 97.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972219.724517,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 10.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 47.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 68.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 76.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972219.884428,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 11.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 38.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 73.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 56.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972220.043329,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 11.9,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 44.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 79.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 39.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972220.202626,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 12.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 47.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 80.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 35.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972220.372871,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 12.3,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 50.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 79.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 32.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972220.5330298,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 12.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 48.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 79.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 86.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972220.6949189,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 15.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 51.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 77.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 60.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972220.8529978,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 13.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 42.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 75.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 45.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972221.01586,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 13.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 47.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 80.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 39.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972221.177952,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 12.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 51.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 86.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 31.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972221.339874,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 12.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 50.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 83.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 27.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972221.505166,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 14.4,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 48.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 82.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 84.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972221.6673338,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 14.4,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 52.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 84.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 66.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972221.8269062,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 14.0,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 53.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 82.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 52.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972222.001805,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 14.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 57.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 84.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 41.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972222.167147,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 16.0,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 51.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 81.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 49.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972222.336087,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 17.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 55.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 82.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 74.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972222.492689,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 14.9,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 53.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 78.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 114.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972222.649086,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 12.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 57.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 89.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 137.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972222.812789,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 12.4,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 55.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 84.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 66.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972222.96861,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 12.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 55.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 84.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 51.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972223.130976,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 19.1,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 54.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 81.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 46.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972223.297385,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 17.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 53.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 83.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 29.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972223.469609,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 15.1,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 47.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 76.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 69.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972223.628219,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 14.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 41.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 73.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 90.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972223.806147,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 13.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 43.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 75.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 68.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972223.970774,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 11.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 40.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 77.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 57.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972224.137354,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 13.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 43.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 77.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 41.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972224.312274,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 12.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 49.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 77.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 48.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972224.6479528,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 13.4,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 56.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 44.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 59.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972224.821738,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 14.3,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 58.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 31.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 48.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972224.9943922,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 15.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 56.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 46.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 54.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972225.1594508,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 14.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 49.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 69.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 32.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972225.334892,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 13.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 46.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 75.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 25.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972225.495091,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 10.2,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 37.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 65.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 42.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972225.657582,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 3.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 43.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 81.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 70.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972225.820481,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.1,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 45.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 64.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 98.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972225.994775,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 4.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 45.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 46.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 64.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972226.158856,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 3.2,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 47.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 43.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 39.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972226.318401,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.2,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 38.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 37.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 28.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972226.47728,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 35.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 31.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 75.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972226.6366441,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 38.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 27.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 70.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972226.806772,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.2,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 34.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 24.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 36.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972226.9740942,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.3,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 35.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 21.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 29.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972227.143198,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 3.3,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 38.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 39.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 23.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972227.3042948,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.2,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 38.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 30.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 20.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972227.461822,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 37.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 26.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 82.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972227.623602,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.1,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 39.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 27.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 109.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972227.7844229,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.4,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 43.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 29.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 55.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972227.949277,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.3,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 49.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 27.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 43.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972228.115607,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.2,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 45.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 28.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 34.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972228.276969,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 3.2,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 45.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 32.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 32.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972228.4377532,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.3,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 46.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 31.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 104.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972228.59777,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.9,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 48.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 34.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 128.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972228.7522838,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 46.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 29.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 82.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972228.91385,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 4.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 53.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 28.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 42.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972229.077552,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.4,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 55.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 24.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 34.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972229.2493608,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.0,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 49.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 24.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 26.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 1.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972229.41018,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.3,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 47.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 32.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 92.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972229.567136,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 49.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 33.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 91.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972229.725913,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.0,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 48.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 29.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 66.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972229.8881972,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 46.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 24.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 50.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972230.047059,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.1,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 55.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 25.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 30.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972230.206487,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.9,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 60.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 27.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 26.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972230.383241,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 54.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 27.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 24.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972230.547328,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 46.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 32.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 99.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972230.705612,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 47.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 36.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 70.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972230.8629,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.1,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 51.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 33.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 52.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972231.040576,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 53.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 27.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 44.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972231.2107131,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 42.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 21.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 31.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972231.383488,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 42.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 24.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 25.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972231.5622132,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.2,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 39.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 23.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 87.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972231.7373052,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 3.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 44.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 34.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 77.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972231.915392,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.5,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 40.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 46.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 43.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972232.0916438,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.2,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 35.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 37.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 35.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972232.269258,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.3,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 32.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 25.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 32.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972232.439198,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.0,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 29.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 21.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 62.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972232.608504,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.4,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 34.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 20.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 92.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972232.795797,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 2.1,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 40.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 28.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 51.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972233.0181272,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 33.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 23.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 35.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972233.2015738,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 24.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 17.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 58.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972233.392598,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.6,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 23.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 15.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 49.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972233.550485,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 28.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 25.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 102.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972233.708083,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.3,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 29.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 25.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 71.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972233.8649988,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 37.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 31.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 56.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972234.0293388,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.1,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 43.3,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 27.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 45.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972234.2027671,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.4,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 34.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 21.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 28.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972234.392677,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.8,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 29.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 17.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 22.4,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972234.557653,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 1.9,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 32.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 19.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 88.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972234.723901,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 0.7,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 38.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 18.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 62.9,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972234.885416,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 9.1,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 41.7,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 30.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 51.5,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972235.048602,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 7.3,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 40.1,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 27.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 43.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    },
+    {
+      "at": 1791972235.2096808,
+      "processes": [
+        {
+          "pid": 542,
+          "pcpu": 6.0,
+          "comm": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/FSEvents.framework/Versions/A/Support/fseventsd"
+        },
+        {
+          "pid": 840,
+          "pcpu": 38.6,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon"
+        },
+        {
+          "pid": 935,
+          "pcpu": 26.8,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/MacOS/wdavdaemon_enterprise"
+        },
+        {
+          "pid": 5045,
+          "pcpu": 43.2,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_unprivileged.app/Contents/MacOS/wdavdaemon_unprivileged"
+        },
+        {
+          "pid": 56476,
+          "pcpu": 0.0,
+          "comm": "/Applications/Microsoft Defender.app/Contents/MacOS/wdavdaemon_enterprise.app/Contents/Frameworks/telemetryd_v2"
+        }
+      ]
+    }
+  ],
+  "method": "Serial create HTTP wall time, followed by safe removal to archive for next reuse. ps -axo pid,pcpu,comm every 100ms; pcpu is OS rolling process average, not interval CPU. Pilot 3, main 10, completion 2; no agent PTYs. Shared host not idle."
+}

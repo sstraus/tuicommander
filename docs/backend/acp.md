@@ -4,8 +4,8 @@ TUICommander speaks the Agent Client Protocol (v1) as a **client**, to
 [ego](https://github.com/sstraus/ego) as the agent. Two repositories, no shared
 crate: both pin `agent-client-protocol` and agree on the wire, not on types.
 
-Backend only so far. There is no frontend surface; everything below is reachable
-from `acp_*` Tauri commands and, identically, from `/acp` HTTP routes.
+AI Chat uses this backend through `acp_*` Tauri commands and, identically,
+through `/acp` HTTP routes.
 
 ## Layout
 
@@ -20,6 +20,21 @@ from `acp_*` Tauri commands and, identically, from `/acp` HTTP routes.
 | `src-tauri/src/mcp_http/acp_mcp.rs` | The host: `tuicommander` served through the `/mcp` handler |
 | `src-tauri/src/acp_commands.rs` | The Tauri surface: one command per manager method, nothing else |
 | `src-tauri/src/mcp_http/acp_routes.rs` | The HTTP surface, calling the same cores |
+
+## Conversational message actions
+
+`acp_message_actions` is the shared IPC/HTTP service for AI Chat reactions and comments.
+It sends the native source message ID, a quote capped at 4000 characters, and the action
+through the original attachment's prompt queue. The text states that the action is
+conversational, not an evaluation or authorization. No provider-specific feedback path,
+permission response, reconnect, or PTY fallback is used.
+
+Accepted reactions are stored by session and native message ID in configuration deltas.
+The service serializes acceptance through persistence; failed queue acceptance does not
+change marks. A persistence error after acceptance explicitly tells the client not to
+resend. Marks mean queue acceptance, not model consumption. Removing a mark sends a
+new conversational turn and cannot retract earlier context. Clients reread marks after
+settings invalidation, reconnect, and action receipts.
 
 ## MCP over ACP
 
@@ -243,6 +258,8 @@ something asks for it, not a set of enum variants to leave lying around.
 
 ## Process authority
 
+**Shared runtime decision (2026-11-06, #2859-fdff):** AI Chat keeps separate processes for distinct peers. An isolated ego 0.4.3 raw ACP probe measured later same-process `session/new` calls at 37–41 ms, versus 109–255 ms for separate-process launch, initialization and first-session creation; these samples exclude MCP and model prompts and are not TUIC end-to-end measurements. Pooling is not implemented: `src-tauri/src/acp/manager.rs` sets the peer's `TUIC_SESSION` on the process launch (near line 304), while ego's `crates/ego-tools/src/exec/backend.rs:152–170` takes inherited tool environments from that process. Separate listener connections can preserve MCP peer identity, but cannot give simultaneous tool subprocesses different host identities. A future ego per-session host-environment extension would need an explicit negotiated contract that binds the host-issued identity to each session's execution and subprocess environment, keeps concurrent sessions isolated without process-global environment changes, and defines identity ownership across load, fork, compaction and reconnect. It would also need to preserve per-session MCP routing and cancellation. The coordinator rejected pooling without that capability; this is not a measured ego defect.
+
 The ego binary is the `ego_executable` setting, read at each `connect`. It is
 not held by the manager — a copy taken once would keep launching the previous
 binary after somebody corrected the setting, without ever saying so — and it is
@@ -314,6 +331,13 @@ previous shape. Unattended sessions retain their existing launch behavior.
 Load, resume, fork and compact rely on ego's durable ceiling, rather than sending
 a replacement authority from the current repository file.
 
+When ego reports a failed session setup (`config_option_update` with
+`_meta.ego.configOptions.state = "failed"`), the attachment snapshot keeps ego's
+reason as `configFailure` on both transports until a later config update
+replaces it. The managed-launch readiness wait and the workflow model adapter
+read it from the snapshot, so a failure sent before a wait subscribes ends that
+wait at once with ego's error instead of at the config deadline.
+
 
 Ego settings (#1775-330c): model/provider defaults and perimeter reads/writes now
 share one captured trusted executable, configured profile and AI Chat workspace
@@ -338,3 +362,20 @@ attachments, never creates an attachment, and drops unclaimed entries when no
 unidentified attachment remains. Normal unknown-session transcript updates remain
 ignored. The composer sends advertised agent invocations as unchanged slash text;
 its host actions call existing chat handlers instead.
+
+## Workflow launch readiness
+
+A workflow launch allows up to 30 seconds for its attached conversation to
+advertise the requested effort and model values. Offers may arrive after
+`session/new` through `config_option_update`. Effort is applied first because
+it can change the model offer. Readiness waits release the global launch lock;
+configuration reacquires it and reloads and validates the retained launch before
+applying settings. Unrelated launches, receipt reads and prompt delivery remain
+available during the wait. The absolute deadline is saved with the launch;
+interrupted waits retain the same launch key, connection, generation and
+conversation. Missing live inventory is uncertain and never starts a replacement.
+
+The offer event wakes a fresh attachment check. Missing options or values still
+return the existing not-offered error when the deadline expires. Binding commits
+before prompt delivery. Once readiness succeeds, cancellation that won during
+the wait prevents binding and disconnects the unbound child.

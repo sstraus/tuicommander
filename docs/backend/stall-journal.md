@@ -50,7 +50,7 @@ private. It is **off by default**, does not persist its enable flag, and require
 `perfDebug` as well as explicit consent. Do not enable it on someone else's
 terminal. Files are not anonymized; review them before sharing.
 
-After loading this build, enable through the existing loopback debug tool:
+After loading this build, enable through the existing debug tool (local or token-authenticated callers):
 
 ```js
 // debug action=invoke_js, script:

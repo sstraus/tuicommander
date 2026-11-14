@@ -1,0 +1,6 @@
+
+Caption     : Microsoft Windows Server 2025 Datacenter
+Version     : 10.0.26100
+BuildNumber : 26100
+
+

@@ -1254,6 +1254,7 @@
 {"record":1251,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":1252,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":1253,"event":{"type":"shell-state","state":"idle","agent_type":"codex"}}
+{"record":1253,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":1253,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":1254,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":1255,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
@@ -1261,6 +1262,7 @@
 {"record":1257,"event":{"type":"shell-state","state":"busy","agent_type":"codex"}}
 {"record":1257,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":1258,"event":{"type":"shell-state","state":"idle","agent_type":"codex"}}
+{"record":1258,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":1258,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":1259,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":1260,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}

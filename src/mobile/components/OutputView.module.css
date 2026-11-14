@@ -7,6 +7,9 @@
   overflow-anchor: none;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
+  /* Keep a drag past either end inside the output. Chained to the page, it pans
+     the visual viewport while the keyboard is open (story 2739). */
+  overscroll-behavior: contain;
   background: var(--bg-primary);
   padding: 8px 12px;
 }

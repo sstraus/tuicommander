@@ -55,7 +55,9 @@ Control key on every platform, including macOS.
 | Shortcut | Action |
 |----------|--------|
 | `Enter` | Send the draft immediately |
-| `Ctrl+Enter` / `Shift+Enter` | Insert a new line |
+| `Ctrl+Enter` | Send the draft immediately |
+| `Shift+Enter` | Insert a new line |
+| `Cmd+S` / `Ctrl+S` | Park, restore or swap the prompt draft; never send |
 | `Shift+Ctrl+Enter` | Queue for the next idle moment (agent sessions only) |
 
 Enter that confirms an IME candidate does not send the draft. Mobile terminal
@@ -63,8 +65,9 @@ keybar controls send native terminal keys; they do not use Compose shortcuts.
 
 ## AI Chat Composer
 
-AI Chat's composer handles `Ctrl+S` locally to park or restore its prompt,
-including on macOS. The same action is available from the composer button on a
+Compose, AI Chat and the mobile terminal composer handle `Cmd+S` and `Ctrl+S`
+locally to park, restore or swap the prompt draft. Enter and Ctrl+Enter send;
+Shift+Enter inserts a newline. The same action is available from the composer button on a
 phone; it is not a configurable global shortcut.
 
 Press `Escape` in the AI Chat composer or transcript to stop a running turn

@@ -19,8 +19,10 @@ pub(crate) mod settings;
 mod stop;
 mod streaming;
 mod tool;
+mod workflow;
 pub(crate) use native::start;
 pub(crate) use tool::{definition as tool_definition, handle as handle_tool};
+pub(crate) use workflow::execute as workflow_execute;
 
 pub(crate) use api::BotApi;
 pub(crate) use config::{Config, Owner, Paths};

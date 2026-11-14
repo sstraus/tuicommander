@@ -190,6 +190,8 @@ pub struct WarmingReport {
 /// Ask git which directories are ignored. A git failure is a warning rather
 /// than an error: the worktree is complete and valid, it just starts cold.
 fn warming_candidates(src: &Path, dest: &Path) -> Result<Vec<PathBuf>, WarmingReport> {
+    // DEFERRED (2026-11-06) — persisted copy_untracked_files/copy_ignored_files
+    // options are not inputs to this warming path. Wiring them is a separate change.
     let mut candidates = ignored_directories(src).map_err(|reason| WarmingReport {
         warmed: 0,
         warnings: vec![format!(
@@ -322,8 +324,16 @@ fn warm_candidates(
             ));
             continue;
         }
+        let proof = crate::copy_provenance::snapshot(&src_root, &dest_root, &relative);
         match copy(&from, &to).and_then(|()| restore_owner_write(&to)) {
-            Ok(()) => report.warmed += 1,
+            Ok(()) => {
+                report.warmed += 1;
+                if let Err(reason) = proof
+                    .and_then(|files| crate::copy_provenance::record(&src_root, &dest_root, files))
+                {
+                    report.warnings.push(format!("Copy provenance unavailable for '{}': {reason}; normal dirty safety applies", relative.display()));
+                }
+            }
             Err(reason) => report.warnings.push(format!(
                 "could not warm '{}' in the new worktree, which starts cold there: {reason}",
                 relative.display()
@@ -921,6 +931,328 @@ mod tests {
             }
         }
         Ok(())
+    }
+
+    fn provenance_fixture() -> (TempDir, PathBuf, PathBuf) {
+        let fixture = warming_fixture();
+        assert!(
+            fixture
+                .0
+                .path()
+                .canonicalize()
+                .unwrap()
+                .starts_with(tuic_test_support::test_temp_root().canonicalize().unwrap())
+        );
+        fixture
+    }
+
+    // Catches warming payloads that look like new work on an older branch.
+    #[test]
+    fn copy_provenance_records_sha256_and_allows_only_unchanged_payload_cleanup() {
+        let (_temp, repo, worktree) = provenance_fixture();
+        let report = warm_worktree_with(&repo, &worktree, plain_copy);
+        assert!(report.warnings.is_empty(), "{report:?}");
+        let admin = crate::git::resolve_git_dir(&worktree).unwrap();
+        let receipt: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(admin.join("tuic-copy-provenance.json")).unwrap(),
+        )
+        .unwrap();
+        // Independent SHA-256 oracle for the fixture's literal bytes "warm".
+        assert_eq!(
+            receipt["files"]["build/cache/data"],
+            "0f0aa408c1832abefd06bced5378aa7945c11b3fe2f24f8a22cd6dbdbe4bccd8"
+        );
+        let lifecycle = crate::worktree::inspect_workspace_lifecycle(&repo, "feature");
+        assert_eq!(lifecycle.dirty_files, Some(0), "{lifecycle:?}");
+        crate::worktree::remove_worktree_internal(
+            &crate::worktree::WorktreeInfo {
+                name: "feature".into(),
+                path: worktree.clone(),
+                branch: Some("feature".into()),
+                base_repo: repo.clone(),
+            },
+            false,
+        )
+        .unwrap();
+        assert!(!worktree.exists());
+        assert_eq!(
+            std::fs::read(repo.join("build/cache/data")).unwrap(),
+            b"warm"
+        );
+    }
+
+    // Catches a provenance implementation that treats mutable ignored build
+    // caches as user changes, or hashes the dependency tree on every refresh.
+    #[test]
+    fn copy_provenance_keeps_destination_ignored_caches_under_normal_git_rules() {
+        let (_temp, repo, worktree) = provenance_fixture();
+        std::fs::write(worktree.join(".gitignore"), "build/\n").unwrap();
+        git_cmd(&worktree)
+            .args(["add", ".gitignore"])
+            .run()
+            .unwrap();
+        git_cmd(&worktree)
+            .args([
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "-m",
+                "ignore build",
+            ])
+            .run()
+            .unwrap();
+        let report = warm_worktree_with(&repo, &worktree, plain_copy);
+        assert!(report.warnings.is_empty(), "{report:?}");
+        assert!(
+            !crate::git::resolve_git_dir(&worktree)
+                .unwrap()
+                .join("tuic-copy-provenance.json")
+                .exists()
+        );
+        std::fs::write(worktree.join("build/cache/data"), "rebuilt cache").unwrap();
+        assert_eq!(
+            crate::worktree::inspect_workspace_lifecycle(&repo, "feature").dirty_files,
+            Some(0)
+        );
+        assert!(
+            crate::copy_provenance::inventory(&worktree)
+                .unwrap()
+                .is_empty()
+        );
+        // Ignored caches do not weaken the unintegrated commit gate.
+        assert!(
+            crate::worktree::remove_worktree_by_workspace_id(
+                repo.to_str().unwrap(),
+                "feature",
+                true,
+                None,
+                false
+            )
+            .is_err()
+        );
+        assert!(worktree.exists());
+    }
+
+    // Catches cleanup-only copy proof admitting recycling with an inherited receipt.
+    #[test]
+    fn copy_provenance_does_not_make_untracked_payloads_recyclable() {
+        for target_ignores_payload in [false, true] {
+            let (temp, repo, worktree) = provenance_fixture();
+            let report = warm_worktree_with(&repo, &worktree, plain_copy);
+            assert!(report.warnings.is_empty(), "{report:?}");
+            crate::worktree::finish_worktree(&repo, &worktree).unwrap();
+            if target_ignores_payload {
+                git_cmd(&repo).args(["add", ".gitignore"]).run().unwrap();
+                git_cmd(&repo)
+                    .args([
+                        "-c",
+                        "user.name=Test",
+                        "-c",
+                        "user.email=test@example.com",
+                        "commit",
+                        "-m",
+                        "ignore warmed payload",
+                    ])
+                    .run()
+                    .unwrap();
+            }
+            let (created, reused) = crate::worktree::create_workspace_recycling(
+                &temp.path().join("allocations"),
+                &crate::worktree::WorktreeConfig {
+                    task_name: "next".into(),
+                    base_repo: repo.to_string_lossy().into_owned(),
+                    branch: Some("next".into()),
+                    create_branch: true,
+                },
+                None,
+                |_| true,
+            )
+            .unwrap();
+            assert!(
+                reused.is_none(),
+                "recycled copy proof, target ignores={target_ignores_payload}"
+            );
+            assert_eq!(
+                std::fs::read(worktree.join("build/cache/data")).unwrap(),
+                b"warm"
+            );
+            if target_ignores_payload {
+                std::fs::create_dir_all(created.path.join("build/cache")).unwrap();
+                std::fs::write(created.path.join("build/cache/data"), "rebuilt").unwrap();
+            }
+            assert_eq!(
+                crate::worktree::inspect_workspace_lifecycle(&repo, "next").dirty_files,
+                Some(0)
+            );
+        }
+    }
+
+    // Catches path-bound receipts stranding an otherwise safe archived checkout.
+    #[test]
+    fn copy_provenance_survives_registered_archive_move() {
+        let (_temp, repo, worktree) = provenance_fixture();
+        let report = warm_worktree_with(&repo, &worktree, plain_copy);
+        assert!(report.warnings.is_empty(), "{report:?}");
+        let archived =
+            PathBuf::from(crate::worktree::archive_worktree(&repo, "feature", None).unwrap());
+        assert!(!worktree.exists());
+        assert_eq!(
+            crate::copy_provenance::inventory(&archived).unwrap()[0].classification,
+            "unchanged-copy"
+        );
+        crate::worktree::remove_worktree_internal(
+            &crate::worktree::WorktreeInfo {
+                name: "feature".into(),
+                path: archived.clone(),
+                branch: Some("feature".into()),
+                base_repo: repo,
+            },
+            false,
+        )
+        .unwrap();
+        assert!(!archived.exists());
+    }
+
+    // Catches a copied .gitignore pinning mutable cache bytes in the receipt.
+    #[test]
+    fn copy_provenance_rechecks_ignore_rules_after_copy() {
+        let (_temp, repo, worktree) = provenance_fixture();
+        std::fs::write(repo.join("build/.gitignore"), "cache/\n").unwrap();
+        let report = warm_worktree_with(&repo, &worktree, plain_copy);
+        assert!(report.warnings.is_empty(), "{report:?}");
+        std::fs::write(worktree.join("build/cache/data"), "rebuilt cache").unwrap();
+        let inventory = crate::copy_provenance::inventory(&worktree).unwrap();
+        assert_eq!(inventory.len(), 1);
+        assert_eq!(inventory[0].path, Path::new("build/.gitignore"));
+        assert_eq!(inventory[0].classification, "unchanged-copy");
+        assert_eq!(
+            crate::worktree::inspect_workspace_lifecycle(&repo, "feature").dirty_files,
+            Some(0)
+        );
+    }
+
+    // Story 3006-ea19. Catches a deleted warm copy counted as uncommitted
+    // work: removal loses nothing, yet clean merged worktrees needed force.
+    // The modified sibling catches a fix that drops proof for every copy.
+    #[test]
+    fn copy_provenance_ignores_a_missing_copy_but_blocks_a_modified_one() {
+        let (_temp, repo, worktree) = provenance_fixture();
+        std::fs::write(repo.join("build/cache/other"), "warm too").unwrap();
+        let report = warm_worktree_with(&repo, &worktree, plain_copy);
+        assert!(report.warnings.is_empty(), "{report:?}");
+        std::fs::remove_file(worktree.join("build/cache/data")).unwrap();
+        std::fs::write(worktree.join("build/cache/other"), "user work").unwrap();
+
+        let lifecycle = crate::worktree::inspect_workspace_lifecycle(&repo, "feature");
+        assert_eq!(lifecycle.dirty_files, Some(1), "{lifecycle:?}");
+
+        std::fs::remove_file(worktree.join("build/cache/other")).unwrap();
+        let lifecycle = crate::worktree::inspect_workspace_lifecycle(&repo, "feature");
+        assert_eq!(lifecycle.dirty_files, Some(0), "{lifecycle:?}");
+        assert_eq!(
+            lifecycle.removal_safety,
+            crate::worktree::WorkspaceRemovalSafety::Safe
+        );
+        // The inventory still reports the deletion; only the dirty count ignores it.
+        let classifications: Vec<_> = crate::copy_provenance::inventory(&worktree)
+            .unwrap()
+            .into_iter()
+            .map(|entry| entry.classification)
+            .collect();
+        assert_eq!(classifications, ["missing", "missing"]);
+        crate::worktree::remove_worktree_internal(
+            &crate::worktree::WorktreeInfo {
+                name: "feature".into(),
+                path: worktree.clone(),
+                branch: Some("feature".into()),
+                base_repo: repo.clone(),
+            },
+            false,
+        )
+        .unwrap();
+        assert!(!worktree.exists());
+    }
+
+    // Catches exemptions that survive edits, replaced parents, new work,
+    // changed source bytes, failed receipt publication, or legacy warming.
+    #[test]
+    fn copy_provenance_rejects_changed_new_symlink_source_and_uncertain_payloads() {
+        for scenario in [
+            "modified",
+            "new",
+            "source-changed",
+            "legacy",
+            "corrupt",
+            "symlink",
+            "source-race",
+            "existing",
+        ] {
+            let (_temp, repo, worktree) = provenance_fixture();
+            if scenario == "existing" {
+                std::fs::create_dir_all(worktree.join("build/cache")).unwrap();
+                std::fs::write(worktree.join("build/cache/data"), "user work").unwrap();
+            }
+            let report = warm_worktree_with(&repo, &worktree, |from, to| {
+                plain_copy(from, to)?;
+                if scenario == "source-race" {
+                    std::fs::write(from.join("cache/data"), "changed during copy").unwrap();
+                }
+                Ok(())
+            });
+            assert!(report.warnings.is_empty(), "{scenario}: {report:?}");
+            let data = worktree.join("build/cache/data");
+            let marker = crate::git::resolve_git_dir(&worktree)
+                .unwrap()
+                .join("tuic-copy-provenance.json");
+            match scenario {
+                "modified" => std::fs::write(&data, "user work").unwrap(),
+                "new" => std::fs::write(worktree.join("build/new work"), "new work").unwrap(),
+                "source-changed" => {
+                    std::fs::write(repo.join("build/cache/data"), "source moved").unwrap()
+                }
+                "legacy" => {
+                    std::fs::remove_file(marker).unwrap();
+                }
+                "corrupt" => std::fs::write(marker, "incomplete receipt").unwrap(),
+                "symlink" => {
+                    #[cfg(unix)]
+                    {
+                        std::fs::remove_dir_all(worktree.join("build/cache")).unwrap();
+                        std::os::unix::fs::symlink(
+                            repo.join("build/cache"),
+                            worktree.join("build/cache"),
+                        )
+                        .unwrap();
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        std::fs::write(&data, "replacement").unwrap();
+                    }
+                }
+                _ => {}
+            }
+            let lifecycle = crate::worktree::inspect_workspace_lifecycle(&repo, "feature");
+            assert_ne!(lifecycle.dirty_files, Some(0), "{scenario}: {lifecycle:?}");
+            let result = crate::worktree::remove_worktree_internal(
+                &crate::worktree::WorktreeInfo {
+                    name: "feature".into(),
+                    path: worktree.clone(),
+                    branch: Some("feature".into()),
+                    base_repo: repo.clone(),
+                },
+                false,
+            );
+            assert!(
+                result.is_err(),
+                "{scenario}: cleanup accepted uncertain payload"
+            );
+            assert!(worktree.exists(), "{scenario}: checkout disappeared");
+            if scenario == "legacy" {
+                assert_eq!(std::fs::read(&data).unwrap(), b"warm");
+            }
+        }
     }
 
     #[test]

@@ -4,7 +4,7 @@ use crate::state::AppState;
 use serde_json::{Value, json};
 use std::{net::SocketAddr, sync::Arc};
 
-/// Run-owned launch policy shared by automation and workflow bindings.
+/// Run-owned launch policy of automation bindings.
 pub(super) struct Launch<'a> {
     pub profile: &'a str,
     pub name: &'a str,
@@ -19,7 +19,7 @@ pub(super) struct Launch<'a> {
 /// now lives in the keyed transaction; call only from a blocking worker.
 pub(super) fn launch(
     state: &Arc<AppState>,
-    addr: SocketAddr,
+    caller: super::guards::CallerAuthority,
     origin: Option<&str>,
     input: Launch<'_>,
 ) -> Value {
@@ -54,9 +54,9 @@ pub(super) fn launch(
     };
     let receipt = runtime.block_on(async {
         if parent.is_some() {
-            super::launch_transaction::execute(state, addr, &request).await
+            super::launch_transaction::execute(state, caller, &request).await
         } else {
-            super::launch_transaction::execute_owned(state, addr, &request).await
+            super::launch_transaction::execute_owned(state, caller, &request).await
         }
     });
     if receipt.get("error").is_some() {
@@ -86,7 +86,7 @@ pub(crate) fn launch_named(
     config.require_named_run_config(profile)?;
     let spawned = launch(
         state,
-        SocketAddr::from(([127, 0, 0, 1], 0)),
+        SocketAddr::from(([127, 0, 0, 1], 0)).into(),
         None,
         Launch {
             profile,
@@ -106,6 +106,19 @@ pub(crate) fn launch_named(
 
 pub(crate) fn stop(state: &Arc<AppState>, session: &str) -> Result<(), String> {
     let result = handle_session(state, &json!({"action":"kill", "session_id":session}), None);
+    if let Some(error) = result["error"].as_str() {
+        return Err(error.into());
+    }
+    Ok(())
+}
+
+/// Reuse explicit session close: no worktree cleanup, desktop and SSE stay in sync.
+pub(crate) fn close(state: &Arc<AppState>, session: &str) -> Result<(), String> {
+    let result = handle_session(
+        state,
+        &json!({"action":"close", "session_id":session}),
+        None,
+    );
     if let Some(error) = result["error"].as_str() {
         return Err(error.into());
     }

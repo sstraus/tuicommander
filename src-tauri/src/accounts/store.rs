@@ -58,6 +58,14 @@ pub(crate) fn snapshot() -> Result<Registry, String> {
     with_registry(|registry| Ok((registry.clone(), false)))
 }
 
+/// Local discovery reads metadata only, without vault access or migration writes.
+pub(crate) fn installed_accounts() -> Result<Vec<Account>, String> {
+    Ok(read_existing::<Registry>(ACCOUNTS_FILE)?
+        .accounts
+        .into_values()
+        .collect())
+}
+
 pub(crate) fn ensure_site(
     registry: &mut Registry,
     provider: &str,

@@ -112,3 +112,86 @@ async fn write_only_reveal_denied() {
         json!({"status":"unset"})
     );
 }
+
+// Catches: downloaded configuration or model request silently enables settings/diagnostics.
+#[tokio::test]
+#[serial_test::serial]
+async fn settings_migration_preserves_default_off_and_explicit_deny() {
+    let (dir, _guard, _state, service) = fixture();
+    let path = dir.path().join("config.json");
+    // Saved policy fields -> (one visible opt-in, remaining denials) after load.
+    for (fields, enabled, denied) in [
+        // Without a saved policy the old default denied settings.
+        (
+            json!({"settings_mcp_enabled": true}),
+            false,
+            vec!["diagnostics"],
+        ),
+        (json!({}), false, vec!["diagnostics"]),
+        (
+            json!({"settings_mcp_enabled": true, "mcp_capabilities": {"denied": ["settings", "diagnostics"]}}),
+            false,
+            vec!["diagnostics"],
+        ),
+        (
+            json!({"settings_mcp_enabled": false, "mcp_capabilities": {"denied": ["settings"]}}),
+            false,
+            vec![],
+        ),
+        (
+            json!({"settings_mcp_enabled": true, "mcp_capabilities": {"denied": ["diagnostics"]}}),
+            true,
+            vec!["diagnostics"],
+        ),
+        (
+            json!({"settings_mcp_enabled": false, "mcp_capabilities": {"denied": []}}),
+            false,
+            vec![],
+        ),
+        (
+            json!({"settings_mcp_enabled": true, "disabled_native_tools": ["settings", "debug"]}),
+            false,
+            vec!["diagnostics"],
+        ),
+        (
+            json!({"settings_mcp_enabled": true, "disabled_native_tools": ["debug"]}),
+            true,
+            vec!["diagnostics"],
+        ),
+    ] {
+        let mut doc = json!({"font_family": "Menlo", "font_size": 14, "theme": "dark"});
+        for (key, value) in fields.as_object().unwrap() {
+            doc[key] = value.clone();
+        }
+        std::fs::write(&path, doc.to_string()).unwrap();
+        let loaded = config::load_app_config();
+        assert_eq!(loaded.settings_mcp_enabled, enabled, "{fields}");
+        assert_eq!(loaded.mcp_capabilities.denied, denied, "{fields}");
+        // Deterministic: a second load reads the same policy and rewrites nothing.
+        let saved = std::fs::read(&path).unwrap();
+        let again = config::load_app_config();
+        assert_eq!(again.settings_mcp_enabled, enabled, "{fields}");
+        assert_eq!(again.mcp_capabilities, loaded.mcp_capabilities, "{fields}");
+        assert_eq!(std::fs::read(&path).unwrap(), saved, "{fields}");
+    }
+    // A settings request cannot turn the opt-in on.
+    std::fs::write(
+        &path,
+        json!({"font_family": "Menlo", "font_size": 14, "theme": "dark"}).to_string(),
+    )
+    .unwrap();
+    let rev = revision(&service).await;
+    let result = service
+        .patch(
+            Target::Machine,
+            "app".into(),
+            rev,
+            vec![Edit::Set {
+                path: "/settings_mcp_enabled".into(),
+                value: json!(true),
+            }],
+        )
+        .await;
+    assert!(result.is_err(), "settings opt-in must stay host-only");
+    assert!(!config::load_app_config().settings_mcp_enabled);
+}

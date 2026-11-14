@@ -24,6 +24,17 @@ TUICommander tool results and its entry UI; it is not an OS sandbox against an
 agent running as the same user, or protection against arbitrary transformations
 or exfiltration by the approved executable.
 
+Username fields remain write-only and are injected into approved child commands,
+but do not register output masks. Password and OTP fields remain masked, as do
+all task-scoped `put` values. A username matching another stored sensitive value
+can still be masked by that sensitive value.
+
+Removing a form value clears it from future output-query masking and new terminal
+streams. Existing terminal streams retain learned masks until session teardown;
+in-flight approved commands retain their captured masks until completion.
+Retained output already sanitized by the PTY reader cannot be restored. Task-scoped
+masks in a running child remain until that session ends, including after TTL expiry.
+
 Values exist only in backend memory, shared by name across all callers of that
 backend process. They are not scoped to an MCP connection or a TUIC session.
 A bridge reconnect or a new MCP session does not clear them. A request that uses
@@ -31,6 +42,14 @@ an existing name replaces that value for all callers; a declined request does no
 Removal and normal application exit zeroize values. Restart clears values and
 templates; `run` reports `missing` when a requested name has no stored value.
 There is no Keychain entry or configuration file for this feature.
+
+`secret action=put scope=<task> ttl=<s> references=[{name, op, account?}]`
+fills the same task scope from references instead of values. `op` is an
+`op://vault/item/field` reference read
+once, at put time, with the 1Password CLI (`op read`, 30 s limit). Each failure
+is a typed error (`op` missing, not signed in, locked or authorization not
+granted, unknown reference, timeout, invalid) and stores nothing. The reply
+carries names only; the value and the reference stay out of logs and config.
 
 `secret action=remove names=["GITHUB_TOKEN"]` returns the requested names and
 `status: "removed"` when deletion completes. Removal is idempotent: the same
@@ -51,10 +70,14 @@ and secret names for consent. You can retain that exact argv until exit.
 Consent also binds the names and canonical working directory. Changing any
 argument, name or directory requires fresh consent; placeholders are not used.
 
-Shell/interpreter evaluation (`-c`, `-e` and equivalents), `env` and `printenv`
-are denied when they are the executable, even with approval. Wrappers such as
-`nohup env` are an accepted limitation; approve only trusted executables. Evaluation-like options are rejected regardless
-of the executable name, so renaming an interpreter does not bypass the policy. Captured output masks exact values, standard and
+Exact-argv consent decides which command may receive values. Options such as
+`git -c color.ui=false`, `grep -e`, `ssh -p` and executables such as `env` reach
+the consent form; there is no lexical ban on option letters or program names.
+Approve only commands you trust: an approved shell or interpreter can run any
+code and exfiltrate the values. Structural checks still refuse an empty program,
+NUL bytes, more than 128 arguments or an argument over 8192 bytes, and Windows
+`.bat`/`.cmd` files, which would run through an implicit `cmd.exe`. The program
+is always spawned directly, without a shell. Captured output masks exact values, standard and
 URL-safe base64 (also inside Basic-auth payloads), JSON-escaped values,
 lower/upper hex and URL/form encodings, including line breaks
 inside an echo. Output over 1 MiB per stream or a 120-second timeout is withheld.
@@ -78,12 +101,25 @@ Responses are not cached or frameable.
 Browser and phone entry use the existing application router, authentication and
 transport. Use HTTPS to protect values in transit. This feature does not enforce
 TLS or loopback-only HTTP, and does not isolate entry from application-origin
-service workers. A desktop host must open the request; headless daemons cannot
-initiate this form yet.
+service workers. A headless host (no desktop window) starts the request through the
+same one-time phone link: the tool call waits, Web Push sends the link to the subscribed
+phone, and the value goes from the phone to the secret store without passing through the
+agent. The link is not sent on the `/events` stream, which local agents can read. If Remote
+Access is off, no address is available, or no phone has turned on **Push notifications**
+(see [Remote Access](remote-access.md)), the request fails with the setup guidance and
+opens no form. The consent form for an exact `secret run` argv uses the same headless path. A closed, expired or consumed link is rejected; an
+expired or cancelled request leaves no pending form. Account-vault entry still needs the
+native window.
 
-While the private native window is open, TUIC blocks new `ui`, `debug`, and
-upstream MCP inspection calls, including proxied screenshots. Already-running
-inspection calls are not cancelled and their results are not withheld.
+While the private native window is open, TUIC blocks new inspection and
+capture calls only: `ui` screenshots, HTML tabs and design mode, `debug`
+JavaScript, frame dumps and logs, and upstream MCP calls to servers that can run
+on this machine (stdio, loopback, LAN, `.local` or single-label hosts, or an
+unknown upstream). `call_tool` wrapping, nested or not, gets the same decision.
+Toasts, confirmations, `debug agent_detection`/`sessions`, and HTTP upstreams on
+public hosts stay available. Already-running inspection calls are not cancelled
+and their results are not withheld. This does not isolate the form from other
+programs of the same OS user that capture the screen.
 Bootstrap checks the native window identity; the main WebView cannot acquire
 its nonce. Inputs are cleared and unmounted before submit begins, and the native
 window is destroyed after successful entry. OS-level screen capture outside
@@ -129,3 +165,16 @@ also receives sanitized output for these sessions. Captures of scoped output
 are therefore not byte-for-byte recordings of the original child stream.
 As with approved commands, arbitrary transformations and deliberate exfiltration
 by a child are outside this protection.
+
+## Literal terminal reads
+
+Agents read terminals through `session action=output`, which masks
+secret-shaped text such as `TEST_TOKEN=not-a-secret`. To let an agent inspect
+fake fixture values while it debugs, right-click the terminal tab and choose
+**Allow Literal Terminal Reads**. Reads of that session that ask for
+`literal=true` then return that text unchanged. Choose **Mask Terminal Reads
+Again** to revoke. The grant is only in memory and ends when the session closes
+or TUIC restarts. Only the desktop window can grant it.
+
+Values you register through secret forms or task scopes stay masked in literal
+reads. Default reads and stored data stay masked.

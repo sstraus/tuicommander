@@ -74,6 +74,17 @@ fn mcp_read_timeout(tool: &str, arguments: &Value) -> Option<std::time::Duration
         // so the server's own timeout response reaches the caller first.
         return Some(std::time::Duration::from_secs(305));
     }
+    if tool == "agent"
+        && arguments.get("action").and_then(Value::as_str) == Some("send")
+        && matches!(
+            arguments.get("urgency").and_then(Value::as_str),
+            Some("urgent" | "interrupt")
+        )
+    {
+        // The server waits up to 5 s for the recipient to go idle before it
+        // replies; the 3 s default would cut the reply of a delivered message.
+        return Some(std::time::Duration::from_secs(10));
+    }
     if !matches!(tool, "agent" | "session")
         || arguments.get("action").and_then(Value::as_str) != Some("wait")
     {
@@ -150,6 +161,7 @@ fn unwrap_tool_text(resp: &ipc::Response) -> Result<String, String> {
 pub struct McpClient {
     session: String,
     tuic_session: Option<String>,
+    instructions: Option<String>,
 }
 
 impl McpClient {
@@ -177,10 +189,23 @@ impl McpClient {
             .ok_or("MCP initialize returned no Mcp-Session-Id header")?
             .to_string();
 
+        let instructions = resp.json().ok().and_then(|v| {
+            v.pointer("/result/instructions")?
+                .as_str()
+                .map(str::to_owned)
+        });
+
         Ok(Self {
             session,
             tuic_session,
+            instructions,
         })
+    }
+
+    /// The instructions the server returned from `initialize` for this caller's
+    /// session: the one text MCP clients read, so a shell caller can read it too.
+    pub fn instructions(&self) -> Option<&str> {
+        self.instructions.as_deref()
     }
 
     /// Establish an MCP-scoped identity when this command did not inherit a
@@ -283,11 +308,17 @@ fn validate_delivery_report(payload: Value) -> Result<Value, String> {
 /// Returns the delivery report so the caller can print the route. The current
 /// contract is `message_id` + `delivered` + `delivery_path`; the removed
 /// `accepted` field must not be required by this client.
-pub fn agent_send(client: &McpClient, to: &str, message: &str) -> Result<Value, String> {
-    let payload = client.call(
-        "agent",
-        json!({ "action": "send", "to": to, "message": message }),
-    )?;
+pub fn agent_send_report(
+    client: &McpClient,
+    to: &str,
+    message: &str,
+    report: Option<&Value>,
+) -> Result<Value, String> {
+    let mut arguments = json!({ "action": "send", "to": to, "message": message });
+    if let Some(report) = report {
+        arguments["report"] = report.clone();
+    }
+    let payload = client.call("agent", arguments)?;
     validate_delivery_report(payload)
 }
 
@@ -310,6 +341,23 @@ mod tests {
         );
         assert_eq!(
             mcp_read_timeout("session", &json!({"action": "list"})),
+            None
+        );
+    }
+
+    /// Catches: urgent/interrupt send left on the 3 s default read timeout while
+    /// the server waits up to 5 s for idle, or normal send widened needlessly.
+    #[test]
+    fn urgent_send_waits_for_the_server_idle_budget_plus_margin() {
+        for urgency in ["urgent", "interrupt"] {
+            assert_eq!(
+                mcp_read_timeout("agent", &json!({"action": "send", "urgency": urgency})),
+                Some(std::time::Duration::from_secs(10))
+            );
+        }
+        assert_eq!(mcp_read_timeout("agent", &json!({"action": "send"})), None);
+        assert_eq!(
+            mcp_read_timeout("agent", &json!({"action": "send", "urgency": "normal"})),
             None
         );
     }

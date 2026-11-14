@@ -143,7 +143,6 @@ export const GitHubTab: Component = () => {
 		);
 		return (d?.repos_not_found ?? []).filter((key) => !explained.has(key));
 	};
-	// DEFERRED (2026-10-17) — CircleCI settings catalogue owner is tracked in 1991-bd88.
 	const [circleCiStatus, setCircleCiStatus] = createSignal<CircleCiTokenStatus | null>(null);
 	const [circleCiToken, setCircleCiToken] = createSignal("");
 	const [circleCiError, setCircleCiError] = createSignal<string | null>(null);

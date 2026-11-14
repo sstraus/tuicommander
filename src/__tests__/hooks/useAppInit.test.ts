@@ -79,6 +79,37 @@ function createMockDeps(overrides: Partial<AppInitDeps> = {}): AppInitDeps {
 }
 
 describe("initApp", () => {
+	// Catches: successful backend renames never reaching the live terminal store.
+	it("applies a backend custom rename and protects it from later agent intent", async () => {
+		await activityStore.hydrate();
+		vi.spyOn(appLogger, "info").mockImplementation(() => {});
+		vi.spyOn(appLogger, "debug").mockImplementation(() => {});
+		for (const level of ["warn", "error"] as const) {
+			vi.spyOn(appLogger, level).mockImplementation((_source, message) => {
+				expect(message).toMatch(
+					/Failed to load themes|Unknown theme|Settings reload failed|Failed to register progress-recorded|Failed to sync native window background/,
+				);
+			});
+		}
+		let renamed: ((event: { payload: unknown }) => void) | undefined;
+		vi.mocked(listen).mockImplementation(((event: string, handler: (event: { payload: unknown }) => void) => {
+			if (event === "session-renamed") renamed = handler;
+			return Promise.resolve(vi.fn());
+		}) as unknown as typeof listen);
+		await initApp(createMockDeps());
+		const id = terminalsStore.add(makeTerminal({ sessionId: "renamed-ego", name: "ego", agentType: "ego" }));
+		expect(renamed).toBeTypeOf("function");
+		renamed!({ payload: { session_id: "renamed-ego", name: "Ripresa eg42 · immagini", is_custom: true } });
+		handleIntentEvent({
+			terminalId: id,
+			text: "Working on images",
+			title: "ego",
+			globalEnabled: true,
+			perAgentEnabled: true,
+		});
+		expect(terminalsStore.get(id)).toMatchObject({ name: "Ripresa eg42 · immagini", nameIsCustom: true });
+	});
+
 	// Catches: init resolves with a pending progress subscription, leaking its promise and missing early events.
 	it("waits for progress event registration before initialization completes", async () => {
 		vi.useRealTimers();
@@ -415,7 +446,7 @@ describe("initApp", () => {
 		expect(deps.stores.loadFontFromConfig).toHaveBeenCalled();
 	});
 
-	it("switches to the owning repo before focusing an MCP native file tab", async () => {
+	it("files an MCP native file tab under the calling session's repo even when another registered repo owns the file", async () => {
 		let uiTabCallback:
 			| ((event: {
 					payload: {
@@ -459,14 +490,15 @@ describe("initApp", () => {
 			},
 		});
 
-		expect(repositoriesStore.state.activeRepoPath).toBe(targetRepo);
+		// Catches: the tab following the file's owning repo (or the focused repo) instead of the caller.
+		expect(repositoriesStore.state.activeRepoPath).toBe(sourceRepo);
 		const activeTab = mdTabsStore.getActive();
 		expect(activeTab).toMatchObject({
-			repoPath: targetRepo,
-			filePath: "reports/comparison.md",
+			repoPath: sourceRepo,
+			filePath: `${targetRepo}/reports/comparison.md`,
 			openerTuicSession: "tuic-b",
 		});
-		expect(mdTabsStore.getVisibleIds(`${targetRepo}|main`)).toContain(activeTab!.id);
+		expect(mdTabsStore.getVisibleIds(`${sourceRepo}|main`)).toContain(activeTab!.id);
 	});
 
 	it("does not activate a background MCP file tab that belongs to another repo", async () => {
@@ -564,6 +596,31 @@ describe("initApp", () => {
 		uiTabCallback!({ payload: { id: "img", title: "Shot", html: "", pinned: false, url, focus: true } });
 		expect(mdTabsStore.getActive()).toMatchObject({ type: "html-preview", filePath: expectedPath });
 		expect(editorTabsStore.getActive()).toBeUndefined();
+	});
+
+	// Catches: a ui tab with url=file:///…/x.png read as UTF-8 text by the inline file:// reader, which
+	// shows "Failed to load …: Failed to read file: stream did not contain valid UTF-8" (Boss, 2026-11-02).
+	it("opens a file:// image ui tab in the preview tab, not the text reader", async () => {
+		let uiTabCallback: ((event: { payload: Record<string, unknown> }) => void) | null = null;
+		vi.mocked(listen).mockImplementation(((event: string, handler: (event: { payload: unknown }) => void) => {
+			if (event === "ui-tab") uiTabCallback = handler as typeof uiTabCallback;
+			return Promise.resolve(vi.fn());
+		}) as unknown as typeof listen);
+		await initApp(createMockDeps());
+		uiTabCallback!({
+			payload: {
+				id: "shot",
+				title: "Shot",
+				html: "",
+				pinned: false,
+				url: "file:///Users/boss/Gits/.tmp/boss/shot.png",
+				focus: true,
+			},
+		});
+		expect(mdTabsStore.getActive()).toMatchObject({
+			type: "html-preview",
+			filePath: "/Users/boss/Gits/.tmp/boss/shot.png",
+		});
 	});
 
 	// Catches: html/htm routed to the preview tab by the image routing, bypassing the editor path it used before.
@@ -728,9 +785,10 @@ describe("initApp", () => {
 		open("second-editor", "/repo/src/main.ts");
 		const secondId = editorTabsStore.state.activeId!;
 		expect(secondId).not.toBe(firstId);
-		open("first-editor", "/repo/src/other.ts");
+		// Catches: a server-opened editor drops the requested cursor column.
+		open("first-editor", "/repo/src/other.ts?line=12&col=7");
 		expect(editorTabsStore.state.activeId).toBe(firstId);
-		expect(editorTabsStore.get(firstId)).toMatchObject({ filePath: "src/other.ts" });
+		expect(editorTabsStore.get(firstId)).toMatchObject({ filePath: "src/other.ts", initialLine: 12, initialCol: 7 });
 		expect(editorTabsStore.get(secondId)).toMatchObject({ filePath: "src/main.ts" });
 		expect(editorTabsStore.add("/repo", "src/main.ts")).not.toBe(secondId);
 	});
@@ -2668,6 +2726,26 @@ describe("initApp", () => {
 			expect(repositoriesStore.get("/repo")?.workspaces["ACME-00106/feature"]?.terminals).toContain("term-1");
 			// Active branch updated
 			expect(repositoriesStore.get("/repo")?.activeWorkspaceId).toBe("ACME-00106/feature");
+		});
+
+		// Catches: a mirrored head-changed (browser mode reads every mirrored event
+		// from /events under the daemon's own name) renames a LOCAL repository's
+		// workspace row that only shares the remote path (#150 criterion 3).
+		it("ignores a mirrored head-changed for a local repository with the same path", async () => {
+			const { getCallback } = captureHeadChanged();
+			const deps = createMockDeps();
+			repositoriesStore.add({ path: "/repo", displayName: "repo" });
+			repositoriesStore.setWorkspace("/repo", "develop", { worktreePath: null });
+			repositoriesStore.setActiveWorkspace("/repo", "develop");
+
+			await initApp(deps);
+
+			(getCallback() as unknown as (event: { payload: unknown }) => void)({
+				payload: { repo_path: "/repo", branch: "remote-branch", __tuic_origin: { connection: "remote" } },
+			});
+
+			expect(repositoriesStore.get("/repo")?.activeWorkspaceId).toBe("develop");
+			expect(repositoriesStore.get("/repo")?.workspaces["remote-branch"]).toBeUndefined();
 		});
 
 		it("creates new branch entry when old branch is a worktree (worktreePath set)", async () => {

@@ -58,8 +58,30 @@ export interface WorkspaceLifecycleStatus {
 	dirtyFingerprint?: string;
 	submoduleUnpushedCommits?: Array<{ path: string; count: number }>;
 	commitStatus: WorkspaceCommitStatus;
+	/** Which backend rule proved the verdict; absent when nothing proved it. */
+	proofSource?: string;
+	/** Exact branch tip and integration base the verdict was computed for. */
+	tip?: string;
+	base?: string;
 	removalSafety: WorkspaceRemovalSafety;
 	error?: string;
+}
+
+/** Why a workspace is or is not eligible for cleanup. Proof and safety stay separate. */
+export type WorkspaceCleanupReason = "merged" | "uncertain" | "unmerged" | "safety-blocked";
+
+/** What one fresh inspection proved, kept apart from what that permits. */
+export interface WorkspaceCleanupRecord {
+	proof: {
+		workspaceId: WorkspaceId;
+		tip: string | null;
+		base: string | null;
+		source: string | null;
+		verdict: WorkspaceCommitStatus;
+		/** Unix ms when the backend answered. */
+		inspectedAt: number;
+	};
+	decision: { eligible: boolean; reason: WorkspaceCleanupReason; detail: string };
 }
 
 /** One workspace with its terminals. */
@@ -82,6 +104,8 @@ export interface WorkspaceState {
 	isMerged: boolean; // true when branch is fully merged into the repo's main branch
 	/** Derived on refresh; never persisted as user intent or trusted for deletion. */
 	lifecycleStatus?: WorkspaceLifecycleStatus;
+	/** Derived from the last fresh inspection; never persisted and never deletion authority. */
+	cleanup?: WorkspaceCleanupRecord;
 	lastCommitTs: number | null; // Unix milliseconds of last commit on this branch
 	runCommand?: string; // Saved run command for this workspace
 	savedTerminals?: SavedTerminal[]; // Persisted terminal metadata for session restore

@@ -53,7 +53,7 @@ pub fn read_process_argv0(pid: u32) -> Option<String> {
 /// A shell alias is expanded before `exec`, so argv is the only place the real
 /// binary and its flags survive: `c2` never reaches the process table, but
 /// `claude --dangerously-skip-permissions` does. Returns `None` on any platform
-/// read failure, and on Windows, where the process-snapshot API exposes no argv.
+/// read failure. Windows reads the live command line and uses its native argv parser.
 #[cfg(target_os = "macos")]
 pub fn read_process_argv(pid: u32) -> Option<Vec<String>> {
     let buf = read_procargs2_raw(pid).ok()?;
@@ -95,8 +95,79 @@ pub fn read_process_argv(pid: u32) -> Option<Vec<String>> {
 }
 
 #[cfg(target_os = "windows")]
-pub fn read_process_argv(_pid: u32) -> Option<Vec<String>> {
-    None
+pub fn read_process_argv(pid: u32) -> Option<Vec<String>> {
+    use windows_sys::Wdk::System::Threading::{
+        NtQueryInformationProcess, ProcessCommandLineInformation,
+    };
+    use windows_sys::Win32::Foundation::{CloseHandle, LocalFree, UNICODE_STRING};
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    use windows_sys::Win32::UI::Shell::CommandLineToArgvW;
+
+    // Unlike PEB offsets, this query also works across process architectures.
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return None;
+        }
+        let mut needed = 0;
+        NtQueryInformationProcess(
+            handle,
+            ProcessCommandLineInformation,
+            std::ptr::null_mut(),
+            0,
+            &mut needed,
+        );
+        // UNICODE_STRING has a u16 byte length. Bound the allocation even on failure.
+        if needed < std::mem::size_of::<UNICODE_STRING>() as u32 || needed > 128 * 1024 {
+            CloseHandle(handle);
+            return None;
+        }
+        let mut buffer = vec![0usize; (needed as usize).div_ceil(std::mem::size_of::<usize>())];
+        let status = NtQueryInformationProcess(
+            handle,
+            ProcessCommandLineInformation,
+            buffer.as_mut_ptr().cast(),
+            needed,
+            &mut needed,
+        );
+        CloseHandle(handle);
+        if status < 0 {
+            return None;
+        }
+        let text = &*buffer.as_ptr().cast::<UNICODE_STRING>();
+        let start = text.Buffer as usize;
+        let base = buffer.as_ptr() as usize;
+        let end = base + buffer.len() * std::mem::size_of::<usize>();
+        if text.Length == 0
+            || text.Length % 2 != 0
+            || !start.is_multiple_of(std::mem::align_of::<u16>())
+            || start < base
+            || start.checked_add(text.Length as usize)? > end
+        {
+            return None;
+        }
+        let mut command =
+            std::slice::from_raw_parts(text.Buffer, text.Length as usize / 2).to_vec();
+        command.push(0);
+        let mut argc = 0;
+        let argv = CommandLineToArgvW(command.as_ptr(), &mut argc);
+        if argv.is_null() {
+            return None;
+        }
+        let mut result = Vec::new();
+        for index in 0..argc {
+            let arg = *argv.add(index as usize);
+            let mut len = 0;
+            while *arg.add(len) != 0 {
+                len += 1;
+            }
+            result.push(String::from_utf16_lossy(std::slice::from_raw_parts(
+                arg, len,
+            )));
+        }
+        LocalFree(argv.cast());
+        (!result.is_empty()).then_some(result)
+    }
 }
 
 // ─── macOS ──────────────────────────────────────────────────────────────────
@@ -444,6 +515,35 @@ mod tests {
         let argv = read_process_argv(pid).expect("own argv is readable");
         assert_ne!(argv, [] as [std::string::String; 0]);
         assert_eq!(Some(&argv[0]), read_process_argv0(pid).as_ref());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn read_windows_child_profile_argv() {
+        // Catches: losing a live child's named profile (including quoting and Unicode).
+        use std::process::{Command, Stdio};
+        let profile = r#"work profile "quoted" 日本語\"#;
+        let mut child = Command::new("cmd.exe")
+            .args([
+                "/D",
+                "/Q",
+                "/C",
+                "set /p TUIC_ARGV_WAIT=",
+                "--profile",
+                profile,
+                "",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("live child waiting for stdin");
+        let result = read_process_argv(child.id());
+        // Always reap the owned child before assertions, including a failed read.
+        let _ = child.kill();
+        child.wait().expect("reap child");
+        let argv = result.expect("live child argv");
+        assert_eq!(&argv[argv.len() - 3..], ["--profile", profile, ""]);
     }
 
     #[test]

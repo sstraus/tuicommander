@@ -11,7 +11,10 @@ interface Transition {
 	storyId: string;
 	revision: number;
 	command: string | Record<string, unknown>;
-	actor: { type: "human" | "local_api" } | { type: "managed_session"; session_id: string };
+	actor:
+		| { type: "human" | "local_api" }
+		| { type: "managed_session"; session_id: string }
+		| { type: "workflow"; run_id: string };
 }
 
 /** The stable identity remains visible even after the claiming terminal closes. */
@@ -188,6 +191,8 @@ export function StoryMetadata(props: { project: string; story: EditableStory & {
 										<span title={entry.actor.session_id}>
 											{sessionName(entry.actor.session_id) || entry.actor.session_id.slice(0, 8)}
 										</span>
+									) : entry.actor.type === "workflow" ? (
+										<span title={entry.actor.run_id}>{t("stories.metadata.workflow", "Workflow")}</span>
 									) : entry.actor.type === "human" ? (
 										t("stories.metadata.human", "Human")
 									) : (

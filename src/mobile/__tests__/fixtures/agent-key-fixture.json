@@ -1,0 +1,54 @@
+[
+  {
+    "agent": "claude",
+    "selectedSequence": "\u001b[13;5u"
+  },
+  {
+    "agent": "gemini",
+    "selectedSequence": "\u001b[13;5u"
+  },
+  {
+    "agent": "opencode",
+    "selectedSequence": "\u001b[13;5u"
+  },
+  {
+    "agent": "codex",
+    "selectedSequence": "\n"
+  },
+  {
+    "agent": "amp",
+    "selectedSequence": "\n"
+  },
+  {
+    "agent": "cursor",
+    "selectedSequence": "\n"
+  },
+  {
+    "agent": "goose",
+    "selectedSequence": "\n"
+  },
+  {
+    "agent": "grok",
+    "selectedSequence": "\n"
+  },
+  {
+    "agent": "droid",
+    "selectedSequence": "\u001b[13;5u"
+  },
+  {
+    "agent": "pi",
+    "selectedSequence": "\n"
+  },
+  {
+    "agent": "ego",
+    "selectedSequence": "\n"
+  },
+  {
+    "agent": "git",
+    "selectedSequence": "\u001b[13;5u"
+  },
+  {
+    "agent": "api",
+    "selectedSequence": "\u001b[13;5u"
+  }
+]

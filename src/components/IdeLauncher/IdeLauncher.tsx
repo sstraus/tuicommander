@@ -30,6 +30,7 @@ export interface IdeLauncherProps {
 	runCommand?: string;
 	onOpenInIde?: (ide: IdeType) => void;
 	onRun?: (shiftKey: boolean) => void;
+	onNewShell?: () => void;
 }
 
 /** IDE icon component - renders the SVG icon at specified size */
@@ -225,12 +226,26 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
 						{(cat) => {
 							const items = () => filterInstalled(IDE_CATEGORIES[cat.key]);
 							return (
-								<Show when={items().length > 0}>
+								<Show when={items().length > 0 || cat.key === "terminals"}>
 									<Show when={cat.key !== "editors"}>
 										<div class={s.divider} />
 									</Show>
 									<div class={s.section}>
 										<div class={s.sectionTitle}>{cat.label}</div>
+										<Show when={cat.key === "terminals"}>
+											<Button
+												variant="ghost"
+												class={s.item}
+												disabled={!props.repoPath || !props.onNewShell}
+												onClick={() => {
+													setIsOpen(false);
+													props.onNewShell?.();
+												}}
+											>
+												<img class={s.icon} src="/icon-192.png" width="14" height="14" alt="" />
+												<span class={s.itemName}>TUICommander shell</span>
+											</Button>
+										</Show>
 										<For each={items()}>
 											{(ide) => (
 												<Button

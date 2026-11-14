@@ -13,6 +13,7 @@ import { MobileDictationButton } from "./MobileDictationButton";
 interface IdeasOverlayProps {
 	sessionId: string;
 	repoPath: string | null;
+	agentType?: string | null;
 	microphoneBlocked?: boolean;
 	onDismiss: () => void;
 }
@@ -61,7 +62,7 @@ export function IdeasOverlay(props: IdeasOverlayProps) {
 			await sendCommand(
 				(data) => retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data })),
 				note.text,
-				null,
+				props.agentType,
 				undefined,
 				true,
 				props.sessionId,

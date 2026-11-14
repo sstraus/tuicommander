@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="UTF-8"><title>Sidebar resize regression fixture</title></head>
+  <body>
+    <div id="root" style="display: flex; height: 700px"></div>
+    <script>
+      // Isolated component adapter: never call the daily backend or its config.
+      window.__TAURI_INTERNALS__ = { invoke: async () => undefined, transformCallback: () => 1 };
+    </script>
+    <script type="module" src="/src/__tests__/fixtures/sidebarResize.tsx"></script>
+  </body>
+</html>

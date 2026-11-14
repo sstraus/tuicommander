@@ -59,142 +59,36 @@ fn to_done(store: &StoryStore, id: &str) -> Story {
         .expect("approve")
 }
 
-/// Registers a workflow run row for `plan_id`, as a started workflow would.
-fn own_plan_by_run(dir: &Path, plan_id: &str) {
-    let _guard = crate::config::set_config_dir_override(dir.to_path_buf());
-    let project = open(dir).get_plan(plan_id).expect("plan").project;
-    let definitions = crate::workflows::WorkflowStore::open().expect("definitions");
-    let template = definitions
-        .seed_templates(&project)
-        .expect("templates")
-        .into_iter()
-        .find(|draft| draft.kind == crate::workflows::WorkflowKind::Plan)
-        .expect("plan template");
-    crate::workflows::RunStore::open()
-        .expect("runs")
-        .start_plan(
-            &project,
-            plan_id,
-            &template.id,
-            template.latest_published_revision,
-            crate::workflows::RunLimits::default(),
-        )
-        .expect("valid persisted run");
-}
-
-/// Catches: an empty or schema-less workflow_runs.sqlite3 beside the story DB making every
-/// dependency check fail with "no such table" instead of meaning "no workflow owns the plan".
+/// Catches: WontFix counting as satisfied (promote on an unrelated approval, or add_dependency
+/// leaving the dependent Ready) (Boss 2026-09-28).
 #[test]
-fn a_run_store_file_without_schema_does_not_block_dependency_checks() {
+fn wont_fix_never_satisfies_a_dependency() {
     let dir = tempfile::tempdir().expect("dir");
-    std::fs::write(dir.path().join("workflow_runs.sqlite3"), b"").expect("empty file");
     let store = open(dir.path());
     let p = plan(&store, "p");
     let a = story(&store, &p.id, "A");
     let b = story(&store, &p.id, "B");
-    let a = to_done(&store, &a.id);
-    let b = store
-        .add_dependency(&b.id, &a.id, b.revision)
-        .expect("add dependency");
-    assert_eq!(b.status, StoryStatus::Ready);
-    store.claim(&b.id, "s1", b.revision).expect("claim");
-}
-
-/// Catches: a Done dependency satisfying a story in a workflow-owned plan without any
-/// integration receipt (add_dependency keeps it Ready, claim and start_manual succeed).
-#[test]
-fn done_dependency_without_receipt_blocks_in_a_workflow_owned_plan() {
-    let dir = tempfile::tempdir().expect("dir");
-    let store = open(dir.path());
-    let p = plan(&store, "owned");
-    let a = story(&store, &p.id, "A");
-    let b = story(&store, &p.id, "B");
-    let a = to_done(&store, &a.id);
-    own_plan_by_run(dir.path(), &p.id);
-
-    let b = store
-        .add_dependency(&b.id, &a.id, b.revision)
-        .expect("add dependency");
-    assert_eq!(b.status, StoryStatus::Backlog, "no receipt: demoted");
-
-    let claim = store
-        .claim(&b.id, "s1", b.revision)
-        .expect_err("claim refused");
-    assert!(
-        claim.contains(&a.id),
-        "the refusal names the unmet dependency: {claim}"
-    );
-    store
-        .reconcile_integrated_dependencies(&p.id)
-        .expect("reconcile");
-    assert_eq!(
-        store.get_story(&b.id).expect("b").status,
-        StoryStatus::Backlog
-    );
-    let start = store.transition(&b.id, b.revision, StoryCommand::StartManual);
-    assert!(start.is_err(), "start_manual needs a Ready story");
-}
-
-/// Catches: the receipt requirement leaking to plans no workflow run owns.
-#[test]
-fn receipt_is_not_required_in_a_plan_without_a_run() {
-    let dir = tempfile::tempdir().expect("dir");
-    let store = open(dir.path());
-    let owned = plan(&store, "owned");
-    let free = plan(&store, "free");
-    own_plan_by_run(dir.path(), &owned.id);
-    let a = story(&store, &free.id, "A");
-    let b = story(&store, &free.id, "B");
-    let a = to_done(&store, &a.id);
+    let c = story(&store, &p.id, "C");
+    let a = store
+        .transition(&a.id, a.revision, StoryCommand::WontFix)
+        .expect("wontfix");
     let b = store
         .add_dependency(&b.id, &a.id, b.revision)
         .expect("dependency");
+    assert_eq!(b.status, StoryStatus::Backlog);
+    to_done(&store, &c.id);
+    let b = store.get_story(&b.id).expect("b");
+    assert_eq!(
+        b.status,
+        StoryStatus::Backlog,
+        "unrelated approval promoted it"
+    );
+    let err = store.claim(&b.id, "s", b.revision).expect_err("claim");
+    assert!(err.contains(&a.id), "{err}");
+    let b = store
+        .remove_dependency(&b.id, &a.id, b.revision, None)
+        .expect("user removes it");
     assert_eq!(b.status, StoryStatus::Ready);
-}
-
-/// Catches: WontFix counting as satisfied (promote on an unrelated approval, or add_dependency
-/// leaving the dependent Ready), with and without a workflow run (Boss 2026-09-28).
-#[test]
-fn wont_fix_never_satisfies_a_dependency() {
-    for owned in [false, true] {
-        let dir = tempfile::tempdir().expect("dir");
-        let store = open(dir.path());
-        let p = plan(&store, "p");
-        if owned {
-            own_plan_by_run(dir.path(), &p.id);
-        }
-        let a = story(&store, &p.id, "A");
-        let b = story(&store, &p.id, "B");
-        let c = story(&store, &p.id, "C");
-        let a = store
-            .transition(&a.id, a.revision, StoryCommand::WontFix)
-            .expect("wontfix");
-        let b = store
-            .add_dependency(&b.id, &a.id, b.revision)
-            .expect("dependency");
-        assert_eq!(b.status, StoryStatus::Backlog, "owned={owned}");
-        to_done(&store, &c.id);
-        let b = store.get_story(&b.id).expect("b");
-        assert_eq!(
-            b.status,
-            StoryStatus::Backlog,
-            "owned={owned}: unrelated approval promoted it"
-        );
-        store
-            .reconcile_integrated_dependencies(&p.id)
-            .expect("reconcile");
-        assert_eq!(
-            store.get_story(&b.id).expect("b").status,
-            StoryStatus::Backlog,
-            "owned={owned}"
-        );
-        let err = store.claim(&b.id, "s", b.revision).expect_err("claim");
-        assert!(err.contains(&a.id), "{err}");
-        let b = store
-            .remove_dependency(&b.id, &a.id, b.revision, None)
-            .expect("user removes it");
-        assert_eq!(b.status, StoryStatus::Ready, "owned={owned}");
-    }
 }
 
 /// Catches: a not-Done (InProgress/Review) dependency leaving the dependent claimable.

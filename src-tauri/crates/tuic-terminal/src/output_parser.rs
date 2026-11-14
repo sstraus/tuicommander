@@ -55,6 +55,18 @@ pub fn parse_provider_recovery(payload: &str) -> Option<ParsedEvent> {
 pub enum ParsedEvent {
     #[serde(rename = "provider-recovery")]
     ProviderRecovery { recovery: Option<ProviderRecovery> },
+    /// The current native tool name of the agent, from verified hook or
+    /// protocol metadata; `None` when no tool call is live. Never a state.
+    #[serde(rename = "tool-activity")]
+    ToolActivity { name: Option<String> },
+    /// Labels of the native children an ego turn has in flight, in start
+    /// order; empty when none. Descriptive only, never a state.
+    #[serde(rename = "child-activity")]
+    ChildActivity { children: Vec<String> },
+    /// Outcome of the last settled native ego turn; `None` while a turn runs
+    /// or after the native session ends. Descriptive only, never a state.
+    #[serde(rename = "turn-outcome")]
+    TurnOutcome { outcome: Option<String> },
     #[serde(rename = "rate-limit")]
     RateLimit {
         pattern_name: String,
@@ -221,6 +233,17 @@ pub struct ChoicePromptPayload {
     pub dismiss_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub amend_key: Option<String>,
+    /// Header of the current question, from the native question payload.
+    /// Set only in a session snapshot (`agent_hook_payload`), never by the
+    /// screen parser.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub header: Option<String>,
+    /// 1-based position of the current question in a multi-question payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question_index: Option<u32>,
+    /// Number of questions in a multi-question payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question_count: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -2571,6 +2594,30 @@ pub fn parse_grok_question(screen_rows: &[String]) -> Option<ParsedEvent> {
     let mut end = screen_rows.len();
     while end > 0 && blank(&screen_rows[end - 1]) {
         end -= 1;
+    }
+    // 1.0.70 adds native Ask controls below the radio rows. Accept only the
+    // complete native footer; arbitrary output after a form is still history.
+    let compact = |row: &str| {
+        row.chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+    };
+    if end > 0
+        && matches!(
+            compact(&screen_rows[end - 1]).as_str(),
+            "Enter:submit│Esc:back" | "Tab:nextanswer│Esc:scrollback│Shift+x:dismiss"
+        )
+    {
+        let footer = (end.saturating_sub(5)..end).rev().find(|&index| {
+            matches!(
+                compact(&screen_rows[index]).as_str(),
+                "┃↑/↓navigate·ycopyEnter:submit" | "┃↑/↓navigate·ycopyEnter:edit"
+            )
+        })?;
+        end = footer;
+        while end > 0 && blank(&screen_rows[end - 1]) {
+            end -= 1;
+        }
     }
     let mut first = end;
     let mut options = Vec::new();

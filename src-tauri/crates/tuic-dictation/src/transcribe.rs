@@ -1,34 +1,63 @@
 use parking_lot::Mutex;
 use serde::Serialize;
+use std::ffi::CStr;
 use std::path::Path;
+use std::sync::OnceLock;
+use whisper_rs::whisper_rs_sys as sys;
 use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
 };
 
-/// True when a GPU backend is compiled into this build.
-/// - macOS: Metal (always, via target-specific dep).
-/// - Windows: Vulkan (always, via target-specific dep).
-/// - Linux: when `cuda` or `vulkan` feature is explicitly enabled.
-///
-/// Used only for `n_threads` tuning — `use_gpu(true)` is always set regardless,
-/// because whisper.cpp falls back to CPU gracefully when no GPU is available.
-pub(super) const GPU_COMPILED: bool = cfg!(any(
-    target_os = "macos",
-    target_os = "windows",
-    feature = "cuda",
-    feature = "vulkan",
-));
-
-/// Optimal n_threads: 1 when a GPU backend is compiled in (GPU handles compute), 4 otherwise.
-pub(super) fn optimal_n_threads() -> i32 {
-    if GPU_COMPILED { 1 } else { 4 }
+/// The device whisper.cpp takes with `use_gpu(true)` and `gpu_device = 0`:
+/// the first GPU or integrated GPU in ggml's registry, as in
+/// `whisper_backend_init_gpu`. CPU and accelerator (BLAS) devices never count.
+fn first_gpu(
+    devices: impl IntoIterator<Item = (sys::ggml_backend_dev_type, String)>,
+) -> Option<String> {
+    devices
+        .into_iter()
+        .find(|(kind, _)| {
+            *kind == sys::ggml_backend_dev_type_GGML_BACKEND_DEVICE_TYPE_GPU
+                || *kind == sys::ggml_backend_dev_type_GGML_BACKEND_DEVICE_TYPE_IGPU
+        })
+        .map(|(_, name)| name)
 }
 
-/// Backend label for logging and frontend events.
-/// Always "gpu" because `use_gpu(true)` is set unconditionally — whisper.cpp
-/// attempts GPU first and falls back to CPU transparently.
+/// Name of the GPU device whisper.cpp will use, or `None` when it runs on CPU:
+/// a CPU-only build (Windows and Linux without `vulkan`/`cuda`) or a machine
+/// whose driver exposes no device. Read once; ggml's registry does not change.
+pub fn gpu_device() -> Option<&'static str> {
+    static DEVICE: OnceLock<Option<String>> = OnceLock::new();
+    DEVICE
+        .get_or_init(|| {
+            // SAFETY: ggml's registry is a process-wide static built on first
+            // use; device handles and names stay valid for the process.
+            let devices = unsafe {
+                (0..sys::ggml_backend_dev_count())
+                    .map(|i| {
+                        let dev = sys::ggml_backend_dev_get(i);
+                        let name = CStr::from_ptr(sys::ggml_backend_dev_name(dev));
+                        (
+                            sys::ggml_backend_dev_type(dev),
+                            name.to_string_lossy().into_owned(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            first_gpu(devices)
+        })
+        .as_deref()
+}
+
+/// Optimal n_threads: 1 when a GPU does the compute, 4 on CPU.
+pub(super) fn optimal_n_threads() -> i32 {
+    if gpu_device().is_some() { 1 } else { 4 }
+}
+
+/// Backend label for logging and the `dictation-backend-info` event: "gpu"
+/// when ggml has a GPU device for whisper.cpp, "cpu" otherwise.
 pub fn backend_label() -> &'static str {
-    "gpu"
+    if gpu_device().is_some() { "gpu" } else { "cpu" }
 }
 
 /// Build WhisperContextParameters with GPU always preferred.
@@ -257,6 +286,7 @@ impl WhisperTranscriber {
         let backend = backend_label();
         tracing::info!(
             backend,
+            gpu_device = gpu_device().unwrap_or("none"),
             n_threads = optimal_n_threads(),
             "Loading Whisper model"
         );
@@ -502,13 +532,60 @@ fn is_hallucination(text: &str) -> bool {
 mod tests {
     use super::*;
 
+    /// Catches: a BLAS accelerator counted as the GPU, or an integrated GPU
+    /// (the usual laptop Vulkan device) skipped, so the label lies.
     #[test]
-    fn optimal_n_threads_consistent_with_gpu_compiled() {
-        let threads = optimal_n_threads();
-        if GPU_COMPILED {
-            assert_eq!(threads, 1, "GPU compiled: n_threads should be 1");
+    fn first_gpu_takes_the_first_gpu_or_igpu_only() {
+        let cpu = sys::ggml_backend_dev_type_GGML_BACKEND_DEVICE_TYPE_CPU;
+        let gpu = sys::ggml_backend_dev_type_GGML_BACKEND_DEVICE_TYPE_GPU;
+        let igpu = sys::ggml_backend_dev_type_GGML_BACKEND_DEVICE_TYPE_IGPU;
+        let accel = sys::ggml_backend_dev_type_GGML_BACKEND_DEVICE_TYPE_ACCEL;
+        let dev = |kind, name: &str| (kind, name.to_string());
+        assert_eq!(first_gpu([dev(cpu, "CPU"), dev(accel, "BLAS")]), None);
+        assert_eq!(first_gpu(Vec::new()), None);
+        assert_eq!(
+            first_gpu([dev(cpu, "CPU"), dev(igpu, "Vulkan0")]).as_deref(),
+            Some("Vulkan0")
+        );
+        assert_eq!(
+            first_gpu([dev(gpu, "Vulkan0"), dev(igpu, "Vulkan1")]).as_deref(),
+            Some("Vulkan0")
+        );
+    }
+
+    /// Catches: the backend label and thread count follow the build target
+    /// ("windows means Vulkan") instead of the devices ggml really has, so a
+    /// CPU-only build reports "gpu" and decodes on a single thread.
+    #[test]
+    fn backend_follows_the_devices_ggml_reports() {
+        use std::ffi::CStr;
+        use whisper_rs::whisper_rs_sys as sys;
+        // Independent oracle: ask ggml's registry directly, as
+        // whisper_backend_init_gpu does when `use_gpu` is set.
+        // SAFETY: the registry is a process-wide static; handles and names
+        // stay valid for the life of the process.
+        let devices: Vec<(sys::ggml_backend_dev_type, String)> = unsafe {
+            (0..sys::ggml_backend_dev_count())
+                .map(|i| {
+                    let dev = sys::ggml_backend_dev_get(i);
+                    let name = CStr::from_ptr(sys::ggml_backend_dev_name(dev));
+                    (
+                        sys::ggml_backend_dev_type(dev),
+                        name.to_string_lossy().into_owned(),
+                    )
+                })
+                .collect()
+        };
+        let has_gpu = devices.iter().any(|(t, _)| {
+            *t == sys::ggml_backend_dev_type_GGML_BACKEND_DEVICE_TYPE_GPU
+                || *t == sys::ggml_backend_dev_type_GGML_BACKEND_DEVICE_TYPE_IGPU
+        });
+        if has_gpu {
+            assert_eq!(backend_label(), "gpu", "devices: {devices:?}");
+            assert_eq!(optimal_n_threads(), 1, "devices: {devices:?}");
         } else {
-            assert_eq!(threads, 4, "CPU only: n_threads should be 4");
+            assert_eq!(backend_label(), "cpu", "devices: {devices:?}");
+            assert_eq!(optimal_n_threads(), 4, "devices: {devices:?}");
         }
     }
 

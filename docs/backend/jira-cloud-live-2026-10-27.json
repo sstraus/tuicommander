@@ -1,0 +1,105 @@
+{
+  "date": "2026-10-27T11:12:22.439Z",
+  "instance": "agent-test-jiralive",
+  "socket": "/Users/stefano.straus/Gits/.tuic/tuic-at/0da69ad430b8fe57/tuic-mcp-0da69ad430b8fe57.sock",
+  "native": "aarch64-apple-darwin",
+  "result": {
+    "settings": {
+      "source": "actual input and blur",
+      "savedProjectId": "10001"
+    },
+    "provider": {
+      "providerId": "jira",
+      "registrationCount": 1
+    },
+    "metadata": {
+      "issueTypes": [
+        {
+          "id": "10000",
+          "name": "Epic"
+        },
+        {
+          "id": "10005",
+          "name": "Story"
+        },
+        {
+          "id": "10006",
+          "name": "Task"
+        },
+        {
+          "id": "10007",
+          "name": "Sub-task"
+        },
+        {
+          "id": "10008",
+          "name": "Bug"
+        }
+      ],
+      "fields": [
+        {
+          "id": "assignee",
+          "required": false
+        },
+        {
+          "id": "attachment",
+          "required": false
+        },
+        {
+          "id": "components",
+          "required": false
+        },
+        {
+          "id": "customfield_10001",
+          "required": false
+        },
+        {
+          "id": "customfield_10015",
+          "required": false
+        },
+        {
+          "id": "customfield_10020",
+          "required": false
+        },
+        {
+          "id": "duedate",
+          "required": false
+        },
+        {
+          "id": "fixVersions",
+          "required": false
+        },
+        {
+          "id": "issuelinks",
+          "required": false
+        },
+        {
+          "id": "labels",
+          "required": false
+        },
+        {
+          "id": "parent",
+          "required": false
+        },
+        {
+          "id": "priority",
+          "required": false
+        }
+      ]
+    },
+    "created": {
+      "resumedAfterCreate": true,
+      "key": "TUIC-3",
+      "url": "https://straus-team.atlassian.net/browse/TUIC-3",
+      "title": "Native Jira plugin E2E",
+      "body": "Native plugin creation\n\n- First\n- Second\n\n```js\nconst n = 1;\n```\n\nHard  \nbreak"
+    },
+    "commentReadBack": true,
+    "transition": {
+      "id": "31",
+      "state": "Done"
+    },
+    "searchable": true,
+    "accountBound": true,
+    "pluginSource": "/Users/stefano.straus/Gits/personal/tuicommander__wt/fix-1694-1756-beta4/plugins/jira"
+  }
+}

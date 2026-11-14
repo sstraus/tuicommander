@@ -41,11 +41,14 @@ Right-click a branch in the Branches tab (Cmd+G) for branch-specific prompts lik
 | **CI & Quality** | Fix CI Failures, Fix Lint Issues, Write Tests, Run & Fix Tests |
 | **Investigation** | Investigate Issue, What Changed?, Summarize Branch, Explain Changes |
 | **Code Operations** | Suggest Refactoring, Security Audit |
-| **Event configuration** | Configure Issue to Draft PR, Configure Incoming PR Review, Configure Authorized Bounded Fix |
 
-The [event configuration guides](event-driven-templates.md) ask for prerequisites
-and confirmation one step at a time. They open in the composer for review and do
-not install event intake or publish to GitHub merely by being selected.
+Git variables are resolved in the active terminal's checkout, not the parent
+repository directory. A template that uses both `{branch}` and `{base_branch}`
+is unavailable when refreshed Git context shows the same branch for both.
+Toolbar and Git Branches actions show the reason in their tooltip. Cached
+workspace branch names do not decide availability or block execution. Every run
+checks the target checkout again before sending text. Select a different branch
+before running a merge or rebase template. Templates that use only `{branch}` remain available.
 
 ## Customizing Smart Prompts
 
@@ -75,7 +78,7 @@ Prompts use `{variable_name}` syntax. Most variables are auto-resolved at execut
 | Variable | Description |
 |----------|-------------|
 | `{branch}` | Current branch name |
-| `{base_branch}` | Default branch (main/master/develop) |
+| `{base_branch}` | Explicit base branch from repository settings; Automatic or unloaded settings use `origin/HEAD`, then local `main`, `master`, or `develop` |
 | `{repo_name}` | Repository directory name |
 | `{repo_path}` | Full filesystem path to the repository root |
 | `{diff}` | Working tree diff (truncated to 50KB) |

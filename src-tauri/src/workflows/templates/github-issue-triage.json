@@ -1,0 +1,160 @@
+{
+  "key": "github-issue-triage",
+  "name": "GitHub issue triage",
+  "description": "Bind it to a GitHub issue trigger (event labeled, filter label, or event opened). It reads the admitted issue, asks the model whether to comment and, only when it comments, posts the approved comment and then adds the triaged label. When no comment is needed, the run ends as skipped and does not change the issue. Set the model profile, model and effort, and the label, before you publish.",
+  "editor": {
+    "labels": {
+      "read": "Read the admitted issue",
+      "assess": "Model triage",
+      "should_comment": "Comment needed?",
+      "comment": "Post the triage comment",
+      "mark": "Add the triaged label"
+    },
+    "presets": {}
+  },
+  "definition": {
+    "control": {
+      "nodes": {
+        "start": { "type": "start" },
+        "read": { "type": "activity", "activity": 0 },
+        "assess": { "type": "activity", "activity": 1 },
+        "should_comment": { "type": "condition", "condition": "comment_needed" },
+        "comment": { "type": "activity", "activity": 2 },
+        "mark": { "type": "activity", "activity": 3 },
+        "commented": { "type": "end", "outcome": "commented" },
+        "skipped": { "type": "end", "outcome": "skipped" }
+      },
+      "edges": {
+        "start": { "next": "read" },
+        "read": { "ok": "assess" },
+        "assess": { "complete": "should_comment" },
+        "should_comment": { "true": "comment", "false": "skipped", "unknown": "skipped" },
+        "comment": { "ok": "mark" },
+        "mark": { "ok": "commented" }
+      }
+    },
+    "outputs": { "fields": {} },
+    "outcomes": ["commented", "skipped"],
+    "inputs": { "fields": {} },
+    "subject": {
+      "required": true,
+      "fields": {
+        "fields": {
+          "workspace": { "value_type": "workspace_reference", "required": true, "default": null }
+        }
+      }
+    },
+    "instances": [
+      {
+        "descriptor": { "namespace": "native", "name": "issue.read", "version": 1 },
+        "config": {},
+        "execution_policy": "native"
+      },
+      {
+        "descriptor": { "namespace": "model", "name": "request", "version": 1 },
+        "config": {
+          "request": {
+            "profile": "",
+            "model": "",
+            "effort": "",
+            "instructions": "You triage a new GitHub issue. The context is the issue as JSON: repository, number, title, body and labels. Set post_comment to true when a short reply helps the reporter: ask for missing reproduction steps, versions or expected behaviour, or confirm what you understood. Put that reply in comment. Set post_comment to false when the issue is complete and clear.",
+            "context": [],
+            "output_schema": {
+              "fields": {
+                "post_comment": { "value_type": "boolean", "required": true, "default": null },
+                "comment": { "value_type": "string", "required": true, "default": null }
+              }
+            },
+            "limits": { "timeout_ms": 120000, "max_context_bytes": 65536, "max_output_bytes": 16384 },
+            "unavailable_policy": "fail"
+          }
+        },
+        "execution_policy": "local"
+      },
+      {
+        "descriptor": { "namespace": "native", "name": "issue.effect", "version": 1 },
+        "config": {},
+        "execution_policy": "native"
+      },
+      {
+        "descriptor": { "namespace": "native", "name": "issue.effect", "version": 1 },
+        "config": {},
+        "execution_policy": "native"
+      }
+    ],
+    "input_bindings": {
+      "0": { "request": { "source": "constant", "value": {} } },
+      "1": {
+        "text": {
+          "source": "projection",
+          "from": { "source": "activity_output", "activity": 0, "field": "receipt" },
+          "pointer": "/text",
+          "value_type": "string"
+        }
+      },
+      "2": {
+        "request": {
+          "source": "object",
+          "fields": {
+            "source": {
+              "source": "projection",
+              "from": { "source": "activity_output", "activity": 0, "field": "receipt" },
+              "pointer": "/source",
+              "value_type": "object"
+            },
+            "action": {
+              "source": "object",
+              "fields": {
+                "type": { "source": "constant", "value": "comment" },
+                "body": {
+                  "source": "projection",
+                  "from": { "source": "activity_output", "activity": 1, "field": "result" },
+                  "pointer": "/comment",
+                  "value_type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "3": {
+        "request": {
+          "source": "object",
+          "fields": {
+            "source": {
+              "source": "projection",
+              "from": { "source": "activity_output", "activity": 0, "field": "receipt" },
+              "pointer": "/source",
+              "value_type": "object"
+            },
+            "action": {
+              "source": "object",
+              "fields": {
+                "type": { "source": "constant", "value": "add_label" },
+                "label": { "source": "constant", "value": "triaged" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "conditions": {
+      "comment_needed": {
+        "operator": "compare",
+        "comparison": "equal",
+        "left": {
+          "source": "projection",
+          "from": { "source": "activity_output", "activity": 1, "field": "result" },
+          "pointer": "/post_comment",
+          "value_type": "boolean"
+        },
+        "right": { "source": "constant", "value": true }
+      }
+    },
+    "collections": {},
+    "loops": {},
+    "forks": {},
+    "output_bindings": {},
+    "subflows": []
+  }
+}

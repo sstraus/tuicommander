@@ -4,8 +4,6 @@ The Smart Prompts Library stores and manages all your prompt templates — both 
 
 > **Looking for one-click AI automation?** See [Smart Prompts](smart-prompts.md) for the full guide on built-in automation prompts, context variables, and headless execution.
 
-Search for **Configure** to find the three [guided event configuration prompts](event-driven-templates.md): issue to draft PR, incoming PR review and authorized bounded fix. They start in the composer for review; they are not scheduled Automation templates or event subscriptions.
-
 ## Opening the Drawer
 
 - **Cmd+Shift+K** — Toggle the prompt library drawer

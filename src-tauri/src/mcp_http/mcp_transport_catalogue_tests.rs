@@ -1,8 +1,26 @@
+/// A peer registered as orchestrator sees every state-gated tool (#2807-f698),
+/// so a test about the whole catalogue can read all of it.
+const EVERY_TOOL_PEER: &str = "550e8400-e29b-41d4-a716-446655442808";
+const EVERY_TOOL_MCP: &str = "mcp-every-tool";
+
+fn every_tool_caller(state: &Arc<AppState>) -> Option<&'static str> {
+    handle_messaging(
+        state,
+        &serde_json::json!({
+            "action": "register", "tuic_session": EVERY_TOOL_PEER,
+            "name": "orchestrator", "orchestrator": true
+        }),
+        Some(EVERY_TOOL_MCP),
+    );
+    Some(EVERY_TOOL_MCP)
+}
+
 /// Catches: Anthropic rejects advertised action contracts with root combinators,
 /// including schemas returned through lazy search and exact lookup.
 #[test]
 fn advertised_native_schemas_have_no_root_combinators() {
     let state = test_state();
+    let caller = every_tool_caller(&state);
     {
         let mut config = state.config.write();
         config.progress_tracking = true;
@@ -12,6 +30,10 @@ fn advertised_native_schemas_have_no_root_combinators() {
     let mut failures = Vec::new();
     let mut check = |surface: &str, tool: &serde_json::Value| {
         let schema = &tool["inputSchema"];
+        // Catches: pruning removes `$defs`, then an indexing write re-inserts it as null (#2883-c897).
+        if schema.get("$defs").is_some_and(|defs| !defs.is_object()) {
+            failures.push(format!("{surface}: {} has non-object $defs", tool["name"]));
+        }
         for keyword in ["oneOf", "anyOf", "allOf"] {
             if schema.get(keyword).is_some() {
                 failures.push(format!("{surface}: {} has {keyword}", tool["name"]));
@@ -21,7 +43,7 @@ fn advertised_native_schemas_have_no_root_combinators() {
     for tool in native_tool_definitions().as_array().unwrap() {
         check("native", tool);
     }
-    for tool in merged_tool_definitions_for_mode(&state, None, false)
+    for tool in merged_tool_definitions_for_mode(&state, caller, false)
         .as_array()
         .unwrap()
     {
@@ -29,19 +51,27 @@ fn advertised_native_schemas_have_no_root_combinators() {
     }
     for tool in searchable_tool_definitions(&state) {
         let name = tool["name"].as_str().unwrap();
-        let exact = handle_get_tool_schema(&state, &serde_json::json!({"tool_name":name}));
+        let exact = handle_get_tool_schema_for_session(
+            &state,
+            &serde_json::json!({"tool_name":name}),
+            caller,
+        );
         assert_eq!(exact["name"], name);
         check("get_tool_schema", &exact);
-        let search = handle_search_tools(
+        let search = handle_search_tools_for_session(
             &state,
             &serde_json::json!({
                 "query":name, "schema_byte_budget":65536
             }),
+            caller,
         );
         assert!(search["count"].as_u64().unwrap() > 0, "{name}");
-        if let Some(top) = search.get("top_schema") {
-            check("search_tools", top);
-        }
+        // A missing top_schema means the ranked tool exceeds the maximum budget: the
+        // check above would then pass without inspecting the search surface (#2743-9a94).
+        let top = search.get("top_schema").unwrap_or_else(|| {
+            panic!("search_tools {name}: top_schema omitted at the 65536-byte budget: {search}")
+        });
+        check("search_tools", top);
     }
     // Catches: an untagged wrapper hides a tagged action enum (settings
     // transactions), or a flattened owner union loses its action-specific fields.
@@ -166,12 +196,8 @@ fn mcp_instructions_teach_the_answer_marker_regardless_of_other_markers() {
     }
     for collapse in [false, true] {
         let instructions = build_mcp_instructions_for_mode(&state, None, collapse);
-        assert!(
-            instructions.contains(
-                "- `💬 ` — prefix every sentence that directly answers the user's question"
-            )
-        );
-        assert!(instructions.contains("at row start or list-item text start (marker + space)"));
+        assert!(instructions.contains("Start each answer sentence on a new line with `💬 `"));
+        assert!(instructions.contains("or after a list prefix. Never after prose."));
         assert!(instructions.contains("Exclude status, tool and hook/task notices."));
     }
 }
@@ -338,9 +364,14 @@ async fn native_tool_definitions_are_the_one_surviving_family() {
         config.settings_mcp_enabled = true;
         config.collapse_tools = false;
     }
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        MCP_SESSION_HEADER,
+        every_tool_caller(&state).unwrap().parse().unwrap(),
+    );
     let listed = tools_list_result(
         &state,
-        HeaderMap::new(),
+        headers,
         serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}),
     )
     .await;
@@ -353,6 +384,7 @@ async fn native_tool_definitions_are_the_one_surviving_family() {
             "session",
             "agent",
             "repo",
+            "story",
             "workflow",
             "progress",
             "ui",
@@ -437,7 +469,7 @@ async fn disabled_progress_is_rejected_by_direct_and_collapsed_dispatch() {
     assert!(direct["error"].as_str().unwrap().contains("disabled"));
     let collapsed = handle_call_tool(
         &state,
-        loopback_addr(),
+        loopback_addr().into(),
         &serde_json::json!({"tool_name":"progress", "arguments": args}),
         None,
         None,
@@ -529,12 +561,16 @@ fn agent_tool_description_carries_orchestration_crash_course() {
     );
     assert!(desc.contains("wait"), "must mention the wait primitive");
     assert!(
-        desc.contains("the payload is never typed into the recipient's composer"),
-        "must state the mail-stays-mail invariant: a send is never keystrokes"
+        desc.contains("Normal mail keeps the payload in the inbox"),
+        "must state the mail-stays-mail invariant: normal mail is never keystrokes"
     );
     assert!(
-        desc.contains("generic `agent action=inbox` wake"),
+        desc.contains("payload-free idle wake"),
         "must explain payload-free wake delivery"
+    );
+    assert!(
+        desc.contains("then submits the full message"),
+        "must state that urgent mail is the one path that submits the body"
     );
     assert!(
         desc.contains("do NOT poll"),
@@ -665,6 +701,8 @@ fn merged_tools_collapse_false_returns_all_native_tools() {
     let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
     // No voice/Telegram configuration files or live remote connections. All
     // ordinary tools are enabled; Design Mode has no armed owner for this caller.
+    // An unbound caller has no project and no automation exists, so `workflow`
+    // and `automations` are not listed (#2807-f698).
     let state = test_state();
     {
         let mut config = state.config.write();
@@ -679,12 +717,11 @@ fn merged_tools_collapse_false_returns_all_native_tools() {
     assert_eq!(
         names,
         vec![
-            "automations",
             "secret",
             "session",
             "agent",
             "repo",
-            "workflow",
+            "story",
             "progress",
             "ui",
             "plugin_dev_guide",
@@ -888,6 +925,16 @@ fn search_tools_returns_ranked_results_for_github_query() {
     assert_eq!(results[0]["name"], "repo");
 }
 
+// Catches: a bare tool name ranked by BM25 alone, so tools that mention "agent" in
+// shorter descriptions outrank the `agent` tool itself.
+#[test]
+fn search_tools_ranks_the_tool_named_by_the_query_first() {
+    let state = test_state();
+    let r = handle_search_tools(&state, &serde_json::json!({ "query": "agent" }));
+    let results = r["results"].as_array().unwrap();
+    assert_eq!(results[0]["name"], "agent", "results: {results:?}");
+}
+
 #[test]
 fn search_tools_excludes_disabled_native_tools() {
     let state = test_state();
@@ -975,7 +1022,14 @@ fn get_tool_schema_excludes_disabled_native_tools() {
 #[tokio::test]
 async fn call_tool_requires_tool_name() {
     let state = test_state();
-    let r = handle_call_tool(&state, loopback_addr(), &serde_json::json!({}), None, None).await;
+    let r = handle_call_tool(
+        &state,
+        loopback_addr().into(),
+        &serde_json::json!({}),
+        None,
+        None,
+    )
+    .await;
     assert!(r["error"].as_str().unwrap().contains("tool_name"));
 }
 
@@ -985,7 +1039,7 @@ async fn call_tool_blocks_meta_tool_recursion() {
     for meta in META_TOOL_NAMES {
         let r = handle_call_tool(
             &state,
-            loopback_addr(),
+            loopback_addr().into(),
             &serde_json::json!({ "tool_name": meta, "arguments": { "query": "x" } }),
             None,
             None,
@@ -1005,7 +1059,7 @@ async fn call_tool_rejects_disabled_native_tool() {
     state.config.write().mcp_capabilities.denied = vec!["repo".to_string()];
     let r = handle_call_tool(
         &state,
-        loopback_addr(),
+        loopback_addr().into(),
         &serde_json::json!({ "tool_name": "repo", "arguments": { "action": "active" } }),
         None,
         None,
@@ -1019,7 +1073,7 @@ async fn call_tool_returns_unknown_tool_error_for_bogus_name() {
     let state = test_state();
     let r = handle_call_tool(
         &state,
-        loopback_addr(),
+        loopback_addr().into(),
         &serde_json::json!({ "tool_name": "nonsense_xyz", "arguments": {} }),
         None,
         None,
@@ -1036,15 +1090,20 @@ async fn call_tool_propagates_addr_for_localhost_only_tools() {
     state.config.write().mcp_capabilities.denied.clear();
     let r = handle_call_tool(
         &state,
-        non_loopback_addr(),
+        non_loopback_addr().into(),
         &serde_json::json!({
-            "tool_name":"settings", "arguments":{"action":"refresh","store":"ego"}
+            "tool_name":"agent", "arguments":{"action":"spawn"}
         }),
         Some("remote-test"),
         None,
     )
     .await;
-    assert_eq!(r["error"]["code"], "forbidden_origin", "{r}");
+    assert!(
+        r["error"]
+            .as_str()
+            .is_some_and(|e| e.contains("restricted to localhost")),
+        "{r}"
+    );
 }
 
 #[tokio::test]
@@ -1054,7 +1113,7 @@ async fn call_tool_missing_arguments_defaults_to_empty_object() {
     let state = test_state();
     let r = handle_call_tool(
         &state,
-        loopback_addr(),
+        loopback_addr().into(),
         &serde_json::json!({ "tool_name": "session" }),
         None,
         None,
@@ -1071,7 +1130,7 @@ async fn call_tool_routes_unknown_upstream_prefixed_name_through_proxy() {
     let state = test_state();
     let r = handle_call_tool(
         &state,
-        loopback_addr(),
+        loopback_addr().into(),
         &serde_json::json!({ "tool_name": "fake_upstream__some_tool", "arguments": {} }),
         None,
         None,
@@ -1274,7 +1333,7 @@ fn agent_description_owns_the_orchestrator_role_and_wake_contract() {
 }
 
 #[test]
-fn agent_send_schema_and_description_explain_urgent_mail_without_exposing_payload() {
+fn agent_send_schema_and_description_explain_forced_urgent_mail() {
     let definitions = native_tool_definitions();
     let agent = definitions
         .as_array()
@@ -1289,7 +1348,9 @@ fn agent_send_schema_and_description_explain_urgent_mail_without_exposing_payloa
     let description = agent["description"].as_str().unwrap();
     assert!(description.contains("Normal is the default"));
     assert!(description.contains("recipient must change course before its next step"));
-    assert!(description.contains("payload is never typed into the recipient's composer"));
+    assert!(description.contains("Normal mail keeps the payload in the inbox"));
+    assert!(description.contains("urgency=urgent and urgency=interrupt share forced steering"));
+    assert!(description.contains("stay inbox-only without a queued fallback"));
     assert!(description.contains("urgent_delivered"));
     assert!(description.contains("urgent_fallback_reason"));
 }
@@ -1383,6 +1444,9 @@ fn meta_tools_do_not_demand_a_schema_the_caller_already_has() {
 ///
 /// Set `TUIC_MCP_SURFACE_DUMP=<path>` to write every measured string out for
 /// out-of-band tokenizer counts (see docs/backend/mcp-http.md).
+/// Measured 7,968 bytes on 2026-11-04 (full agent: 16,336), rounded up to 64.
+const CHILD_AGENT_CEILING: usize = 8000;
+
 #[test]
 fn mcp_instruction_surface_bytes_stay_within_budget() {
     let state = test_state();
@@ -1430,6 +1494,21 @@ fn mcp_instruction_surface_bytes_stay_within_budget() {
             serde_json::to_string(tool).unwrap(),
         );
     }
+
+    // The agent definition a managed child receives (story 2805).
+    let child_agent = record(
+        "schema.agent.managed_child",
+        serde_json::to_string(
+            &crate::mcp_http::mcp_transport_catalogue::filtered_native_tools_for_role(
+                &state,
+                crate::mcp_http::caller_role::CallerRole::ManagedChild,
+            )
+            .into_iter()
+            .find(|tool| tool["name"] == "agent")
+            .expect("agent listed for a managed child"),
+        )
+        .unwrap(),
+    );
 
     // register response — the other place the workflow prose lives.
     let register = handle_messaging(
@@ -1496,6 +1575,8 @@ fn mcp_instruction_surface_bytes_stay_within_budget() {
         .map(|(k, v)| format!("{k}={}", v.as_str().unwrap().len()))
         .collect();
     let measured = measured.join(" ");
+    // Captured by the harness; `--no-capture` shows the measurement the docs cite.
+    println!("MCP_SURFACE_BYTES {measured}");
 
     // Budgets are regression guards on the surfaces this story shrank, not
     // targets. Each is the measured value rounded up to the next 64 bytes.
@@ -1532,9 +1613,21 @@ fn mcp_instruction_surface_bytes_stay_within_budget() {
         spawn_bytes <= 832,
         "spawn response must stay free of static prose — {measured}"
     );
+    // Story 2805 estimated about 5,000; send prose and the report schema keep it higher.
+    assert!(
+        child_agent <= CHILD_AGENT_CEILING,
+        "the managed-child agent definition grew past its budget — {measured}"
+    );
     assert!(
         register_bytes <= 4608,
         "register response grew past its budget — {measured}"
+    );
+    // Story 2804 split stories out of `workflow` so a story session stops loading the
+    // workflow language; the split is pointless if the story tool grows back to it.
+    let story_chars = dump["schema.story"].as_str().unwrap().chars().count();
+    assert!(
+        story_chars <= 17_000,
+        "the story tool definition grew past its 17,000-character ceiling — {measured}"
     );
 }
 
@@ -1788,6 +1881,7 @@ fn rebuild_tool_search_index_populates_all_native_tools() {
             "session",
             "agent",
             "repo",
+            "story",
             "workflow",
             "progress",
             "ui",
@@ -1913,6 +2007,7 @@ mod secret_form_dispatch {
         let response = mcp_post(
             State(state),
             ConnectInfo("127.0.0.1:12345".parse().unwrap()),
+            None,
             HeaderMap::new(),
             Json(serde_json::json!({
                 "jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -1980,6 +2075,215 @@ mod secret_form_dispatch {
                 .contains("private secret form"),
             "{response}"
         );
+    }
+
+    async fn native_call(
+        state: &std::sync::Arc<crate::AppState>,
+        name: &str,
+        args: serde_json::Value,
+    ) -> serde_json::Value {
+        super::mcp_transport::handle_mcp_tool_call(
+            state,
+            "127.0.0.1:12345".parse().unwrap(),
+            name,
+            &args,
+            None,
+        )
+        .await
+    }
+
+    async fn direct_upstream_text(
+        state: std::sync::Arc<crate::AppState>,
+        name: &str,
+        arguments: serde_json::Value,
+    ) -> String {
+        let response = mcp_post(
+            State(state),
+            ConnectInfo("127.0.0.1:12345".parse().unwrap()),
+            None,
+            HeaderMap::new(),
+            Json(serde_json::json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": name, "arguments": arguments}
+            })),
+        )
+        .await
+        .into_response();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+
+    /// Catches (#2661-e740): the owner loses harmless UI and unrelated server
+    /// work while a private form is open, because every `ui` call and every
+    /// `{upstream}__{tool}` call is classified as inspection.
+    #[tokio::test]
+    async fn secret_form_allows_toast_and_unrelated_upstream_query() {
+        let state = test_state();
+        // A remote HTTP upstream cannot capture this machine. `.invalid` never
+        // resolves, so the proxied call fails after the gate, without network.
+        state.mcp.upstream_registry.inject_ready_http_upstream(
+            "docs",
+            "https://docs.example.invalid/mcp",
+            &["search"],
+        );
+        open_form(&state);
+        let mut bus = state.event_bus.subscribe();
+
+        let toast = native_call(
+            &state,
+            "ui",
+            serde_json::json!({"action": "toast", "title": "build done"}),
+        )
+        .await;
+        assert_eq!(toast, serde_json::json!({"ok": true}), "{toast}");
+        assert!(
+            matches!(
+                bus.try_recv(),
+                Ok(crate::state::AppEvent::McpToast { ref title, .. }) if title == "build done"
+            ),
+            "toast was not delivered while the form was open"
+        );
+
+        let detection = native_call(
+            &state,
+            "debug",
+            serde_json::json!({"action": "agent_detection"}),
+        )
+        .await;
+        assert!(
+            !detection.to_string().contains("private secret form"),
+            "{detection}"
+        );
+
+        let direct =
+            direct_upstream_text(state.clone(), "docs__search", serde_json::json!({})).await;
+        assert!(!direct.contains("private secret form"), "{direct}");
+
+        let wrapped = native_call(
+            &state,
+            "call_tool",
+            serde_json::json!({"tool_name": "docs__search", "arguments": {}}),
+        )
+        .await;
+        assert!(
+            !wrapped.to_string().contains("private secret form"),
+            "{wrapped}"
+        );
+    }
+
+    /// Catches (#2661-e740): relaxing the gate lets an injected direct, nested
+    /// or proxied call capture or script the app while the private form is open.
+    #[tokio::test]
+    async fn secret_form_capture_and_wrapped_inspection_remain_blocked() {
+        let state = test_state();
+        // Loopback and LAN upstreams may run on this machine and capture it.
+        state
+            .mcp
+            .upstream_registry
+            .inject_ready_upstream("localcap", &["capture_screen"]);
+        state.mcp.upstream_registry.inject_ready_http_upstream(
+            "lancap",
+            "http://192.168.1.5:9000/mcp",
+            &["capture_screen"],
+        );
+        state.mcp.upstream_registry.inject_ready_http_upstream(
+            "hostcap",
+            "http://my-mac.local:9000/mcp",
+            &["capture_screen"],
+        );
+        open_form(&state);
+
+        let blocked = |value: &serde_json::Value| {
+            value["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("private secret form")
+        };
+        let native = [
+            ("ui", serde_json::json!({"action": "screenshot"})),
+            (
+                "ui",
+                serde_json::json!({"action": "tab", "id": "x", "title": "x", "html": "<script></script>"}),
+            ),
+            ("ui", serde_json::json!({"action": "design_screenshot"})),
+            (
+                "ui",
+                serde_json::json!({"action": "design_eval", "script": "1"}),
+            ),
+            (
+                "debug",
+                serde_json::json!({"action": "invoke_js", "script": "return 1"}),
+            ),
+            (
+                "debug",
+                serde_json::json!({"action": "frame_workload_dump"}),
+            ),
+            ("debug", serde_json::json!({"action": "logs"})),
+            ("ui", serde_json::json!({})),
+        ];
+        for (name, args) in native {
+            let response = native_call(&state, name, args.clone()).await;
+            assert!(blocked(&response), "{name} {args} -> {response}");
+            let wrapped = native_call(
+                &state,
+                "call_tool",
+                serde_json::json!({"tool_name": name, "arguments": args}),
+            )
+            .await;
+            assert!(blocked(&wrapped), "wrapped {name} -> {wrapped}");
+        }
+
+        for upstream in [
+            "localcap__capture_screen",
+            "lancap__capture_screen",
+            "hostcap__capture_screen",
+            "unregistered__capture_screen",
+        ] {
+            let direct = direct_upstream_text(state.clone(), upstream, serde_json::json!({})).await;
+            assert!(
+                direct.contains("private secret form"),
+                "{upstream}: {direct}"
+            );
+            let nested = native_call(
+                &state,
+                "call_tool",
+                serde_json::json!({
+                    "tool_name": "call_tool",
+                    "arguments": {"tool_name": upstream, "arguments": {}}
+                }),
+            )
+            .await;
+            assert!(blocked(&nested), "nested {upstream} -> {nested}");
+        }
+    }
+
+    /// Catches (#2661-e740): an IPv4-mapped IPv6 literal such as
+    /// `[::ffff:127.0.0.1]` names this machine, but `Ipv6Addr::is_loopback` and
+    /// the IPv6 private ranges do not see the embedded IPv4 address, so the gate
+    /// classifies a local capture upstream as public and lets it run.
+    #[tokio::test]
+    async fn secret_form_blocks_ipv4_mapped_ipv6_local_upstreams() {
+        let state = test_state();
+        state.mcp.upstream_registry.inject_ready_http_upstream(
+            "mappedloop",
+            "http://[::ffff:127.0.0.1]:1/mcp",
+            &["capture_screen"],
+        );
+        state.mcp.upstream_registry.inject_ready_http_upstream(
+            "mappedlan",
+            "http://[::ffff:192.168.1.5]:1/mcp",
+            &["capture_screen"],
+        );
+        open_form(&state);
+        for upstream in ["mappedloop__capture_screen", "mappedlan__capture_screen"] {
+            let direct = direct_upstream_text(state.clone(), upstream, serde_json::json!({})).await;
+            assert!(
+                direct.contains("private secret form"),
+                "{upstream}: {direct}"
+            );
+        }
     }
 }
 
@@ -2543,7 +2847,7 @@ async fn conditional_owner_flags_gate_discovery_schema_and_both_call_paths() {
             .await;
             let meta = handle_call_tool(
                 &state,
-                loopback_addr(),
+                loopback_addr().into(),
                 &serde_json::json!({"tool_name":tool,"arguments":{"action":"status"}}),
                 None,
                 None,
@@ -2681,6 +2985,7 @@ async fn conditional_configured_telegram_preserves_caller_authority() {
 // Agent guidance updated for the explicit interrupt delivery contract in 2113.
 // Telegram guidance updated for non-owner send and reply routing in 2119.
 // Automations guidance updated from 5337762482 for saved profile discovery in 2360.
+// Agent guidance updated for forced urgent steering in 2869.
 #[tokio::test]
 async fn native_help_preserves_every_displaced_rule_2069() {
     let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
@@ -2718,9 +3023,14 @@ async fn native_help_preserves_every_displaced_rule_2069() {
             serde_json::to_vec(definition).unwrap().len()
         );
     }
+    let caller = every_tool_caller(&state);
     let mut failures = Vec::new();
     for (name, original) in recorded.as_object().unwrap() {
-        let definition = handle_get_tool_schema(&state, &serde_json::json!({"tool_name":name}));
+        let definition = handle_get_tool_schema_for_session(
+            &state,
+            &serde_json::json!({"tool_name":name}),
+            caller,
+        );
         let compact = definition["description"].as_str().unwrap();
         if compact.len() >= original.as_str().unwrap().len() {
             failures.push(format!("{name}: description was not shortened"));
@@ -2860,4 +3170,149 @@ fn managed_child_progress_tool_description_excludes_children_from_user_duty() {
     let description = tool["description"].as_str().unwrap();
     assert!(description.contains("Managed children must not call"));
     assert!(description.contains("agent action=send"));
+}
+
+// Catches: the ui tool description stating a tab lands in the focused project, or saying nothing,
+// while a session caller's tab belongs to that session's project.
+#[test]
+fn ui_tool_description_states_which_project_a_tab_opens_in() {
+    let definitions = native_tool_definitions();
+    let ui = definitions
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "ui")
+        .unwrap();
+    let description = ui["description"].as_str().unwrap();
+    assert!(
+        description.contains("in its own session's project"),
+        "ui description must state the caller-project rule"
+    );
+}
+
+/// Search returns `top_schema` only when the serialized tool fits the default
+/// 16384-byte budget. Branches that each add agent text pass alone and overflow
+/// once merged (#2799-75f3), so every branch must keep this margin free.
+const SEARCH_SCHEMA_BUDGET: usize = 16384;
+const SEARCH_SCHEMA_MARGIN: usize = 1024;
+
+// Catches: the agent schema creeping to the budget edge on a branch, so the
+// overflow shows only after merging with other agent-text additions.
+#[test]
+fn agent_schema_keeps_a_margin_under_the_search_budget() {
+    let state = test_state();
+    let agent = searchable_tool_definitions(&state)
+        .into_iter()
+        .find(|tool| tool["name"] == "agent")
+        .expect("agent tool is searchable");
+    let bytes = serde_json::to_vec(&agent).unwrap().len();
+    assert!(
+        bytes + SEARCH_SCHEMA_MARGIN <= SEARCH_SCHEMA_BUDGET,
+        "agent schema is {bytes} B; must stay <= {} B (budget {SEARCH_SCHEMA_BUDGET} - margin {SEARCH_SCHEMA_MARGIN})",
+        SEARCH_SCHEMA_BUDGET - SEARCH_SCHEMA_MARGIN
+    );
+}
+
+// Catches: select:agent losing top_schema at the default budget.
+#[test]
+fn select_agent_returns_the_full_top_schema_at_the_default_budget() {
+    let state = test_state();
+    rebuild_tool_search_index(&state);
+    let search = handle_search_tools(&state, &serde_json::json!({"query":"select:agent"}));
+    assert_eq!(search["top_schema"]["name"], "agent", "{search}");
+}
+
+// Catches: type notes lost from workflow help.
+#[tokio::test]
+async fn workflow_type_notes_move_from_the_schema_to_help() {
+    let state = test_state();
+    state.config.write().mcp_capabilities.denied.clear();
+    // The subject is the schema content, not who may see the tool: since
+    // #2807-f698 an unbound caller is not listed `workflow`, so read it as an
+    // orchestrator, like every other whole-catalogue test.
+    let _caller = every_tool_caller(&state);
+    let help = handle_mcp_tool_call(
+        &state,
+        loopback_addr(),
+        "workflow",
+        &serde_json::json!({"action":"help"}),
+        None,
+    )
+    .await;
+    let notes = help["typeNotes"]
+        .as_object()
+        .expect("help carries the type notes");
+    assert!(
+        notes
+            .values()
+            .any(|note| note.as_str().is_some_and(|note| !note.is_empty())),
+        "{notes:?}"
+    );
+    assert!(help["description"].is_string());
+}
+
+/// WF16D adds a field to the workflow node language, which the `workflow` tool schema carries.
+/// Lazy search drops a schema above 65536 bytes, so the tool would vanish from `search_tools`.
+// Catches: a workflow-language addition that eats the search budget with no margin left.
+#[test]
+fn workflow_schema_keeps_a_margin_under_the_search_budget() {
+    const BUDGET: usize = 65536;
+    const MARGIN: usize = 2048;
+    let state = test_state();
+    let caller = every_tool_caller(&state);
+    rebuild_tool_search_index(&state);
+    let exact = handle_get_tool_schema_for_session(
+        &state,
+        &serde_json::json!({"tool_name":"workflow"}),
+        caller,
+    );
+    let size = serde_json::to_string(&exact["inputSchema"]).unwrap().len();
+    assert!(
+        size + MARGIN <= BUDGET,
+        "workflow inputSchema is {size} bytes; the margin under {BUDGET} must stay at least {MARGIN}"
+    );
+}
+
+// Catches: workflow inlines typed action schemas and story discovery ranks the wrong tool.
+#[test]
+fn workflow_compact_advertisement_and_story_search_2849() {
+    let state = test_state();
+    let caller = every_tool_caller(&state);
+    rebuild_tool_search_index(&state);
+    let tools = native_tool_definitions();
+    for name in ["workflow", "story"] {
+        let tool = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == name)
+            .unwrap();
+        let bytes = serde_json::to_vec(tool).unwrap().len();
+        eprintln!("{name} advertised tool: {bytes} bytes");
+        if name == "workflow" {
+            assert!(bytes <= 16384, "workflow is {bytes} bytes");
+        }
+    }
+    for query in ["story", "plan", "workflow story"] {
+        let result = handle_search_tools_for_session(
+            &state,
+            &serde_json::json!({"query":query,"limit":1}),
+            caller,
+        );
+        assert_eq!(result["results"][0]["name"], "story", "{query}: {result}");
+    }
+    let workflow = tools
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "workflow")
+        .unwrap();
+    assert!(
+        workflow["description"]
+            .as_str()
+            .unwrap()
+            .starts_with("For stories, plans and Ideas use the story tool.")
+    );
+    let error = crate::mcp_http::mcp_input_contract::validate("workflow", &serde_json::json!({"action":"definition","input":{"action":"update_draft","id":"d","graph":{"nodes":[],"edges":[]}}})).unwrap();
+    assert!(error.to_string().contains("expected_revision"), "{error}");
 }

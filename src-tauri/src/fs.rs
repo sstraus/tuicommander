@@ -1,3 +1,6 @@
+#[path = "fs_range.rs"]
+pub(crate) mod range;
+
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -192,56 +195,69 @@ pub struct ContentSearchError {
 /// Managed state for cancelling in-flight content searches.
 pub struct ContentSearchCancel(pub Mutex<Option<Arc<AtomicBool>>>);
 
-/// Validate that a resolved path is within the repo root.
-/// Returns the canonical repo path and the canonical target path.
-fn validate_path(repo_path: &str, relative: &str) -> Result<(PathBuf, PathBuf), String> {
-    let repo = PathBuf::from(repo_path);
-    let target = repo.join(relative);
+/// Normalize repository-relative input without touching the filesystem.
+///
+/// The input must stay lexically inside the root: absolute, rooted and drive
+/// paths, and a `..` that climbs above the root, are refused, and an inner `..`
+/// is resolved here so `link/../a` keeps meaning `<repo>/a`. Symlinks are not
+/// checked: the owner's links are followed wherever they point (story
+/// 2651-ec2e), while input from repository content stays repo-relative.
+pub(crate) fn normalize_repo_relative(relative: &str) -> Result<PathBuf, String> {
+    if is_absolute_on_any_platform(relative) {
+        return Err("Access denied: path must be relative to the repository".to_string());
+    }
+    let mut normalized = PathBuf::new();
+    for component in Path::new(relative).components() {
+        match component {
+            std::path::Component::Normal(part) => normalized.push(part),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir if normalized.pop() => {}
+            _ => return Err("Access denied: path is outside repository".to_string()),
+        }
+    }
+    Ok(normalized)
+}
 
-    let canonical_repo = repo
+/// Join validated relative input to the canonical repository root.
+/// Returns the canonical repo path and the joined, unresolved target.
+fn join_repo_relative(repo_path: &str, relative: &str) -> Result<(PathBuf, PathBuf), String> {
+    let normalized = normalize_repo_relative(relative)?;
+    let canonical_repo = Path::new(repo_path)
         .canonicalize()
         .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
+    let target = canonical_repo.join(normalized);
+    Ok((canonical_repo, target))
+}
+
+/// Resolve an existing repository entry, following symlinks.
+/// Returns the canonical repo path and the canonical target path.
+pub(crate) fn validate_path(repo_path: &str, relative: &str) -> Result<(PathBuf, PathBuf), String> {
+    let (canonical_repo, target) = join_repo_relative(repo_path, relative)?;
     let canonical_target = target
         .canonicalize()
         .map_err(|e| format!("Failed to resolve path: {e}"))?;
-
-    if !canonical_target.starts_with(&canonical_repo) {
-        return Err("Access denied: path is outside repository".to_string());
-    }
-
     Ok((canonical_repo, canonical_target))
 }
 
-/// Validate a path that may not exist yet (for write/create operations).
-/// Canonicalizes the parent directory and checks it's within the repo.
+/// Resolve a repository entry that may not exist yet (write/create/delete).
+/// Only the parent is resolved, so the entry itself is never followed.
 fn validate_path_for_creation(
     repo_path: &str,
     relative: &str,
 ) -> Result<(PathBuf, PathBuf), String> {
-    let repo = PathBuf::from(repo_path);
-    let target = repo.join(relative);
-
-    let canonical_repo = repo
-        .canonicalize()
-        .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
-
-    // For new files, canonicalize the parent directory
-    let parent = target
-        .parent()
-        .ok_or_else(|| "Invalid path: no parent directory".to_string())?;
-
-    let canonical_parent = parent
-        .canonicalize()
-        .map_err(|e| format!("Failed to resolve parent directory: {e}"))?;
-
-    if !canonical_parent.starts_with(&canonical_repo) {
-        return Err("Access denied: path is outside repository".to_string());
+    let (canonical_repo, target) = join_repo_relative(repo_path, relative)?;
+    // The root itself is never an entry: deleting or replacing it is refused.
+    if target == canonical_repo {
+        return Err("Invalid path: no file name".to_string());
     }
-
-    // Reconstruct full path using canonical parent + filename
     let file_name = target
         .file_name()
         .ok_or_else(|| "Invalid path: no file name".to_string())?;
+    let canonical_parent = target
+        .parent()
+        .ok_or_else(|| "Invalid path: no parent directory".to_string())?
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve parent directory: {e}"))?;
     let canonical_target = canonical_parent.join(file_name);
 
     Ok((canonical_repo, canonical_target))
@@ -474,12 +490,13 @@ pub(crate) fn list_directory_impl(
         .canonicalize()
         .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
 
-    // Validate the subdir is within the repo
+    // Keep the repo-relative spelling: a linked directory is listed through its
+    // link, so its entries keep paths under the repository.
     let dir_to_read = if subdir.is_empty() || subdir == "." {
         canonical_repo.clone()
     } else {
-        let (_cr, canonical_dir) = validate_path(&repo_path, &subdir)?;
-        canonical_dir
+        let (_cr, dir) = join_repo_relative(&repo_path, &subdir)?;
+        dir
     };
 
     if !dir_to_read.is_dir() {
@@ -1645,31 +1662,7 @@ pub async fn create_directory(repo_path: String, dir: String) -> Result<(), Stri
 }
 
 fn create_directory_impl(repo_path: String, dir: String) -> Result<(), String> {
-    let repo = PathBuf::from(&repo_path);
-    let target = repo.join(&dir);
-
-    let canonical_repo = repo
-        .canonicalize()
-        .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
-
-    // For new directories we can't canonicalize the full path yet.
-    // Walk up to find an existing ancestor and verify it's within the repo.
-    let mut check = target.clone();
-    loop {
-        if check.exists() {
-            let canonical_check = check
-                .canonicalize()
-                .map_err(|e| format!("Failed to resolve path: {e}"))?;
-            if !canonical_check.starts_with(&canonical_repo) {
-                return Err("Access denied: path is outside repository".to_string());
-            }
-            break;
-        }
-        if !check.pop() {
-            return Err("Cannot resolve path".to_string());
-        }
-    }
-
+    let (_canonical_repo, target) = join_repo_relative(&repo_path, &dir)?;
     std::fs::create_dir_all(&target).map_err(|e| format!("Failed to create directory: {e}"))
 }
 
@@ -1712,7 +1705,11 @@ pub async fn rename_path(repo_path: String, from: String, to: String) -> Result<
 }
 
 fn rename_path_impl(repo_path: String, from: String, to: String) -> Result<(), String> {
-    let (_canonical_repo, canonical_from) = validate_path(&repo_path, &from)?;
+    // Resolve only the parent of the source, like `delete_path`: following a
+    // final link would move its target into the repository and leave the link dangling.
+    let (_canonical_repo, canonical_from) = validate_path_for_creation(&repo_path, &from)?;
+    std::fs::symlink_metadata(&canonical_from)
+        .map_err(|e| format!("Failed to resolve path: {e}"))?;
     // NEVER canonicalize the destination — only its parent. On case-insensitive
     // filesystems (macOS APFS, Windows NTFS) `canonicalize("readme.md")` resolves
     // to the existing on-disk `README.md`, so a case-only rename would collapse to
@@ -1796,23 +1793,51 @@ fn move_path_abs_impl(from: String, to: String) -> Result<(), String> {
     if from_path == to_path {
         return Ok(());
     }
-    let canonical_from = from_path
+    // Resolve the parent only: canonicalizing the final component would follow a
+    // link and move (or, on EXDEV, delete) its target instead of the link.
+    let resolved_parent = from_path
+        .parent()
+        .ok_or_else(|| "Invalid path: no parent directory".to_string())?
         .canonicalize()
         .map_err(|e| format!("Failed to resolve source: {e}"))?;
-    if canonical_from.is_dir() {
+    let file_name = from_path
+        .file_name()
+        .ok_or_else(|| "Invalid path: no file name".to_string())?;
+    let source = resolved_parent.join(file_name);
+    let metadata =
+        std::fs::symlink_metadata(&source).map_err(|e| format!("Failed to resolve source: {e}"))?;
+    if metadata.is_dir() {
         return Err("Cannot move directories. Only files can be moved.".to_string());
     }
-    match std::fs::rename(&canonical_from, &to_path) {
-        Ok(()) => Ok(()),
-        Err(_) => {
-            // Cross-filesystem move (EXDEV): rename is rejected, so copy then remove.
-            std::fs::copy(&canonical_from, &to_path)
-                .map_err(|e| format!("Failed to move file: {e}"))?;
-            std::fs::remove_file(&canonical_from)
-                .map_err(|e| format!("Failed to remove source after move: {e}"))?;
-            Ok(())
-        }
+    // Renaming a link onto the file it points to would replace that file with
+    // the link, leaving a link to itself and losing the content.
+    if metadata.file_type().is_symlink()
+        && let (Ok(target), Ok(dest)) = (source.canonicalize(), to_path.canonicalize())
+        && target == dest
+    {
+        return Err("Cannot move a link onto its own target.".to_string());
     }
+    match std::fs::rename(&source, &to_path) {
+        Ok(()) => Ok(()),
+        // Cross-filesystem move (EXDEV): rename is rejected, so copy then remove.
+        Err(_) => move_by_copy(&source, &to_path, metadata.file_type().is_symlink()),
+    }
+}
+
+/// Copy-then-remove move. A link is recreated at the destination, never
+/// dereferenced: copying through it would duplicate the external target.
+fn move_by_copy(from: &std::path::Path, to: &std::path::Path, is_link: bool) -> Result<(), String> {
+    if is_link {
+        let target = std::fs::read_link(from).map_err(|e| format!("Failed to read link: {e}"))?;
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&target, to).map_err(|e| format!("Failed to move link: {e}"))?;
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(&target, to)
+            .map_err(|e| format!("Failed to move link: {e}"))?;
+    } else {
+        std::fs::copy(from, to).map_err(|e| format!("Failed to move file: {e}"))?;
+    }
+    std::fs::remove_file(from).map_err(|e| format!("Failed to remove source after move: {e}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -2140,6 +2165,11 @@ pub enum MarkdownLinkTarget {
     Missing {
         path: String,
     },
+    /// A network location the frontend opens with the system handler only after
+    /// an owner click and confirmation. Never probed here.
+    External {
+        target: String,
+    },
     Blocked {
         reason: String,
     },
@@ -2175,6 +2205,14 @@ fn is_unc_markdown_path(path: &str) -> bool {
         return false;
     }
     bytes.len() >= 2 && matches!(bytes[0], b'/' | b'\\') && matches!(bytes[1], b'/' | b'\\')
+}
+
+/// The network location a UNC path names, or `None` for a device or verbatim
+/// namespace (`\\.\`, `\\?\`) or a missing host. The caller strips a literal `?`
+/// as a query, so `\\?\UNC\…` arrives host-less; an encoded `%3F` arrives as host `?`.
+fn unc_network_target(path: &str) -> Option<String> {
+    let host = path[2..].split(['/', '\\']).next().unwrap_or_default();
+    (!host.is_empty() && host != "." && host != "?").then(|| path.to_string())
 }
 
 fn resolve_markdown_link_impl(root: &str, current_file: &str, href: &str) -> MarkdownLinkTarget {
@@ -2230,8 +2268,13 @@ fn resolve_markdown_link_with_home(
         };
     };
     if is_unc_markdown_path(&path) {
-        return MarkdownLinkTarget::Blocked {
-            reason: "Network paths are not supported in Markdown links".into(),
+        // Never probe the host: on Windows a filesystem probe alone sends the
+        // user's credentials to it. The owner confirms the target first.
+        return match unc_network_target(&path) {
+            Some(target) => MarkdownLinkTarget::External { target },
+            None => MarkdownLinkTarget::Blocked {
+                reason: "Device paths are not supported in Markdown links".into(),
+            },
         };
     }
     if let Some(expanded) = home.and_then(|home| expand_home_prefix(&path, home)) {
@@ -2670,23 +2713,6 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn symlink_open_names_external_target_instead_of_generic_access_denied() {
-        let dir = setup_test_repo();
-        let outside = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-        std::os::unix::fs::symlink(outside.path(), dir.path().join("linked-dir")).unwrap();
-        let error = crate::read_file_impl(dir.path().to_string_lossy().into(), "linked-dir".into())
-            .unwrap_err();
-        assert_eq!(
-            error,
-            format!(
-                "Cannot open symbolic link \"linked-dir\": target \"{}\" is outside the repository.",
-                outside.path().canonicalize().unwrap().display()
-            )
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
     fn symlink_metadata_preserves_internal_reads_and_dangling_entries() {
         // Catches following links for lstat size, dropping broken links, or denying internal reads.
         let dir = setup_test_repo();
@@ -2715,10 +2741,9 @@ mod tests {
             crate::read_file_impl(repo.clone(), "internal".into()).unwrap(),
             "# Test"
         );
-        assert!(
-            crate::read_file_impl(repo.clone(), "external".into())
-                .unwrap_err()
-                .contains("is outside the repository")
+        assert_eq!(
+            crate::read_file_impl(repo.clone(), "external".into()).unwrap(),
+            "outside content"
         );
         assert!(crate::read_file_impl(repo, "dangling".into()).is_err());
         let ordinary = entries.iter().find(|e| e.name == "README.md").unwrap();
@@ -3064,6 +3089,31 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // Catches: renaming an owner link to an outside directory moves the external
+    // target into the repository and leaves the link dangling, now that
+    // `validate_path` follows links out of the repository.
+    #[cfg(unix)]
+    #[test]
+    fn rename_path_renames_an_external_link_not_its_target() {
+        let dir = setup_test_repo();
+        let outside = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let shared = outside.path().join("shared");
+        std::fs::create_dir(&shared).unwrap();
+        std::fs::write(shared.join("notes.md"), "kept").unwrap();
+        std::os::unix::fs::symlink(&shared, dir.path().join("shared")).unwrap();
+        let repo_path = dir.path().to_string_lossy().to_string();
+
+        rename_path_impl(repo_path, "shared".to_string(), "renamed".to_string()).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(shared.join("notes.md")).unwrap(),
+            "kept"
+        );
+        let renamed = dir.path().join("renamed").symlink_metadata().unwrap();
+        assert!(renamed.file_type().is_symlink());
+        assert!(dir.path().join("shared").symlink_metadata().is_err());
+    }
+
     #[test]
     fn test_copy_path_abs_cross_repo() {
         let src = setup_test_repo();
@@ -3120,6 +3170,72 @@ mod tests {
             !src.path().join("main.rs").exists(),
             "source removed after move"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn move_path_abs_moves_a_file_link_not_its_target() {
+        let repo = setup_test_repo();
+        let outside = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let target = outside.path().join("external.txt");
+        std::fs::write(&target, "external").unwrap();
+        let link = repo.path().join("link.txt");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let moved = repo.path().join("src").join("moved-link.txt");
+
+        move_path_abs_impl(
+            link.to_string_lossy().to_string(),
+            moved.to_string_lossy().to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "external");
+        assert!(
+            std::fs::symlink_metadata(&link).is_err(),
+            "link left behind"
+        );
+        assert_eq!(std::fs::read_link(&moved).unwrap(), target);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn move_path_abs_exdev_fallback_keeps_the_external_original() {
+        let repo = setup_test_repo();
+        let outside = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let target = outside.path().join("external.txt");
+        std::fs::write(&target, "external").unwrap();
+        let link = repo.path().join("link.txt");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let moved = repo.path().join("src").join("moved-link.txt");
+
+        move_by_copy(&link, &moved, true).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "external");
+        assert!(
+            std::fs::symlink_metadata(&link).is_err(),
+            "link left behind"
+        );
+        assert_eq!(std::fs::read_link(&moved).unwrap(), target);
+    }
+
+    /// Pasting a cut link into the folder of its own target, under the same
+    /// name, must not replace the target file with the link.
+    #[cfg(unix)]
+    #[test]
+    fn move_path_abs_onto_the_links_own_target_keeps_the_target_content() {
+        let repo = setup_test_repo();
+        let other = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let target = other.path().join("notes.txt");
+        std::fs::write(&target, "precious").unwrap();
+        let link = repo.path().join("notes.txt");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        let _ = move_path_abs_impl(
+            link.to_string_lossy().to_string(),
+            target.to_string_lossy().to_string(),
+        );
+
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "precious");
     }
 
     #[test]
@@ -4457,32 +4573,59 @@ mod tests {
         );
     }
 
+    // Catches: the owner cannot open a deliberate network document from a
+    // Markdown link. The resolver must hand the frontend the network target for
+    // its click confirmation, still without any filesystem probe of the host.
     #[test]
-    fn markdown_link_resolution_rejects_unc_before_touching_filesystem() {
+    fn owner_confirmed_network_or_custom_link_uses_handler() {
+        let resolve = |href: &str| {
+            serde_json::to_value(resolve_markdown_link_impl("/repo", "README.md", href)).unwrap()
+        };
+        for (href, target) in [
+            (r"\\nas.example\share\doc.md", r"\\nas.example\share\doc.md"),
+            ("//nas.example/share/doc.md", "//nas.example/share/doc.md"),
+            (
+                "%5C%5Cnas.example/share/a%20b.md",
+                r"\\nas.example/share/a b.md",
+            ),
+        ] {
+            let value = resolve(href);
+            assert_eq!(value["kind"], "external", "{href}: {value}");
+            assert_eq!(value["target"], target, "{href}");
+        }
+        // Device namespaces and a host-less prefix are not network documents.
+        for href in [
+            r"\\.\pipe\x",
+            r"\\?\GLOBALROOT\x",
+            r"\\?\UNC\nas.example\share\doc.md",
+            "%5C%5C%3F%5CUNC%5Cnas.example%5Cdoc.md",
+            r"\\",
+            "//",
+        ] {
+            assert_eq!(resolve(href)["kind"], "blocked", "{href}");
+        }
+    }
+
+    #[test]
+    fn markdown_link_resolution_returns_unc_before_touching_filesystem() {
+        // Catches: a UNC href reaching canonicalize (a host probe) instead of
+        // returning the untouched target for owner confirmation.
         assert!(!is_unc_markdown_path(r"\\?\C:\repo\README.md"));
-        let result =
-            resolve_markdown_link_impl("/repo", "README.md", "//attacker.example/share/x.md");
-        assert!(matches!(result, MarkdownLinkTarget::Blocked { .. }));
-        let result =
-            resolve_markdown_link_impl("/repo", "README.md", r"\\attacker.example\share\x.md");
-        assert!(matches!(result, MarkdownLinkTarget::Blocked { .. }));
-        let encoded =
-            resolve_markdown_link_impl("/repo", "README.md", "%5C%5Cattacker.example/share/x.md");
-        assert!(matches!(encoded, MarkdownLinkTarget::Blocked { .. }));
-        let encoded_slashes =
-            resolve_markdown_link_impl("/repo", "README.md", "%2F%2Fattacker.example/share/x.md");
-        assert!(matches!(
-            encoded_slashes,
-            MarkdownLinkTarget::Blocked { .. }
-        ));
-        for mixed in [
+        for href in [
+            "//attacker.example/share/x.md",
+            r"\\attacker.example\share\x.md",
+            "%5C%5Cattacker.example/share/x.md",
+            "%2F%2Fattacker.example/share/x.md",
             r"\/attacker.example\share\x.md",
             r"/\attacker.example\share\x.md",
         ] {
-            assert!(matches!(
-                resolve_markdown_link_impl("/repo", "README.md", mixed),
-                MarkdownLinkTarget::Blocked { .. }
-            ));
+            assert!(
+                matches!(
+                    resolve_markdown_link_impl("/repo", "README.md", href),
+                    MarkdownLinkTarget::External { .. }
+                ),
+                "{href}"
+            );
         }
         let verbatim = resolve_markdown_link_impl(
             "/repo",
@@ -5385,25 +5528,41 @@ mod tests {
         }
     }
 
-    // Catches parent-only validation accidentally allowing a symlinked parent escape.
+    // Catches: deleting through an owner-linked directory removes the link itself
+    // or refuses the entry, instead of deleting the entry in the linked directory.
     #[cfg(unix)]
     #[tokio::test]
-    async fn delete_path_rejects_external_parent_and_missing_entry() {
+    async fn delete_path_follows_linked_parent_and_rejects_missing_entry() {
         let dir = setup_test_repo();
         let outside = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        std::fs::write(outside.path().join("removed"), "bytes").unwrap();
         std::fs::write(outside.path().join("kept"), "keep bytes").unwrap();
         std::os::unix::fs::symlink(outside.path(), dir.path().join("outside")).unwrap();
         let repo = dir.path().to_string_lossy().into_owned();
-        assert!(
-            delete_path(repo.clone(), "outside/kept".into())
-                .await
-                .is_err()
-        );
+        delete_path(repo.clone(), "outside/removed".into())
+            .await
+            .unwrap();
+        assert!(!outside.path().join("removed").exists());
         assert_eq!(
             std::fs::read_to_string(outside.path().join("kept")).unwrap(),
             "keep bytes"
         );
-        assert!(delete_path(repo, "missing".into()).await.is_err());
+        assert!(
+            dir.path()
+                .join("outside")
+                .symlink_metadata()
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(delete_path(repo.clone(), "missing".into()).await.is_err());
+        for root in ["", ".", "src/.."] {
+            assert!(
+                delete_path(repo.clone(), root.into()).await.is_err(),
+                "{root:?}"
+            );
+        }
+        assert!(dir.path().join("README.md").exists());
     }
 
     #[tokio::test]
@@ -5519,6 +5678,65 @@ mod tests {
         assert!(
             err.contains("outside repository") || err.contains("Access denied"),
             "expected the validation error, got: {err}"
+        );
+    }
+
+    /// Catches: downloaded repository content turns repo-relative input into
+    /// arbitrary path access once owner links are followed.
+    #[tokio::test]
+    async fn relative_repo_api_rejects_absolute_and_parent_escape() {
+        let dir = setup_test_repo();
+        let outside = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        fs::write(outside.path().join("secret.txt"), "outside").unwrap();
+        let repo = dir.path().to_string_lossy().into_owned();
+        let outside_abs = outside.path().join("secret.txt");
+        let inside_abs = dir.path().join("README.md");
+        for input in [
+            "../escape.txt",
+            "src/../../escape.txt",
+            outside_abs.to_str().unwrap(),
+            inside_abs.to_str().unwrap(),
+            "/escape.txt",
+            "C:\\escape.txt",
+            "C:/escape.txt",
+            "\\\\server\\share\\escape.txt",
+        ] {
+            assert!(
+                crate::read_file_impl(repo.clone(), input.into()).is_err(),
+                "read {input}"
+            );
+            assert!(
+                list_directory_impl(repo.clone(), input.into()).is_err(),
+                "list {input}"
+            );
+            assert!(
+                write_file(repo.clone(), input.into(), "x".into())
+                    .await
+                    .is_err(),
+                "write {input}"
+            );
+            assert!(
+                create_directory(repo.clone(), input.into()).await.is_err(),
+                "mkdir {input}"
+            );
+            assert!(
+                delete_path(repo.clone(), input.into()).await.is_err(),
+                "delete {input}"
+            );
+        }
+        assert_eq!(fs::read_to_string(&outside_abs).unwrap(), "outside");
+        assert_eq!(fs::read_to_string(&inside_abs).unwrap(), "# Test");
+        assert!(!dir.path().parent().unwrap().join("escape.txt").exists());
+        let mut created: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        created.sort();
+        assert_eq!(created, [".git", "README.md", "main.rs", "src"]);
+        // A `..` that stays inside the repository keeps working.
+        assert_eq!(
+            crate::read_file_impl(repo, "src/../README.md".into()).unwrap(),
+            "# Test"
         );
     }
 }

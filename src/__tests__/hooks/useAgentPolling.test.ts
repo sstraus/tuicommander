@@ -55,6 +55,30 @@ describe("useAgentPolling", () => {
 		store.remove(id);
 	});
 
+	// Catches: a refused ego turn (agent_state=error) is dropped to an unknown
+	// lifecycle and a plain idle tab, or its refusal text never reaches the tab.
+	it("shows a refused native turn as error with its message until native busy", async () => {
+		const id = store.add(makeTerminal({ sessionId: "refused-3011" }));
+		polling.applySessionStateEvent({
+			session_id: "refused-3011",
+			state: { agent_type: "ego", shell_state: "idle", agent_state: "error" },
+		});
+		expect(store.get(id)?.agentState).toBe("error");
+		expect(store.get(id)?.awaitingInput).toBe("error");
+		polling.applySessionStateEvent({
+			session_id: "refused-3011",
+			state: { agent_type: "ego", shell_state: "idle", agent_state: "error", last_error: "model refuses it" },
+		});
+		expect(store.get(id)?.lastError).toBe("model refuses it");
+		polling.applySessionStateEvent({
+			session_id: "refused-3011",
+			state: { agent_type: "ego", shell_state: "busy", agent_state: "working" },
+		});
+		expect(store.get(id)?.awaitingInput).toBeNull();
+		expect(store.get(id)?.lastError).toBeNull();
+		store.remove(id);
+	});
+
 	// Catches: remote agent_type is dropped until the 30s process-discovery poll.
 	it("applies backend identity immediately and retires it when the shell returns", async () => {
 		const id = store.add(makeTerminal({ name: "shell 1", sessionId: "remote-1" }));

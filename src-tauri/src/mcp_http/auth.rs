@@ -632,14 +632,18 @@ pub async fn login_handler(
     {
         BasicOutcome::Checked(result) => result,
         BasicOutcome::Limited(retry_after) => {
-            let mut response = login_error(
+            let retry_after_secs = retry_after_secs(retry_after);
+            return (
                 StatusCode::TOO_MANY_REQUESTS,
-                "Too many failed authentication attempts",
-            );
-            if let Ok(val) = (retry_after.as_secs() + 1).to_string().parse() {
-                response.headers_mut().insert(header::RETRY_AFTER, val);
-            }
-            return response;
+                [
+                    (header::CACHE_CONTROL, "no-store".to_string()),
+                    (header::RETRY_AFTER, retry_after_secs.to_string()),
+                ],
+                axum::Json(serde_json::json!({
+                    "error": lockout_message(retry_after_secs),
+                })),
+            )
+                .into_response();
         }
     };
 
@@ -815,8 +819,25 @@ fn unauthorized_response(message: &'static str) -> Response {
         .into_response()
 }
 
+/// Whole seconds until the IP window ends, rounded up so a client that waits
+/// exactly `Retry-After` is admitted again.
+fn retry_after_secs(retry_after: Duration) -> u64 {
+    retry_after.as_secs() + 1
+}
+
+/// The lockout refusal. A new correct password is refused too until the window
+/// ends, so it names the wait and the recovery that needs no password: the QR
+/// token, which is checked before admission and clears the IP's budget.
+fn lockout_message(retry_after_secs: u64) -> String {
+    format!(
+        "Too many failed authentication attempts. Try again in {retry_after_secs} s, \
+         or sign in now with the QR code in TUICommander Settings → Remote Access \
+         on the host computer."
+    )
+}
+
 fn rate_limited_response(retry_after: Duration) -> Response {
-    let retry_after = retry_after.as_secs() + 1;
+    let retry_after = retry_after_secs(retry_after);
     tracing::warn!(
         source = "auth",
         retry_after,
@@ -831,7 +852,7 @@ fn rate_limited_response(retry_after: Duration) -> Response {
                 "Basic realm=\"TUICommander\"".to_string(),
             ),
         ],
-        "Too many failed authentication attempts",
+        lockout_message(retry_after),
     )
         .into_response()
 }
@@ -1826,6 +1847,139 @@ mod tests {
             .unwrap();
         assert_eq!(send(&app, req).await.status(), StatusCode::OK);
     }
+    /// Lock an IP out through the form with distinct wrong passwords.
+    async fn lock_out(app: &axum::Router, failures: u32) {
+        for i in 0..failures {
+            let body = credentials("boss", &format!("wrong-{i}"), None);
+            let response = send(app, login_post().body(body.into()).unwrap()).await;
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        }
+    }
+
+    fn qr_token_request(path: &str, token: &str) -> Request<axum::body::Body> {
+        Request::get(format!("{path}?token={token}"))
+            .extension(ConnectInfo(SocketAddr::from((PUBLIC_IP, 51234))))
+            .body(axum::body::Body::empty())
+            .unwrap()
+    }
+
+    /// Story 2663-9519. Catches: the owner cannot find recovery while a new
+    /// correct password gets 429 — the refusal must say when to retry and that
+    /// the QR code signs in now, and that route must actually work at the cap.
+    #[tokio::test]
+    async fn auth_lockout_explains_retry_and_owner_recovery() {
+        let state = login_state(2);
+        *state.session_token.write() = "qr-token".to_string();
+        let app = login_app(&state);
+        lock_out(&app, 2).await;
+
+        // A new correct password at the cap: form login.
+        let body = credentials("boss", "correct", None);
+        let response = send(&app, login_post().body(body.into()).unwrap()).await;
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        let retry_after: u64 = response.headers()[header::RETRY_AFTER]
+            .to_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!((1..=301).contains(&retry_after), "{retry_after}");
+        let json = json_of(response).await;
+        let error = json["error"].as_str().unwrap();
+        assert!(error.contains(&format!("{retry_after} s")), "{error}");
+        assert!(
+            error.contains("QR code") && error.contains("Settings → Remote Access"),
+            "{error}"
+        );
+
+        // The same correct password through the Basic fallback.
+        let req = Request::get("/api/ping")
+            .header(header::AUTHORIZATION, basic_header("boss", "correct"))
+            .extension(ConnectInfo(SocketAddr::from((PUBLIC_IP, 51234))))
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let response = send(&app, req).await;
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(response.headers().contains_key(header::RETRY_AFTER));
+        let bytes = axum::body::to_bytes(response.into_body(), 1 << 16)
+            .await
+            .unwrap();
+        let text = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(
+            text.contains("QR code") && text.contains("Settings → Remote Access"),
+            "{text}"
+        );
+
+        // The named recovery works at the cap and lifts the lockout.
+        let response = send(&app, qr_token_request("/api/ping", "qr-token")).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response.headers().contains_key(header::SET_COOKIE));
+        let body = credentials("boss", "correct", None);
+        let response = send(&app, login_post().body(body.into()).unwrap()).await;
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    /// Story 2663-9519. Catches: unauthenticated guesses trigger unlimited
+    /// password work through recovery — at the cap no new credential reaches
+    /// bcrypt, a wrong QR token is no second budget, a duplicate failure is
+    /// answered from the cache, and only an expired window admits again.
+    #[tokio::test]
+    async fn auth_recovery_cannot_bypass_bcrypt_attempt_admission() {
+        let state = login_state(2);
+        *state.session_token.write() = "qr-token".to_string();
+        let app = login_app(&state);
+        lock_out(&app, 2).await;
+        let ip = IpAddr::from(PUBLIC_IP);
+        let attempts = || {
+            state
+                .auth_rate_limits
+                .get(&ip)
+                .unwrap()
+                .state
+                .lock()
+                .attempts
+        };
+        assert_eq!(attempts(), 2);
+
+        // A duplicate known-bad password is answered from the cache.
+        let body = credentials("boss", "wrong-0", None);
+        let response = send(&app, login_post().body(body.into()).unwrap()).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        for i in 0..20 {
+            let body = credentials("boss", &format!("guess-{i}"), None);
+            let response = send(&app, login_post().body(body.into()).unwrap()).await;
+            assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+            let req = Request::get("/api/ping")
+                .header(
+                    header::AUTHORIZATION,
+                    basic_header("boss", &format!("b-{i}")),
+                )
+                .extension(ConnectInfo(SocketAddr::from((PUBLIC_IP, 51234))))
+                .body(axum::body::Body::empty())
+                .unwrap();
+            assert_eq!(
+                send(&app, req).await.status(),
+                StatusCode::TOO_MANY_REQUESTS
+            );
+            // A wrong token neither signs in nor resets the budget.
+            let wrong = send(&app, qr_token_request("/api/ping", &format!("t-{i}"))).await;
+            assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
+        }
+        assert_eq!(attempts(), 2, "a guess past the cap reached bcrypt");
+
+        // An expired window admits verification again.
+        {
+            let limit = state.auth_rate_limits.get(&ip).unwrap();
+            let mut limit_state = limit.state.lock();
+            limit_state.window_start = Instant::now()
+                .checked_sub(Duration::from_secs(301))
+                .unwrap();
+        }
+        let body = credentials("boss", "correct", None);
+        let response = send(&app, login_post().body(body.into()).unwrap()).await;
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
     mod login_boundaries {
         //! Adversarial tests for the in-app login (story 1359-57b4), written by the critic.
         //! Each test names the plausible bug it catches.

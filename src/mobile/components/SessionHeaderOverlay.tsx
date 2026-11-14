@@ -123,6 +123,13 @@ export function SessionHeaderOverlay(props: SessionHeaderOverlayProps) {
 							{task()}
 						</p>
 					</Show>
+					<Show when={props.state?.current_tool}>
+						<p>
+							<b>Current tool</b>
+							<br />
+							{props.state?.current_tool}
+						</p>
+					</Show>
 					<Show when={(props.state?.active_sub_tasks ?? 0) > 0}>
 						<p>{props.state?.active_sub_tasks} sub-tasks running</p>
 					</Show>

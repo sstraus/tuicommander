@@ -587,8 +587,11 @@ pub(super) fn identity_from_client_ancestry(client_pid: &str) -> Option<String> 
         }
         // A detached command is not its runner's foreground peer. Its agent
         // may scrub the bridge environment, so check every ancestor before
-        // accepting identity or walking up to the caller-bound runner.
+        // accepting identity or walking up to the caller-bound runner. The same
+        // boundary isolates redirected advisors from their terminal parent.
         if crate::process_env::read_process_env_var(pid, "TUIC_BG_COMMAND").as_deref() == Some("1")
+            || crate::process_env::read_process_env_var(pid, "TUIC_CONTEXT_ISOLATED").as_deref()
+                == Some("1")
         {
             return None;
         }
@@ -1241,6 +1244,7 @@ pub(crate) async fn local_peer_call_with_message_id(
                     &args,
                     sid.as_deref(),
                     message_id.as_deref(),
+                    None,
                 )
             })
             .await
@@ -1352,7 +1356,30 @@ pub(super) fn handle_messaging(
             return response;
         }
     }
-    handle_messaging_with_message_id(state, args, mcp_session_id, None)
+    handle_messaging_with_message_id(state, args, mcp_session_id, None, None)
+}
+
+/// Sender identity of mail that arrives through the inbound webhook. It is not a
+/// peer: no terminal, no inbox, and a reply addressed to it is refused.
+pub(super) const WEBHOOK_SENDER: &str = "webhook";
+
+/// File an external event as mail for `to`, through the same `send` path as a
+/// peer, with normal urgency. A managed recipient therefore gets only the
+/// payload-free wake line typed; the payload stays in its inbox.
+pub(super) async fn webhook_send(
+    state: &Arc<AppState>,
+    to: &str,
+    message: &str,
+) -> serde_json::Value {
+    if !state.config.read().mcp_capabilities.allows("agent", None) {
+        return serde_json::json!({"error":"Tool 'agent' is disabled by configuration"});
+    }
+    let state = state.clone();
+    let args = serde_json::json!({"action": "send", "to": to, "message": message});
+    run_blocking_handler(move || {
+        handle_messaging_with_message_id(&state, &args, None, None, Some(WEBHOOK_SENDER))
+    })
+    .await
 }
 
 fn handle_messaging_with_message_id(
@@ -1360,6 +1387,7 @@ fn handle_messaging_with_message_id(
     args: &serde_json::Value,
     mcp_session_id: Option<&str>,
     forwarded_message_id: Option<&str>,
+    system_sender: Option<&str>,
 ) -> serde_json::Value {
     let action = match require_action(args, "agent", AGENT_ACTIONS) {
         Ok(a) => a,
@@ -1490,11 +1518,16 @@ fn handle_messaging_with_message_id(
             let handoff = superseded
                 .as_ref()
                 .map(|phantom| retire_repaired_phantom_identity(state, phantom, &tuic_session));
+            let was_orchestrator = state.orchestrator_peers.contains(&tuic_session);
             if orchestrator {
                 state.orchestrator_peers.insert(tuic_session.clone());
             } else {
                 state.orchestrator_peers.remove(&tuic_session);
                 state.clear_orchestrator_delivery(&tuic_session);
+            }
+            if was_orchestrator != orchestrator {
+                // The role decides whether `workflow` and `automations` are listed.
+                let _ = state.mcp.tools_changed.send(());
             }
             let linked_children = link_pending_children_to_parent(state, &mcp_sid, &tuic_session);
             // Identity bindings are security-relevant; record them (no message content).
@@ -1559,9 +1592,10 @@ fn handle_messaging_with_message_id(
                     "spawn_isolated": "repo action=worktree_create path=<repo> branch=<name> spawn_session=true — worktree + PTY in one call.",
                     "monitor": "Use blocking waits instead of polling: agent action=wait (wakes on new mail; the cursor is kept server-side) or session action=wait session_id=<id> until=idle|exited. Task results arrive through agent send/inbox. Use session output only as an anomaly fallback when a child failed to send.",
                     "auto_state_change": "Spawned peers auto-post state only: {type:state_change, state:idle|completed|exited|awaiting_input, session_id, exit_code?, prompt?}. This is not task output. awaiting_input means the child hit an interactive prompt and is parked with nobody at its keyboard — it will NOT progress until you answer it with session action=input (the `prompt` field carries the question). Every child must report its result or blocker with agent action=send; use session output only when a child anomalously failed to send.",
-                    "send": "agent action=send to=<orchestrator | peer tuic_session | its registered name | its PTY id | that terminal's alias, e.g. tu-1> message=<text, max 64KB> [urgency=normal|urgent|interrupt]. Normal is the default; urgent writes only a payload-free inbox notice to a safe busy Claude/Codex/ego composer for its next tool boundary and returns urgent_delivered or urgent_fallback_reason. The message is always buffered in the inbox. Opt-in urgency=interrupt sends Esc to a safe working Claude Code, Codex or ego, waits up to 10 seconds for confirmed idle, then submits the full message as one new input (including for an orchestrator). An already idle recipient needs no Esc. A dialog/approval or draft blocks both Esc and payload. Unsupported agents, no PTY and idle timeout use the existing urgent notice/inbox fallback. The result adds interrupt_delivered and interrupt_fallback_reason; delivery_path=interrupt_payload_and_inbox means the full input was written, not that the model acted. Interrupted tools can leave partial work; child processes may continue. An active waiter owns delivery and needs no interrupt. A peer explicitly registered with orchestrator=true keeps payloads out of its active turn and composer; managed idle/completed lifecycle, or a confirmed-ready empty composer held working only by background work, may submit one coalesced, payload-free wake instructing `agent action=inbox`. Busy, questioning, partially typed, external without a subscribed ACP inbox, or unknown state stays inbox-only. An active agent wait owns delivery and suppresses that wake. Check `delivered` and `delivery_path` (the only route field); a message reaching the inbox is not delivery.",
+                    "send": "agent action=send to=<orchestrator | peer tuic_session | its registered name | its PTY id | that terminal's alias, e.g. tu-1> message=<text, max 64KB> [urgency=normal|urgent|interrupt]. Normal is the default and keeps peer payloads in the inbox. urgency=urgent (interrupt is an alias) forces the shared steer flow: send Esc to a safe working Claude Code, Codex or ego, waits up to 5 seconds for confirmed idle, then submits the full message as one new input (including for an orchestrator). An already idle recipient needs no Esc. A dialog/approval or draft blocks both Esc and payload. Unsupported agents, no PTY and idle timeout stay inbox-only; no busy Enter or ordinary queue fallback. The result adds interrupt_delivered and interrupt_fallback_reason; delivery_path=interrupt_payload_and_inbox means the full input was written, not that the model acted. Interrupted tools can leave partial work; child processes may continue. An active waiter owns delivery and needs no interrupt. A peer explicitly registered with orchestrator=true keeps payloads out of its active turn and composer; managed idle/completed lifecycle, or a confirmed-ready empty composer held working only by background work, may submit one coalesced, payload-free wake instructing `agent action=inbox`. Busy, questioning, partially typed, external without a subscribed ACP inbox, or unknown state stays inbox-only. An active agent wait owns delivery and suppresses that wake. Check `delivered` and `delivery_path` (the only route field); a message reaching the inbox is not delivery.",
                     "list_peers": "agent action=list_peers path=<optional filter> — see who else is connected.",
                     "conflict_control": "Use send/inbox to serialize shared-file edits: child sends 'claim <path>', orchestrator replies 'ack'/'deny'; child sends 'release <path>' on commit. Orchestrator is the arbiter — children never ack each other directly.",
+                    "script_callback": "Write a script that ends with `tuic notify <your tuic_session> -` (text on stdin; exit 0 only when delivered), hand it to the user to run, and its result reaches you as mail; an idle agent is woken. Example: #!/bin/sh; make check > /tmp/check.log 2>&1; code=$?; { echo \"make check exit $code\"; tail -20 /tmp/check.log; } | tuic notify <your tuic_session> -",
                     "cleanup": "On MCP session close, peer routes and inbox are drained. Managed PTY lifecycle remains separate; an MCP-scoped external identity has no PTY to reap."
                 }
             });
@@ -1598,6 +1632,11 @@ fn handle_messaging_with_message_id(
                 None => None,
             };
             let project_filter = args["path"].as_str();
+            // The caller's own row carries is_caller=true, as in session list:
+            // matching tuic_session against $TUIC_SESSION by hand let an agent
+            // read its own row as a peer.
+            let caller = mcp_session_id
+                .and_then(|sid| state.mcp.to_session.get(sid).map(|e| e.value().clone()));
             let peers: Vec<serde_json::Value> = state
                 .peer_agents
                 .iter()
@@ -1625,7 +1664,14 @@ fn handle_messaging_with_message_id(
                         "tuic_session": p.tuic_session,
                         "name": p.name,
                         "orchestrator": state.orchestrator_peers.contains(&p.tuic_session),
+                        "is_caller": caller.as_deref() == Some(p.tuic_session.as_str()),
                     });
+                    if let Some(pty) = live_pty.as_deref() {
+                        state
+                            .agent_reports
+                            .view(state, pty, Some(&p.tuic_session), snapshot.as_ref())
+                            .extend(&mut peer);
+                    }
                     let object = peer.as_object_mut().expect("peer entry is an object");
                     insert_optional_value(
                         object,
@@ -1716,7 +1762,10 @@ fn handle_messaging_with_message_id(
                     "Message exceeds 64 KB limit ({} bytes)", message.len()
                 )});
             }
-            let interrupt = args["urgency"].as_str() == Some("interrupt");
+            let report = match crate::agent_report::parse(args) {
+                Ok(report) => report,
+                Err(error) => return serde_json::json!({"error":error}),
+            };
             let urgent = match args.get("urgency") {
                 None => false,
                 Some(serde_json::Value::String(value)) if value == "normal" => false,
@@ -1730,13 +1779,17 @@ fn handle_messaging_with_message_id(
                 }
             };
             // Resolve sender via O(1) mcp_to_session reverse map (RUST-3/PERF-2).
-            let sender = match mcp_session_id
-                .and_then(|sid| state.mcp.to_session.get(sid).map(|e| e.value().clone()))
-                .and_then(|tuic| {
-                    state
-                        .peer_agents
-                        .get(&tuic)
-                        .map(|p| (p.tuic_session.clone(), p.name.clone()))
+            let sender = match system_sender
+                .map(|sender| (sender.to_string(), sender.to_string()))
+                .or_else(|| {
+                    mcp_session_id
+                        .and_then(|sid| state.mcp.to_session.get(sid).map(|e| e.value().clone()))
+                        .and_then(|tuic| {
+                            state
+                                .peer_agents
+                                .get(&tuic)
+                                .map(|p| (p.tuic_session.clone(), p.name.clone()))
+                        })
                 }) {
                 Some(s) => s,
                 None => {
@@ -1756,6 +1809,7 @@ fn handle_messaging_with_message_id(
                 from_name: sender_name.clone(),
                 content: message.to_string(),
                 timestamp: now_ms,
+                report,
                 delivered_via_channel: false,
             };
             let msg_id = msg.id.clone();
@@ -1827,183 +1881,47 @@ fn handle_messaging_with_message_id(
             let managed_recipient = live_pty.is_some();
             let acp_inbox_subscriber = !managed_recipient && state.acp.has_acp_inbox_subscriber(to);
             if urgent {
-                use crate::state::{AgentDeliveryAssignment, UrgentNoticeReservation};
-
-                let mut delivered = false;
-                let mut urgent_delivered = false;
-                let mut delivery_path = "inbox_only";
-                let mut fallback_reason = None;
-                let mut interrupt_fallback_reason = if interrupt {
-                    Some("recipient_exited")
-                } else {
-                    None
-                };
-                // Reserve interrupt payload delivery before cancellation so a
-                // waiter arriving during the idle wait cannot also consume it.
-                // An already active waiter still wins under the same gate.
-                if state.assign_agent_delivery(to, &msg_id, interrupt && managed_recipient)
+                use crate::state::AgentDeliveryAssignment;
+                // Urgent is a force request, not an inbox pointer queued behind
+                // the running turn. A waiter already owning delivery still wins.
+                let mut response = if state.assign_agent_delivery(to, &msg_id, managed_recipient)
                     == AgentDeliveryAssignment::Waiter
                 {
-                    delivered = true;
-                    urgent_delivered = true;
-                    delivery_path = "waiter_and_inbox";
-                    if interrupt {
-                        interrupt_fallback_reason = Some("waiter_owns_delivery");
-                    }
-                } else if let Some(pty_session) = live_pty.as_deref() {
-                    if interrupt {
-                        match crate::pty::deliver_interrupting_mail(state, pty_session, message) {
-                            Ok(()) => {
-                                state.mark_terminal_delivery_dispatched(to, &msg_id);
-                                return serde_json::json!({
-                                    "message_id": msg_id,
-                                    "delivered": true,
-                                    "delivery_path": "interrupt_payload_and_inbox",
-                                    "urgent_delivered": true,
-                                    "interrupt_delivered": true,
-                                    "recipient_state": managed_recipient_state(state, pty_session),
-                                });
-                            }
-                            Err(reason) => {
-                                state.release_terminal_delivery(to, &msg_id);
-                                interrupt_fallback_reason = Some(reason);
-                                // A partial payload must never be followed by another
-                                // write or queued retry into that same composer.
-                                if reason == "write_uncertain" {
-                                    return serde_json::json!({"message_id":msg_id,"delivered":false,"delivery_path":"inbox_only","urgent_delivered":false,"interrupt_delivered":false,"interrupt_fallback_reason":reason});
-                                }
-                            }
-                        }
-                    }
-                    match state.reserve_urgent_notice(to, &sender_tuic, message_timestamp) {
-                        UrgentNoticeReservation::AlreadyRead => {
-                            delivered = true;
-                            urgent_delivered = true;
-                            delivery_path = "inbox_read";
-                        }
-                        UrgentNoticeReservation::Written => {
-                            delivered = true;
-                            urgent_delivered = true;
-                            delivery_path = "coalesced_urgent_notice_and_inbox";
-                        }
-                        UrgentNoticeReservation::InFlight => {
-                            fallback_reason = Some("urgent_notice_in_flight");
-                        }
-                        UrgentNoticeReservation::Reserved => {
-                            let outcome = crate::pty::deliver_urgent_mail_notice(
-                                state,
-                                pty_session,
-                                &sender_tuic,
-                                &sender_name,
-                            );
-                            state.finish_urgent_notice(
-                                to,
-                                &sender_tuic,
-                                message_timestamp,
-                                outcome.is_ok(),
-                            );
-                            match outcome {
-                                Ok(()) => {
-                                    delivered = true;
-                                    urgent_delivered = true;
-                                    delivery_path = "urgent_notice_and_inbox";
-                                }
-                                Err(reason) => fallback_reason = Some(reason),
-                            }
-                        }
-                    }
+                    serde_json::json!({
+                        "message_id": msg_id, "delivered": true,
+                        "delivery_path": "waiter_and_inbox", "urgent_delivered": true,
+                        "interrupt_delivered": false,
+                        "interrupt_fallback_reason": "waiter_owns_delivery",
+                    })
                 } else {
-                    fallback_reason = Some("recipient_exited");
-                }
-
-                // A failed urgent write still has a durable inbox copy. Use
-                // the existing safe idle wake/queue path, never the ordinary
-                // Claude channel because it carries the peer's payload.
-                if let Some(reason) = fallback_reason
-                    && reason != "urgent_notice_in_flight"
-                    && reason != "write_uncertain"
-                {
-                    if let Some(assignment) = crate::pty::route_registered_orchestrator_mail(
-                        state,
-                        to,
-                        &msg_id,
-                        message_timestamp,
-                    ) {
-                        use crate::state::OrchestratorDeliveryAssignment;
-                        match assignment {
-                            OrchestratorDeliveryAssignment::Waiter => {
-                                delivered = true;
-                                urgent_delivered = true;
-                                delivery_path = "waiter_and_inbox";
-                                fallback_reason = None;
-                            }
-                            OrchestratorDeliveryAssignment::WakeSubmitted => {
-                                delivered = true;
-                                delivery_path = "wake_notification_and_inbox";
-                            }
-                            OrchestratorDeliveryAssignment::WakeCoalesced => {
-                                delivered = true;
-                                delivery_path = "coalesced_wake_and_inbox";
-                            }
-                            OrchestratorDeliveryAssignment::WakeSummarySubmitted => {
-                                delivered = true;
-                                delivery_path = "lifecycle_summary_and_inbox";
-                            }
-                            OrchestratorDeliveryAssignment::InboxOnly => {}
+                    let outcome = live_pty
+                        .as_deref()
+                        .ok_or("recipient_exited")
+                        .and_then(|pty| crate::pty::deliver_interrupting_mail(state, pty, message));
+                    match outcome {
+                        Ok(()) => {
+                            state.mark_terminal_delivery_dispatched(to, &msg_id);
+                            serde_json::json!({
+                                "message_id": msg_id, "delivered": true,
+                                "delivery_path": "interrupt_payload_and_inbox",
+                                "urgent_delivered": true, "interrupt_delivered": true,
+                            })
                         }
-                    } else {
-                        match state.assign_agent_delivery(to, &msg_id, managed_recipient) {
-                            AgentDeliveryAssignment::Waiter => {
-                                delivered = true;
-                                urgent_delivered = true;
-                                delivery_path = "waiter_and_inbox";
-                                fallback_reason = None;
-                            }
-                            AgentDeliveryAssignment::Terminal => {
-                                if let Some(pty_session) = live_pty.as_deref() {
-                                    let outcome = crate::pty::deliver_notice_to_managed_pty(
-                                        state,
-                                        pty_session,
-                                        crate::pty::PEER_MAIL_WAKE,
-                                    );
-                                    crate::pty::settle_terminal_delivery(
-                                        state, to, &msg_id, outcome,
-                                    );
-                                    if outcome != crate::pty::PtyDelivery::Unavailable {
-                                        delivered = true;
-                                        delivery_path = "wake_notification_and_inbox";
-                                    }
-                                }
-                            }
-                            AgentDeliveryAssignment::InboxOnly => {}
+                        Err(reason) => {
+                            state.release_terminal_delivery(to, &msg_id);
+                            // Keep only the durable inbox copy. A failed force
+                            // must not silently become another queued input.
+                            serde_json::json!({
+                                "message_id": msg_id, "delivered": false,
+                                "delivery_path": "inbox_only", "urgent_delivered": false,
+                                "interrupt_delivered": false,
+                                "urgent_fallback_reason": reason,
+                                "interrupt_fallback_reason": reason,
+                            })
                         }
                     }
-                }
-                let mut response = serde_json::json!({
-                    "message_id": msg_id,
-                    "delivered": delivered,
-                    "delivery_path": delivery_path,
-                    "urgent_delivered": urgent_delivered,
-                });
-                if let Some(reason) = fallback_reason {
-                    response["urgent_fallback_reason"] = serde_json::json!(reason);
-                }
-                if interrupt {
-                    response["interrupt_delivered"] = serde_json::json!(false);
-                    response["interrupt_fallback_reason"] =
-                        serde_json::json!(interrupt_fallback_reason);
-                }
+                };
                 apply_acp_inbox_receipt(&mut response, acp_inbox_subscriber);
-                tracing::info!(
-                    source = "agent_msg",
-                    event = "urgent_send",
-                    from = %sender_tuic,
-                    to = %to,
-                    message_id = %msg_id,
-                    urgent_delivered = %response["urgent_delivered"],
-                    delivery_path = %response["delivery_path"],
-                    "Urgent peer mail routed"
-                );
                 insert_optional_value(
                     response
                         .as_object_mut()
@@ -2011,7 +1929,7 @@ fn handle_messaging_with_message_id(
                     "recipient_state",
                     live_pty
                         .as_deref()
-                        .and_then(|pty_session| managed_recipient_state(state, pty_session)),
+                        .and_then(|pty| managed_recipient_state(state, pty)),
                 );
                 return response;
             }
@@ -2173,6 +2091,29 @@ fn handle_messaging_with_message_id(
             {
                 tracing::debug!(session = %pty_session, error = %e, "Wake on message delivery failed");
             }
+            // Story 3015: mail from a parent to its idle managed child counts as
+            // delivered only when the child starts a turn. Read the boundary
+            // before the wake can produce output.
+            let turn_watch = live_pty
+                .as_deref()
+                .filter(|_| terminal_owned)
+                .filter(|pty| {
+                    state
+                        .session_maps
+                        .session_parent
+                        .get(*pty)
+                        .is_some_and(|parent| parent.value() == &sender_tuic)
+                        && state
+                            .session_state_with_shell(pty)
+                            .and_then(|snapshot| snapshot.agent_state)
+                            .is_some_and(|agent_state| {
+                                matches!(
+                                    agent_state.as_str(),
+                                    "idle" | "completed" | "awaiting_input"
+                                )
+                            })
+                })
+                .map(|pty| (pty.to_owned(), crate::pty::output_offset(state, pty)));
             // Event-driven wake: tell a managed recipient it has mail without
             // polling. The line typed is `PEER_MAIL_WAKE` — a pointer, never
             // the payload. External SSE recipients have no PTY to wake.
@@ -2195,6 +2136,20 @@ fn handle_messaging_with_message_id(
                 // would understate what happens.
                 inbox_only = outcome == crate::pty::PtyDelivery::Unavailable;
             }
+            let turn_check = !inbox_only
+                && turn_watch.is_some_and(|(pty, offset)| {
+                    crate::agent_health::watch_mail_delivery(
+                        state,
+                        crate::agent_health::MailDelivery {
+                            peer: to.to_owned(),
+                            pty,
+                            message_id: msg_id.clone(),
+                            message_timestamp,
+                            offset,
+                        },
+                        crate::agent_health::MAIL_TURN_DEADLINE,
+                    )
+                });
             let delivery_path = if waiter_owned {
                 "waiter_and_inbox"
             } else if pushed {
@@ -2220,6 +2175,11 @@ fn handle_messaging_with_message_id(
                 // case as `sse_channel_and_inbox` and subsumes it.
                 "delivery_path": delivery_path,
             });
+            if turn_check {
+                // `delivered` names the route. The child acts only if it starts a
+                // turn; otherwise a `delivery_failed` notice follows.
+                response["turn_check"] = serde_json::json!("pending");
+            }
             if inbox_only {
                 let object = response
                     .as_object_mut()

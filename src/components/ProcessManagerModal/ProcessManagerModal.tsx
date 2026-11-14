@@ -2,6 +2,7 @@ import { type Component, createSignal, For, onCleanup, onMount, Show } from "sol
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { registerModal } from "../../stores/modalStack";
+import { reconcileById } from "../../utils/reconcileById";
 import d from "../shared/dialog.module.css";
 import { Button } from "../ui/Button";
 import s from "./ProcessManagerModal.module.css";
@@ -36,7 +37,7 @@ export const ProcessManagerModal: Component<ProcessManagerModalProps> = (props) 
 	async function refresh(): Promise<void> {
 		try {
 			const stats = await invoke<ProcessStats[]>("get_process_stats");
-			setProcesses(stats);
+			setProcesses((prev) => reconcileById(stats, prev, (p) => p.pid));
 		} catch (err) {
 			appLogger.error("app", "Failed to get process stats", err);
 		}

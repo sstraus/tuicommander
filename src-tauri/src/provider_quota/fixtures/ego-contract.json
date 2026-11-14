@@ -1,0 +1,40 @@
+{
+  "rate_limits": [
+    {
+      "provider": "anthropic",
+      "credential": "oauth:example",
+      "windows": [
+        {
+          "name": "seven_day",
+          "used_percentage": 82.0,
+          "resets_at": 1794502800,
+          "window_seconds": 604800
+        }
+      ],
+      "plan": null,
+      "credits": null,
+      "observed_at": 1794458253279,
+      "source": "active"
+    },
+    {
+      "provider": "openai-codex",
+      "credential": "oauth:example",
+      "windows": [
+        {
+          "name": "seven_day",
+          "used_percentage": 14,
+          "resets_at": 1794992503,
+          "window_seconds": 604800
+        }
+      ],
+      "plan": "pro",
+      "credits": {
+        "has_credits": true,
+        "unlimited": false,
+        "balance": "8418.4673090000"
+      },
+      "observed_at": 1794458255892,
+      "source": "active"
+    }
+  ]
+}

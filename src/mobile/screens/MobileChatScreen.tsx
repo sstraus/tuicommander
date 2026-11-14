@@ -1,7 +1,9 @@
 import { createEffect, createSignal, For, onMount, Show } from "solid-js";
 import { Composer } from "../../components/AIChatPanel/Composer";
 import { chatErrorView } from "../../components/AIChatPanel/chatError";
+import { aiChatDraft } from "../../components/AIChatPanel/draft";
 import { Interactions } from "../../components/AIChatPanel/Interactions";
+import { conversationLabel } from "../../components/AIChatPanel/SessionControls";
 import { Transcript } from "../../components/AIChatPanel/Transcript";
 import { createAcpChat } from "../../components/AIChatPanel/useAcpChat";
 import { Button } from "../../components/ui";
@@ -99,6 +101,37 @@ export function MobileChatScreen(props: {
 		<section class={styles.screen} aria-label="AI Chat">
 			<header class={styles.header}>
 				<strong>AI Chat</strong>
+				<Show when={chat.phase() === "live"}>
+					<Select
+						aria-label="Conversation"
+						value={chat.sessionId() ?? ""}
+						onChange={(event) => void chat.selectSession(event.currentTarget.value)}
+					>
+						<Show when={chat.sessionId() && !chat.sessions().some((session) => session.sessionId === chat.sessionId())}>
+							<option value={chat.sessionId()!} selected>
+								{conversationLabel({ sessionId: chat.sessionId()! })}
+							</option>
+						</Show>
+						<For each={chat.sessions()}>
+							{(session) => (
+								<option value={session.sessionId} selected={session.sessionId === chat.sessionId()}>
+									{acpTranscript.title(session.sessionId) || session.title || session.sessionId}
+								</option>
+							)}
+						</For>
+					</Select>
+					<Button
+						variant="ghost"
+						shape="icon"
+						aria-label="New conversation"
+						title="New conversation"
+						onClick={() => void chat.startSession()}
+					>
+						<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+							<path d="M7 2h2v5h5v2H9v5H7V9H2V7h5V2Z" />
+						</svg>
+					</Button>
+				</Show>
 			</header>
 			<Show when={sharedFileError()}>
 				{(message) => (
@@ -148,39 +181,24 @@ export function MobileChatScreen(props: {
 			<Show when={chat.phase() === "live" && !chat.isStreaming()}>
 				<div class={styles.banner}>Not receiving updates.</div>
 			</Show>
-			<Show when={chat.phase() === "live"}>
-				<div class={styles.controls}>
-					<label>
-						Conversation
-						<Select
-							aria-label="Conversation"
-							value={chat.sessionId() ?? ""}
-							onChange={(event) => void chat.selectSession(event.currentTarget.value)}
-						>
-							<For each={chat.sessions()}>
-								{(session) => (
-									<option value={session.sessionId}>
-										{acpTranscript.title(session.sessionId) || session.title || session.sessionId}
-									</option>
-								)}
-							</For>
-						</Select>
-					</label>
-					<Button variant="ghost" onClick={() => void chat.startSession()}>
-						New
-					</Button>
-				</div>
-			</Show>
+
 			<div class={styles.reading} data-mobile-reading style={mobileChatReadingStyle()}>
 				<Transcript
 					mobile
 					entries={chat.entries}
+					messageActions={chat.messageActions}
 					muteIntermediate={settingsStore.state.chatMuteIntermediateText}
 					busy={chat.busy}
+					working={chat.working}
+					retry={chat.retry}
 					onOpenFile={openFile}
 					observeToolDuration={false}
 					onOpenTable={setTableDocument}
 					onSuggestion={(text) => void chat.send(text)}
+					onQuote={(quoted) => {
+						const session = chat.sessionId();
+						if (session) aiChatDraft.insertReference(session, quoted);
+					}}
 					emptyMessage={
 						!settingsReady()
 							? "Chat settings are unavailable. Waiting for the server…"

@@ -56,6 +56,19 @@ pub(crate) async fn save_tunnel_profile(
     if let Err(e) = profile.validate() {
         return err_json(StatusCode::BAD_REQUEST, &e);
     }
+    // This route bypasses the settings facade: refuse what the facade gates on owner
+    // confirmation (port, auto-connect, forwards) before anything is written.
+    let stored = match ProfileStore::load_all(&state.data_dir, None) {
+        Ok(profiles) => profiles.into_iter().find(|p| p.id == profile.id),
+        Err(e) => return err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+    }
+    .unwrap_or_else(|| TunnelProfile::new("", "", ""));
+    if crate::settings::policy::tunnel_profile_requires_confirmation(
+        &serde_json::json!(stored),
+        &serde_json::json!(profile),
+    ) {
+        return crate::mcp_http::config_routes::confirmation_required().into_response();
+    }
     match save_profile(&state, profile) {
         Ok(id) => (StatusCode::OK, Json(serde_json::json!({"id": id}))).into_response(),
         Err(e) => err_json(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),

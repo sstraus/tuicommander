@@ -2,7 +2,10 @@ import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { createRoot } from "solid-js";
 import { afterEach, expect, it, vi } from "vitest";
 
-const backend = vi.hoisted(() => ({ config: { ego_executable: "", experimental_features_enabled: true } }));
+const backend = vi.hoisted(() => ({
+	config: { ego_executable: "", experimental_features_enabled: true },
+	connects: [] as unknown[],
+}));
 let disposePanel: (() => void) | undefined;
 
 vi.mock("../../invoke", () => ({
@@ -14,10 +17,26 @@ vi.mock("../../invoke", () => ({
 			return;
 		}
 		if (command === "focus_main_window") return;
+		// The configured composer probes these on activation; none is the subject here.
+		if (command === "detect_all_agent_binaries") return {};
+		if (command === "acp_workspace_root") return "/work";
+		if (command === "get_hands_free_status") return { armed: false, sessionId: null };
+		// The activated composer attaches to ego. No ego process runs in this test.
+		if (command === "acp_connect") {
+			backend.connects.push(args?.root);
+			throw new Error("no ego process in this test");
+		}
 		throw new Error(`Unexpected command: ${command}`);
 	}),
 	listen: vi.fn(async () => () => {}),
 	guardTauriUnlisten: (unlisten: () => void) => unlisten,
+}));
+// Push events are not the subject. Under Vitest 5.0.0, concurrent dynamic imports of
+// a mocked "@tauri-apps/api/event" return the real module to all but the first caller,
+// so `subscribeEvents` stays inert here instead of reaching the real Tauri listener.
+vi.mock("../../transport", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../transport")>()),
+	subscribeEvents: vi.fn(async () => () => {}),
 }));
 vi.mock("@tauri-apps/api/event", () => ({
 	emitTo: vi.fn(async () => {}),
@@ -38,6 +57,7 @@ vi.resetModules();
 const { settingsStore: mainSettings } = await import("../../stores/settings");
 
 afterEach(() => {
+	vi.restoreAllMocks();
 	vi.useRealTimers();
 	cleanup();
 	disposePanel?.();
@@ -46,6 +66,7 @@ afterEach(() => {
 
 // Catches: detached settings stay stale after main-window setup, leaving chat inactive until the window is reopened.
 it("activates the already-open detached composer after ego is configured in the main window", async () => {
+	const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 	localStorage.clear();
 	window.history.replaceState({}, "", "/?mode=panel&panel=ai-chat");
 	await createRoot((dispose) => {
@@ -67,4 +88,7 @@ it("activates the already-open detached composer after ego is configured in the 
 	window.dispatchEvent(new Event("focus"));
 	document.dispatchEvent(new Event("visibilitychange"));
 	await waitFor(() => expect(panel.queryByRole("textbox")).not.toBeNull());
+	// Activation reaches the configured ego, whose expected absence is the only logged error.
+	await waitFor(() => expect(backend.connects).toEqual(["/work"]));
+	expect(consoleError.mock.calls).toEqual([["[ai-chat]", "connecting to ego failed"]]);
 });

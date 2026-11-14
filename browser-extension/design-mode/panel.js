@@ -1,4 +1,3 @@
-import {hasExplicitHostGrant} from './browserCommands.js';
 const $ = (id) => document.getElementById(id);
 let current;
 const cards = new Map();
@@ -98,26 +97,17 @@ chrome.runtime.onMessage.addListener((message) => { if(message.kind==='changed')
 refresh();
 setInterval(refresh,5000);
 
+// One owner click: Chrome's all-sites grant (required for capture without a toolbar gesture, and for
+// remote scripting) plus TUIC's consent for the armed session on this host.
 $('grant-host').onclick = async () => {
   try {
     const [tab] = await chrome.tabs.query({active:true,lastFocusedWindow:true});
     const url = new URL(tab.url);
     if (!['http:','https:'].includes(url.protocol)) throw new Error('Select an HTTP(S) page first.');
-    // A wildcard scheme distinguishes explicit localhost consent from static access.
-    const allowed = await chrome.permissions.request({origins:[`*://${url.hostname}/*`]});
-    $('grants').textContent = !allowed ? 'Host permission declined.' : hasExplicitHostGrant((await chrome.permissions.getAll()).origins, tab.url) ? 'Host granted for agent commands and eval.' : 'Chrome did not add separate eval consent. Remove the all-sites capture permission in Chrome, grant this host, then enable capture again.';
-  } catch (error) { $('grants').textContent = error.message; }
-};
-$('grant-all').onclick = async () => {
-  const allowed = await chrome.permissions.request({origins:['http://*/*','https://*/*']});
-  const {origins = []} = await chrome.permissions.getAll();
-  $('grants').textContent = !allowed ? 'Host permission declined.' : ['http://*/*','https://*/*'].every((origin) => origins.includes(origin)) ? 'All sites granted for agent commands and eval.' : 'Chrome did not add separate eval consent. Remove the all-sites capture permission in Chrome, grant all sites, then enable capture again.';
-};
-
-$('grant-capture').onclick = async () => {
-  try {
-    const permission = {origins:['<all_urls>']};
-    const allowed = await chrome.permissions.request(permission);
-    $('grants').textContent = allowed ? 'All-sites capture enabled. Agent eval still needs a separate grant.' : 'Capture permission declined. Invoke the Design Mode browser action on a tab for temporary capture access.';
+    // Localhost eval needs no all-sites grant: declining Chrome's prompt must not block its consent.
+    const local = ['localhost','127.0.0.1','[::1]'].includes(url.hostname);
+    if (!(await chrome.permissions.request({origins:['<all_urls>']})) && !local) throw new Error('Chrome permission declined. Agents stay blocked on this host; invoke the Design Mode browser action for temporary capture access.');
+    await call({kind:'consent_host'});
+    $('grants').textContent = `Agents in this Design Mode session may capture, inspect and run JavaScript on ${url.hostname}.`;
   } catch (error) { $('grants').textContent = error.message; }
 };

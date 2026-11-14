@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { cleanup, render, waitFor } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import MobileApp from "../MobileApp";
@@ -92,5 +94,18 @@ describe("mobile shell follows the visual viewport", () => {
 		await waitFor(() => expect(shellVar("--app-height")).toBe(`${KEYBOARD_VV_HEIGHT}px`));
 		vv.move(SCREEN - 62, 0);
 		await waitFor(() => expect(shellVar("--app-height")).toBe(`${SCREEN - 62}px`));
+	});
+});
+
+describe("terminal output overscroll", () => {
+	const outputRule =
+		readFileSync(resolve(__dirname, "../components/OutputView.module.css"), "utf-8").match(
+			/\.output\s*\{([^}]*)\}/,
+		)?.[1] ?? "";
+
+	// Catches (story 2739): a drag past the bottom of the output chains to the page and pans the
+	// visual viewport while the keyboard is open (measured on the iOS Simulator: offsetTop 0 → 28 px).
+	it("keeps a drag past either end inside the output", () => {
+		expect(outputRule).toMatch(/(^|[;\s])overscroll-behavior:\s*contain;/);
 	});
 });

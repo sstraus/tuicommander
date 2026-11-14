@@ -1,11 +1,25 @@
 import { defaultKeymap, history, historyKeymap, insertNewline } from "@codemirror/commands";
 import { drawSelection, EditorView, keymap } from "@codemirror/view";
 import { createCodeMirror } from "solid-codemirror";
-import { type Accessor, type Component, createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
+import {
+	type Accessor,
+	type Component,
+	createEffect,
+	createMemo,
+	createSignal,
+	For,
+	on,
+	onCleanup,
+	Show,
+} from "solid-js";
 import type { QueuedCommand } from "../../hooks/usePty";
+import { createPromptDraft } from "../../stores/promptDraft";
+import { terminalPromptDraft } from "../../stores/terminalPromptDraft";
 import { cx } from "../../utils";
 import { IMAGE_FILE_ACCEPT } from "../../utils/pastedImage";
+import { promptKeyAction } from "../../utils/promptKeybinding";
 import { ComposePinIcon, ComposeSendIcon } from "../shared/ComposeActionIcons";
+import { PromptContent } from "../shared/PromptContent";
 import { Button } from "../ui/Button";
 import controls from "../ui/FormControls.module.css";
 import s from "./ComposePanel.module.css";
@@ -48,6 +62,8 @@ const composeTheme = EditorView.theme(
 
 export interface ComposePanelProps {
 	isOpen: Accessor<boolean>;
+	/** PTY identity, shared with the mobile composer. */
+	sessionId?: string;
 	initialText: Accessor<string>;
 	onClose: () => void;
 	onSend: (text: string) => void | Promise<void>;
@@ -62,6 +78,10 @@ export interface ComposePanelProps {
 	onLoadQueue: () => Promise<QueuedCommand[]>;
 	/** Drop a single queued command by id. */
 	onRemoveQueued: (id: number) => void | Promise<void>;
+	/** Use the existing backend Send now path for a supported queue entry. */
+	onSteerQueued?: (id: number) => void | Promise<void>;
+	/** A native question must be answered before steering. */
+	canSteerQueued?: Accessor<boolean>;
 	/** Withdraw the newest host-owned user prompt, or return null if delivery already won. */
 	onRecallQueued?: () => Promise<string | null>;
 	onTextChange?: (text: string) => void;
@@ -72,6 +92,8 @@ export interface ComposePanelProps {
 	pinned: Accessor<boolean>;
 	/** The host requires this input: hide controls that would close or undock it. */
 	persistent?: Accessor<boolean>;
+	/** Desktop CLI reserves only the minimum; additional content overlays the grid. */
+	reserveMinimum?: Accessor<boolean>;
 	onTogglePin: () => void;
 	/** The close button: closes the panel even when pinned, unlike Esc. */
 	onDismiss: () => void;
@@ -119,6 +141,7 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 		if (inFlight) return;
 		inFlight = true;
 		const submitted = editorView()?.state.doc.toString() ?? "";
+		const submittedDraft = draft();
 		// The executor calls the handler synchronously and turns a throw into a
 		// rejection, so the flag is always released.
 		new Promise<void>((resolve) => resolve(handler(text)))
@@ -129,14 +152,18 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 					// away and back while the request is pending.
 					const doc = !disposed && view ? view.state.doc.toString() : props.initialText();
 					// Editing the submitted text itself leaves no safe prefix to remove.
-					const remaining = doc.startsWith(submitted) ? doc.slice(submitted.length).trimStart() : doc;
+					let remaining = doc.startsWith(submitted) ? doc.slice(submitted.length).trimStart() : doc;
+					if (!remaining && submittedDraft.parked()) {
+						submittedDraft.restoreAfterSend();
+						remaining = submittedDraft.text();
+					}
 					if (props.onSubmitted) {
 						props.onSubmitted(remaining);
 						return;
 					}
 					if (disposed || !props.pinned() || !view) return;
 					if (doc !== remaining) {
-						view.dispatch({ changes: { from: 0, to: doc.length - remaining.length, insert: "" } });
+						view.dispatch({ changes: { from: 0, to: doc.length, insert: remaining } });
 					}
 					view.focus();
 				},
@@ -156,6 +183,30 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 	});
 	onCleanup(() => props.onInsertText?.(undefined));
 
+	const draft = createMemo(() => (props.sessionId ? terminalPromptDraft(props.sessionId) : createPromptDraft()));
+	createExtension(
+		EditorView.domEventHandlers({
+			keydown: (event, view) => {
+				if (view.composing) return false;
+				const action = promptKeyAction(event);
+				if (!action || (event.key === "Enter" && event.shiftKey && event.ctrlKey)) return false;
+				if (action === "newline") return insertNewline(view);
+				if (action === "send") {
+					const text = view.state.doc.toString().trim();
+					if (text) submit(props.onSend, text);
+					return true;
+				}
+				event.preventDefault();
+				event.stopPropagation();
+				if (event.repeat || inFlight) return true;
+				const owner = draft();
+				owner.set(view.state.doc.toString());
+				owner.parkOrSwap();
+				view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: owner.text() } });
+				return true;
+			},
+		}),
+	);
 	createExtension(composeTheme);
 	createExtension(EditorView.editorAttributes.of({ class: controls.autoGrow }));
 	createExtension(drawSelection());
@@ -207,16 +258,7 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 					return true;
 				},
 			},
-			{
-				key: "Enter",
-				run: (view) => {
-					const text = view.state.doc.toString().trim();
-					if (text) submit(props.onSend, text);
-					return true;
-				},
-			},
-			{ key: "Ctrl-Enter", run: insertNewline },
-			{ key: "Shift-Enter", run: insertNewline },
+
 			{
 				key: "Escape",
 				run: () => {
@@ -295,6 +337,8 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 	createEffect(() => {
 		if (!props.isOpen() || props.pinned()) return;
 		const handleFocusOut = (e: FocusEvent) => {
+			// Desktop CLI lets a terminal click collapse the overlay without closing the draft.
+			if (props.reserveMinimum?.() && window.matchMedia("(min-width: 601px)").matches) return;
 			const related = e.relatedTarget as Node | null;
 			const panel = editorView()?.dom?.closest(`.${s.panel}`);
 			if (related && panel?.contains(related)) return;
@@ -312,6 +356,26 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 	// re-fetched whenever the count moves under it (the queue drains on idle).
 	const [queueOpen, setQueueOpen] = createSignal(false);
 	const [queueItems, setQueueItems] = createSignal<QueuedCommand[]>([]);
+	const [queueActionPending, setQueueActionPending] = createSignal(false);
+	const [queueError, setQueueError] = createSignal<string | null>(null);
+	async function actOnQueued(id: number, action: (id: number) => void | Promise<void>) {
+		if (queueActionPending()) return;
+		setQueueActionPending(true);
+		setQueueError(null);
+		try {
+			await action(id);
+		} catch (error) {
+			if (!disposed) setQueueError(error instanceof Error ? error.message : String(error));
+		} finally {
+			try {
+				const remaining = await props.onLoadQueue();
+				if (!disposed) setQueueItems(remaining);
+			} catch (error) {
+				if (!disposed) setQueueError(error instanceof Error ? error.message : String(error));
+			}
+			if (!disposed) setQueueActionPending(false);
+		}
+	}
 
 	createEffect(() => {
 		if (!queueOpen()) return;
@@ -344,46 +408,72 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 
 	return (
 		<div
-			class={cx(s.panel, props.isOpen() && s.panelOpen, props.pinned() && s.panelPinned)}
+			class={cx(
+				s.panel,
+				props.isOpen() && s.panelOpen,
+				props.pinned() && s.panelPinned,
+				props.reserveMinimum?.() && s.panelMinimum,
+			)}
 			onMouseDown={(e) => e.stopPropagation()}
 		>
-			<div class={s.editor} data-compose-editor ref={ref} />
-			<Show when={queueOpen() && props.queuedCount() > 0}>
-				<div class={s.queueList}>
-					<div class={s.queueListHeader}>
-						<span>Waiting for the agent to go idle</span>
-						<Button variant="ghost" class={s.queueClearAll} onClick={() => props.onClearQueue()}>
-							Clear all
-						</Button>
-					</div>
-					<For each={queueItems()}>
-						{(item) => (
-							<div class={s.queueItem}>
-								<span class={s.queueItemText} title={queueItemTitle(item)}>
-									{queueItemLabel(item)}
-								</span>
-								<Button
-									variant="ghost"
-									shape="icon"
-									class={s.queueItemRemove}
-									onClick={() => props.onRemoveQueued(item.id)}
-									title="Remove from queue"
-									aria-label="Remove from queue"
-								>
-									<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-										<path d="M4.3 3.3l8.4 8.4-1 1-8.4-8.4zM12.7 4.3l-8.4 8.4-1-1 8.4-8.4z" />
-									</svg>
+			<div class={cx(s.body, props.reserveMinimum?.() && controls.autoGrowMinimum)}>
+				<div class={s.bodyContents}>
+					<div class={s.editor} data-compose-editor ref={ref} />
+					<Show when={queueOpen() && props.queuedCount() > 0}>
+						<div class={s.queueList}>
+							<div class={s.queueListHeader}>
+								<span>Waiting for the agent to go idle</span>
+								<Button variant="ghost" class={s.queueClearAll} onClick={() => props.onClearQueue()}>
+									Clear all
 								</Button>
 							</div>
-						)}
-					</For>
+							<For each={queueItems()}>
+								{(item) => (
+									<div class={s.queueItem}>
+										<div class={s.queueItemText} title={queueItemTitle(item)}>
+											<PromptContent text={queueItemLabel(item)} />
+										</div>
+										<div class={s.queueItemActions}>
+											<Show when={item.send_now && props.onSteerQueued && (props.canSteerQueued?.() ?? true)}>
+												<Button
+													variant="ghost"
+													size="compact"
+													disabled={queueActionPending()}
+													onClick={() => void actOnQueued(item.id, props.onSteerQueued!)}
+													title="Send now: stop the current request"
+													aria-label={`Steer: ${queueItemLabel(item)}`}
+												>
+													Steer
+												</Button>
+											</Show>
+											<Button
+												variant="ghost"
+												size="compact"
+												disabled={queueActionPending()}
+												onClick={() => void actOnQueued(item.id, props.onRemoveQueued)}
+												title="Cancel queued prompt"
+												aria-label={`Cancel: ${queueItemLabel(item)}`}
+											>
+												Cancel
+											</Button>
+										</div>
+									</div>
+								)}
+							</For>
+						</div>
+					</Show>
+					<Show when={queueError()}>
+						<div class={s.imageError} role="alert">
+							{queueError()}
+						</div>
+					</Show>
+					<Show when={images.error()}>
+						<div class={s.imageError} role="alert">
+							{images.error()}
+						</div>
+					</Show>
 				</div>
-			</Show>
-			<Show when={images.error()}>
-				<div class={s.imageError} role="alert">
-					{images.error()}
-				</div>
-			</Show>
+			</div>
 			<div class={s.statusBar}>
 				{/* Same legend shape as the command palette footer. The bindings are
 				    literal Control on every platform: CodeMirror's "Ctrl-" is not "Mod-". */}
@@ -392,7 +482,7 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 						<kbd>↵</kbd> send
 					</span>
 					<span class={s.hint}>
-						<kbd>ctrl ↵</kbd> newline
+						<kbd>⇧ ↵</kbd> newline
 					</span>
 					<Show when={props.canEnqueue()}>
 						<span class={s.hint}>
@@ -408,6 +498,9 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 						<Button
 							variant="ghost"
 							class={cx(s.queueBadge, queueOpen() && s.queueBadgeOpen)}
+							// WebKit does not focus a clicked button: without this the editor
+							// blurs, the unfocused panel clips the list and the shortcut is dead.
+							onMouseDown={(e) => e.preventDefault()}
 							onClick={() => setQueueOpen(!queueOpen())}
 							title="Waiting for the agent to go idle — click to review"
 							aria-expanded={queueOpen()}

@@ -310,15 +310,17 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 						)}
 					</span>
 				</Show>
-				<TickerArea />
-				<Show when={terminalsStore.getActive()?.providerRecovery}>
-					{(recovery) => (
-						<ProviderRecoveryStatus recovery={recovery()} sessionId={terminalsStore.getActive()?.sessionId ?? ""} />
-					)}
-				</Show>
+			</div>
+
+			{/* One right-hand flow, including usage absorbed from plugin tickers. */}
+			<div class={s.rightGroup}>
 				<Show when={!terminalsStore.getActive()?.providerRecovery && terminalsStore.getActive()?.agentType}>
 					{(agentType) => {
-						const display = () => AGENT_DISPLAY[agentType()];
+						const badgeAgent = () => {
+							const label = usageTicker()?.label?.toLowerCase();
+							return agentType() === "ego" && (label === "codex" || label === "claude") ? label : agentType();
+						};
+						const display = () => AGENT_DISPLAY[badgeAgent()];
 						const ul = () => terminalsStore.getActive()?.usageLimit ?? null;
 						const rl = rateLimitWarning;
 						// The shared usage slot follows Claude, Codex or ego. Absorb it only when
@@ -332,8 +334,10 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 								.find(
 									(message) =>
 										message.pluginId === "claude-usage" &&
-										message.label?.toLowerCase() === provider &&
-										(provider !== "ego" || message.sessionId === terminalsStore.getActive()?.sessionId),
+										(provider === "ego"
+											? ["claude", "codex"].includes(message.label?.toLowerCase() ?? "") &&
+												message.sessionId === terminalsStore.getActive()?.sessionId
+											: message.label?.toLowerCase() === provider && !message.sessionId),
 								);
 						};
 						return (
@@ -351,7 +355,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 								}
 							>
 								<span style={{ color: display().color }}>
-									<AgentIcon agent={agentType()} size={12} />
+									<AgentIcon agent={badgeAgent()} size={12} />
 								</span>
 								<Switch fallback={<span style={{ color: display().color }}> {agentType()}</span>}>
 									<Match when={rl()}>{(rl) => <span class={s.agentRateLimited}> ⚠ {rl().remaining}</span>}</Match>
@@ -386,169 +390,183 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 										)}
 									</Match>
 								</Switch>
+								<Show when={terminalsStore.getActive()?.currentTool}>
+									{(tool) => (
+										<span class={s.agentTool} data-testid="agent-tool">
+											{" "}
+											· {tool()}
+										</span>
+									)}
+								</Show>
 							</span>
 						);
 					}}
 				</Show>
-			</div>
+				<Show when={terminalsStore.getActive()?.providerRecovery}>
+					{(recovery) => (
+						<ProviderRecoveryStatus recovery={recovery()} sessionId={terminalsStore.getActive()?.sessionId ?? ""} />
+					)}
+				</Show>
+				<TickerArea />
 
-			{/* Remote machines holding registered repos that are not answering.
+				{/* Remote machines holding registered repos that are not answering.
 			    Without this the only symptom is every operation on those repos
 			    failing one by one, with the real cause buried in Settings. */}
-			<Show when={unreachableMachines().length > 0}>
-				<div
-					class={s.remoteOffline}
-					title={t(
-						"statusBar.remoteOfflineHint",
-						"Open Settings → Remote Machines to reconnect. Repositories on these machines cannot be read.",
-					)}
-				>
-					{t("statusBar.remoteOffline", "Offline:")} {unreachableMachines().join(", ")}
-				</div>
-			</Show>
+				<Show when={unreachableMachines().length > 0}>
+					<div
+						class={s.remoteOffline}
+						title={t(
+							"statusBar.remoteOfflineHint",
+							"Open Settings → Remote Machines to reconnect. Repositories on these machines cannot be read.",
+						)}
+					>
+						{t("statusBar.remoteOffline", "Offline:")} {unreachableMachines().join(", ")}
+					</div>
+				</Show>
 
-			{/* GitHub PR + CI badges */}
-			<Show when={activePrData()}>
-				<div class={s.githubStatus}>
-					<PrBadge
-						number={activePrData()!.number}
-						title={activePrData()!.title}
-						readiness={prReadinessOf(activePrData()!)}
-						onClick={() => setShowPrDetailPopover(true)}
-					/>
-					<Show when={activePrData()!.checks && activePrData()!.checks!.total > 0}>
-						<span onClick={handleCiBadgeClick} style={{ cursor: "pointer" }}>
-							<CiBadge
-								status={
-									activePrData()!.checks!.failed > 0
-										? "completed"
-										: activePrData()!.checks!.pending > 0
-											? "in_progress"
-											: "completed"
-								}
-								conclusion={
-									activePrData()!.checks!.failed > 0
-										? "failure"
-										: activePrData()!.checks!.pending > 0
-											? null
-											: "success"
-								}
-								workflowName="CI"
-							/>
-						</span>
+				{/* GitHub PR + CI badges */}
+				<Show when={activePrData()}>
+					<div class={s.githubStatus}>
+						<PrBadge
+							number={activePrData()!.number}
+							title={activePrData()!.title}
+							readiness={prReadinessOf(activePrData()!)}
+							onClick={() => setShowPrDetailPopover(true)}
+						/>
+						<Show when={activePrData()!.checks && activePrData()!.checks!.total > 0}>
+							<span onClick={handleCiBadgeClick} style={{ cursor: "pointer" }}>
+								<CiBadge
+									status={
+										activePrData()!.checks!.failed > 0
+											? "completed"
+											: activePrData()!.checks!.pending > 0
+												? "in_progress"
+												: "completed"
+									}
+									conclusion={
+										activePrData()!.checks!.failed > 0
+											? "failure"
+											: activePrData()!.checks!.pending > 0
+												? null
+												: "success"
+									}
+									workflowName="CI"
+								/>
+							</span>
+						</Show>
+					</div>
+				</Show>
+
+				{/* Right section - controls */}
+				<div class={cx(s.section, s.controls)}>
+					{/* Toggle buttons */}
+					<Show when={appLogger.unseenErrorCount() > 0}>
+						<Button
+							size="compact"
+							class={s.toggleBtn}
+							onClick={() => props.onToggleErrorLog?.()}
+							title={`Error Log (${keyFor("toggle-error-log")})`}
+							style={{ position: "relative" }}
+						>
+							<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+								<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+							</svg>
+							<CountBadge count={appLogger.unseenErrorCount()} tone="error" />
+						</Button>
 					</Show>
-				</div>
-			</Show>
-
-			{/* Right section - controls */}
-			<div class={cx(s.section, s.controls)}>
-				{/* Toggle buttons */}
-				<Show when={appLogger.unseenErrorCount() > 0}>
 					<Button
 						size="compact"
 						class={s.toggleBtn}
-						onClick={() => props.onToggleErrorLog?.()}
-						title={`Error Log (${keyFor("toggle-error-log")})`}
+						onClick={() => props.onToggleNotes?.()}
+						title={`${t("statusBar.toggleNotes", "Toggle Ideas Panel")} (${keyFor("toggle-notes")})`}
 						style={{ position: "relative" }}
 					>
 						<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-							<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+							<path d="M9 21c0 .5.4 1 1 1h4c.6 0 1-.5 1-1v-1H9v1zm3-19C8.1 2 5 5.1 5 9c0 2.4 1.2 4.5 3 5.7V17c0 .5.4 1 1 1h6c.6 0 1-.5 1-1v-2.3c1.8-1.3 3-3.4 3-5.7 0-3.9-3.1-7-7-7z" />
 						</svg>
-						<CountBadge count={appLogger.unseenErrorCount()} tone="error" />
+						<CountBadge count={notesBadgeCount()} />
 					</Button>
-				</Show>
-				<Button
-					size="compact"
-					class={s.toggleBtn}
-					onClick={() => props.onToggleNotes?.()}
-					title={`${t("statusBar.toggleNotes", "Toggle Ideas Panel")} (${keyFor("toggle-notes")})`}
-					style={{ position: "relative" }}
-				>
-					<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-						<path d="M9 21c0 .5.4 1 1 1h4c.6 0 1-.5 1-1v-1H9v1zm3-19C8.1 2 5 5.1 5 9c0 2.4 1.2 4.5 3 5.7V17c0 .5.4 1 1 1h6c.6 0 1-.5 1-1v-2.3c1.8-1.3 3-3.4 3-5.7 0-3.9-3.1-7-7-7z" />
-					</svg>
-					<CountBadge count={notesBadgeCount()} />
-				</Button>
-				<Button
-					size="compact"
-					class={s.toggleBtn}
-					onClick={() => props.onToggleFileBrowser?.()}
-					title={`${t("statusBar.fileBrowser", "File Browser")} (${keyFor("toggle-file-browser")})`}
-					style={{ position: "relative" }}
-				>
-					<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-						<path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
-					</svg>
-				</Button>
-				<Button
-					size="compact"
-					class={s.toggleBtn}
-					onClick={props.onToggleMarkdown}
-					title={`${t("statusBar.markdown", "Markdown")} (${keyFor("toggle-markdown")})`}
-					style={{ position: "relative" }}
-				>
-					<svg viewBox="0 0 208 128" width="16" height="10" fill="currentColor">
-						<rect x="5" y="5" width="198" height="118" rx="12" fill="none" stroke="currentColor" stroke-width="12" />
-						<path d="M30 98V30h20l20 25 20-25h20v68h-20V59L70 84 50 59v39H30zm125 0l-30-33h20V30h20v35h20l-30 33z" />
-					</svg>
-				</Button>
-				<Button
-					size="compact"
-					class={s.toggleBtn}
-					onClick={props.onToggleDiff}
-					title={`${t("statusBar.git", "Git")} (${keyFor("toggle-git-ops")})`}
-					style={{ position: "relative" }}
-				>
-					<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-						<path d="M9 7H7v2H5v2h2v2h2v-2h2V9H9V7zm7 2h4v2h-4V9zm0 4h4v2h-4v-2zM5 19h14v2H5v-2zM5 3h14v2H5V3z" />
-					</svg>
-					<CountBadge count={changesCount()} />
-				</Button>
-
-				<Show when={settingsStore.isAiChatEnabled()}>
 					<Button
 						size="compact"
 						class={s.toggleBtn}
-						onClick={() => props.onToggleAiChat?.()}
-						title={`AI Chat (${keyFor("toggle-ai-chat")})`}
+						onClick={() => props.onToggleFileBrowser?.()}
+						title={`${t("statusBar.fileBrowser", "File Browser")} (${keyFor("toggle-file-browser")})`}
 						style={{ position: "relative" }}
 					>
-						<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-							<path d="M3 2a2 2 0 00-2 2v6a2 2 0 002 2h1v2.5L7.5 12H13a2 2 0 002-2V4a2 2 0 00-2-2H3z" />
+						<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+							<path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
 						</svg>
-						<CountBadge count={uiStore.state.aiChatPanelVisible ? 0 : pendingAcpCount()} tone="error" />
 					</Button>
-				</Show>
-
-				{/* Mic button - hold to talk (rightmost) */}
-				<Show when={dictationStore.state.enabled}>
 					<Button
 						size="compact"
-						variant={dictationStore.state.recording ? "primary" : "secondary"}
-						class={cx(
-							s.toggleBtn,
-							dictationStore.state.recording && s.micRecording,
-							dictationStore.state.processing && s.micProcessing,
-							dictationStore.state.loading && s.micLoading,
-						)}
-						onMouseDown={(e) => {
-							if (e.button === 0) props.onDictationStart();
-						}}
-						onMouseUp={(e) => {
-							if (e.button === 0) props.onDictationStop();
-						}}
-						onMouseLeave={() => {
-							if (dictationStore.state.recording || dictationStore.state.loading) props.onDictationStop();
-						}}
-						title={`${t("statusBar.voiceDictation", "Voice Dictation")} (${dictationStore.state.hotkey})`}
+						class={s.toggleBtn}
+						onClick={props.onToggleMarkdown}
+						title={`${t("statusBar.markdown", "Markdown")} (${keyFor("toggle-markdown")})`}
 						style={{ position: "relative" }}
 					>
-						<svg class={s.micIcon} viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-							<path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
-							<path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+						<svg viewBox="0 0 208 128" width="16" height="10" fill="currentColor">
+							<rect x="5" y="5" width="198" height="118" rx="12" fill="none" stroke="currentColor" stroke-width="12" />
+							<path d="M30 98V30h20l20 25 20-25h20v68h-20V59L70 84 50 59v39H30zm125 0l-30-33h20V30h20v35h20l-30 33z" />
 						</svg>
 					</Button>
-				</Show>
+					<Button
+						size="compact"
+						class={s.toggleBtn}
+						onClick={props.onToggleDiff}
+						title={`${t("statusBar.git", "Git")} (${keyFor("toggle-git-ops")})`}
+						style={{ position: "relative" }}
+					>
+						<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+							<path d="M9 7H7v2H5v2h2v2h2v-2h2V9H9V7zm7 2h4v2h-4V9zm0 4h4v2h-4v-2zM5 19h14v2H5v-2zM5 3h14v2H5V3z" />
+						</svg>
+						<CountBadge count={changesCount()} />
+					</Button>
+
+					<Show when={settingsStore.isAiChatEnabled()}>
+						<Button
+							size="compact"
+							class={s.toggleBtn}
+							onClick={() => props.onToggleAiChat?.()}
+							title={`AI Chat (${keyFor("toggle-ai-chat")})`}
+							style={{ position: "relative" }}
+						>
+							<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+								<path d="M3 2a2 2 0 00-2 2v6a2 2 0 002 2h1v2.5L7.5 12H13a2 2 0 002-2V4a2 2 0 00-2-2H3z" />
+							</svg>
+							<CountBadge count={uiStore.state.aiChatPanelVisible ? 0 : pendingAcpCount()} tone="error" />
+						</Button>
+					</Show>
+
+					{/* Mic button - hold to talk (rightmost) */}
+					<Show when={dictationStore.state.enabled}>
+						<Button
+							size="compact"
+							variant={dictationStore.state.recording ? "primary" : "secondary"}
+							class={cx(
+								s.toggleBtn,
+								dictationStore.state.recording && s.micRecording,
+								dictationStore.state.processing && s.micProcessing,
+								dictationStore.state.loading && s.micLoading,
+							)}
+							onMouseDown={(e) => {
+								if (e.button === 0) props.onDictationStart();
+							}}
+							onMouseUp={(e) => {
+								if (e.button === 0) props.onDictationStop();
+							}}
+							onMouseLeave={() => {
+								if (dictationStore.state.recording || dictationStore.state.loading) props.onDictationStop();
+							}}
+							title={`${t("statusBar.voiceDictation", "Voice Dictation")} (${dictationStore.state.hotkey})`}
+							style={{ position: "relative" }}
+						>
+							<svg class={s.micIcon} viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+								<path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
+								<path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+							</svg>
+						</Button>
+					</Show>
+				</div>
 			</div>
 
 			{/* Rich PR detail popover */}

@@ -191,3 +191,257 @@ async fn remote_router_serves_settings_bootstrap() {
         "shared bootstrap must retain secret redaction"
     );
 }
+
+async fn put_config(router: Router, body: Value) -> (StatusCode, Value) {
+    let response = router
+        .oneshot(request("PUT", "/config", body))
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+fn save_body(change: impl FnOnce(&mut crate::config::AppConfig)) -> Value {
+    let base = crate::config::AppConfig::default();
+    let mut config = base.clone();
+    change(&mut config);
+    json!({"base": base, "config": config})
+}
+
+// Catches: the raw config route writing owner-confirmed settings without the facade's approval.
+#[tokio::test]
+async fn put_config_refuses_owner_confirmed_settings() {
+    type Change = fn(&mut crate::config::AppConfig);
+    let changes: [(&str, Change); 4] = [
+        ("ego_executable", |c| c.ego_executable = "/tmp/evil".into()),
+        ("services.server.port", |c| c.services.server.port = 9981),
+        ("services.auth.username", |c| {
+            c.services.auth.username = "intruder".into()
+        }),
+        ("services.relay", |c| c.services.relay.enabled = true),
+    ];
+    for (name, change) in changes {
+        let (_dir, _guard, state) = isolated();
+        let before = serde_json::to_value(&*state.config.read()).unwrap();
+        let (status, body) =
+            put_config(build_remote_router(state.clone()), save_body(change)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{name}: {body}");
+        assert_eq!(body["error"], "confirmation_required", "{name}: {body}");
+        assert_eq!(
+            serde_json::to_value(&*state.config.read()).unwrap(),
+            before,
+            "{name}: refused write must leave the config unchanged"
+        );
+    }
+}
+
+// Catches: the guard refusing ordinary settings that never needed owner confirmation.
+#[tokio::test]
+async fn put_config_still_writes_ordinary_settings() {
+    let (_dir, _guard, state) = isolated();
+    let (status, body) = put_config(
+        build_remote_router(state.clone()),
+        save_body(|c| c.default_font_size = 23),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(state.config.read().default_font_size, 23);
+}
+
+// Catches: launcher executable/args edits slipping through because the delta replaces the whole array.
+#[tokio::test]
+async fn put_config_refuses_custom_launcher_execution_edits() {
+    let (_dir, _guard, state) = isolated();
+    let body = save_body(|c| {
+        c.custom_launchers.push(crate::config::CustomLauncher {
+            id: "x".into(),
+            executable: "/tmp/evil".into(),
+            ..Default::default()
+        })
+    });
+    let (status, body) = put_config(build_remote_router(state.clone()), body).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert!(state.config.read().custom_launchers.is_empty());
+}
+
+// Catches: the raw route refusing a change that only removes authority, which the facade writes unasked.
+#[tokio::test]
+async fn put_config_writes_owner_confirmed_settings_that_only_reduce_authority() {
+    let (_dir, _guard, state) = isolated();
+    state.config.write().services.relay.enabled = true;
+    let base = state.config.read().clone();
+    let mut config = base.clone();
+    config.services.relay.enabled = false;
+    let (status, body) = put_config(
+        build_remote_router(state.clone()),
+        json!({"base": base, "config": config}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(!state.config.read().services.relay.enabled);
+}
+
+async fn send(router: Router, method: &str, path: &str, body: Value) -> (StatusCode, Value) {
+    let response = router.oneshot(request(method, path, body)).await.unwrap();
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+fn stored_profile(state: &AppState) -> crate::tunnels::profile::TunnelProfile {
+    let profile = crate::tunnels::profile::TunnelProfile::new("p", "example.com", "alice");
+    crate::tunnels::storage::ProfileStore::save(&state.data_dir, &profile).unwrap();
+    profile
+}
+
+fn stored_profiles(state: &AppState) -> Vec<Value> {
+    let profiles = crate::tunnels::storage::ProfileStore::load_all(&state.data_dir, None).unwrap();
+    profiles
+        .iter()
+        .map(|p| serde_json::to_value(p).unwrap())
+        .collect()
+}
+
+// Catches: POST /tunnels/profiles writing a port, auto-connect or forward change that the
+// facade gates on owner confirmation.
+#[tokio::test]
+async fn tunnel_profile_route_refuses_owner_confirmed_changes() {
+    type Change = fn(&mut Value);
+    let changes: [(&str, Change); 3] = [
+        ("port", |p| p["port"] = json!(2222)),
+        ("auto_connect", |p| p["auto_connect"] = json!(true)),
+        (
+            "forwards",
+            |p| {
+                p["forwards"] =
+                    json!([{"type":"Local","bind_port":8080,"remote_host":"h","remote_port":80}])
+            },
+        ),
+    ];
+    for (name, change) in changes {
+        let (_dir, _guard, state) = isolated();
+        let stored = stored_profile(&state);
+        let before = stored_profiles(&state);
+        let mut next = serde_json::to_value(&stored).unwrap();
+        change(&mut next);
+        let (status, body) = send(
+            build_remote_router(state.clone()),
+            "POST",
+            "/tunnels/profiles",
+            next,
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{name}: {body}");
+        assert_eq!(body["error"], "confirmation_required", "{name}: {body}");
+        assert_eq!(
+            stored_profiles(&state),
+            before,
+            "{name}: refused write must not persist"
+        );
+    }
+}
+
+// Catches: a brand-new profile with forwards being created over HTTP without confirmation.
+#[tokio::test]
+async fn tunnel_profile_route_refuses_new_profile_with_forwards() {
+    let (_dir, _guard, state) = isolated();
+    let mut profile = serde_json::to_value(crate::tunnels::profile::TunnelProfile::new(
+        "n",
+        "example.com",
+        "alice",
+    ))
+    .unwrap();
+    profile["forwards"] =
+        json!([{"type":"Local","bind_port":8080,"remote_host":"h","remote_port":80}]);
+    let (status, body) = send(
+        build_remote_router(state.clone()),
+        "POST",
+        "/tunnels/profiles",
+        profile,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_eq!(stored_profiles(&state), [] as [Value; 0]);
+}
+
+// Catches: the tunnel guard refusing ordinary profile edits (rename) that never needed confirmation.
+#[tokio::test]
+async fn tunnel_profile_route_still_saves_ordinary_edits() {
+    let (_dir, _guard, state) = isolated();
+    let stored = stored_profile(&state);
+    let mut next = serde_json::to_value(&stored).unwrap();
+    next["name"] = json!("renamed");
+    let (status, body) = send(
+        build_remote_router(state.clone()),
+        "POST",
+        "/tunnels/profiles",
+        next,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(stored_profiles(&state)[0]["name"], "renamed");
+}
+
+fn upstream(id: &str, transport: Value) -> Value {
+    json!({"id": id, "name": id, "transport": transport, "enabled": true})
+}
+
+// Catches: PUT /mcp/upstreams adding or editing a stdio (process-spawning) upstream without
+// the owner confirmation the facade requires.
+#[tokio::test]
+async fn upstream_route_refuses_stdio_changes() {
+    let (_dir, _guard, state) = isolated();
+    let body = json!({
+        "base": {"servers": []},
+        "config": {"servers": [upstream("evil", json!({"type":"stdio","command":"/bin/sh","args":["-c","id"]}))]},
+    });
+    let (status, resp) = send(
+        build_router(state.clone(), true, true),
+        "PUT",
+        "/mcp/upstreams",
+        body,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{resp}");
+    assert!(
+        crate::mcp_upstream_config::load_mcp_upstreams()
+            .servers
+            .is_empty(),
+        "refused write must not persist"
+    );
+}
+
+// Catches: the upstream guard refusing HTTP upstreams, which the facade does not gate.
+#[tokio::test]
+async fn upstream_route_still_saves_http_upstreams() {
+    let (_dir, _guard, state) = isolated();
+    let body = json!({
+        "base": {"servers": []},
+        "config": {"servers": [upstream("remote", json!({"type":"http","url":"https://example.com/mcp"}))]},
+    });
+    let (status, resp) = send(
+        build_router(state.clone(), true, true),
+        "PUT",
+        "/mcp/upstreams",
+        body,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{resp}");
+    assert_eq!(
+        crate::mcp_upstream_config::load_mcp_upstreams()
+            .servers
+            .len(),
+        1
+    );
+}

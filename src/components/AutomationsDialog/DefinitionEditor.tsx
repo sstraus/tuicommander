@@ -140,6 +140,20 @@ export function DefinitionEditor(props: { store: AutomationsStore; focusProfile?
 								/>
 							</label>
 						</div>
+						<label class={s.check}>
+							<input
+								type="checkbox"
+								checked={draft().close_on_finish ?? false}
+								onChange={(event) => store.edit({ close_on_finish: event.currentTarget.checked })}
+							/>
+							{t("automations.closeOnFinish", "Close the run tab after confirmed completion")}
+						</label>
+						<p class={s.hint}>
+							{t(
+								"automations.closeOnFinishHint",
+								"Off by default. Failed, unknown and input-blocked runs stay open. Worktrees and other tabs are not removed.",
+							)}
+						</p>
 						<p class={s.hint}>
 							{t(
 								"automations.overlap",

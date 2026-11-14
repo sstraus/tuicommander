@@ -90,6 +90,19 @@ describe("automation runs", () => {
 		expect(screen.getByText("/repo/removed-worktree")).toBeTruthy();
 		expect(screen.getByText("Saved output was truncated by the backend.")).toBeTruthy();
 	});
+	// Catches View run rendering the 2 KiB list_runs excerpt instead of the saved output `run` returns whole.
+	it("View run shows the whole saved output, not the list excerpt", async () => {
+		const listed = { ...runFixture("saved", "deleted"), stdout: { text: "tail of report", truncated: true } };
+		const whole = { ...listed, stdout: { text: "head of report\ntail of report", truncated: false } };
+		const run = vi.fn(async () => whole);
+		render(() => (
+			<AutomationsDialog onClose={() => {}} adapter={fakeAdapter({ history: async () => [listed], run })} />
+		));
+		fireEvent.click(screen.getByRole("tab", { name: "Runs" }));
+		fireEvent.click(await screen.findByRole("button", { name: "View run" }));
+		await screen.findByText(/head of report/);
+		expect(screen.queryByText("Saved output was truncated by the backend.")).toBeNull();
+	});
 	// Catches View run skipping real navigation or selecting a foreign/dead terminal.
 	it.each([
 		{ owner: "remote-owner", suspended: false, shellState: "idle" as const, navigates: true },

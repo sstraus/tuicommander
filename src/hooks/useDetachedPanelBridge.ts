@@ -11,6 +11,7 @@ import { createPanelSyncProvider, type PanelAction } from "../utils/panelSync";
 export function useDetachedPanelBridge(
 	onConfigureEgo?: () => void,
 	onConfigureDictation?: () => void,
+	onConfigureAiChat?: () => void,
 ): { restoreDetachedPanels: () => void } {
 	/**
 	 * A panel comes home exactly once. `reattachPanel` emits `panel-action` and
@@ -42,6 +43,10 @@ export function useDetachedPanelBridge(
 		const { panelId, action, data } = event.payload;
 		if (panelId === "ai-chat" && action === "configure-ego") {
 			onConfigureEgo?.();
+			return;
+		}
+		if (panelId === "ai-chat" && action === "configure-ai-chat") {
+			onConfigureAiChat?.();
 			return;
 		}
 		if (panelId === "ai-chat" && action === "configure-dictation") {

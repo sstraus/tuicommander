@@ -1,23 +1,23 @@
 import { createSignal, onCleanup } from "solid-js";
-import type { ContextMenuItem } from "./ContextMenu";
+import type { AgentLaunchMenuItem } from "./AgentLaunchMenu";
 import { createContextMenu } from "./ContextMenu";
 
 export const AGENT_LAUNCH_LONG_PRESS_MS = 500;
 
 /** The agent builder nests every agent under one "Add Agent" entry; under a + the list is the menu. */
-function flattenAgentItems(items: ContextMenuItem[]): ContextMenuItem[] {
+function flattenAgentItems(items: AgentLaunchMenuItem[]): AgentLaunchMenuItem[] {
 	return items.length === 1 && items[0].children ? items[0].children : items;
 }
 
 /**
  * Long press or right click on a "+" button lists the agents, so a new
- * terminal can open straight into one instead of a shell. A plain click keeps
- * opening a plain terminal; a press that opened the menu must not also do that.
+ * terminal can open straight into one instead of a shell. Callers can also use
+ * openBelow for a primary click; consumeClick suppresses the long-press release.
  */
-export function createAgentLaunchMenu(getItems: () => ContextMenuItem[], options: { rightClick?: boolean } = {}) {
+export function createAgentLaunchMenu(getItems: () => AgentLaunchMenuItem[], options: { rightClick?: boolean } = {}) {
 	const rightClick = options.rightClick ?? true;
 	const menu = createContextMenu();
-	const [items, setItems] = createSignal<ContextMenuItem[]>([]);
+	const [items, setItems] = createSignal<AgentLaunchMenuItem[]>([]);
 	let pressTimer: ReturnType<typeof setTimeout> | undefined;
 	let pressFired = false;
 
@@ -107,6 +107,7 @@ export function createAgentLaunchMenu(getItems: () => ContextMenuItem[], options
 
 	return {
 		items,
+		openBelow,
 		position: menu.position,
 		visible: menu.visible,
 		close,

@@ -120,6 +120,72 @@ impl InputFramePriority {
     }
 }
 
+/// The frame-dirty flag plus the wake that lets the ticker park without a timeout.
+///
+/// Every writer that sets it (reader, scroll, subscribe, resync) unparks the
+/// ticker, so an idle PTY needs no periodic wake. Keep `store(true)` the only way
+/// to arm it: a writer that bypassed this type would leave the terminal unpainted.
+#[derive(Default)]
+pub(crate) struct FrameDirty {
+    flag: std::sync::atomic::AtomicBool,
+    ticker: OnceLock<std::thread::Thread>,
+}
+
+impl FrameDirty {
+    pub(crate) fn new(value: bool) -> Self {
+        Self {
+            flag: std::sync::atomic::AtomicBool::new(value),
+            ticker: OnceLock::new(),
+        }
+    }
+
+    pub(crate) fn bind_ticker(&self) {
+        let _ = self.ticker.set(std::thread::current());
+    }
+
+    pub(crate) fn load(&self, order: std::sync::atomic::Ordering) -> bool {
+        self.flag.load(order)
+    }
+
+    pub(crate) fn swap(&self, value: bool, order: std::sync::atomic::Ordering) -> bool {
+        self.flag.swap(value, order)
+    }
+
+    pub(crate) fn store(&self, value: bool, order: std::sync::atomic::Ordering) {
+        self.flag.store(value, order);
+        if value {
+            self.wake();
+        }
+    }
+
+    /// unpark keeps one token when the ticker has not parked yet.
+    pub(crate) fn wake(&self) {
+        if let Some(ticker) = self.ticker.get() {
+            ticker.unpark();
+        }
+    }
+}
+
+/// How long the ticker may sleep. `None` parks until a writer wakes it.
+/// Any outstanding debt keeps the 16 ms cadence (or the earlier priority retry).
+pub(crate) struct TickerDebt {
+    pub(crate) dirty: bool,
+    pub(crate) sync_active: bool,
+    pub(crate) watcher_batch: bool,
+    pub(crate) terminal_replies: bool,
+    pub(crate) priority_retry: Option<Instant>,
+}
+
+impl TickerDebt {
+    pub(crate) fn wake_at(&self, next_tick: Instant) -> Option<Instant> {
+        if let Some(retry) = self.priority_retry {
+            return Some(retry.min(next_tick));
+        }
+        (self.dirty || self.sync_active || self.watcher_batch || self.terminal_replies)
+            .then_some(next_tick)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

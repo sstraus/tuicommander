@@ -294,6 +294,13 @@
   animation: pulse-opacity 1.5s ease-in-out infinite;
 }
 
+/* Silent past the stall threshold while the agent claims to work */
+.tab.shellStalled .tabIcon {
+  color: var(--warning);
+  opacity: 1;
+  font-size: var(--font-3xs);
+}
+
 .tab.shellIdle .tabIcon {
   color: var(--success);
   opacity: 1;

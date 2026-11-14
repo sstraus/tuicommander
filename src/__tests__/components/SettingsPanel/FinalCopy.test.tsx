@@ -29,6 +29,7 @@ beforeEach(() => {
 	vi.useFakeTimers();
 	mockInvoke.mockImplementation(async (command: string) => {
 		if (command === "detect_all_agent_binaries") return {};
+		if (command === "get_agent_hook_state") return "notInstalled";
 		if (command === "load_agent_configs") return { agents: {}, launch_modules: {} };
 		return undefined;
 	});
@@ -52,15 +53,16 @@ describe("final copy regressions", () => {
 	});
 
 	// Catches: global hooks remain undiscoverable in basic setup or are advertised for native-signal agents.
-	it("offers the hooks tip only in supported disabled agent setup", () => {
+	it("offers the hooks tip only in supported disabled agent setup", async () => {
 		agentConfigsStore.syncHookInstrumentation("grok", false);
 		uiStore.setSettingsExpertMode(false);
 		const view = render(() => <AgentsTab />);
 		expect(view.queryByRole("complementary", { name: "More precise agent status" })).toBeNull();
 		fireEvent.click(view.getByRole("button", { name: /^Claude Code/ }));
+		await vi.advanceTimersByTimeAsync(0);
 		expect(view.queryByRole("complementary", { name: "More precise agent status" })).toBeNull();
 		fireEvent.click(view.getByRole("button", { name: /Grok Not found/ }));
-		expect(view.getByRole("complementary", { name: "More precise agent status" })).toBeTruthy();
+		expect(await view.findByRole("complementary", { name: "More precise agent status" })).toBeTruthy();
 		agentConfigsStore.syncHookInstrumentation("grok", true);
 		expect(view.queryByRole("complementary", { name: "More precise agent status" })).toBeNull();
 		agentConfigsStore.syncHookInstrumentation("grok", false);

@@ -1,5 +1,6 @@
 {"fixture":"src-tauri/src/fixtures/agent_prompts/ego-intent-joined-2060.tcap","agent":"ego","geometry":[63,222]}
 {"record":0,"event":{"type":"shell-state","state":"idle","agent_type":"ego"}}
+{"record":0,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":0,"event":{"type":"intent","text":"Verifying joined title closure","title":"Intent boundary","_turn_epoch":0}}
 {"record":0,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"ring_len":65536}

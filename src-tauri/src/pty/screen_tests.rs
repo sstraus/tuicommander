@@ -1688,10 +1688,10 @@ fn shell_return_clears_orphaned_agent_screen_and_metadata() {
             vt.process(b"\x1b[?1049l");
         }
         state.grid.vt_log_buffers.insert(sid.into(), Mutex::new(vt));
-        state
-            .grid
-            .frame_dirty
-            .insert(sid.into(), Arc::new(AtomicBool::new(false)));
+        state.grid.frame_dirty.insert(
+            sid.into(),
+            Arc::new(crate::pty::frame_priority::FrameDirty::new(false)),
+        );
         apply_foreground_agent_observation(&state, sid, 1, None, true, false, "bash".into());
         assert_eq!(
             state
@@ -2056,5 +2056,127 @@ fn assert_nonpaint_preserves_ego_draft(output: &[u8], local: bool) {
             .lock()
             .content(),
         "keep my real draft"
+    );
+}
+
+// Catches: tracked background work alone still scanning the whole process table
+// every second, or a waiting probe held back to the slow cadence.
+#[test]
+fn background_work_alone_scans_at_the_slow_cadence_and_probes_do_not_wait() {
+    use std::time::Duration;
+    assert!(
+        process_snapshot_due(false, None),
+        "the first scan is never held back"
+    );
+    assert!(!process_snapshot_due(false, Some(Duration::from_secs(1))));
+    assert!(process_snapshot_due(
+        false,
+        Some(BACKGROUND_WORK_SCAN_INTERVAL)
+    ));
+    assert!(process_snapshot_due(true, Some(Duration::from_secs(1))));
+}
+
+/// Claude starts a language server on the first LSP tool call of a session, hours
+/// after the agent itself, so the startup window cannot class it as plumbing. The
+/// live pin was `sourcekit-lsp` under two idle Claude tabs on 2026-11-04: both
+/// read `working` for as long as the server lived.
+#[test]
+fn late_language_server_is_not_background_work() {
+    for (name, command) in [
+        ("sourcekit-lsp", "/usr/bin/sourcekit-lsp"),
+        ("rust-analyzer", "/Users/boss/.cargo/bin/rust-analyzer"),
+        ("gopls", "gopls serve"),
+    ] {
+        let tree = vec![
+            aged_process(10, 1, "claude", "claude", 48_000),
+            aged_process(11, 10, name, command, 27_000),
+        ];
+        assert!(
+            !has_meaningful_descendant(10, &tree),
+            "{name} started hours into the session is plumbing"
+        );
+        let mut with_work = tree;
+        with_work.push(aged_process(12, 10, "cargo", "cargo test", 30));
+        assert!(
+            has_meaningful_descendant(10, &with_work),
+            "a language server must not hide real work next to it"
+        );
+    }
+}
+
+/// Catches: ego's current empty startup composer never confirms readiness,
+/// leaving the initial brief unwritten behind an agent_not_ready queue blocker.
+#[cfg(unix)]
+#[test]
+fn ego_startup_composer_delivers_initial_prompt_with_pending_mail() {
+    let state = Arc::new(crate::state::tests_support::make_test_app_state());
+    let sid = "ego-startup-2948";
+    agent_session(&state, sid, SHELL_IDLE);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("ego".into());
+    let bytes = insert_recording_session(&state, sid);
+    let silence = Arc::new(Mutex::new(SilenceState::new()));
+    state
+        .session_maps
+        .silence_states
+        .insert(sid.into(), silence.clone());
+    {
+        let mut queue = state.pending_injections.entry(sid.into()).or_default();
+        queue.push_back(crate::state::PendingInjection::initial_prompt(
+            "STARTUP_BRIEF_2948",
+        ));
+        queue.push_back(crate::state::PendingInjection::notice(PEER_MAIL_WAKE));
+    }
+    let capture =
+        crate::pty_capture::decode_capture(&agent_prompt_fixture("ego-startup-2948.tcap")).unwrap();
+    let (rows, cols) = capture.geometry.unwrap();
+    let mut vt = VtLogBuffer::new(rows, cols, 2000);
+    for record in capture.records {
+        if record.direction == crate::pty_capture::CaptureDirection::Output {
+            vt.process(&record.data);
+        }
+    }
+    let screen = vt.screen_rows();
+    let activity = detect_agent_screen_activity(Some("ego"), &screen);
+    let prompt = screen
+        .iter()
+        .rposition(|row| row.trim_end() == ">")
+        .unwrap();
+    // Catches: accepting the new status shape bypasses draft/modal protection.
+    for (name, prompt_text, following) in [
+        ("draft", "> retained draft", ""),
+        ("wrapped draft", ">", "draft continuation"),
+        ("modal", ">", "Allow this command?"),
+    ] {
+        let mut occupied = screen.clone();
+        occupied[prompt] = prompt_text.into();
+        occupied[prompt + 1] = following.into();
+        assert_eq!(
+            detect_agent_screen_activity(Some("ego"), &occupied),
+            AgentScreenActivity::Unknown,
+            "{name} must not grant startup readiness"
+        );
+    }
+    state.grid.vt_log_buffers.insert(sid.into(), Mutex::new(vt));
+    try_timer_idle_transition(&state, &silence, sid, activity, Some("ego"), Some(0));
+    // Advance only the existing stable-screen debounce, not startup setup time.
+    if let Some(since) = silence.lock().screen_ready_pending_since.as_mut() {
+        *since = std::time::Instant::now() - AGENT_READY_CONFIRM;
+    }
+    try_timer_idle_transition(&state, &silence, sid, activity, Some("ego"), Some(0));
+    flush_pending_injections_blocking(&state, sid);
+    let written = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+    assert_eq!(
+        written.matches("STARTUP_BRIEF_2948").count(),
+        1,
+        "an empty native startup composer must release the brief, not park it forever: {written:?}"
+    );
+    assert!(
+        !written.contains(PEER_MAIL_WAKE),
+        "mail must not overtake the initial brief"
     );
 }

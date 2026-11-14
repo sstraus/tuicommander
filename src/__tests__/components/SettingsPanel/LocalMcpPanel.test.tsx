@@ -159,7 +159,7 @@ describe("LocalMcpPanel", () => {
 			mcp_capabilities: { denied: ["workflow", "workflow.reports"], migration_unknown_tools: ["legacy"] },
 			settings_mcp_enabled: false,
 		};
-		const capabilities = ["workflow", "workflow.story", "workflow.reports"].map((name) => ({
+		const capabilities = ["workflow", "workflow.run", "workflow.reports"].map((name) => ({
 			name,
 			title: name,
 			description: name + " help",
@@ -181,15 +181,15 @@ describe("LocalMcpPanel", () => {
 		let view = render(() => <LocalMcpPanel />);
 		await vi.advanceTimersByTimeAsync(0);
 		const toggle = (name: string) => view.getByRole("checkbox", { name }) as HTMLInputElement;
-		expect(toggle("workflow.story").checked).toBe(false);
-		expect(toggle("workflow.story").disabled).toBe(true);
+		expect(toggle("workflow.run").checked).toBe(false);
+		expect(toggle("workflow.run").disabled).toBe(true);
 		expect(view.getAllByText(/Enable workflow to change this capability/)).toHaveLength(2);
 		expect(mockInvoke.mock.calls.filter(([command]) => command === "save_config")).toHaveLength(0);
 
 		fireEvent.click(toggle("workflow"));
 		await vi.advanceTimersByTimeAsync(0);
-		expect(toggle("workflow.story").checked).toBe(true);
-		expect(toggle("workflow.story").disabled).toBe(false);
+		expect(toggle("workflow.run").checked).toBe(true);
+		expect(toggle("workflow.run").disabled).toBe(false);
 		expect(toggle("workflow.reports").checked).toBe(false);
 		expect(toggle("workflow.reports").disabled).toBe(false);
 		expect(saved.mcp_capabilities.denied).toEqual(["workflow.reports"]);
@@ -199,15 +199,15 @@ describe("LocalMcpPanel", () => {
 		expect(saved.mcp_capabilities.denied).toEqual([]);
 		fireEvent.click(toggle("workflow"));
 		await vi.advanceTimersByTimeAsync(0);
-		expect(toggle("workflow.story").checked).toBe(false);
+		expect(toggle("workflow.run").checked).toBe(false);
 		expect(saved.mcp_capabilities).toEqual({ denied: ["workflow"], migration_unknown_tools: ["legacy"] });
 		view.unmount();
 		view = render(() => <LocalMcpPanel />);
 		await vi.advanceTimersByTimeAsync(0);
-		expect(toggle("workflow.story").checked).toBe(false);
+		expect(toggle("workflow.run").checked).toBe(false);
 		fireEvent.click(toggle("workflow"));
 		await vi.advanceTimersByTimeAsync(0);
-		expect(toggle("workflow.story").checked).toBe(true);
+		expect(toggle("workflow.run").checked).toBe(true);
 		expect(toggle("workflow.reports").checked).toBe(true);
 		view.unmount();
 	});
@@ -531,4 +531,44 @@ it("requires trusted UI opt-in even when settings is absent from disabled names"
 	);
 	view.unmount();
 	vi.useRealTimers();
+});
+
+// Catches: the settings switch writes a capability denial that becomes a hidden second gate.
+it("settings switch saves only the one opt-in and leaves capability denials alone", async () => {
+	vi.useFakeTimers();
+	const config = {
+		mcp_capabilities: { denied: ["diagnostics"], migration_unknown_tools: [] },
+		settings_mcp_enabled: false,
+	};
+	vi.mocked(rpc).mockImplementation((command: string) => {
+		if (command === "load_config") return Promise.resolve(structuredClone(config));
+		if (command === "get_mcp_status") return Promise.resolve({ native_capabilities: nativeTools });
+		return Promise.resolve(undefined);
+	});
+	mockInvoke.mockImplementation((command: string) =>
+		Promise.resolve(command === "load_config" ? structuredClone(config) : undefined),
+	);
+	const view = render(() => <LocalMcpPanel />);
+	try {
+		await vi.advanceTimersByTimeAsync(0);
+		const toggle = view.getByRole("checkbox", { name: "settings" }) as HTMLInputElement;
+		for (const enabled of [true, false]) {
+			mockInvoke.mockClear();
+			fireEvent.click(toggle);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(toggle.checked).toBe(enabled);
+			expect(mockInvoke).toHaveBeenCalledWith(
+				"save_config",
+				expect.objectContaining({
+					config: expect.objectContaining({
+						settings_mcp_enabled: enabled,
+						mcp_capabilities: { denied: ["diagnostics"], migration_unknown_tools: [] },
+					}),
+				}),
+			);
+		}
+	} finally {
+		view.unmount();
+		vi.useRealTimers();
+	}
 });

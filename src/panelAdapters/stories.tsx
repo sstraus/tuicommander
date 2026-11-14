@@ -1,17 +1,19 @@
 import { emitTo } from "@tauri-apps/api/event";
-import { type Component, createEffect, lazy, onMount, Show, Suspense } from "solid-js";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { type Component, createEffect, createSignal, lazy, onCleanup, onMount, Show, Suspense } from "solid-js";
 import { initPanelWindow } from "../hooks/initPanelWindow";
+import { guardTauriUnlisten } from "../invoke";
 import { closePanel, type PanelAdapter } from "../panelRouter";
 import { appLogger } from "../stores/appLogger";
 import { repositoriesStore } from "../stores/repositories";
-import { storiesUi } from "../stores/storiesUi";
+import { STORIES_REVEAL_EVENT, type StoriesTarget, storiesUi } from "../stores/storiesUi";
 
 const StoriesDialog = lazy(() =>
 	import("../components/StoriesDialog/StoriesDialog").then((module) => ({ default: module.StoriesDialog })),
 );
 
 const DetachedStories: Component<{ params: URLSearchParams }> = (props) => {
-	const project = props.params.get("project");
+	const [project, setProject] = createSignal(props.params.get("project"));
 	storiesUi.restoreControls(Object.fromEntries(props.params));
 	createEffect(() => {
 		// Keep the main WebView's session controls current even when this window closes natively.
@@ -19,11 +21,25 @@ const DetachedStories: Component<{ params: URLSearchParams }> = (props) => {
 			(error) => appLogger.warn("panel", "Failed to return detached controls", { error: String(error) }),
 		);
 	});
+	let unlisten: (() => void) | undefined;
+	onCleanup(() => unlisten?.());
 	onMount(() => {
 		void initPanelWindow();
+		// A bell click in the main window lands here: select the target, switching project if needed.
+		Promise.resolve()
+			.then(() =>
+				getCurrentWebviewWindow().listen<StoriesTarget>(STORIES_REVEAL_EVENT, (event) => {
+					storiesUi.reveal(event.payload);
+					setProject(event.payload.project);
+				}),
+			)
+			.then((fn) => {
+				unlisten = guardTauriUnlisten(fn);
+			})
+			.catch((error) => appLogger.warn("panel", "Failed to listen for Stories reveal", { error: String(error) }));
 	});
 	return (
-		<Show when={project} keyed>
+		<Show when={project()} keyed>
 			{(path) => (
 				<Suspense>
 					<StoriesDialog project={path} mode="detached" onClose={() => void closePanel("stories")} />

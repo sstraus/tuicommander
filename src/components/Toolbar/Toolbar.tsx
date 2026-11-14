@@ -23,7 +23,7 @@ import { cx } from "../../utils";
 import { keyFor } from "../../utils/hotkey";
 import { navigateToTerminal } from "../../utils/navigateToTerminal";
 import { getRepoTextColor } from "../../utils/repoColor";
-import type { SidebarDensityMode } from "../../utils/sidebarDensity";
+import { type SidebarDensity, type SidebarDensityMode, sidebarDensity } from "../../utils/sidebarDensity";
 import { IdeLauncher } from "../IdeLauncher";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { SmartPromptsDropdown } from "../SmartPromptsDropdown/SmartPromptsDropdown";
@@ -42,9 +42,10 @@ function relativeAge(timestamp: number): string {
 }
 
 const DENSITY_TITLES: Record<SidebarDensityMode, () => string> = {
-	auto: () => t("toolbar.densityAuto", "Sidebar layout: auto (rich for a short list or a finger) — click for compact"),
-	compact: () => t("toolbar.densityCompact", "Sidebar layout: compact — click for rich"),
-	rich: () => t("toolbar.densityRich", "Sidebar layout: rich (details on every row) — click for auto"),
+	rich: () => t("toolbar.densityRich", "Sidebar layout: rich (details on every row) — click for compact"),
+	compact: () => t("toolbar.densityCompact", "Sidebar layout: compact — click for harness"),
+	harness: () =>
+		t("toolbar.densityHarness", "Sidebar layout: harness (live harness branches, rich rows) — click for rich"),
 };
 
 /** Back/forward arrows over the terminal activation history. */
@@ -67,13 +68,12 @@ const HISTORY_BUTTONS = [
 
 /** Row glyph: five tight lines for compact, a title with a detail line for rich. */
 const DENSITY_LABELS: Record<SidebarDensityMode, () => string> = {
-	auto: () => t("toolbar.densityAutoShort", "A"),
+	harness: () => t("toolbar.densityHarnessShort", "H"),
 	compact: () => t("toolbar.densityCompactShort", "C"),
 	rich: () => t("toolbar.densityRichShort", "R"),
 };
 
-const DENSITY_ICON_PATHS: Record<SidebarDensityMode, string> = {
-	auto: "M2 3.5h12M2 8h12M2 12.5h12",
+const DENSITY_ICON_PATHS: Record<SidebarDensity, string> = {
 	compact: "M2 2.5h12M2 5.5h12M2 8.5h12M2 11.5h12M2 14.5h12",
 	rich: "M2 3h12M2 5.5h7M2 10.5h12M2 13h7",
 };
@@ -170,6 +170,7 @@ export interface ToolbarProps {
 	runCommand?: string;
 	onBranchClick?: () => void;
 	onRun?: (shiftKey: boolean) => void;
+	onNewShell?: () => void;
 	onReviewPr?: (repoPath: string, branchName: string, command: string) => void;
 	/** Opens Settings on the Smart Prompts tab. */
 	onOpenSettings?: () => void;
@@ -357,7 +358,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 						variant="ghost"
 						class={cx(s.filterToggle, s.densityToggle)}
 						classList={{
-							[s.filterToggleActive]: uiStore.state.sidebarDensityMode !== "auto",
+							[s.filterToggleActive]: uiStore.state.sidebarDensityMode !== "rich",
 						}}
 						onClick={() => uiStore.cycleSidebarDensityMode()}
 						data-testid="sidebar-density-toggle"
@@ -368,7 +369,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 					>
 						<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
 							<path
-								d={DENSITY_ICON_PATHS[uiStore.state.sidebarDensityMode]}
+								d={DENSITY_ICON_PATHS[sidebarDensity(uiStore.state.sidebarDensityMode)]}
 								stroke="currentColor"
 								stroke-width="1.3"
 								stroke-linecap="round"
@@ -873,6 +874,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 						cursorCol={editorTabsStore.getActive()?.cursorCol}
 						runCommand={props.runCommand}
 						onRun={props.onRun}
+						onNewShell={props.onNewShell}
 					/>
 				</Show>
 			</div>

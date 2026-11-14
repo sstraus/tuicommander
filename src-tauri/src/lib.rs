@@ -10,7 +10,9 @@ mod accounts_regression_tests;
 pub mod acp;
 pub(crate) mod acp_chat;
 pub(crate) mod acp_commands;
+mod acp_message_actions;
 pub(crate) mod agent;
+pub(crate) mod agent_health;
 pub(crate) mod agent_hook;
 pub(crate) mod agent_hook_codex;
 pub(crate) mod agent_hook_codex_trust;
@@ -18,22 +20,33 @@ pub(crate) mod agent_hook_commands;
 pub(crate) mod agent_hook_installer;
 pub(crate) mod agent_hook_launch;
 pub(crate) mod agent_hook_opencode;
+pub(crate) mod agent_hook_payload;
+pub(crate) mod agent_hook_pi;
 pub(crate) mod agent_mcp;
+pub mod agent_report;
 pub(crate) mod agent_session;
+pub(crate) mod agent_stage;
+pub(crate) mod agent_tool_readout;
 pub(crate) mod ai_agent;
+pub(crate) mod api_retry;
 pub(crate) mod attachments;
 #[cfg(feature = "desktop")]
 pub(crate) mod audio_enumeration;
 pub(crate) mod background_mode;
 #[cfg(test)]
 mod background_mode_tests;
+mod boss_attention;
 #[cfg(all(debug_assertions, feature = "desktop"))]
 pub mod dev_backend;
+mod fabbrica_attention;
+mod heap_profile;
 pub(crate) mod launch_instructions;
 pub(crate) mod mail_subscriptions;
+pub(crate) mod markdown_review;
 pub(crate) mod prompt_receipt;
 pub(crate) mod session_resume;
 pub(crate) mod session_wake;
+pub(crate) mod sqlite_once;
 pub(crate) mod suspended_sessions;
 pub mod work_items;
 pub use tuic_core::app_instance;
@@ -46,6 +59,7 @@ pub(crate) use tuic_terminal::chrome;
 pub(crate) mod circleci;
 pub(crate) mod claude_usage;
 pub(crate) use tuic_core::cli;
+pub(crate) mod agent_capabilities;
 mod ai_chat_selection;
 #[expect(
     dead_code,
@@ -113,6 +127,9 @@ pub(crate) mod grok_usage;
 pub(crate) mod improvement_scan;
 pub(crate) use tuic_core::jsonc_edit;
 pub(crate) use tuic_terminal::input_line_buffer;
+#[cfg(feature = "desktop")]
+pub(crate) mod ego_install;
+mod exec_probe;
 pub(crate) mod mcp_http;
 #[allow(dead_code)] // Incremental build: wired in story 1196+ (OAuth flow/token/registry)
 pub(crate) mod mcp_oauth;
@@ -139,6 +156,8 @@ mod native_keys;
 mod native_notification;
 #[cfg(feature = "desktop")]
 pub(crate) mod notification_sound;
+#[cfg(feature = "desktop")]
+pub(crate) mod release_install;
 pub(crate) mod secrets;
 pub(crate) use tuic_terminal::output_parser;
 pub(crate) use tuic_terminal::output_watchers;
@@ -156,7 +175,7 @@ pub(crate) mod plugin_pty;
 pub(crate) mod plugin_settings;
 pub(crate) mod plugins;
 pub(crate) mod pr_review;
-// The elevated-copy staging serves the desktop-only mdkb installer.
+// The elevated-copy staging serves the desktop-only release installer.
 #[cfg(feature = "desktop")]
 mod press_and_hold;
 #[cfg_attr(not(feature = "desktop"), allow(dead_code))]
@@ -164,10 +183,13 @@ pub(crate) mod private_scratch;
 pub(crate) use tuic_core::process_env;
 pub(crate) mod progress;
 pub(crate) mod prompt;
+pub(crate) mod provider_quota;
+mod provider_quota_transport;
 pub(crate) mod pty;
 pub(crate) mod pty_capture;
 pub(crate) mod push;
 pub(crate) use tuic_core::redaction;
+mod agent_question;
 pub(crate) mod chat_view;
 mod codex_binding;
 mod monitoring_status;
@@ -183,6 +205,7 @@ pub(crate) mod remote_lifetime;
 pub(crate) mod remote_mirror;
 pub(crate) mod remote_runtime;
 pub(crate) mod remote_update;
+pub(crate) mod repo_template;
 pub(crate) mod repo_watcher;
 mod shell_integration;
 #[cfg(feature = "desktop")]
@@ -190,6 +213,7 @@ pub(crate) mod sleep_prevention;
 pub(crate) mod smart_prompt;
 pub(crate) mod state;
 pub(crate) mod stories;
+pub(crate) mod story_adapter;
 pub(crate) mod subagent_map;
 pub(crate) mod tailscale;
 pub(crate) mod tasks;
@@ -215,6 +239,10 @@ pub(crate) mod tool_search;
 mod tuic_cli;
 #[allow(dead_code)] // Many items used only by the remote binary (not(desktop) build)
 pub(crate) mod tunnels;
+#[cfg(feature = "desktop")]
+mod update_install;
+#[cfg(any(feature = "desktop", test))]
+pub(crate) mod update_install_core;
 #[cfg(feature = "desktop")]
 mod updater;
 pub(crate) mod webview_recovery;
@@ -552,6 +580,15 @@ async fn chat_view_snapshot(
 }
 #[cfg(feature = "desktop")]
 #[tauri::command]
+async fn chat_view_full_text(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    message_id: String,
+) -> Result<chat_view::ChatFullText, String> {
+    chat_view::chat_view_full_text_blocking(state.inner().clone(), session_id, message_id).await
+}
+#[cfg(feature = "desktop")]
+#[tauri::command]
 async fn progress_flow_detail(
     state: State<'_, Arc<AppState>>,
     input: progress::ProgressFlowDetailInput,
@@ -581,8 +618,35 @@ fn save_notes(
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn story_capabilities() -> bool {
-    true
+async fn boss_attention(
+    state: State<'_, Arc<AppState>>,
+) -> Result<boss_attention::BossAttention, String> {
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || boss_attention::snapshot(&state))
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+async fn answer_outside_request(
+    state: State<'_, Arc<AppState>>,
+    request_id: String,
+    decision: String,
+) -> Result<(), String> {
+    fabbrica_attention::answer_outside_request(&state, &request_id, &decision).await
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+async fn story_capabilities(project: Option<String>) -> Result<stories::StoryCapabilities, String> {
+    let Some(project) = project else {
+        return Ok(stories::NATIVE_CAPABILITIES);
+    };
+    // Reading an external backend's capabilities can start its adapter process.
+    tokio::task::spawn_blocking(move || stories::story_capabilities_for(&project))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[cfg(feature = "desktop")]
@@ -632,26 +696,22 @@ async fn automation_action(
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-async fn workflow_definition_action(
-    project: String,
-    action: workflows::WorkflowAction,
-) -> Result<workflows::WorkflowReply, String> {
-    tokio::task::spawn_blocking(move || workflows::definition_action(&project, action))
-        .await
-        .map_err(|error| format!("workflow definition task failed: {error}"))?
-}
-
-#[cfg(feature = "desktop")]
-#[tauri::command]
-async fn workflow_run_action(
+async fn workflow_neutral_action(
     state: State<'_, Arc<AppState>>,
     project: String,
-    action: workflows::RunAction,
-) -> Result<workflows::RunReply, String> {
+    action: workflows::neutral_api::model::NeutralAction,
+) -> Result<workflows::neutral_api::model::NeutralReply, String> {
     let state = state.inner().clone();
-    tokio::task::spawn_blocking(move || workflows::run_action_with_events(&state, &project, action))
-        .await
-        .map_err(|error| format!("workflow run task failed: {error}"))?
+    tokio::task::spawn_blocking(move || {
+        workflows::neutral_api::neutral_action(
+            &state,
+            &project,
+            action,
+            Some(workflows::NativeCaller::Owner),
+        )
+    })
+    .await
+    .map_err(|error| format!("neutral workflow task failed: {error}"))?
 }
 
 /// Receive a screenshot response from the frontend (captured iframe content).
@@ -1010,13 +1070,19 @@ fn read_text_file_guarded_with_limit(path: &std::path::Path, limit: u64) -> Resu
     if let Ok(meta) = std::fs::metadata(path)
         && meta.len() > limit
     {
-        return Err(format!(
-            "File too large to open in editor: {:.1} MB (limit {} MB)",
-            meta.len() as f64 / (1024.0 * 1024.0),
-            limit / (1024 * 1024)
-        ));
+        return Err(editor_too_large_error(meta.len(), limit));
     }
     std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {e}"))
+}
+
+/// The editor's size refusal, shared by whole reads and editor pages. The
+/// frontend matches "too large", so keep that phrase stable.
+pub(crate) fn editor_too_large_error(size: u64, limit: u64) -> String {
+    format!(
+        "File too large to open in editor: {:.1} MB (limit {} MB)",
+        size as f64 / (1024.0 * 1024.0),
+        limit / (1024 * 1024)
+    )
 }
 
 /// Guarded read at the generic [`MAX_EDITOR_FILE_SIZE`] cap (markdown/html/plugin panels).
@@ -1030,32 +1096,13 @@ pub(crate) fn read_file_impl_with_limit(
     file: String,
     limit: u64,
 ) -> Result<String, String> {
-    let repo_path = PathBuf::from(&path);
-    let file_path = repo_path.join(&file);
-
-    let canonical_repo = repo_path
-        .canonicalize()
-        .map_err(|e| format!("Failed to resolve repo path: {e}"))?;
-
-    // Security: ensure the file is within the repo path
-    let canonical_file = file_path
-        .canonicalize()
-        .map_err(|e| format!("Failed to resolve file path: {e}"))?;
-
-    if !canonical_file.starts_with(&canonical_repo) {
-        if file_path
-            .symlink_metadata()
-            .is_ok_and(|m| m.file_type().is_symlink())
-        {
-            return Err(format!(
-                "Cannot open symbolic link \"{file}\": target \"{}\" is outside the repository.",
-                canonical_file.display()
-            ));
-        }
-        return Err("Access denied: file is outside repository".to_string());
-    }
-
+    let file_path = resolve_repo_file(&path, &file)?;
     read_text_file_guarded_with_limit(&file_path, limit)
+}
+
+/// Shared full/range read path: repo-relative input, owner symlinks followed.
+pub(crate) fn resolve_repo_file(path: &str, file: &str) -> Result<PathBuf, String> {
+    crate::fs::validate_path(path, file).map(|(_repo, target)| target)
 }
 
 /// Read file content (shared logic) at the generic [`MAX_EDITOR_FILE_SIZE`] cap.
@@ -1083,7 +1130,7 @@ async fn read_editor_file(repo_path: String, file: String) -> Result<String, Str
 ///
 /// No TCC directory blocking: reading a specific file by known path does not
 /// trigger macOS permission dialogs (TCC guards directory enumeration, not
-/// individual reads). The HTTP endpoint has its own repo-root check.
+/// individual reads). The HTTP endpoint adds path-syntax validation.
 #[cfg_attr(feature = "desktop", tauri::command)]
 async fn read_external_file(path: String) -> Result<String, String> {
     fs::spawn_blocking_fs(move || read_external_file_impl(&path)).await
@@ -1108,11 +1155,35 @@ pub(crate) fn read_external_file_with_limit(path: &str, limit: u64) -> Result<St
 }
 
 /// Read an absolute-path file for the CodeMirror editor, at the larger
-/// [`MAX_EDITOR_LARGE_FILE_SIZE`] cap. The HTTP endpoint has its own repo-root check.
+/// [`MAX_EDITOR_LARGE_FILE_SIZE`] cap. The HTTP endpoint adds path-syntax validation.
 #[cfg_attr(feature = "desktop", tauri::command)]
 async fn read_editor_file_external(path: String) -> Result<String, String> {
     fs::spawn_blocking_fs(move || read_external_file_with_limit(&path, MAX_EDITOR_LARGE_FILE_SIZE))
         .await
+}
+
+/// One bounded page of a repo file for the code editor, on request. Lets a client
+/// whose whole read stops below the editor ceiling (a `tuic-remote` browser) page
+/// in the file; the 250 MB ceiling still applies.
+#[cfg_attr(feature = "desktop", tauri::command)]
+async fn read_editor_file_page(
+    repo_path: String,
+    file: String,
+    offset: u64,
+    length: Option<u64>,
+) -> Result<fs::range::FileRange, String> {
+    fs::spawn_blocking_fs(move || fs::range::read_editor(&repo_path, &file, offset, length)).await
+}
+
+/// One bounded page of an absolute-path file for the code editor. The HTTP
+/// endpoint checks path syntax, like the whole external read.
+#[cfg_attr(feature = "desktop", tauri::command)]
+async fn read_editor_file_external_page(
+    path: String,
+    offset: u64,
+    length: Option<u64>,
+) -> Result<fs::range::FileRange, String> {
+    fs::spawn_blocking_fs(move || fs::range::read_editor_external(&path, offset, length)).await
 }
 
 /// Write a file at an absolute path (used by the UI for files outside any registered repo,
@@ -1138,6 +1209,16 @@ pub(crate) fn write_external_file_impl(path: String, content: String) -> Result<
 #[tauri::command]
 async fn get_mcp_audit(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
     Ok(mcp_http::mcp_call_audit::snapshot(&state))
+}
+
+/// Last 7 days of MCP usage per role (same body as `GET /mcp/usage`).
+#[cfg(feature = "desktop")]
+#[tauri::command]
+async fn get_mcp_usage(state: State<'_, Arc<AppState>>) -> Result<serde_json::Value, String> {
+    let state = Arc::clone(&state);
+    tokio::task::spawn_blocking(move || mcp_http::mcp_usage_rollup::snapshot(&state))
+        .await
+        .map_err(|error| error.to_string())
 }
 
 /// Get MCP server status (running, port, active sessions).
@@ -2163,6 +2244,11 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
                 if let Err(error) = tokio::task::spawn_blocking(tuic_cli::auto_update_cli).await {
                     tracing::warn!(source = "tuic_cli", "CLI auto-update task failed: {error}");
                 }
+                // After the update: probe what is installed now, so a copy the kernel
+                // kills on exec is replaced before the next MCP session needs it.
+                if let Err(error) = tokio::task::spawn_blocking(exec_probe::heal_startup).await {
+                    tracing::warn!(source = "exec_probe", "exec-probe task failed: {error}");
+                }
             });
 
             // Finish GitHub token resolution now the window exists. Boot only
@@ -2259,6 +2345,8 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             read_editor_file,
             read_external_file,
             read_editor_file_external,
+            read_editor_file_page,
+            read_editor_file_external_page,
             write_external_file,
             github::get_github_status,
             pty::get_orchestrator_stats,
@@ -2303,6 +2391,7 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             pty::has_foreground_process,
             pty_capture::get_pty_capture,
             pty_capture::set_pty_capture,
+            secrets::set_terminal_literal_reads,
             load_config,
             save_config,
             themes::list_themes,
@@ -2313,6 +2402,7 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             mdkb_commands::mdkb_status,
             mdkb_commands::install_mdkb,
             mdkb_commands::uninstall_mdkb,
+            ego_install::install_ego,
             hash_password,
             agent::open_in_app,
             agent::open_in_custom,
@@ -2359,6 +2449,8 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             git::git_stash_pop,
             git::git_stash_drop,
             git::git_stash_show,
+            git::git_stash_facts,
+            git::git_stash_check_drop,
             git::get_file_history,
             git::get_file_blame,
             github::get_github_viewer_login,
@@ -2437,6 +2529,7 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             worktree::pending_orphan_cleanup_answer,
             worktree::clear_orphan_cleanup,
             worktree::remove_orphan_worktree,
+            worktree::resolve_worktree_diagnostic_cmd,
             worktree::run_setup_script,
             clear_caches,
             clear_repo_caches,
@@ -2448,16 +2541,20 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             progress_flow,
             progress_flow_detail,
             chat_view_snapshot,
+            chat_view_full_text,
+            boss_attention,
+            answer_outside_request,
             story_action_command,
             story_capabilities,
             automation_action,
-            workflow_definition_action,
-            workflow_run_action,
+            workflow_neutral_action,
             get_local_ip,
             get_local_ips,
             updater::check_update_channel,
+            update_install::install_app_update,
             get_mcp_status,
             get_mcp_audit,
+            get_mcp_usage,
             deep_link_mcp_call,
             get_connect_url,
             regenerate_session_token,
@@ -2617,6 +2714,7 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             work_items::notices::compare_work_item_comments,
             fs::write_file,
             fs::write_file_if_unchanged,
+            markdown_review::markdown_review_changed_lines,
             fs::create_directory,
             fs::delete_path,
             fs::rename_path,
@@ -2643,6 +2741,8 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             plugin_fs::plugin_read_file,
             plugin_fs::plugin_read_files,
             plugin_fs::plugin_read_file_base64,
+            plugin_fs::range::plugin_file_size,
+            plugin_fs::range::plugin_read_file_range,
             plugin_fs::plugin_write_file_base64,
             plugin_fs::plugin_list_directory,
             plugin_fs::plugin_read_file_tail,
@@ -2660,6 +2760,9 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             plugin_exec::plugin_exec_cli,
             plugin_credentials::plugin_read_credential,
             registry::fetch_plugin_registry,
+            provider_quota_transport::get_provider_quotas,
+            provider_quota_transport::get_session_quota_binding,
+            provider_quota_transport::refresh_provider_quota,
             claude_usage::get_claude_usage_api,
             claude_usage::get_claude_usage_timeline,
             claude_usage::get_claude_session_stats,
@@ -2722,6 +2825,8 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             acp_commands::acp_session_delete,
             acp_commands::acp_session_close,
             acp_commands::acp_session_prompt,
+            acp_commands::acp_message_action,
+            acp_commands::acp_message_reactions,
             acp_commands::acp_session_set_viewed_repo,
             acp_commands::acp_session_cancel,
             acp_commands::acp_queued_prompt_cancel,
@@ -2872,6 +2977,9 @@ fn spawn_background_tasks(state: &Arc<AppState>) {
             .spawn_cleanup_task(state.mcp.upstream_registry.clone()),
     );
     mcp_http::mcp_transport::spawn_tool_search_index_updater(state.clone());
+    mcp_http::tool_usage::spawn_updater(state.clone());
+    provider_quota_transport::spawn(state.clone());
+    provider_quota::spawn_scheduler(state.clone());
     pty::spawn_tombstone_sweeper(state.clone());
     content_index::spawn_content_index_updater(state.clone());
     cpu_watchdog::spawn(state.clone());
@@ -2951,9 +3059,13 @@ fn spawn_daemon_background_tasks(state: &Arc<AppState>) {
     pty::spawn_standby_checker(state.clone());
     content_index::spawn_content_index_updater(state.clone());
     mcp_http::mcp_transport::spawn_tool_search_index_updater(state.clone());
+    mcp_http::tool_usage::spawn_updater(state.clone());
+    provider_quota_transport::spawn(state.clone());
+    provider_quota::spawn_scheduler(state.clone());
     crate::mcp_proxy::registry::UpstreamRegistry::spawn_health_checker(Arc::clone(
         &state.mcp.upstream_registry,
     ));
+    crate::fabbrica_attention::spawn_poller(state.clone());
     drop(
         state
             .mcp
@@ -2996,6 +3108,9 @@ pub struct RemoteOptions {
     pub supervised: bool,
     /// Allow the old process a short grace period to release its TCP port.
     pub wait_for_restart: bool,
+    /// Run the automation scheduler and event intake. Off for a worker whose
+    /// work arrives only through assigned workflow runs.
+    pub automations: bool,
     pairing_token: Option<String>,
 }
 
@@ -3020,6 +3135,7 @@ impl Default for RemoteOptions {
             agent_configs: true,
             supervised: false,
             wait_for_restart: false,
+            automations: true,
             pairing_token: None,
         }
     }
@@ -3190,6 +3306,9 @@ pub async fn run_remote(mut options: RemoteOptions) -> anyhow::Result<()> {
     state.wire_event_bus();
     crate::github_auth::spawn_deferred_token_resolution(state.clone());
 
+    if !options.automations {
+        state.automation_runtime.disable();
+    }
     spawn_daemon_background_tasks(&state);
     telegram::start(&state);
 
@@ -3285,15 +3404,15 @@ pub async fn run_remote(mut options: RemoteOptions) -> anyhow::Result<()> {
         },
         options.port,
     );
-    match relay_tunnel::service::load_agent(upstream, &app_config.services.auth.session_token) {
-        Ok(Some(agent)) => {
-            let stop = relay_shutdown.clone();
-            tokio::spawn(relay_tunnel::daemon::run(agent, async move {
-                stop.notified().await;
-            }));
-        }
-        Ok(None) => {}
-        Err(e) => tracing::warn!(source = "remote", "Relay tunnel not started: {e}"),
+    {
+        let stop = relay_shutdown.clone();
+        let token = app_config.services.auth.session_token.clone();
+        tokio::spawn(relay_tunnel::service::supervise(
+            move || relay_tunnel::service::load_agent(upstream, &token),
+            std::time::Duration::from_secs(2),
+            |agent| relay_tunnel::daemon::run(agent, std::future::pending()),
+            async move { stop.notified().await },
+        ));
     }
 
     let router = mcp_http::build_remote_router(state.clone());

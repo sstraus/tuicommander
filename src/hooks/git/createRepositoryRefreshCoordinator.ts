@@ -6,7 +6,19 @@ import { repoSettingsStore } from "../../stores/repoSettings";
 import { type RepositoryState, repositoriesStore } from "../../stores/repositories";
 import { closeWorktreeTerminals, removeWorktreeWorkspace } from "../../stores/terminalOwnership";
 import { terminalsStore } from "../../stores/terminals";
+import type { WorkspaceCleanupRecord } from "../../stores/workspaceIdentity";
 import { timeBatch } from "../../utils/perfTrace";
+import { keptReasonFromError, keptRecord, recordWorkspaceCleanup } from "./workspaceCleanupDecision";
+
+/** First try plus one retry, the retry always behind a fresh inspection. */
+const ARCHIVE_ATTEMPTS = 2;
+
+/** A kept merged worktree (ignored build output, a lock, a live session) stays kept
+ *  across refreshes; its preflight walks the whole checkout, so repeat it at this pace. */
+const KEPT_REINSPECT_MS = 10 * 60_000;
+
+const keptRecently = (record: WorkspaceCleanupRecord | undefined): boolean =>
+	record !== undefined && !record.decision.eligible && Date.now() - record.proof.inspectedAt < KEPT_REINSPECT_MS;
 
 /** The backend's removal verdict for one detached checkout. `live_sessions` lists the sessions
  *  still working inside it; a checkout with any is never `safe`. */
@@ -63,6 +75,7 @@ interface RepositoryRefreshCoordinatorDeps {
 			worktreePath: string,
 			safeOnly?: boolean,
 			confirmedSessions?: string[],
+			expectedFingerprint?: string,
 		) => Promise<void>;
 		getWorkspaceLifecycle: (
 			repoPath: string,
@@ -72,7 +85,9 @@ interface RepositoryRefreshCoordinatorDeps {
 		finalizeMergedWorktree: (
 			repoPath: string,
 			workspaceId: string,
-			action: "archive" | "delete",
+			action: "archive" | "delete" | "archive_and_drop_branch",
+			force?: boolean,
+			expectedFingerprint?: string,
 		) => Promise<{ merged: boolean; action: string; archive_path: string | null }>;
 	};
 	dialogs: {
@@ -484,7 +499,6 @@ export function createRepositoryRefreshCoordinator(deps: RepositoryRefreshCoordi
 		if (!updatedRepo) return;
 
 		// Side effects that only need structure data — run before Phase 2
-		await handleAutoArchiveMerged(repoPath, updatedRepo.workspaces);
 		await handleOrphanCleanup(repoPath);
 		if (repoSettingsStore.getEffective(repoPath)?.archiveRetentionDays) {
 			try {
@@ -542,6 +556,10 @@ export function createRepositoryRefreshCoordinator(deps: RepositoryRefreshCoordi
 					markBodyEnd();
 				}),
 			);
+			// Phase 1 only knows local merge proof. Sweep after Phase 2 so isMerged
+			// already carries the PR proof and a PR-only merge is a candidate.
+			const repoAfterStats = repositoriesStore.get(repoPath);
+			if (repoAfterStats) await handleAutoArchiveMerged(repoPath, repoAfterStats.workspaces);
 		} catch (err) {
 			appLogger.warn("git", `Phase 2 diff stats failed for ${repoPath}`, err);
 		}
@@ -660,8 +678,16 @@ export function createRepositoryRefreshCoordinator(deps: RepositoryRefreshCoordi
 		if (entry.safe) {
 			await deps.repo.removeOrphanWorktree(repoPath, entry.path, true);
 		} else {
+			// The fingerprint does not track dirty file contents or entries inside an ignored directory.
+			// The final check and Git removal are not atomic.
 			const seen = (entry.live_sessions ?? []).map((session) => session.session_id);
-			await deps.repo.removeOrphanWorktree(repoPath, entry.path, false, seen);
+			await deps.repo.removeOrphanWorktree(
+				repoPath,
+				entry.path,
+				false,
+				seen,
+				...(entry.dirty_fingerprint === undefined ? [] : [entry.dirty_fingerprint]),
+			);
 		}
 		// The checkout is gone: a terminal that will not close must not turn that into a failed removal.
 		try {
@@ -675,6 +701,7 @@ export function createRepositoryRefreshCoordinator(deps: RepositoryRefreshCoordi
 	interface OrphanRemovalTally {
 		removed: number;
 		unclosedTerminals: number;
+		failures: string[];
 	}
 	/** Remove the orphans concurrently and add the outcome to `tally` once all settled: each task
 	 *  returns its own count, so concurrent removals cannot overwrite one another's. */
@@ -690,6 +717,10 @@ export function createRepositoryRefreshCoordinator(deps: RepositoryRefreshCoordi
 					return await removeOrphan(repoPath, entry);
 				} catch (err) {
 					appLogger.warn("git", `${failure} ${entry.path}`, err);
+					if (!entry.safe) {
+						keptOrphans.set(entry.path, entry.dirty_fingerprint);
+						tally.failures.push(`${failure} ${entry.path}: ${err instanceof Error ? err.message : String(err)}`);
+					}
 					return null;
 				}
 			}),
@@ -702,14 +733,15 @@ export function createRepositoryRefreshCoordinator(deps: RepositoryRefreshCoordi
 	};
 	/** One status line for the whole sweep, whichever phase removed the checkouts. */
 	const handleOrphanCleanup = async (repoPath: string) => {
-		const tally: OrphanRemovalTally = { removed: 0, unclosedTerminals: 0 };
+		const tally: OrphanRemovalTally = { removed: 0, unclosedTerminals: 0, failures: [] };
 		try {
 			await sweepOrphans(repoPath, tally);
 		} finally {
-			if (tally.removed > 0) {
+			if (tally.removed > 0 || tally.failures.length > 0) {
 				const unclosed =
 					tally.unclosedTerminals > 0 ? `; ${tally.unclosedTerminals} terminal(s) could not be closed` : "";
-				deps.setStatusInfo(`Removed ${tally.removed} orphaned worktree(s)${unclosed}`);
+				const removed = tally.removed > 0 ? `Removed ${tally.removed} orphaned worktree(s)${unclosed}` : "";
+				deps.setStatusInfo([removed, ...tally.failures].filter(Boolean).join("; "));
 			}
 		}
 	};
@@ -804,56 +836,125 @@ export function createRepositoryRefreshCoordinator(deps: RepositoryRefreshCoordi
 	const handleAutoArchiveMerged = async (repoPath: string, branches: RepositoryState["workspaces"]) => {
 		if (!repoSettingsStore.getEffective(repoPath)?.autoArchiveMerged) return;
 
-		const mergedLinkedBranches = Object.values(branches).filter(
-			(b) => b.kind === "worktree" && b.isMerged && b.worktreePath !== null && b.worktreePath !== repoPath,
-		);
-		if (mergedLinkedBranches.length === 0) return;
+		// Snapshot identity fields: Solid store records can change while a preview awaits.
+		// Phase 2 (with PR proof) selects the candidates; the full removal preflight is too
+		// costly to run on every linked checkout after every refresh. The fresh backend
+		// lifecycle, not this flag, still decides whether a candidate is archived.
+		const linkedWorkspaces = Object.values(branches)
+			.filter(
+				(b) =>
+					b.kind === "worktree" &&
+					b.isMerged &&
+					!b.isRemoving &&
+					b.worktreePath !== null &&
+					b.worktreePath !== repoPath &&
+					!keptRecently(b.cleanup),
+			)
+			.map(({ workspaceId, branchName, worktreePath }) => ({ workspaceId, branchName, worktreePath }));
+		if (linkedWorkspaces.length === 0) return;
 
 		let archived = 0;
 		const kept: string[] = [];
-		const safe: typeof mergedLinkedBranches = [];
-		for (const ws of mergedLinkedBranches) {
-			try {
-				const preview = await deps.repo.getWorkspaceLifecycle(repoPath, ws.workspaceId);
-				if (
-					preview.commitStatus === "merged" &&
-					preview.removalSafety === "safe" &&
-					preview.dirtyFiles === 0 &&
-					!preview.liveSessions?.length
-				) {
-					safe.push(ws);
-				} else {
-					kept.push(`${ws.branchName}: ${(preview.warnings ?? []).join("; ") || "removal needs review"}`);
+		const archiveOne = async (ws: (typeof linkedWorkspaces)[number]): Promise<void> => {
+			// Overlapping passes cannot reach here: `refreshInFlight` joins them per repository.
+			let provenTip: string | null = null;
+			for (let attempt = 1; attempt <= ARCHIVE_ATTEMPTS; attempt++) {
+				const preview = await inspectForCleanup(repoPath, ws);
+				if (!preview.decision.eligible) {
+					// A recreated or vanished workspace after a failed first try is not an error.
+					if (attempt > 1 && !repositoriesStore.get(repoPath)?.workspaces[ws.workspaceId]) return;
+					kept.push(`${ws.branchName}: ${preview.decision.detail}`);
+					return;
 				}
-			} catch (error) {
-				kept.push(`${ws.branchName}: removal preview failed`);
-				appLogger.warn("git", `Could not inspect ${ws.branchName} before auto-archive`, error);
+				if (provenTip !== null && preview.tip !== provenTip) {
+					kept.push(`${ws.branchName}: tip changed since the first inspection`);
+					return;
+				}
+				provenTip = preview.tip;
+				try {
+					const current = repositoriesStore.get(repoPath)?.workspaces[ws.workspaceId];
+					if (
+						current?.kind !== "worktree" ||
+						current.isRemoving ||
+						current.worktreePath !== ws.worktreePath ||
+						current.branchName !== ws.branchName
+					) {
+						throw new Error("Workspace identity changed during automatic archive preview");
+					}
+					// By workspaceId, never branchName: with two workspaces on one branch the
+					// branch cannot say which checkout to archive (#726-5ac7). The fingerprint
+					// binds the cleanup to the dirty/untracked/submodule state just inspected.
+					const result = await deps.repo.finalizeMergedWorktree(
+						repoPath,
+						ws.workspaceId,
+						// Merged, clean and proven: the backend also drops the branch, keeping
+						// its refs/archive recovery ref, so finished agent work stops piling up.
+						"archive_and_drop_branch",
+						false,
+						preview.fingerprint,
+					);
+					// This sweep runs on a refresh tick with nobody watching, so it never
+					// passes `force`. A worktree that is not known to be clean comes back
+					// untouched and stays in the sidebar for the user to handle by hand.
+					if (result.action === "needs_confirmation") {
+						kept.push(`${ws.branchName}: uncommitted work`);
+						recordKept(repoPath, ws.workspaceId, "uncommitted work");
+						appLogger.info("git", `Kept the merged worktree for "${ws.branchName}" — it has uncommitted work`);
+						return;
+					}
+					archived++;
+					return;
+				} catch (error) {
+					// One retry, always behind a fresh inspection: a transient failure must not
+					// strand a workspace until the next refresh, and a changed one must not be forced.
+					if (attempt === ARCHIVE_ATTEMPTS) {
+						// Recorded either way: a failure that repeats must wait for the re-inspection
+						// interval like any other keep, not cost two preflights on every refresh.
+						const message = error instanceof Error ? error.message : String(error);
+						recordKept(repoPath, ws.workspaceId, keptReasonFromError(error) ?? `archive failed: ${message}`);
+						appLogger.warn("git", `Failed to auto-archive merged worktree for "${ws.branchName}"`, error);
+					}
+				}
 			}
-		}
-		const results = await Promise.allSettled(
-			// By workspaceId, never branchName: with two workspaces on one branch the
-			// branch cannot say which checkout to archive (#726-5ac7).
-			safe.map((ws) => deps.repo.finalizeMergedWorktree(repoPath, ws.workspaceId, "archive")),
-		);
-		results.forEach((result, i) => {
-			const name = safe[i].branchName;
-			if (result.status === "rejected") {
-				appLogger.warn("git", `Failed to auto-archive merged worktree for "${name}"`, result.reason);
-				return;
-			}
-			// This sweep runs on a refresh tick with nobody watching, so it never
-			// passes `force`. A worktree that is not known to be clean comes back
-			// untouched and stays in the sidebar for the user to handle by hand.
-			if (result.value.action === "needs_confirmation") {
-				kept.push(`${name}: uncommitted work`);
-				appLogger.info("git", `Kept the merged worktree for "${name}" — it has uncommitted work`);
-				return;
-			}
-			archived++;
-		});
+		};
+		// Sequential: each inspection and archive owns the checkout it names; N linked
+		// workspaces cost at most ARCHIVE_ATTEMPTS inspections and archives each.
+		for (const ws of linkedWorkspaces) await archiveOne(ws);
 		if (archived > 0 || kept.length > 0) {
 			const keptNote = kept.length > 0 ? `, kept ${kept.length}: ${kept.join(" | ")}` : "";
 			deps.setStatusInfo(`Auto-archived ${archived} merged worktree(s)${keptNote}`);
+		}
+	};
+
+	/** Remember on the row why a merged worktree was left alone. */
+	const recordKept = (repoPath: string, workspaceId: string, detail: string) => {
+		const record = repositoriesStore.get(repoPath)?.workspaces[workspaceId]?.cleanup;
+		if (record) repositoriesStore.setWorkspace(repoPath, workspaceId, { cleanup: keptRecord(record, detail) });
+	};
+
+	/** Fresh backend inspection, recorded as proof plus a separate cleanup decision. */
+	const inspectForCleanup = async (
+		repoPath: string,
+		ws: { workspaceId: string; branchName: string },
+	): Promise<{ decision: WorkspaceCleanupRecord["decision"]; tip: string | null; fingerprint?: string }> => {
+		try {
+			const status = await deps.repo.getWorkspaceLifecycle(repoPath, ws.workspaceId);
+			const record = recordWorkspaceCleanup(ws.workspaceId, status, Date.now());
+			if (repositoriesStore.get(repoPath)?.workspaces[ws.workspaceId]) {
+				repositoriesStore.setWorkspace(repoPath, ws.workspaceId, { cleanup: record });
+			}
+			return { decision: record.decision, tip: record.proof.tip, fingerprint: status.dirtyFingerprint };
+		} catch (error) {
+			appLogger.warn("git", `Could not inspect ${ws.branchName} before auto-archive`, error);
+			// Recorded like any keep, so a preview that keeps failing waits the re-inspection interval.
+			const decision = { eligible: false, reason: "uncertain" as const, detail: "removal preview failed" };
+			if (repositoriesStore.get(repoPath)?.workspaces[ws.workspaceId]) {
+				const proof = { workspaceId: ws.workspaceId, tip: null, base: null, source: null, verdict: "unknown" as const };
+				repositoriesStore.setWorkspace(repoPath, ws.workspaceId, {
+					cleanup: { proof: { ...proof, inspectedAt: Date.now() }, decision },
+				});
+			}
+			return { decision, tip: null };
 		}
 	};
 

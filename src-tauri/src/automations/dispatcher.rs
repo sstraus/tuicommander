@@ -42,20 +42,6 @@ pub(crate) trait DispatchEffects: Send + Sync {
         &self,
         request: LaunchRequest,
     ) -> impl Future<Output = Result<LaunchBinding, String>> + Send;
-    fn start_event_workflow(
-        &self,
-        _run: &AutomationRun,
-        _workspace: &str,
-        _prompt: &str,
-    ) -> impl Future<Output = Result<super::run::EventWorkflowBinding, String>> + Send {
-        async { Err("Native event workflows unavailable".into()) }
-    }
-    fn stop_event_workflow(
-        &self,
-        _binding: &super::run::EventWorkflowBinding,
-    ) -> Result<(), String> {
-        Err("Native event workflow cancellation unavailable".into())
-    }
     fn stop(&self, binding: &LaunchBinding) -> Result<(), String>;
     fn publish(&self, _run: &AutomationRun) {}
 }
@@ -101,21 +87,6 @@ impl<E: DispatchEffects> Dispatcher<E> {
     ) -> Result<Vec<AutomationRun>, String> {
         self.runs.prune(now.timestamp_millis(), None)?;
         scheduler::tick(&self.runs, &self.definitions.load()?, now)
-    }
-
-    /// Admit eligible labelled issues from the poller's latest snapshot. Safe to
-    /// repeat: the run store admits each issue and label once.
-    pub fn admit_events(
-        &self,
-        issues: &[tuic_git::github::GitHubIssue],
-        now: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Vec<AutomationRun>, String> {
-        super::event_intake::admit_issues(
-            &self.runs,
-            &self.definitions.load()?,
-            issues,
-            now.timestamp_millis(),
-        )
     }
 
     pub async fn dispatch(&self, id: &str) -> Result<(), String> {
@@ -166,25 +137,11 @@ impl<E: DispatchEffects> Dispatcher<E> {
         .await;
         let proceed = outcome.proceeds();
         let (prompt, context) = if proceed {
-            let (prompt, context) = inject_context(
+            inject_context(
                 &outcome,
                 run.definition.precheck.as_ref(),
                 &run.definition.prompt,
-            );
-            match super::event_intake::event_context(&run.trigger) {
-                Some(event) => {
-                    let report = if matches!(run.trigger, RunTrigger::Triage { .. }) {
-                        format!(
-                            "\nDecision report run id: {}. Call automations with action=triage_decision, id=this run id, decision={{outcome:accepted|rejected|needs_input,reason:your reason}}. Do not substitute a terminal print or progress report.",
-                            run.id
-                        )
-                    } else {
-                        String::new()
-                    };
-                    (format!("{prompt}\n\n{event}{report}"), context)
-                }
-                None => (prompt, context),
-            }
+            )
         } else {
             (String::new(), Default::default())
         };
@@ -209,30 +166,6 @@ impl<E: DispatchEffects> Dispatcher<E> {
         self.require_current(run)?;
         if !Path::new(&path).is_dir() {
             return Err("Automation workspace disappeared before launch".into());
-        }
-        if run.event_workflow.is_some() {
-            let binding = self
-                .effects
-                .start_event_workflow(run, &path, &prompt)
-                .await?;
-            let saved = self.runs.transition(
-                &run.id,
-                RunStatus::Running,
-                RunDetails {
-                    workflow_binding: Some(binding.clone()),
-                    ..Default::default()
-                },
-                now_ms(),
-            );
-            if !matches!(&saved, Ok(saved) if saved.status == RunStatus::Running && saved.workflow_binding.as_ref() == Some(&binding))
-            {
-                self.effects.stop_event_workflow(&binding)?;
-                return Err(
-                    "Automation stopped before workflow binding; owned workflow cancelled".into(),
-                );
-            }
-            self.effects.publish(&saved?);
-            return Ok(());
         }
         let binding = self
             .effects
@@ -267,29 +200,14 @@ impl<E: DispatchEffects> Dispatcher<E> {
 
     fn require_current(&self, run: &AutomationRun) -> Result<(), String> {
         run.definition.validate()?;
-        if matches!(run.trigger, RunTrigger::PullRequestReview { .. })
-            || self.definitions.load()?.review_only(&run.definition.id)
-        {
-            return Err("PR review-only work cannot launch a generic agent".into());
-        }
         if self.runs.get(&run.id)?.status != RunStatus::Prechecking {
             return Err("Automation stopped before dispatch".into());
         }
+        self.require_latest_definition(run)
+    }
+
+    fn require_latest_definition(&self, run: &AutomationRun) -> Result<(), String> {
         let config = self.definitions.load()?;
-        if let RunTrigger::Triage {
-            repository,
-            policy_version,
-            ..
-        } = &run.trigger
-            && !config.event_intake.triage.iter().any(|policy| {
-                policy.repository.eq_ignore_ascii_case(repository)
-                    && policy.policy_version == *policy_version
-                    && policy.definition_id == run.definition.id
-                    && policy.read_only_attested
-            })
-        {
-            return Err("Triage policy changed before dispatch".into());
-        }
         let mut latest = config
             .definitions
             .into_iter()

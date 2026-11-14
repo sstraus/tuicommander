@@ -34,6 +34,8 @@ pub(super) struct VersionResponse {
 #[serde(default)]
 pub(crate) struct SessionInfo {
     pub session_id: String,
+    #[serde(flatten)]
+    pub agent_report: crate::agent_stage::AgentReportView,
     /// Live PTY child, not the foreground agent or one of its tool subprocesses.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub child_pid: Option<u32>,
@@ -83,6 +85,9 @@ pub(super) struct CreateSessionRequest {
     /// locally-created and does not spawn a duplicate "PTY:" tab. Honored only
     /// when non-empty and not already in use; otherwise the backend mints one.
     pub session_id: Option<String>,
+    pub tuic_session: Option<String>,
+    #[serde(default)]
+    pub restored: bool,
     /// Terminal alias this tab held before the restart (e.g. `tu-3`). Same field
     /// name and meaning as `PtyConfig::alias` on the Tauri IPC side — a restored
     /// tab keeps the address other agents already know.
@@ -110,6 +115,9 @@ pub(super) struct SetNameRequest {
 #[derive(Deserialize)]
 pub(super) struct EnqueueCommandRequest {
     pub text: String,
+    /// Automatic background completions carry the origin captured at launch.
+    #[serde(default, rename = "automaticCompletionOrigin")]
+    pub automatic_completion_origin: Option<String>,
     #[serde(default, rename = "expectedDraft")]
     pub expected_draft: Option<String>,
     #[serde(default, rename = "idempotencyKey")]
@@ -131,6 +139,8 @@ pub(super) struct OutputQuery {
     pub byte_budget: Option<u64>,
     pub continuation: Option<String>,
     pub since_cursor: Option<usize>,
+    /// Ask for a literal read (format=mcp/mcp_raw); honoured only with the owner grant.
+    pub literal: Option<bool>,
     /// When set to "text", ANSI escape sequences are stripped from the output.
     pub format: Option<String>,
     /// Starting offset for log-mode WebSocket catch-up (skip lines already fetched via HTTP).
@@ -144,6 +154,15 @@ pub(super) struct OutputQuery {
 #[derive(Deserialize)]
 pub(super) struct PathQuery {
     pub path: String,
+}
+
+/// Repo path plus the optional diff scope (`staged`, `head`, a commit hash,
+/// `base:<ref>`, `base-uncommitted:<ref>` or `range:<from>..<to>`)
+/// that the IPC diff commands take, so both transports reach the same diff.
+#[derive(Deserialize)]
+pub(super) struct DiffScopeQuery {
+    pub path: String,
+    pub scope: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -398,6 +417,16 @@ pub(super) struct FsFileQuery {
     pub file: String,
 }
 
+/// Range options belong to /fs/read and the editor page reads on /fs/read-editor.
+#[derive(Deserialize)]
+pub(super) struct FsReadQuery {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    pub file: String,
+    pub offset: Option<u64>,
+    pub length: Option<u64>,
+}
+
 #[derive(Deserialize)]
 pub(super) struct FsSearchQuery {
     #[serde(rename = "repoPath")]
@@ -433,12 +462,28 @@ pub(super) struct FsExternalFileQuery {
     pub path: String,
 }
 
+/// `/fs/read-editor-external`: optional range options request one editor page.
+#[derive(Deserialize)]
+pub(super) struct FsExternalReadQuery {
+    pub path: String,
+    pub offset: Option<u64>,
+    pub length: Option<u64>,
+}
+
 #[derive(Deserialize)]
 pub(super) struct FsWriteFileRequest {
     #[serde(rename = "repoPath")]
     pub repo_path: String,
     pub file: String,
     pub content: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct MarkdownReviewLinesRequest {
+    pub path: String,
+    pub baseline: Option<String>,
+    pub expected: String,
 }
 
 #[derive(Deserialize)]
@@ -569,6 +614,15 @@ pub(super) struct CheckoutRemoteRequest {
     pub repo_path: String,
     #[serde(rename = "branchName")]
     pub branch_name: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct ResolveWorktreeDiagnosticRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    #[serde(rename = "worktreePath")]
+    pub worktree_path: String,
+    pub action: tuic_git::worktree::WorktreeDiagnosticAction,
 }
 
 #[derive(Deserialize)]
@@ -856,6 +910,14 @@ pub(super) struct CommitLogQuery {
 pub(super) struct StashRefRequest {
     pub path: String,
     pub stash_ref: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct StashCheckDropRequest {
+    pub path: String,
+    pub stash_ref: String,
+    pub hash: String,
+    pub verdict: String,
 }
 
 #[derive(Deserialize)]

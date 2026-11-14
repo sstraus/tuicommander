@@ -1,0 +1,48 @@
+{
+  "date": "2026-10-27T13:59:20.762Z",
+  "instance": "agent-test-jiralive",
+  "socket": "/Users/stefano.straus/Gits/.tuic/tuic-at/0da69ad430b8fe57/tuic-mcp-0da69ad430b8fe57.sock",
+  "native": "aarch64-apple-darwin",
+  "result": {
+    "settings": {
+      "source": "actual input and blur",
+      "savedProjectId": "10001"
+    },
+    "provider": {
+      "providerId": "jira",
+      "registrationCount": 1
+    },
+    "metadataAccepted": true,
+    "resolved": {
+      "link": {
+        "reference": {
+          "providerId": "jira",
+          "accountId": "191565c5-b7d1-4bb9-b692-ffc4bbe87320",
+          "id": "TUIC-3"
+        },
+        "key": "TUIC-3",
+        "title": "Native Jira plugin E2E",
+        "url": "https://straus-team.atlassian.net/browse/TUIC-3",
+        "state": {
+          "id": "10005",
+          "name": "Done",
+          "tone": "success"
+        }
+      },
+      "startWork": {
+        "branch": "TUIC-3-native-jira-plugin-e2e",
+        "prompt": "Jira issue TUIC-3: Native Jira plugin E2E\nhttps://straus-team.atlassian.net/browse/TUIC-3\n\nNative plugin creation\n\n- First\n- Second\n\n```js\nconst n = 1;\n```\n\nHard  \nbreak",
+        "delivery": "draft"
+      }
+    },
+    "cancellation": {
+      "pendingAtAbort": true,
+      "abortAfterMs": 25,
+      "settledAfterAbortMs": 2,
+      "cancelledLink": null,
+      "preabortedLink": null,
+      "evidence": "native aborted-result suppression only: the host throws AbortError after native HTTP settles; request stop is proven by the module/transport cancellation tests, not here"
+    },
+    "recovered": "TUIC-3"
+  }
+}

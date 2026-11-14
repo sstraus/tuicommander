@@ -95,6 +95,19 @@ pub(crate) enum UpstreamStatus {
     Authenticating,
 }
 
+impl UpstreamStatus {
+    /// Whether the upstream's tools stay in the merged `tools/list`.
+    ///
+    /// `CircuitOpen` is a transient health flap that heals within minutes. Hiding
+    /// the tools for it would make every MCP client see its server vanish and
+    /// return (a `tools/list_changed` each way), and an agent reading that notice
+    /// asks the user to reconnect TUIC. The tools stay listed; a call during the
+    /// open circuit answers "temporarily unavailable, retry".
+    fn lists_tools(&self) -> bool {
+        matches!(self, UpstreamStatus::Ready | UpstreamStatus::CircuitOpen)
+    }
+}
+
 /// Internal state protected by a single mutex to avoid race conditions
 /// between failure_count, retry_count, and open_until writes.
 struct CircuitBreakerState {
@@ -400,20 +413,27 @@ impl UpstreamRegistry {
         *self.mcp_tools_tx.write() = Some(tx);
     }
 
-    /// Emit an upstream status change event (fire-and-forget).
-    pub(crate) fn emit_status_change(&self, name: &str, status: &str) {
+    /// Publish an upstream status change on the event bus only. The merged tool
+    /// list is untouched, so no `tools/list_changed` goes out.
+    fn emit_status_event(&self, name: &str, status: &str) {
         if let Some(bus) = self.event_bus.read().as_ref() {
             let _ = bus.send(crate::state::AppEvent::UpstreamStatusChanged {
                 name: name.to_string(),
                 status: status.to_string(),
             });
         }
+    }
+
+    /// Emit an upstream status change event (fire-and-forget).
+    pub(crate) fn emit_status_change(&self, name: &str, status: &str) {
+        self.emit_status_event(name, status);
         // Status changes to/from Ready affect the merged tool list.
         // Authenticating is transient — tools haven't changed, skip notification.
+        // circuit_open is transient too: the tools stay listed (see `lists_tools`).
         let status_lower = status.to_ascii_lowercase();
         if matches!(
             status_lower.as_str(),
-            "ready" | "error" | "disconnected" | "failed" | "circuit_open"
+            "ready" | "error" | "disconnected" | "failed"
         ) && let Some(tx) = self.mcp_tools_tx.read().as_ref()
         {
             let _ = tx.send(());
@@ -497,7 +517,7 @@ impl UpstreamRegistry {
         let mut result = Vec::new();
         for entry_ref in self.entries.iter() {
             let entry = entry_ref.value();
-            if *entry.status.read() != UpstreamStatus::Ready {
+            if !entry.status.read().lists_tools() {
                 continue;
             }
             // Per-repo upstream allowlist filter
@@ -580,7 +600,7 @@ impl UpstreamRegistry {
         // Block calls while backoff is active, upstream permanently failed, or authenticating
         if entry.cb.is_open() {
             return Err(format!(
-                "Circuit open for upstream '{upstream_name}' (backoff active, will retry)"
+                "Upstream '{upstream_name}' is temporarily unavailable (circuit open, backoff active) — retry in a minute"
             )
             .into());
         }
@@ -618,7 +638,7 @@ impl UpstreamRegistry {
                 let prev = entry.status.read().clone();
                 if prev == UpstreamStatus::CircuitOpen {
                     *entry.status.write() = UpstreamStatus::Ready;
-                    self.emit_status_change(upstream_name, "ready");
+                    self.emit_status_event(upstream_name, "ready");
                 }
                 Ok(v)
             }
@@ -1326,6 +1346,8 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
                     // Always refresh the tool list (fixes "0 tools" after recovery)
                     let old_count = entry.tools.read().len();
                     let new_count = tools.len();
+                    // Names and definitions, not the count: a renamed tool keeps the count.
+                    let tools_changed = *entry.tools.read() != tools;
                     *entry.tools.write() = tools;
 
                     entry.cb.record_success();
@@ -1339,10 +1361,10 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
                                 status: "ready".to_string(),
                             });
                         }
-                    } else if old_count != new_count {
+                    } else if tools_changed {
                         tracing::info!(source = "mcp_registry", %name, "Tool list refreshed: {old_count} → {new_count}");
                     }
-                    if (needs_recovery || old_count != new_count)
+                    if (tools_changed || !status.lists_tools())
                         && let Some(ref tx) = tools_tx
                     {
                         let _ = tx.send(());
@@ -1387,7 +1409,9 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
                             status: status_str.to_string(),
                         });
                     }
-                    if let Some(ref tx) = tools_tx {
+                    if status.lists_tools() != new_status.lists_tools()
+                        && let Some(ref tx) = tools_tx
+                    {
                         let _ = tx.send(());
                     }
                 }
@@ -1541,6 +1565,17 @@ mod tests {
         }
     }
 
+    /// Wait until the first upstream reports `status` (setup bound, not the behaviour under test).
+    async fn wait_for_upstream_status(registry: &UpstreamRegistry, status: &str) {
+        tokio::time::timeout(Duration::from_secs(60), async {
+            while registry.status_snapshot()["upstreams"][0]["status"] != status {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("upstream never reached {status}"));
+    }
+
     fn ready_entry(name: &str, tools: Vec<UpstreamToolDef>) -> (String, Arc<UpstreamEntry>) {
         let config = http_server_config(name, "http://example.com/mcp");
         // Build a dummy HTTP client (won't be called in aggregation tests)
@@ -1616,10 +1651,175 @@ mod tests {
     fn aggregated_tools_skips_non_ready() {
         let registry = UpstreamRegistry::new();
         let (name, entry) = ready_entry("offline", vec![make_tool_def("tool")]);
-        *entry.status.write() = UpstreamStatus::CircuitOpen;
+        *entry.status.write() = UpstreamStatus::Failed;
         registry.entries.insert(name, entry);
 
         assert_eq!(registry.aggregated_tools(), [] as [serde_json::Value; 0]);
+    }
+
+    /// A health flap must not look like a vanished server: the tools stay listed
+    /// while the circuit is open. Catches `tools/list` dropping an upstream on
+    /// every flap, which clients report as "MCP server disconnected".
+    #[test]
+    fn aggregated_tools_keeps_tools_of_a_circuit_open_upstream() {
+        let registry = UpstreamRegistry::new();
+        let (name, entry) = ready_entry("flappy", vec![make_tool_def("tool")]);
+        *entry.status.write() = UpstreamStatus::CircuitOpen;
+        registry.entries.insert(name, entry);
+
+        let tools = registry.aggregated_tools();
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0]["name"], "flappy__tool");
+    }
+
+    /// A call while the circuit is open says the upstream is temporarily
+    /// unavailable and worth retrying, not that TUIC lost it.
+    #[tokio::test]
+    async fn proxy_tool_call_on_an_open_circuit_says_retry() {
+        let registry = UpstreamRegistry::new();
+        let (name, entry) = ready_entry("flappy", vec![make_tool_def("tool")]);
+        for _ in 0..CB_THRESHOLD {
+            entry.cb.record_failure();
+        }
+        assert!(entry.cb.is_open(), "setup: the breaker must be open");
+        *entry.status.write() = UpstreamStatus::CircuitOpen;
+        registry.entries.insert(name, entry);
+
+        let err = registry
+            .proxy_tool_call("flappy__tool", serde_json::json!({}))
+            .await
+            .expect_err("open circuit must refuse the call");
+        assert!(err.contains("temporarily unavailable"), "{err}");
+        assert!(err.contains("retry"), "{err}");
+    }
+
+    /// `circuit_open` is a transient health state: it must reach the event bus
+    /// but never make clients refetch `tools/list`.
+    #[test]
+    fn circuit_open_status_change_does_not_signal_tools_changed() {
+        let registry = UpstreamRegistry::new();
+        let (tx, mut rx) = tokio::sync::broadcast::channel::<()>(4);
+        registry.set_mcp_tools_tx(tx);
+
+        registry.emit_status_change("flappy", "circuit_open");
+        assert!(
+            rx.try_recv().is_err(),
+            "circuit_open must not emit list_changed"
+        );
+
+        registry.emit_status_change("flappy", "failed");
+        assert!(
+            rx.try_recv().is_ok(),
+            "failed removes the tools and must emit it"
+        );
+    }
+
+    /// The health tick that finds an upstream down changes nothing in
+    /// `tools/list`: Ready → circuit_open sends no signal. The recovery
+    /// direction is covered by
+    /// `circuit_open_recovery_with_renamed_tool_signals_tools_changed`.
+    #[tokio::test]
+    async fn health_flap_does_not_signal_tools_changed() {
+        let registry = UpstreamRegistry::new();
+        let (bus, mut events) = tokio::sync::broadcast::channel(16);
+        registry.set_event_bus(bus);
+        let (tx, mut rx) = tokio::sync::broadcast::channel::<()>(4);
+        registry.set_mcp_tools_tx(tx);
+        // Nothing listens on port 1, so the probe fails.
+        let config = http_server_config("flappy", "http://127.0.0.1:1/mcp");
+        let client = HttpMcpClient::new(
+            "flappy".to_string(),
+            "http://127.0.0.1:1/mcp".to_string(),
+            2,
+            false,
+        );
+        let entry = Arc::new(UpstreamEntry::new(
+            config,
+            UpstreamClient::Http(Box::new(tokio::sync::RwLock::new(client))),
+        ));
+        *entry.tools.write() = vec![make_tool_def("tool")];
+        *entry.status.write() = UpstreamStatus::Ready;
+        registry.entries.insert("flappy".to_string(), entry);
+
+        run_health_checks(&registry).await;
+        tokio::time::timeout(Duration::from_secs(30), events.recv())
+            .await
+            .expect("the failed probe must publish a status change")
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            registry.status_snapshot()["upstreams"][0]["status"],
+            "circuit_open"
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "Ready → circuit_open leaves tools/list unchanged"
+        );
+        assert_eq!(registry.aggregated_tools().len(), 1);
+    }
+
+    /// An upstream that comes back from an open circuit with a different tool
+    /// set must still signal, even when the tool count is unchanged. Catches the
+    /// recovery path comparing only counts: clients and the search index keep a
+    /// renamed tool that no longer exists and never learn the new name.
+    /// A second flap that comes back with the same tools must stay silent:
+    /// catches a recovery that signals unconditionally, which makes clients
+    /// drop the upstream's tools on every flap.
+    #[tokio::test]
+    async fn circuit_open_recovery_with_renamed_tool_signals_tools_changed() {
+        let mut fixture = std::env::current_exe().unwrap();
+        fixture.pop();
+        if fixture.file_name().is_some_and(|name| name == "deps") {
+            fixture.pop();
+        }
+        fixture.push(format!(
+            "tuic-mcp-fixture-server{}",
+            std::env::consts::EXE_SUFFIX
+        ));
+        assert!(
+            fixture.is_file(),
+            "fixture server must be built by nextest setup"
+        );
+        let mut config = http_server_config_disabled("renamed", "");
+        config.transport = UpstreamTransport::Stdio {
+            command: fixture.to_string_lossy().into_owned(),
+            args: vec!["env-tool-name".into()],
+            env: [("TUIC_TEST_ENV_VAR".to_string(), "new_name".to_string())].into(),
+            cwd: None,
+        };
+        let registry = UpstreamRegistry::new();
+        registry.connect_upstream(config, None).await.unwrap();
+        let entry = Arc::clone(registry.entries.get("renamed").unwrap().value());
+        // Listed while open with the tool set from before the outage; backoff expired.
+        *entry.tools.write() = vec![make_tool_def("old_name")];
+        *entry.status.write() = UpstreamStatus::CircuitOpen;
+        assert!(!entry.cb.is_open(), "setup: the probe must run");
+        let (tx, mut rx) = tokio::sync::broadcast::channel::<()>(4);
+        registry.set_mcp_tools_tx(tx);
+
+        run_health_checks(&registry).await;
+        wait_for_upstream_status(&registry, "ready").await;
+
+        assert_eq!(registry.aggregated_tools()[0]["name"], "renamed__new_name");
+        // The status is written before the signal is sent: wait, do not poll once.
+        assert!(
+            tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                .await
+                .is_ok(),
+            "a recovered upstream whose tools changed must emit list_changed"
+        );
+
+        // Same flap again, the tools this time unchanged.
+        *entry.status.write() = UpstreamStatus::CircuitOpen;
+        run_health_checks(&registry).await;
+        wait_for_upstream_status(&registry, "ready").await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(500), rx.recv())
+                .await
+                .is_err(),
+            "a recovery with identical tools must not emit list_changed"
+        );
+        registry.disconnect_upstream("renamed").unwrap();
     }
 
     #[test]
@@ -1960,10 +2160,7 @@ mod tests {
                     .is_err()
             );
         }
-        tokio::time::timeout(Duration::from_secs(60), rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
+        wait_for_upstream_status(&registry, "circuit_open").await;
         assert_eq!(
             registry.status_snapshot()["upstreams"][0]["status"],
             "circuit_open"
@@ -1972,10 +2169,7 @@ mod tests {
         // without changing its state or manufacturing a dead client.
         tokio::time::sleep(Duration::from_secs(5)).await;
         run_health_checks(&registry).await;
-        tokio::time::timeout(Duration::from_secs(60), rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
+        wait_for_upstream_status(&registry, "ready").await;
         assert_eq!(
             registry.status_snapshot()["upstreams"][0]["status"],
             "ready",

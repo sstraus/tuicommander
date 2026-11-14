@@ -1,0 +1,13 @@
+.panel { padding: 16px; border-top: 1px solid var(--border); background: var(--bg-secondary); color: var(--fg-primary); }
+.header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+.header h4 { margin: 0; }
+.header p { color: var(--fg-secondary); font-size: var(--font-sm); }
+.bindingList { display: flex; flex-wrap: wrap; gap: 8px; }
+.form { border: 0; padding: 0; margin: 16px 0 0; min-width: 0; }
+.columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.fields { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.fields label { display: flex; flex-direction: column; gap: 6px; color: var(--fg-secondary); font-size: var(--font-sm); }
+.fields fieldset { display: grid; gap: 12px; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px; margin: 0; min-width: 0; }
+.fields pre { overflow-wrap: anywhere; white-space: pre-wrap; font-size: var(--font-xs); }
+.panel [role="alert"] { color: var(--error); }
+@media (max-width: 760px) { .columns { grid-template-columns: minmax(0, 1fr); } }

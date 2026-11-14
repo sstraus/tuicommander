@@ -9,6 +9,12 @@ import { isMacOS } from "../platform";
 const mod = isMacOS() ? "Cmd" : "Ctrl";
 
 export const CONTEXTUAL_TIPS = {
+	sidebarModes: {
+		feature: "Sidebar R, C, H modes",
+		description:
+			"Click the toolbar layout switch for Rich, Compact, or Harness-only. H keeps rich rows and shows only branches with a live harness session.",
+		shortcut: null,
+	},
 	preventSleep: {
 		feature: "Keep long agent runs awake",
 		description:
@@ -31,6 +37,36 @@ export const CONTEXTUAL_TIPS = {
 
 export const TIPS: Tip[] = [
 	{
+		feature: "Catalog workflow authoring",
+		description:
+			"The Workflow Designer opens neutral drafts with schema forms and typed mappings. Preview is separate from publication and execution. This view requires a compatible neutral backend.",
+		shortcut: null,
+	},
+	{
+		feature: "Launch an agent from +",
+		description:
+			"Click the tab-bar + to choose an agent and run config. Your most-used branch choice comes first. Alt/Option-click opens a plain terminal.",
+		shortcut: null,
+	},
+	{
+		feature: "Review attached images before the next turn",
+		description:
+			"Path-based image attachments appear above your message in Pending, session Chat and AI Chat. Two images sit side by side; larger sets use a grid. Queue lists use the same previews.",
+		shortcut: null,
+	},
+	{
+		feature: "React to an AI Chat answer",
+		description:
+			"Open an answer's three-dot menu to add thumbs up, thumbs down, heart, celebrate, or a comment. These are conversational messages, not votes or permissions. Click a visible mark to send its removal.",
+		shortcut: null,
+	},
+	{
+		feature: "See what is waiting on you",
+		description:
+			"Plans and Stories lists manual checks under Waiting on you, and the activity bell notifies each one once. Open an entry to answer it in its source.",
+		shortcut: null,
+	},
+	{
 		feature: "Talk with AI Chat",
 		description:
 			"In Voice settings, choose an attached AI Chat as the hands-free Target. Docked and detached chats share the same prompt queue and spoken replies.",
@@ -39,7 +75,7 @@ export const TIPS: Tip[] = [
 	{
 		feature: "Send a pending Chat prompt now",
 		description:
-			"While an agent is busy, Session Chat keeps your next prompt in the host queue. Use the return-key button beside Pending to stop the current request and send it now, or Cancel to remove it. Send now supports Claude, Codex and ego.",
+			"While an agent is busy, Session Chat keeps your next prompt in the host queue. Use the return-key button beside Pending, or Steer in the Compose N queued list, to send it now. Cancel removes one prompt; Clear all empties the Compose queue. With Claude and ego, Send now moves the running tool to the background and the request continues; with Codex, it stops the current request.",
 		shortcut: null,
 	},
 	{
@@ -88,18 +124,6 @@ export const TIPS: Tip[] = [
 		feature: "Mobile session state filters",
 		description:
 			"Tap Working, Idle or Awaiting on the mobile Sessions screen to filter by those states. Select multiple counters or clear all to show every session; search and sorting still apply.",
-		shortcut: null,
-	},
-	{
-		feature: "Review-only PR automation",
-		description:
-			"Opt in with pull_request_reviews in the host automations.json. The host reviews the latest GitHub head and posts a COMMENT review without pushing branches or creating another PR. Unknown publication is not retried.",
-		shortcut: null,
-	},
-	{
-		feature: "Optional issue triage",
-		description:
-			"Configure event_intake.triage on the owning daemon to evaluate trusted authors' open issues before labelled implementation. The read-only profile is operator-attested; TUIC does not enforce credential isolation.",
 		shortcut: null,
 	},
 	{
@@ -374,7 +398,7 @@ export const TIPS: Tip[] = [
 	{
 		feature: "Automations",
 		description:
-			"Open Automations from the command palette to edit schedules. Enable Include precheck stdout in the agent prompt to add bounded check results before your unchanged prompt. Select Runs for history and saved output.",
+			"Open Automations from the command palette to edit schedules. Enable Close the run tab after confirmed completion to avoid completed tabs piling up. Failed and input-blocked runs stay open. Select Runs for history and saved output.",
 		shortcut: null,
 	},
 	{
@@ -481,11 +505,6 @@ export const TIPS: Tip[] = [
 		shortcut: null,
 	},
 	{
-		feature: "Workflow Run History",
-		description: "Open Run history in Plans and Stories to follow a plan's persisted workflow timeline.",
-		shortcut: null,
-	},
-	{
 		feature: "Command Palette",
 		description: "Search and run any action by name — shortcuts, settings, panels, everything.",
 		shortcut: `${mod}+P`,
@@ -529,6 +548,12 @@ export const TIPS: Tip[] = [
 		feature: "Split Panes",
 		description: "Split the current terminal into two side-by-side panes.",
 		shortcut: `${mod}+\\`,
+	},
+	{
+		feature: "Drag to Split",
+		description:
+			"Drag a tab onto the edge of the terminal area or of a pane to split it. The highlight shows where the tab will go.",
+		shortcut: null,
 	},
 	{
 		feature: "Quick Branch Switch",

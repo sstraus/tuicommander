@@ -257,11 +257,7 @@ impl Settings {
         caller: &Caller,
         approval: Option<&str>,
     ) -> Result<Value, Failure> {
-        caller.check(!matches!(
-            &action,
-            Action::Catalogue(_)
-                | Action::Transaction(Request::Get { .. } | Request::Describe { .. })
-        ))?;
+        caller.check()?;
         match action {
             Action::Catalogue(Describe::Describe {
                 area,
@@ -361,7 +357,7 @@ impl Settings {
 
 pub(crate) async fn execute(state: &Arc<AppState>, mut input: Value, caller: Caller) -> Value {
     let outcome = async {
-        caller.check(false)?;
+        caller.check()?;
         let approval = input
             .as_object_mut()
             .and_then(|input| input.remove("approval"));
@@ -418,5 +414,5 @@ pub(crate) async fn settings_action(
     state: tauri::State<'_, Arc<AppState>>,
     request: Value,
 ) -> Result<Value, Failure> {
-    Ok(execute(state.inner(), request, Caller::native()).await)
+    Ok(execute(state.inner(), request, Caller::owner_ui()).await)
 }

@@ -1,0 +1,6 @@
+{
+  "provenance": "Live TUIC claude_usage log 98950; response metadata only, account unknown",
+  "timestamp_ms": 1793559061022,
+  "status": 429,
+  "retry_after_secs": 3600
+}

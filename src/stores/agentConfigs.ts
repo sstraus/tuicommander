@@ -75,6 +75,8 @@ interface AgentConfigsState {
 	>;
 	/** Which agent CLI to use for headless prompt execution (user-chosen in Settings) */
 	headless_agent: HeadlessAgentChoice | null;
+	/** Run configuration name that workflow Agent steps launch with; null means none chosen. */
+	workflow_profile: string | null;
 	/** Global user additions; null means no additions. */
 	launch_instructions: string | null;
 	launch_modules: Record<string, boolean>;
@@ -98,6 +100,7 @@ export function createAgentConfigsStore(io: AgentConfigIO = defaultIO, connectio
 		abandoned_shell_hours: 0,
 		hibernate_scope: "background_only",
 		headless_agent: null,
+		workflow_profile: null,
 		launch_instructions: null,
 		launch_modules: {},
 		launch_instructions_disabled: false,
@@ -113,6 +116,7 @@ export function createAgentConfigsStore(io: AgentConfigIO = defaultIO, connectio
 			abandoned_shell_hours: state.abandoned_shell_hours,
 			hibernate_scope: state.hibernate_scope,
 			headless_agent: state.headless_agent ?? undefined,
+			workflow_profile: state.workflow_profile ?? undefined,
 			launch_instructions: state.launch_instructions ?? undefined,
 			launch_modules: clone(state.launch_modules),
 			launch_instructions_disabled: state.launch_instructions_disabled,
@@ -128,6 +132,7 @@ export function createAgentConfigsStore(io: AgentConfigIO = defaultIO, connectio
 				s.abandoned_shell_hours = config.abandoned_shell_hours ?? 0;
 				s.hibernate_scope = config.hibernate_scope ?? "background_only";
 				s.headless_agent = toHeadlessAgentChoice(config.headless_agent ?? "");
+				s.workflow_profile = config.workflow_profile ?? null;
 				s.launch_instructions = config.launch_instructions ?? null;
 				s.launch_modules = config.launch_modules ?? {};
 				s.launch_instructions_disabled = config.launch_instructions_disabled ?? false;
@@ -388,6 +393,21 @@ export function createAgentConfigsStore(io: AgentConfigIO = defaultIO, connectio
 					s.agents[type].launch_instructions = text;
 				}),
 			);
+			try {
+				await saveToDisk();
+			} catch (_err) {
+				// saveToDisk already logged the error
+			}
+		},
+
+		/** Get the run configuration name workflow Agent steps launch with */
+		getWorkflowProfile(): string | null {
+			return state.workflow_profile;
+		},
+
+		/** Choose the run configuration workflow Agent steps launch with */
+		async setWorkflowProfile(name: string | null): Promise<void> {
+			setState("workflow_profile", name);
 			try {
 				await saveToDisk();
 			} catch (_err) {

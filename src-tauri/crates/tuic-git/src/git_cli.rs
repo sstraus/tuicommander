@@ -175,6 +175,20 @@ impl GitCmd {
         Self::checked_output(output)
     }
 
+    /// Run git with a finite stdin payload, requiring success, and return its
+    /// raw stdout bytes. Use when the output feeds another git process, where a
+    /// lossy UTF-8 round trip would merge distinct non-UTF-8 content.
+    pub fn run_bytes_with_input(mut self, input: &[u8]) -> Result<Vec<u8>, GitError> {
+        let output = self.output(Some(input))?;
+        if !output.status.success() {
+            return Err(GitError::NonZeroExit {
+                code: output.status.code(),
+                stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            });
+        }
+        Ok(output.stdout)
+    }
+
     fn checked_output(output: std::process::Output) -> Result<GitOutput, GitError> {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();

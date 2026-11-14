@@ -1,0 +1,47 @@
+[1;35m⠀⢀⡴⠋⠉⠉[36m⠀⣴⠋⠉⣷⠀⢠⡞⠉⢳⡄[0m
+[1;35m⠀⢴⡋⠉⠁⠀[36m⠀⠻⣄⣀⣿⠀⠸⣇⠀⣸⠇[0m
+[1;35m⠀⠀⠉⠉⠉⠀[36m⠀⠲⣄⣠⠟⠀⠀⠈⠉⠁⠀[0m
+εgo: ego 0.4.3
+[?u[cεgo: sandbox is off; commands can access any file your user account can access
+
+εgo: model ollama/fixture
+mode default (flags) · sandbox off (flags)
+     Ctrl+B backgrounds · Esc interrupts · Enter queues · Up recalls · Ctrl+Enter steers · Ctrl+S draft
+     Option+P models · Shift+Tab mode · /help
+]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1jYjlmLTcwM2YtYWQzOC0zMTIwM2IwNjM5N2MiLCJ0dXJuIjpudWxsLCJldmVudCI6InNlc3Npb25fc3RhcnQiLCJpZCI6bnVsbCwiZGF0YSI6e319\[?2004h[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1jYjlmLTcwM2YtYWQzOC0zMTIwM2IwNjM5N2MiLCJ0dXJuIjoiMDFhMTk3MjYtY2JmMC03MjdmLWFhMmYtMzY4YzcwYTE5NDRjIiwiZXZlbnQiOiJ0dXJuX3N0YXJ0IiwiaWQiOm51bGwsImRhdGEiOnt9fQ==\]0;ɛ । Capture native permission evidence.]7770;intent=Capture native permission evidence. (εgo)]9;4;0;0]7770;state=busy]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1jYjlmLTcwM2YtYWQzOC0zMTIwM2IwNjM5N2MiLCJ0dXJuIjoiMDFhMTk3MjYtY2JmMC03MjdmLWFhMmYtMzY4YzcwYTE5NDRjIiwiZXZlbnQiOiJ0b29sX3N0YXJ0IiwiaWQiOiIwMWExOTcyNi1jYzg0LTc2NDQtODA2YS1kNDMxZmNjNDYzNDUiLCJkYXRhIjp7ImxhYmVsIjoiZXhlYyJ9fQ==\[?2004l[6n[1;1H[J]7770;state=awaiting]777;notify;εgo;permission needed for exec]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1jYjlmLTcwM2YtYWQzOC0zMTIwM2IwNjM5N2MiLCJ0dXJuIjoiMDFhMTk3MjYtY2JmMC03MjdmLWFhMmYtMzY4YzcwYTE5NDRjIiwiZXZlbnQiOiJtb2RhbF9vcGVuIiwiaWQiOiIwMWExOTcyNi1jY2Q4LTc0NDgtYjU0Yy1iN2EwNTM4NWNhZWMiLCJkYXRhIjp7ImtpbmQiOiJwZXJtaXNzaW9uIiwibGFiZWwiOiJleGVjIn19\[?2004h[6n[0m[?25l[1;2H[J[1;1H[92m[39m
+Allow run /usr/bin/touch /Users/stefano.straus/Gits/.tmp/ego-771live-native/v043/permission/approved-effect?
+Risk: unknown - runs a program
+[y] yes   [a] yes, do not ask again for exec(/usr/bin/touch
+/Users/stefano.straus/Gits/.tmp/ego-771live-native/v043/permission/approved-effect)
+[n] no, say what to do instead   [e] edit   [d] details [35m[0m[0m7[37m[0m8[?25h[?2004l[6n[1;1H[J]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1jYjlmLTcwM2YtYWQzOC0zMTIwM2IwNjM5N2MiLCJ0dXJuIjoiMDFhMTk3MjYtY2JmMC03MjdmLWFhMmYtMzY4YzcwYTE5NDRjIiwiZXZlbnQiOiJtb2RhbF9lbmQiLCJpZCI6IjAxYTE5NzI2LWNjZDgtNzQ0OC1iNTRjLWI3YTA1Mzg1Y2FlYyIsImRhdGEiOnsib3V0Y29tZSI6ImFuc3dlcmVkIn19\]7770;state=busy[?2004h[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h[1;2H[J[1;1H[KAllowed run /usr/bin/touch /Users/stefano.straus/Gits/.tmp/ego-771live-native/v043/permission/approved-effe…
+[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1jYjlmLTcwM2YtYWQzOC0zMTIwM2IwNjM5N2MiLCJ0dXJuIjoiMDFhMTk3MjYtY2JmMC03MjdmLWFhMmYtMzY4YzcwYTE5NDRjIiwiZXZlbnQiOiJ0b29sX2VuZCIsImlkIjoiMDFhMTk3MjYtY2M4NC03NjQ0LTgwNmEtZDQzMWZjYzQ2MzQ1IiwiZGF0YSI6eyJvdXRjb21lIjoiY29tcGxldGVkIn19\]7770;state=idle]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1jYjlmLTcwM2YtYWQzOC0zMTIwM2IwNjM5N2MiLCJ0dXJuIjoiMDFhMTk3MjYtY2JmMC03MjdmLWFhMmYtMzY4YzcwYTE5NDRjIiwiZXZlbnQiOiJ0dXJuX2VuZCIsImlkIjpudWxsLCJkYXRhIjp7Im91dGNvbWUiOiJjb21wbGV0ZWQiLCJyZWFzb24iOiJDb21wbGV0ZWQifX0=\[0m[?25l[1;1H[2K[96m◐ Working 0s · ↓ ~7 tokens [2m· Esc to interrupt[22m[0m8[?25h[1;2H[J[1;1H[K
+[K[38;5;115m✓[0m $ [38;5;110m/usr/bin/touch[0m /Users/stefano.straus/Gits/.tmp/ego-771l…[38;5;246m · exit 0 · (timeout 1.0s) · 105ms · approval 70ms[0m
+[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s · ↓ ~7 tokens [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h[?2004l[?2004h[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s · ↓ ~7 tokens [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h[1;2H[J[1;1H[K
+[KNative evidence completed.
+[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s · ↓ ~7 tokens [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h[1;2H[J[1;1H[K
+[Kεgo: Turn elapsed 377ms · done 1:47 PM
+[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s · ↓ ~7 tokens [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1jYjlmLTcwM2YtYWQzOC0zMTIwM2IwNjM5N2MiLCJ0dXJuIjpudWxsLCJldmVudCI6InNlc3Npb25fZW5kIiwiaWQiOm51bGwsImRhdGEiOnsib3V0Y29tZSI6ImNvbXBsZXRlZCJ9fQ==\]9;4;0;0]7770;state=idle]0;ɛ । ]133;D;0[0m[?25l[1;2H[J[1;1H[92m[96mfixture · off · default [38;5;115m▱▱▱▱▱▱▱▱▱▱ 14/32.8k[0m unpriced ~ trust=untrusted
+> [35m[0m[0m7[37m[0m
+ 8[?25h[1;2H[J[1;1H[K
+[Kεgo: 0 unsent drafts discarded; 0 prompts waiting to run.
+[6n[0m[?25l[1;2H[J[1;1H[92m[96mfixture · off · default [38;5;115m▱▱▱▱▱▱▱▱▱▱ 14/32.8k[0m unpriced ~ trust=untrusted
+> [35m[0m[0m7[37m[0m
+ 8[?25h[1;2H[J[1;1H[K
+[Kεgo: To resume: 'ego resume 01a19726-cb9f-703f-ad38-31203b06397c'
+[6n[0m[?25l[1;2H[J[1;1H[92m[96mfixture · off · default [38;5;115m▱▱▱▱▱▱▱▱▱▱ 14/32.8k[0m unpriced ~ trust=untrusted
+> [35m[0m[0m7[37m[0m
+ 8[?25h[?2004l

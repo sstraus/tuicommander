@@ -148,17 +148,33 @@ export function splitLeaf(
 	leafId: string,
 	direction: "horizontal" | "vertical",
 	newGroupId: string,
+	position: "before" | "after" = "after",
 ): PaneNode | null {
 	const currentDepth = leafDepthFromRoot(root, leafId);
 	if (currentDepth < 0) return null; // leaf not found
 	if (currentDepth + 1 >= MAX_SPLIT_DEPTH) return null; // would exceed max depth
 
-	return transformNode(root, leafId, (leaf) => ({
-		type: "branch" as const,
-		direction,
-		children: [leaf, { type: "leaf" as const, id: newGroupId }],
-		ratios: [0.5, 0.5],
-	}));
+	return transformNode(root, leafId, (leaf) => {
+		const added: PaneLeaf = { type: "leaf", id: newGroupId };
+		return {
+			type: "branch" as const,
+			direction,
+			children: position === "before" ? [added, leaf] : [leaf, added],
+			ratios: [0.5, 0.5],
+		};
+	});
+}
+
+/** A pane edge on which a dragged tab can be dropped to split that pane. */
+export type PaneEdge = "left" | "right" | "top" | "bottom";
+
+/** Map a pane edge to the split direction and the position of the new pane.
+ *  A "vertical" branch places its children side by side. */
+export function edgeSplit(edge: PaneEdge): { direction: "horizontal" | "vertical"; position: "before" | "after" } {
+	return {
+		direction: edge === "left" || edge === "right" ? "vertical" : "horizontal",
+		position: edge === "left" || edge === "top" ? "before" : "after",
+	};
 }
 
 /** Replace a leaf with a new node (used by splitLeaf). Returns new tree. */
@@ -432,6 +448,42 @@ function createPaneLayoutStore() {
 			tree = newRoot;
 			bumpTree();
 			setState("activeGroupId", newGroupId);
+			scheduleSave();
+			return newGroupId;
+		},
+
+		/** True when dropping `tabId` on `edge` of `groupId` would split that pane:
+		 *  the depth limit allows it, and the tab is not the only one in that pane. */
+		canSplitAtEdge(groupId: string, tabId: string): boolean {
+			if (!this.canSplit(groupId)) return false;
+			const group = state.groups[groupId];
+			if (!group) return false;
+			return !(group.tabs.length === 1 && group.tabs[0].id === tabId);
+		},
+
+		/** Split `groupId` on `edge` and move `tab` into the new pane. The tab
+		 *  leaves the group that held it; a group left empty by the move closes.
+		 *  Returns the new group ID, or null when the split is not possible. */
+		splitAtEdge(groupId: string, edge: PaneEdge, tab: PaneTab): string | null {
+			if (!tree || !this.canSplitAtEdge(groupId, tab.id)) return null;
+			const { direction, position } = edgeSplit(edge);
+			const newGroupId = this.createGroup();
+			const newRoot = splitLeaf(tree, groupId, direction, newGroupId, position);
+			if (!newRoot) {
+				this.removeGroup(newGroupId);
+				return null;
+			}
+			const fromGroupId = this.getGroupForTab(tab.id);
+			batch(() => {
+				tree = newRoot;
+				bumpTree();
+				if (fromGroupId) {
+					this.removeTab(fromGroupId, tab.id);
+					if (state.groups[fromGroupId]?.tabs.length === 0) this.closePane(fromGroupId);
+				}
+				this.addTab(newGroupId, { id: tab.id, type: tab.type });
+				setState("activeGroupId", newGroupId);
+			});
 			scheduleSave();
 			return newGroupId;
 		},

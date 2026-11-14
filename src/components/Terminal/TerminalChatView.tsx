@@ -120,6 +120,7 @@ export const TerminalChatView: Component<{
 				terminalAgent={terminalsStore.get(props.terminalId)?.agentType ?? undefined}
 				onSearchRef={props.onSearchRef}
 				onOpenFile={openFile}
+				onQuote={(text) => term()?.ref?.quoteIntoCompose(text)}
 				onUnavailable={() => terminalsStore.setViewMode(props.terminalId, "cli")}
 			/>
 			<Show when={bound() && term()?.awaitingInput === "question"}>

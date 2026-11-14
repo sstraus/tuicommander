@@ -132,8 +132,6 @@ python3 tests/terminal-stress/selection_motion_e2e.py \
 The producer requires a POSIX PTY and supports `--initial-rows 10050` for the
 scrollback-cap boundary. The harness never reads, snapshots, restores, or
 writes the host clipboard; copied text is retained only in the page guard.
-Diagnosis and the current validation ledger are in
-[`SELECTION_FINDINGS.md`](SELECTION_FINDINGS.md).
 
 ## Capturing a live anomaly
 
@@ -302,5 +300,3 @@ Basic Auth is exchanged once for a session token before request-intensive tests.
 `scrollout` emits 18 physical rows per record and its existing verifier requires
 all records. Keep that scenario at `--count 500` or below with the current grid
 cap; the separate `history-cap` case verifies intentional eviction exactly.
-
-Measured results and unresolved mismatches: [INTEGRITY_FINDINGS.md](INTEGRITY_FINDINGS.md).

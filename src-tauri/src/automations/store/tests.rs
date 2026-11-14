@@ -251,7 +251,6 @@ fn saved_reports_bound_each_stream_and_keep_definition_snapshot_and_launch_point
                 precheck_context: None,
                 workspace_id: Some("allocated-workspace-id".into()),
                 reason: Some("confirmed done".into()),
-                workflow_binding: None,
             },
             2,
         )
@@ -332,7 +331,7 @@ fn history_pages_utc_windows_and_retention_preserve_open_runs() {
 // Catches: schema downgrade or opportunistic replacement of an unknown populated database.
 #[test]
 fn unsupported_schemas_fail_closed_without_modifying_existing_database() {
-    for version in [2, -1, 0] {
+    for version in [3, -1, 0] {
         let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
         let path = dir.path().join("automation_runs.sqlite3");
         let conn = Connection::open(&path).unwrap();
@@ -559,69 +558,6 @@ fn grouped_history_counts_failures_before_paging_without_rewriting_history() {
         [] as [serde_json::Value; 0]
     );
     assert!(store.grouped_history(None, 101, 0).is_err());
-}
-
-// Catches: two pushes on one PR publishing duplicate or stale reviews.
-#[test]
-fn two_pushes_publish_one_review_for_latest_head() {
-    let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-    let owner = RunOwner::acquire_at(&dir.path().join("runs.sqlite3"), 100).unwrap();
-    let store = owner.store();
-    let mut runs = Vec::new();
-    for (index, head) in ["a".repeat(40), "b".repeat(40)].iter().enumerate() {
-        let trigger: RunTrigger = serde_json::from_value(serde_json::json!({
-            "kind":"pull_request_review", "repository":"cli/cli", "pr_number":7, "head_sha":head
-        }))
-        .expect("PR head triggers must be supported");
-        let now = 101 + index as i64;
-        let run = store
-            .admit_event(&definition(), trigger.clone(), None, 2, now)
-            .unwrap()
-            .unwrap();
-        let run = store
-            .transition(&run.id, RunStatus::Completed, RunDetails::default(), now)
-            .unwrap();
-        assert!(
-            store
-                .admit_event(&definition(), trigger, None, 2, now)
-                .unwrap()
-                .is_none()
-        );
-        runs.push((run, head.clone()));
-    }
-    let mut published = Vec::new();
-    for (run, head) in runs {
-        let claimed = store
-            .claim_publication(
-                &run.id,
-                PublicationIntent {
-                    repository: "cli/cli".into(),
-                    head: head.clone(),
-                    base: String::new(),
-                    issue_number: 7,
-                },
-                110,
-            )
-            .unwrap();
-        if claimed {
-            published.push(head.clone());
-        }
-        assert!(
-            !store
-                .claim_publication(
-                    &run.id,
-                    PublicationIntent {
-                        repository: "cli/cli".into(),
-                        head,
-                        base: String::new(),
-                        issue_number: 7,
-                    },
-                    111
-                )
-                .unwrap()
-        );
-    }
-    assert_eq!(published, vec!["b".repeat(40)]);
 }
 
 // Catches: PTY tail policy changing non-PTY report or precheck prefix retention.

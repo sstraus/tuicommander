@@ -4,6 +4,7 @@ import { appLogger } from "./appLogger";
 import { editorTabsStore } from "./editorTabs";
 import { branchKeyFor, repositoriesStore, resolveRepoPathFor } from "./repositories";
 import { type BaseTab, createTabManager } from "./tabManager";
+import { terminalsStore } from "./terminals";
 
 const MCP_RELOAD_KEY = "tui-commander-mcp-markdown-reload";
 
@@ -579,7 +580,10 @@ function createMdTabsStore() {
 			}
 			if (url) tab.url = url;
 			if (focus) {
-				if (repoPath && repoPath !== repositoriesStore.state.activeRepoPath) repositoriesStore.setActive(repoPath);
+				if (repoPath && repoPath !== repositoriesStore.state.activeRepoPath) {
+					terminalsStore.noteModelNavigation();
+					repositoriesStore.setActive(repoPath);
+				}
 				return base._addTab(tab);
 			}
 			base._addTabBackground(tab);

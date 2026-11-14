@@ -5,6 +5,7 @@ import {addPick, editPick, deletePick, addError, clearErrors, draftForTab, recip
 import {reviewAgents} from './reviewAgents.js';
 import {connectNative, nativeRequest} from './native.js';
 import {HEARTBEAT_MS, heartbeatReply} from './heartbeat.js';
+import {grantHostConsent} from './consent.js';
 let connection = 'Connecting…';
 let bound;
 let agents = [];
@@ -188,6 +189,14 @@ async function handle(message, sender) {
   }
   if (message.kind === 'start_server') { await request('start_dev_server');lastRefresh=0;await refreshConnection(tab.id); }
   if (message.kind === 'refresh') { lastRefresh=0;await refreshConnection(tab.id); }
+  if (message.kind === 'consent_host') {
+    // TUIC decides which session is armed; commands from any other session stay unconsented.
+    // Without binding.json nothing is armed: answer not_armed instead of dereferencing a missing binding.
+    const config = await binding.catch(() => undefined);
+    const mode = config && (await request('mode_status')).find((mode) => mode.repoPath === config.repoPath);
+    await grantHostConsent(chrome.storage.session, mode?.status === 'armed' ? mode.sessionId : undefined, tab.url);
+    syncErrors();
+  }
   if (message.kind === 'send') {
     const draft=draftForTab(await drafts(),message.tabId);
     const outcome=await deliverDraft(draft,(batch)=>request('send',batch),
