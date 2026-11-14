@@ -44,13 +44,15 @@ async function boot(
 	historyUnavailable = false,
 	tabs: Tab[] = [{ id: 7, windowId: 2, active: true, url: "http://localhost:5173/" }],
 	capture = { width: 100, height: 50, bytes: 8 },
+	bindingFound = true,
 ) {
 	let listener: (m: unknown, s: unknown, r: (x: Reply) => void) => boolean | undefined = () => undefined;
 	const store: Record<string, unknown> = {};
 	const sessionStore: Record<string, unknown> = {};
 	const tabsUpdate = vi.fn(async () => {});
+	const registerScripts = vi.fn(async () => {});
 	vi.stubGlobal("fetch", async () => ({
-		ok: true,
+		ok: bindingFound,
 		json: async () => ({ repoPath: "/repo", sessionId: "A" }),
 		blob: async () => new Blob(),
 	}));
@@ -95,7 +97,12 @@ async function boot(
 			onAdded: { addListener: () => {} },
 			onRemoved: { addListener: () => {} },
 		},
-		scripting: { getRegisteredContentScripts: async () => [] },
+		scripting: {
+			getRegisteredContentScripts: async () => [],
+			unregisterContentScripts: async () => {},
+			registerContentScripts: registerScripts,
+			executeScript: async () => [{ result: { value: 2 } }],
+		},
 		storage: {
 			session: {
 				get: async () => ({ ...sessionStore }),
@@ -131,7 +138,7 @@ async function boot(
 	await import("../../../browser-extension/design-mode/worker.js");
 	const send = (message: object, sender: object = { url: PANEL }) =>
 		new Promise<Reply>((resolve) => listener(message, sender, resolve));
-	return { send, tabsUpdate, draw, encode };
+	return { send, tabsUpdate, draw, encode, sessionStore, registerScripts };
 }
 
 describe("Design Mode worker dev-server wiring", () => {
@@ -218,7 +225,7 @@ describe("Design Mode worker dev-server wiring", () => {
 		expect(replies[0].reply).toEqual({ ok: true, result: { tabId: 7, windowId: 2 } });
 		expect(replies[1].reply).toEqual({
 			ok: false,
-			error: "eval_not_granted: grant needed: click Allow eval on this host in the Design Mode sidebar.",
+			error: "eval_not_granted: grant needed: click Allow agents on this host in the Design Mode sidebar.",
 		});
 		expect(replies[2].reply).toEqual({
 			ok: true,
@@ -230,9 +237,41 @@ describe("Design Mode worker dev-server wiring", () => {
 				bytes: 8,
 				width: 100,
 				height: 50,
+				downscaled: false,
 			},
 		});
 		expect(replies[3].reply).toEqual({ ok: true, result: { errors: [] } });
+	});
+
+	// Catches: consent_host reading bound.repoPath without binding.json, surfacing a TypeError to the owner.
+	it("consent_host without binding.json answers not_armed", async () => {
+		const { send, sessionStore } = await boot(false, undefined, undefined, false);
+		const reply = await send({ kind: "consent_host" });
+		expect(reply.ok).toBe(false);
+		expect(reply.error).toMatch(/^not_armed:/);
+		expect(sessionStore.hostConsents).toBeUndefined();
+	});
+
+	// Catches: a page script or a stale binding writing consent, or consent landing on a session that is not armed.
+	it("records host consent only from the sidebar, for the armed session and the active host", async () => {
+		const remote = [{ id: 7, windowId: 2, active: true, url: "https://example.com/app" }];
+		const { send, sessionStore, registerScripts } = await boot(false, remote);
+		const page = await send({ kind: "consent_host" }, { tab: { id: 7 }, url: "https://example.com/app" });
+		expect(page).toEqual({ ok: true, result: undefined });
+		expect(sessionStore.hostConsents).toBeUndefined();
+		const granted = await send({ kind: "consent_host" });
+		expect(granted.ok).toBe(true);
+		expect(sessionStore.hostConsents).toEqual([JSON.stringify(["A", "example.com"])]);
+		await vi.advanceTimersByTimeAsync(0);
+		// Remote error capture follows the consented host instead of a Chrome origin record.
+		expect(registerScripts).toHaveBeenLastCalledWith([
+			expect.objectContaining({ matches: ["*://example.com/*"], js: ["errors.js"] }),
+			expect.objectContaining({ matches: ["*://example.com/*"], js: ["errorsBridge.js"] }),
+		]);
+		offeredCommands.push({ requestId: "eval", sessionId: "A", action: "eval", args: { script: "1+1" } });
+		await vi.advanceTimersByTimeAsync(300);
+		const reply = calls.find((call) => call.action === "command_reply" && call.requestId === "eval");
+		expect(reply?.reply).toEqual({ ok: true, result: { value: 2 } });
 	});
 
 	// Catches: URL equality rejecting a launch tab that redirected before startup acknowledgment.

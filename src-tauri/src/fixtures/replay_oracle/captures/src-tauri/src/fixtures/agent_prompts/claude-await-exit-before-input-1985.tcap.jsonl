@@ -397,8 +397,9 @@
 {"record":681,"event":{"type":"choice-cleared","_turn_epoch":0}}
 {"record":681,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":"Enter to select · ↑/↓ to navigate ·","choice_sig":null,"fullscreen":false}}
 {"record":682,"event":{"type":"shell-state","state":"idle","agent_type":"claude"}}
-{"record":682,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":"Enter to select · ↑/↓ to navigate ·","choice_sig":null,"fullscreen":false}}
-{"record":683,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":"Enter to select · ↑/↓ to navigate ·","choice_sig":null,"fullscreen":false}}
+{"record":682,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
+{"record":682,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":"Enter to select · ↑/↓ to navigate ·","choice_sig":null,"fullscreen":false}}
+{"record":683,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":"Enter to select · ↑/↓ to navigate ·","choice_sig":null,"fullscreen":false}}
 {"record":684,"event":{"type":"choice-prompt","title":"Choose red as the test color.","options":[{"key":"↑","label":"Previous option","highlighted":false,"destructive":false},{"key":"↓","label":"Next option","highlighted":false,"destructive":false},{"key":"↵","label":"Select highlighted option","highlighted":false,"destructive":false}],"selection_mode":"navigate-only","dismiss_key":"cancel","_turn_epoch":0}}
 {"record":684,"state":{"shell":2,"agent":"awaiting_input","awaiting":true,"question":"Choose red as the test color.","confident":true,"last_question":"Enter to select · ↑/↓ to navigate ·","choice_sig":"Choose red as the test color.|↑,↓,↵","fullscreen":false}}
 {"ring_len":28231}

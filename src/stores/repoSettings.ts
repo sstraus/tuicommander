@@ -393,8 +393,9 @@ function createRepoSettingsStore() {
 
 		/** Get fully resolved settings: per-repo > .tuic.json > global defaults */
 		getEffective(path: string): EffectiveRepoSettings | undefined {
-			const settings = state.settings[path];
-			if (!settings) return undefined;
+			// A repo never opened in its settings panel has no entry; it still
+			// inherits .tuic.json and the global defaults, never "everything off".
+			const settings = state.settings[path] ?? blankSettings(path, path);
 
 			const local = () => state.localConfigs[path];
 			// Spelled out rather than looped so this stays one object literal with no
@@ -438,8 +439,7 @@ function createRepoSettingsStore() {
 			path: string,
 			field: K,
 		): EffectiveRepoSettings[K] | undefined {
-			const settings = state.settings[path];
-			if (!settings) return undefined;
+			const settings = state.settings[path] ?? blankSettings(path, path);
 			return resolvers[field](settings, () => state.localConfigs[path]);
 		},
 

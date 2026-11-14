@@ -26,6 +26,7 @@
  */
 
 import { appLogger } from "../stores/appLogger";
+import { isPerfDebug } from "./perfDebug";
 import { holdScreenAwake } from "./screenWakeLock";
 
 /** The rate Whisper wants, and therefore the rate the socket carries. */
@@ -207,6 +208,8 @@ export async function connectBrowserVoice(
 		offset: number;
 	}[] = [];
 	let paused = false;
+	// Audio-clock end of the latest scheduled chunk; a start after it is silence.
+	let lastScheduledEnd: number | null = null;
 	const detach = (reply: (typeof replies)[number]) => {
 		const node = reply.node;
 		reply.node = null;
@@ -225,6 +228,12 @@ export async function connectBrowserVoice(
 			// stop/pause can deliver ended after this buffer has been rescheduled.
 			if (reply.node !== node) return;
 			reply.node = null;
+			if (isPerfDebug()) {
+				appLogger.info(
+					"dictation",
+					`Browser voice chunk end seq=${reply.sequence} audioClock=${context.currentTime.toFixed(4)}s`,
+				);
+			}
 			replies.splice(replies.indexOf(reply), 1);
 			if (socket.readyState === WebSocket.OPEN) {
 				socket.send(JSON.stringify({ type: "playback-ended", sequence: reply.sequence }));
@@ -233,6 +242,16 @@ export async function connectBrowserVoice(
 		reply.startedAt = when - reply.offset;
 		reply.node = node;
 		node.start(when, reply.offset);
+		const end = when + reply.buffer.duration - reply.offset;
+		if (isPerfDebug()) {
+			// gapMs is silence before this chunk on the audio clock (negative: queued ahead).
+			const gapMs = lastScheduledEnd === null ? null : Math.round((when - lastScheduledEnd) * 1000);
+			appLogger.info(
+				"dictation",
+				`Browser voice chunk start seq=${reply.sequence} at=${when.toFixed(4)}s dur=${reply.buffer.duration.toFixed(4)}s gapMs=${gapMs}`,
+			);
+		}
+		lastScheduledEnd = end;
 	};
 	const schedule = () => {
 		let when = context.currentTime;

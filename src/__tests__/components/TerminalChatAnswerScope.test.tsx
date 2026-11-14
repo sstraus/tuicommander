@@ -1,13 +1,19 @@
 // @vitest-environment jsdom
 import { readFileSync } from "node:fs";
 import { cleanup, render } from "@solidjs/testing-library";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, beforeAll, expect, it } from "vitest";
 import { Transcript } from "../../components/AIChatPanel/Transcript";
 import answerScope from "./fixtures/chat-answer-scope-2158.json";
 
 const terminalStyles = readFileSync("src/components/AIChatPanel/AIChatPanel.module.css", "utf8");
 
 const message = answerScope.text;
+
+// Isolated renders do not run App startup, which settles the persisted-store promise.
+beforeAll(async () => {
+	const { activityStore } = await import("../../stores/activityStore");
+	await activityStore.hydrate();
+});
 
 let style: HTMLStyleElement | undefined;
 afterEach(() => {
@@ -40,7 +46,11 @@ it.each([false, true])("rules only the answer paragraph, not the terminal Chat m
 		/>
 	));
 	await Promise.resolve();
-	const blocks = Array.from(container.querySelectorAll<HTMLElement>("#markdown-content > div > *"));
+	const blocks = Array.from(
+		container.querySelectorAll<HTMLElement>(
+			"#markdown-content > div > :not([data-tuic-answer-region]), #markdown-content > div > [data-tuic-answer-region] > *",
+		),
+	);
 	expect(blocks.map((block) => block.hasAttribute("data-tuic-answer"))).toEqual([
 		true,
 		false,
@@ -82,8 +92,10 @@ it.each<[string, boolean[]]>([
 	));
 	await Promise.resolve();
 	expect(
-		Array.from(container.querySelectorAll("#markdown-content > div > *")).map((block) =>
-			block.hasAttribute("data-tuic-answer"),
-		),
+		Array.from(
+			container.querySelectorAll(
+				"#markdown-content > div > :not([data-tuic-answer-region]), #markdown-content > div > [data-tuic-answer-region] > *",
+			),
+		).map((block) => block.hasAttribute("data-tuic-answer")),
 	).toEqual(expected);
 });

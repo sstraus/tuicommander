@@ -230,12 +230,13 @@ export const chatViewStore = {
 			...acpTranscript.entries(chatViewKey(sessionId)),
 			...(state.queued[sessionId] ?? [])
 				.filter((command) => command.kind === "user_command")
-				.map(({ id, text }) => ({
+				.map(({ id, text, send_now }) => ({
 					id: `queue-${id}`,
 					kind: "user" as const,
 					text,
 					pending: true,
 					queuedCommandId: id,
+					sendNow: send_now,
 				})),
 			...(state.pending[sessionId] ?? []).map(({ id, text }) => ({ id, kind: "user" as const, text, pending: true })),
 		];

@@ -112,21 +112,26 @@ pub(crate) async fn poll_device_flow(
         .await
         .map_err(|e| format!("Failed to poll Device Flow: {e}"))?;
 
+    let status = response.status();
     let body = response
         .text()
         .await
         .map_err(|e| format!("Failed to read poll response: {e}"))?;
+    interpret_poll_body(status, &body)
+}
 
+/// Map one Device Flow poll response to its outcome.
+fn interpret_poll_body(status: reqwest::StatusCode, body: &str) -> Result<PollResult, String> {
     // GitHub returns 200 for both success and error states during polling.
     // Try parsing as a success response first, then as an error.
-    if let Ok(token_resp) = serde_json::from_str::<GithubTokenResponse>(&body) {
+    if let Ok(token_resp) = serde_json::from_str::<GithubTokenResponse>(body) {
         return Ok(PollResult::Success {
             access_token: token_resp.access_token,
             scope: token_resp.scope,
         });
     }
 
-    if let Ok(err_resp) = serde_json::from_str::<GithubErrorResponse>(&body) {
+    if let Ok(err_resp) = serde_json::from_str::<GithubErrorResponse>(body) {
         return Ok(match err_resp.error.as_str() {
             "authorization_pending" => PollResult::Pending,
             "slow_down" => PollResult::SlowDown,
@@ -136,7 +141,11 @@ pub(crate) async fn poll_device_flow(
         });
     }
 
-    Err(format!("Unexpected Device Flow response: {body}"))
+    // Never echo the body: it can hold a token, and this error reaches logs and the UI.
+    Err(format!(
+        "Unexpected Device Flow response (HTTP {}): not a token or error object",
+        status.as_u16()
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -930,6 +939,24 @@ mod tests {
         );
     }
 
+    // Catches: an unparseable poll response echoes its body, which can hold a token, into logs and the UI.
+    #[test]
+    fn unexpected_poll_response_error_omits_the_body() {
+        let body = r#"{"access_token":"gho_SECRETSECRET","token_type":42}"#;
+        let error = match interpret_poll_body(reqwest::StatusCode::OK, body) {
+            Err(error) => error,
+            Ok(_) => panic!("a malformed token response must be an error"),
+        };
+        assert!(
+            !error.contains("gho_SECRETSECRET"),
+            "error leaks the body: {error}"
+        );
+        assert!(
+            error.contains("200"),
+            "error must name the HTTP status: {error}"
+        );
+    }
+
     #[test]
     fn read_nonexistent_returns_none() {
         // Use a different service name to avoid interfering with real tokens.
@@ -1184,7 +1211,7 @@ mod tests {
         let state = std::sync::Arc::new(crate::state::tests_support::make_test_app_state());
         let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel(32);
         *state.github.poller.lock() = Some(crate::github_poller::GitHubPoller {
-            intake_paths: Vec::new(),
+            neutral_intake_paths: Vec::new(),
             cmd_tx,
             previous_prs: Default::default(),
             stop: std::sync::Arc::new(tokio::sync::Notify::new()),

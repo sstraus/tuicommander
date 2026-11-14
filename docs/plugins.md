@@ -554,7 +554,7 @@ await host.playNotificationSound();              // defaults to "info"
 
 ### Tier 3b: Filesystem Operations (capability-gated)
 
-These methods provide sandboxed filesystem access. All paths must be absolute and within the user's home directory (`$HOME`).
+These methods provide capability-gated filesystem access. All paths must be absolute. Reads, listings and watches reach any path the user can access, including external volumes and symlink targets outside `$HOME`; the OS reports access errors and the size limits below still apply. Writes and renames stay within the user's home directory (`$HOME`).
 
 #### `host.readFile(absolutePath) -> Promise<string>`
 
@@ -722,6 +722,8 @@ The status bar has a shared ticker area that rotates messages from multiple plug
 | Low | < 10 | Shown only in the popover, not in rotation |
 | Normal | 10–99 | Auto-rotates every 5s in the ticker area |
 | Urgent | >= 100 | Pinned — pauses rotation until cleared |
+
+Plugin tickers and the active agent usage badge share one right-aligned status group, before Offline, PR/CI and panel controls. Matching usage is absorbed into the agent badge, not left beside the cwd. Tickers use priority order, then creation order; they appear side by side when space permits and rotate overflow in the last slot. Narrow layouts truncate labels without overlapping controls.
 
 Users can click the counter badge (e.g. `1/3 ▸`) to cycle manually, or right-click the ticker to see all active messages in a popover.
 
@@ -1181,7 +1183,7 @@ host.registerContextMenuAction({
 
 Read credentials from the system credential store by service name. Returns the raw credential JSON string, or `null` if not found. **Requires `"credentials:read"` capability.**
 
-First call from an external plugin shows a user consent dialog. Built-in plugins skip the dialog.
+No consent dialog is shown: the installed manifest declares the `credentials:read` capability, and that declaration is the disclosure.
 
 ```typescript
 const credJson = await host.readCredential("Claude Code-credentials");
@@ -1201,9 +1203,11 @@ if (credJson) {
 
 `httpFetch(url, { signal })` accepts a host-local `AbortSignal`. A pre-aborted signal starts no request; abort cancels the Rust request while waiting for headers or collecting the body and rejects with `AbortError`. Unloading the plugin also cancels its active HTTP requests. Signals never cross IPC/HTTP: the host sends a generated UUID and a plugin-scoped cancel command. Requests without a signal keep the same response contract.
 
-Make an HTTP request. Non-2xx status codes are returned normally (not thrown as errors). **Requires `"net:http"` capability.**
+Make an HTTP request. Non-2xx status codes are returned normally (not thrown as errors). **Requires `"net:http"` capability.** Each request sends the `User-Agent` `tuicommander-plugin/<version>` unless you set your own `User-Agent` header (GitHub REST refuses requests without one).
 
 Plugins can only fetch URLs matching their manifest's `allowedUrls` patterns. A manifest declaring `net:http` with empty or omitted `allowedUrls` is rejected. An empty list never grants unrestricted access, including localhost or private destinations.
+
+**Owner destinations:** the owner can list URL patterns in `plugin_http_destinations` in `config.json` (same syntax as `allowedUrls`). Every `net:http` plugin can then reach them without an account and without a manifest change, localhost and LAN addresses included. The manifest still needs its non-empty `allowedUrls` list. Only `http` and `https` pass. The first URL and each redirect hop are checked. An agent write through the settings API that adds a pattern needs the owner's confirmation; removing a pattern applies directly. Owner destinations never widen where an account request can start; a redirect hop to another scheme, host or port still loses `Authorization`.
 
 ```typescript
 const resp = await host.httpFetch("https://api.example.com/data", {
@@ -1225,7 +1229,7 @@ interface HttpResponse {
 }
 ```
 
-**Account requests:** `httpFetch(url, { account: "<account id>" })` makes Rust inject that account's credential (`Authorization: Bearer <token>`, or `Basic` for Basic accounts). The plugin never sees the token. Rules: the manifest `providers` list must contain the account's provider; the URL must be under the account host (same scheme, host and port, path prefix of the site URL; GitHub accounts use their API base, `https://api.github.com/` or `https://<ghe>/api/`); the account host rule replaces the `allowedUrls` check for the first URL; you must not set `Authorization` yourself. Each redirect hop must be under the account host or match `allowedUrls`, and a hop to another scheme, host or port loses the `Authorization` header. The token is read again for each request, so a re-entered credential applies at once; a 401 comes back to you as a normal response. Token values in the response body and headers are replaced with `[redacted]`.
+**Account requests:** `httpFetch(url, { account: "<account id>" })` makes Rust inject that account's credential (`Authorization: Bearer <token>`, or `Basic` for Basic accounts). The plugin never sees the token. Rules: the manifest `providers` list must contain the account's provider; the URL must be under the account host (same scheme, host and port, path prefix of the site URL; GitHub accounts use their API base, `https://api.github.com/` or `https://<ghe>/api/`); the account host rule replaces the `allowedUrls` check for the first URL; you must not set `Authorization` yourself. Each redirect hop must be under the account host, match `allowedUrls` or match an owner destination, and a hop to another scheme, host or port loses the `Authorization` header. The token is read again for each request, so a re-entered credential applies at once; a 401 comes back to you as a normal response. Token values in the response body and headers are replaced with `[redacted]`.
 
 ```typescript
 const me = await host.httpFetch(`${site}/rest/api/3/myself`, { account: accountId });
@@ -1234,8 +1238,8 @@ const me = await host.httpFetch(`${site}/rest/api/3/myself`, { account: accountI
 **Security and limits:**
 - `file://`, `data://`, `ftp://` schemes are blocked
 - 30-second timeout, 10 MB response limit, max 5 redirects
-- Localhost (`localhost`, `127.0.0.1`, `::1`, `[::1]`, `0.0.0.0`) is blocked unless explicitly declared in `allowedUrls`
-- Every HTTP request must match a declared pattern; an empty list permits no requests
+- Localhost (`localhost`, `127.0.0.1`, `::1`, `[::1]`, `0.0.0.0`) is blocked unless explicitly declared in `allowedUrls` or in an owner destination
+- Every HTTP request must match a declared pattern or an owner destination; otherwise an empty list permits no requests
 
 **`allowedUrls` pattern matching:**
 - Patterns use prefix matching with an optional trailing `*` wildcard
@@ -1257,7 +1261,7 @@ const lines = tail.split("\n").filter(Boolean);
 
 ### Tier 3j: CLI Execution (capability-gated)
 
-#### `host.execCli(binary, args, cwd?) -> Promise<string>`
+#### `host.execCli(binary, args, cwd?, options?) -> Promise<string>`
 
 Execute a CLI binary declared in the plugin's manifest and return its stdout. **Requires `"exec:cli"` capability.**
 
@@ -1272,14 +1276,20 @@ Only binaries listed in the manifest's `binaries` field can be executed. The on-
 const raw = await host.execCli("mdkb", ["--format", "json", "status"], "/Users/me/project");
 const status = JSON.parse(raw);
 console.log(status.index.documents); // 1486
+
+// A long indexing or build command raises its own deadline (whole milliseconds).
+await host.execCli("mdkb", ["index"], "/Users/me/project", { timeoutMs: 10 * 60 * 1000 });
 ```
 
 **Security and limits:**
 - Only binaries declared in the plugin's `binaries` manifest field can be executed
-- Working directory must be absolute and within `$HOME`
-- 30-second timeout
-- 5 MiB limit per stdout/stderr stream; both streams drain concurrently. Overflow or read failure stops the process with an error.
-- Binary is resolved via PATH lookup and known install locations (`~/.cargo/bin/`, `/usr/local/bin/`, etc.)
+- Working directory must be an absolute path to an existing directory
+- Timeout: 30 seconds by default; `options.timeoutMs` raises or lowers it, from 1 ms to 3 600 000 ms (1 hour). A zero, fractional, non-finite or larger value is refused, not clamped. The deadline starts when the command starts.
+- Concurrency: at most 4 commands per plugin run at the same time. A further call waits for a free slot instead of failing; there is no calls-per-minute quota. A slot is released when its command ends, fails, times out or is cancelled.
+- Cancellation: a timeout, an output overflow or a dropped request (for example a closed HTTP connection) stops the process and its subprocesses.
+- 5 MiB limit per stdout/stderr stream; both streams drain concurrently. Stdout overflow or a read failure stops the process with an error. Stderr beyond 5 MiB is dropped (the child keeps running) and the failure message ends with `[stderr truncated at 5 MiB]`.
+- A non-zero exit returns the captured stderr in the error, with registered secret values masked.
+- The declared name resolves to the first executable in the backend PATH (the install folders that desktop-launched apps miss, such as `/opt/homebrew/bin` and `~/.cargo/bin`, then the inherited PATH), then `~/.local/bin`, `~/.npm-global/bin` and `~/go/bin`. Homebrew comes before the inherited PATH, so the result can differ from your shell. System folders such as `/usr/bin` and version-manager shims on PATH resolve. The program runs with this folder list as its PATH, so a `#!/usr/bin/env node` script finds its interpreter. A symlink runs as found, not as its target. On Windows the name resolves to `<name>.exe` or `<name>.cmd`. A declared name is never a path.
 
 ### Tier 4: Scoped Tauri Invoke (whitelisted commands only)
 
@@ -1355,13 +1365,13 @@ Capabilities gate access to Tier 3 and Tier 4 methods. Declare them in `manifest
 | `ui:sound` | `host.playNotificationSound(sound?)` | Can play sounds (question, error, completion, warning, info) |
 | `ui:panel` | `host.openPanel()` | Can render arbitrary HTML in sandboxed iframe |
 | `ui:ticker` | `host.setTicker()`, `host.clearTicker()` | Can post messages to the shared status bar ticker |
-| `credentials:read` | `host.readCredential()` | Can read system credentials (consent dialog shown) |
-| `net:http` | `host.httpFetch()` | Requires a non-empty `allowedUrls` list; requests must match a declared pattern |
+| `credentials:read` | `host.readCredential()` | Can read system credentials |
+| `net:http` | `host.httpFetch()` | Requires a non-empty `allowedUrls` list; requests must match a declared pattern or an owner destination (`plugin_http_destinations`) |
 | `invoke:read_file` | `host.invoke("read_file", ...)` | Can read files on disk |
 | `invoke:list_markdown_files` | `host.invoke("list_markdown_files", ...)` | Can list directory contents |
-| `fs:read` | `host.readFile()`, `host.readFiles()`, `host.readFileBase64()`, `host.readFileTail()` | Can read files within `$HOME` (10 MiB default; binary reads may request up to the 512 MiB host ceiling) |
-| `fs:list` | `host.listDirectory()` | Can list directory contents within `$HOME` |
-| `fs:watch` | `host.watchPath()` | Can watch filesystem paths within `$HOME` for changes |
+| `fs:read` | `host.readFile()`, `host.readFiles()`, `host.readFileBase64()`, `host.readFileTail()` | Can read any file the user can access (10 MiB default; binary reads may request up to the 512 MiB host ceiling) |
+| `fs:list` | `host.listDirectory()` | Can list any directory the user can access |
+| `fs:watch` | `host.watchPath()` | Can watch any path the user can access for changes |
 | `fs:write` | `host.writeFile()`, `host.writeFileBase64()` | Can atomically write files within `$HOME` (10 MiB default; binary writes may request up to the 512 MiB host ceiling) |
 | `fs:rename` | `host.renamePath()` | Can rename/move files within `$HOME` |
 | `fs:scan` | `host.scanBuildArtifacts()` | Can recursively scan registered repos for build-artifact directories (read-only; ignores `.gitignore`) |
@@ -1612,7 +1622,7 @@ TUICommander registers the `tuic://` URL scheme for external integration:
 | `tuic://open/<path>` | Open markdown file in tab (iframe SDK only) |
 | `tuic://terminal?repo=<path>` | Open terminal in repo (iframe SDK only) |
 
-**Security:** `install-plugin` requires HTTPS URLs and shows a confirmation dialog. `open-repo` only accepts paths already in the repository list. `open` and `terminal` validate paths against known repos (available only inside plugin iframes via the TUIC SDK, not as OS-level deep links).
+**Security:** `install-plugin` requires HTTPS URLs (plain `http://` only for `localhost` and loopback addresses, and redirects are checked the same way) and shows a confirmation dialog. `open-repo` only accepts paths already in the repository list. `open` and `terminal` validate paths against known repos (available only inside plugin iframes via the TUIC SDK, not as OS-level deep links).
 
 ## Plugin Registry
 
@@ -2154,3 +2164,8 @@ custom values; unsupported structured values do not get an empty editor. Jira
 create metadata retains Description requiredness for the fixed body input, not
 a second schema control. Empty or whitespace-only required descriptions block
 creation in both the host form and provider action.
+
+### Random-access binary previews
+
+`host.fileSize(absolutePath)` returns the file size in bytes.
+`host.readFileRange(absolutePath, offset, length)` returns exactly that binary range as Base64. Both require `fs:read` and reuse the existing absolute-path read policy (including external volumes). Offset and length must be non-negative safe integers; length is capped at 8 MiB. Ranges past EOF and short reads fail. Split larger requests into bounded calls. File changes between calls may cause a read to fail; reopen the preview to refresh metadata.

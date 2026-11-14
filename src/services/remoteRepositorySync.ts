@@ -14,7 +14,9 @@ export function startRemoteRepositorySync(refresh: (path: string) => Promise<voi
 		{ timer: ReturnType<typeof setTimeout>; gitState: boolean; reconcileAfterGrace: boolean }
 	>();
 	const catchups = new Map<string, ReturnType<typeof setTimeout>>();
-	const registering = new Set<string>();
+	// Value: a resync arrived while this registration was in flight. The daemon
+	// that answers may be the one that was replaced, so register once more.
+	const registering = new Map<string, boolean>();
 	const owns = (path: string, owner: string) =>
 		!disposed &&
 		Boolean(getRemoteBaseUrl(owner)) &&
@@ -65,21 +67,29 @@ export function startRemoteRepositorySync(refresh: (path: string) => Promise<voi
 		};
 		timers.set(key, next);
 	};
+	const register = (path: string, owner: string) => {
+		if (!owns(path, owner)) return;
+		const key = JSON.stringify([owner, path]);
+		if (registering.has(key)) {
+			registering.set(key, true);
+			return;
+		}
+		registering.set(key, false);
+		// Re-register after daemon/SSE restart; the daemon need not have this
+		// desktop's repository list persisted in its own configuration.
+		void rpc("start_repo_watcher", { repoPath: path }, owner)
+			.catch((error) => appLogger.warn("git", `Remote repository watcher failed for ${path}`, error))
+			.finally(() => {
+				const again = registering.get(key);
+				registering.delete(key);
+				schedule(path, owner);
+				if (again) register(path, owner);
+			});
+	};
 	const resync = (connection?: string) => {
 		for (const path of repositoriesStore.getActivePaths()) {
 			const owner = repositoriesStore.getConnectionId(path);
-			if (!owner || (connection && owner !== connection) || !owns(path, owner)) continue;
-			const key = JSON.stringify([owner, path]);
-			if (registering.has(key)) continue;
-			registering.add(key);
-			// Re-register after daemon/SSE restart; the daemon need not have this
-			// desktop's repository list persisted in its own configuration.
-			void rpc("start_repo_watcher", { repoPath: path }, owner)
-				.catch((error) => appLogger.warn("git", `Remote repository watcher failed for ${path}`, error))
-				.finally(() => {
-					registering.delete(key);
-					schedule(path, owner);
-				});
+			if (owner && (!connection || owner === connection)) register(path, owner);
 		}
 	};
 

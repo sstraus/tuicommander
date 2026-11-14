@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { isBackgroundTimerGap } from "../../utils/freezeDetector";
 
 describe("isBackgroundTimerGap", () => {
@@ -22,5 +22,30 @@ describe("isBackgroundTimerGap", () => {
 
 	it("does not skip a normal short tick while focused", () => {
 		expect(isBackgroundTimerGap(55, false, true)).toBe(false);
+	});
+});
+
+describe("freeze detector lifecycle", () => {
+	// Catches: setPerfDebug(false) leaving the detector running (it never stopped),
+	// and a paint-jank rAF loop re-arming every frame while perfDebug is on.
+	it("starts one timer and no animation-frame loop, and stopFreezeDetector clears the timer", async () => {
+		vi.resetModules();
+		vi.useFakeTimers();
+		vi.doMock("../../utils/perfDebug", () => ({ isPerfDebug: () => true }));
+		vi.doMock("../../stores/appLogger", () => ({ appLogger: { debug: vi.fn(), diag: { warn: vi.fn() } } }));
+		const raf = vi.fn();
+		vi.stubGlobal("requestAnimationFrame", raf);
+		const { startFreezeDetector, stopFreezeDetector } = await import("../../utils/freezeDetector");
+		startFreezeDetector();
+		expect(vi.getTimerCount()).toBe(1);
+		expect(raf).not.toHaveBeenCalled();
+		stopFreezeDetector();
+		expect(vi.getTimerCount()).toBe(0);
+		startFreezeDetector();
+		expect(vi.getTimerCount()).toBe(1);
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
+		vi.doUnmock("../../utils/perfDebug");
+		vi.doUnmock("../../stores/appLogger");
 	});
 });

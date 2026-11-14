@@ -65,7 +65,7 @@ The following search rules are deliberate:
   repository, and a global box has no way to know which one you mean.
 - **Per-agent controls in expandable cards are not searched.** Search cannot
   select a specific agent card or scroll to a control inside it. For managed
-  workspace trust, open **Settings → Agents**, expand **Claude** or **Codex**,
+  workspace trust, open **Settings → Agents**, expand **Claude**, **Codex** or **ego**,
   then use **Accept workspace trust for managed spawns** in Expert Mode.
 - **ego permissions are searchable.** Permissions and Filesystem sandbox are
   in a visible section on the Agents page; no agent card needs expansion.
@@ -108,7 +108,7 @@ never all expert: in basic mode it would show an empty page.
 | Notifications | Master Volume, Audio Output Device |
 | Terminal | Shell, Font Weight, Allow OSC 52 clipboard writes, Block folding, Show scrollbar marks, Reflow scrollback on resize |
 | Git & GitHub | Auto-Delete on PR Close, Copy ignored files, Copy untracked files, Storage Strategy, Auto-archive merged worktrees, Orphan Worktree Cleanup and safe cleanup countdown, After Merge Behavior, Auto-Fetch Interval, the **Add another GitHub account** button (shown while no additional account exists) |
-| Agents | Collect project progress, Launch instructions (global); per agent: Launch instructions, Close idle managed child after, Auto-retry on server errors, Prevent alternate screen, Accept workspace trust for managed spawns (Claude and Codex), Native status signals, Install hooks globally, Track agent intent, Collect progress, Show suggested follow-ups, Headless Command Template; Claude only: Environment Flags |
+| Agents | Collect project progress, Launch instructions (global); per agent: Launch instructions, Close idle managed child after, Auto-retry on server errors, Prevent alternate screen, Accept workspace trust for managed spawns (Claude, Codex and ego), Native status signals, Install hooks globally, Track agent intent, Collect progress, Show suggested follow-ups, Headless Command Template; Claude only: Environment Flags |
 | Voice | Long-press threshold, Auto-send, Input device, Level gate, Speech confidence gate, Hold-back before sending, Notify model when hands-free changes, Start notice |
 | MCP | Collapse tools |
 | Remote Access | Port, Session Token Duration, Enable IPv6 (dual-stack) |
@@ -134,9 +134,10 @@ never all expert: in basic mode it would show an empty page.
 | **Resume all agents after an update** | After the app restarts for an update, resume every agent tab with a confirmed session on every branch. Default on |
 | **TUIC CLI** | Install or uninstall the `tuic` command-line tool, with its status. Desktop app only. See [CLI](cli.md). |
 | **Code Intelligence** | Install and manage MDKB, which gives the editor go-to-definition, find references, and symbol outline, and serves as a memory manager for AI agents. Desktop app only. |
-| **ego executable** | Path to the ego binary the **AI Chat** panel talks to over ACP (**ego** section, directly after Code Intelligence). Always shown, also while Experimental Features is off. On the desktop it is laid out like the TUIC CLI section: a status line ("Configured at …") with **Select…** (native file picker) and **Clear**. A browser client, which has no native picker, gets a text field. While it is empty, ACP is not configured: every connect is refused in Rust and the panel says so rather than launching nothing. Read at each connect, so a correction takes effect without a restart. |
+| **ego executable** | Path to the ego binary the **AI Chat** panel talks to over ACP (**ego** section, directly after Code Intelligence). Always shown, also while Experimental Features is off. On the desktop it is laid out like the TUIC CLI section: a status line ("Configured at …") with **Install latest**, **Select…** (native file picker) and **Clear**. **Install latest** downloads the bare binary for this platform (`ego-<os>-<arch>`, for example `ego-macos-arm64`) from the latest `sstraus/ego` GitHub release, installs it like MDKB (`/usr/local/bin/ego`; Windows: `%LOCALAPPDATA%\Microsoft\WindowsApps\ego.exe`, with an elevation prompt when the folder is not writable) and saves that path as the ego executable. A browser client, which has no native picker, gets a text field. While it is empty, ACP is not configured: every connect is refused in Rust and the panel says so rather than launching nothing. Read at each connect, so a correction takes effect without a restart. |
 | **ego profile** | Optional name of a profile in ego's user configuration for the AI Chat panel. Leave empty to use ego's normal profile selection. Names with whitespace or a leading dash are rejected. TUICommander passes the name to `ego acp`; the profile's rules remain in ego's configuration. |
 | **Default IDE** | IDE for "Open in..." actions (**IDE** section). Only installed apps are offered, grouped by category: Code Editors (VS Code, Cursor, Zed, Windsurf, Neovim, Xcode, `$EDITOR`), JetBrains (IntelliJ IDEA, PyCharm, WebStorm, GoLand, CLion, PhpStorm, RubyMine, Rider, DataGrip, RustRover, Android Studio, Fleet), Terminals (Ghostty, WezTerm, Alacritty, Kitty, Warp, iTerm2), Git Tools (Sourcetree, GitHub Desktop, Fork, GitKraken, Sublime Merge, Tower), System (Terminal, Finder) |
+| **TUICommander shell** | Open a plain shell tab in the active repository or worktree from the Open in menu. |
 | **Custom Launchers** | Define your own tools for the "Open in" menu. Each launcher has a name, an executable (bare name resolved on `PATH`, or absolute path), and arguments (one per line). Arguments may use placeholders, expanded at launch: `{path}`/`{file}` (focused file, else repo root), `{fileDir}` (directory of the focused file), `{repo}` (repo/worktree root), `{cwd}` (focused terminal's working directory), `{home}` (your home directory), `{line}`/`{column}` (1-based editor cursor position). Args are passed verbatim (no shell parsing), so paths with spaces are safe. |
 | **Experimental Features** | One toggle, no sub-toggles. It opts in to the **AI Chat** panel (ego over ACP, #785-58ca) and **SSH Tunnels**. It also shows the **AI Chat** settings page. The AI Chat, AI Triage and AI Watchers sub-toggles went with the embedded AI engine (#784-0aec). |
 
@@ -288,7 +289,7 @@ arguments and the managed-launch wrapper warning.
 | **MCP Integration** | Install/remove TUICommander as MCP server for supported agents. Shows install status with a dot indicator. |
 | **Native status signals** | Claude and Codex only. Enabled by default; injects process-scoped status configuration at launch without changing global agent files. The **Signals: at launch** badge identifies this mode. |
 | **Prevent alternate screen** | Enabled by default for every agent. TUIC applies a verified native-scrollback control when the installed CLI supports one. Turning it off leaves new launches without TUIC's screen control. Existing shells need to be reopened to receive the changed policy. |
-| **Accept workspace trust for managed spawns** | Claude and Codex only. In Expert Mode, expand the agent's card to change whether agent-to-agent spawns skip that agent's workspace trust question in a new folder. |
+| **Accept workspace trust for managed spawns** | Claude, Codex and ego only. In Expert Mode, expand the agent's card to change whether agent-to-agent spawns skip that agent's workspace trust question in a new folder. |
 | **Install hooks globally** | Codex, Gemini, Grok, and OpenCode. Explicitly installs/removes sentinel-owned lifecycle hooks in the agent's global configuration. Off by default. Codex verifies native trust; **Hooks: review in /hooks** requires normal Codex review. Profile-specific hooks require review in that profile. |
 | **Show agent intent as tab title** | When agents declare their current work phase, update the tab name with a short title |
 | **Show suggested follow-up actions** | Display actionable suggestions from agents after completing a task |
@@ -303,7 +304,7 @@ See [AI Agents](ai-agents.md) for details on agent detection, rate limits, and t
 **Chat behavior → Master prompt** adds your instructions to new AI Chat conversations.
 Use the multiline field to describe how the agent should answer or delegate work.
 The text is saved by TUIC and added to the existing TUIC rules; it does not replace them.
-Leave it empty for no extra instructions. The limit is **8192 UTF-8 bytes**; an edit above
+Leave it empty for no extra user instructions. Separate AI Chat host guidance describes Mermaid rendering and does not count toward this limit. The limit is **8192 UTF-8 bytes**; an edit above
 that limit shows an error and is not saved. Running and saved conversations keep their
 original instructions, including when reopened or forked. Do not put secrets in this field.
 
@@ -747,3 +748,12 @@ Git & GitHub access diagnostics show exact per-repository messages grouped by ow
 ## Archived worktree retention
 
 Git & GitHub → Worktree Defaults includes **Archived worktree retention (days)**. `0` is Off, the default. Repository → Worktree has a nullable override: leave it empty to inherit, or enter `0` to keep that repository’s archives. Cleanup uses recorded archive age on repository refresh, preserves committed work in archive refs, and keeps dirty or otherwise unsafe archives with named reasons. See [Worktrees](worktrees.md#archived-worktree-retention).
+
+## Grok hook updates
+
+After updating native hooks in agent settings, relaunch Grok to load completion, cancellation, failure and permission lifecycle coverage. Installation updates the TUIC-owned hook file and preserves other hook files.
+
+
+### Windows agent hook controls
+
+Native Windows does not install or inject TUIC's external POSIX status hooks. Hook state returns `unsupported`, and hook/status setters reject changes before writing preferences or user hook files. Saved preferences and existing hooks remain intact. Settings hides these controls based on the owning backend response, including remote machines. External agents retain heuristic detection; ego keeps native PTY OSC signals and its separate ACP path.

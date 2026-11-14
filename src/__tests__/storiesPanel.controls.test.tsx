@@ -8,7 +8,7 @@ vi.mock("../invoke", () => ({
 	invoke: vi
 		.fn()
 		.mockImplementation(async (command: string) =>
-			command === "story_capabilities" ? true : { type: "plans", value: [] },
+			command === "story_capabilities" ? { backend: "native", operations: {} } : { type: "plans", value: [] },
 		),
 	listen: vi.fn().mockResolvedValue(() => {}),
 }));

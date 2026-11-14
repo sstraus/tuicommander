@@ -85,7 +85,7 @@ pub(crate) fn phys_footprint_bytes() -> Option<u64> {
 /// This is the number that separates "a structure in `AppState` grew" from
 /// "the heap grew somewhere this report cannot see": when `footprint` climbs
 /// and `accounted_bytes` does not, `blocks_in_use` says whether the memory is
-/// in the Rust heap at all.
+/// in the system default malloc zone. A prefixed Rust allocator is separate.
 ///
 /// It is the same pair `vmmap` prints as ALLOCATION COUNT and BYTES ALLOCATED,
 /// read from inside the process. `vmmap` itself is not an option: it suspends
@@ -431,6 +431,8 @@ fn holders(state: &Arc<AppState>) -> Vec<MapReport> {
 pub(crate) fn summary(state: &Arc<AppState>) -> serde_json::Value {
     let (blocks, heap_bytes) = malloc_zone_stats().unzip();
     serde_json::json!({
+        "allocator": crate::heap_profile::metrics(),
+        "malloc_scope": "system default malloc zone only; excludes prefixed jemalloc and other zones",
         "malloc_blocks_in_use": blocks,
         "malloc_bytes_in_use": heap_bytes,
         "sessions": state.session_maps.sessions.len(),
@@ -452,9 +454,10 @@ pub(crate) fn report(state: &Arc<AppState>) -> serde_json::Value {
         // structure here owns — which is itself the finding, and says the next
         // suspect is outside `AppState`.
         "accounted_bytes": accounted,
-        // The Rust heap as the allocator sees it. `heap_bytes` far above
-        // `accounted_bytes` means the growth is in allocations no map here
-        // owns; `blocks_in_use` rising with it says how many.
+        // Native system default-zone counters, not the whole Rust heap when
+        // the diagnostic prefixed jemalloc allocator is selected.
+        "allocator": crate::heap_profile::metrics(),
+        "malloc_scope": "system default malloc zone only; excludes prefixed jemalloc and other zones",
         "malloc_blocks_in_use": blocks,
         "malloc_bytes_in_use": heap_bytes,
         // All blocks of `min_bytes` or more, including map-owned allocations.

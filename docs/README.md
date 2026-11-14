@@ -19,7 +19,6 @@ Start with the [documentation home](index.md) or the [Getting Started](user-guid
 - [Remote Access](user-guide/remote-access.md) - Mobile PWA, SSH tunnels, remote connections, the `tuic-remote` daemon
 - [Voice Dictation](user-guide/dictation.md) - Push-to-talk setup, models, corrections
 - [Prompt Library](user-guide/prompt-library.md) - Template management, variables
-- [Guided Event Configuration](user-guide/event-driven-templates.md) - Issue delivery, PR review and authorized repair setup
 
 ## Architecture
 

@@ -6,7 +6,8 @@ The explicit global installer targets `CODEX_HOME/hooks.json` and its sibling
 `config.toml`, with `~/.codex` as the default. File state is not operational
 state. `agent_hook_codex_trust` asks the installed CLI for current definitions,
 keys and hashes, matches the exact TUIC command/event/matcher and execution
-settings, and writes only each matched `trusted_hash` through `config/batchWrite`.
+settings (including the `statusMessage` label `TUICommander session`, which is
+what Codex `/hooks` shows instead of "Unnamed hook"), and writes only each matched `trusted_hash` through `config/batchWrite`.
 The write uses the native user-layer version as a compare-and-swap precondition.
 User-layer selection and write acknowledgements compare host paths, not string
 spellings. Equivalent Windows separators and dot components identify the same
@@ -82,7 +83,6 @@ reload registration. General MCP settings publication remains a separate cutover
 
 Plugins can call `host.settings({ action: "get", paths: ["/enabled"] })` and pass
 the resulting revision to set/reset/patch. The host supplies its plugin ID.
-
 
 **Module:** `src-tauri/src/config.rs`
 
@@ -407,8 +407,9 @@ needs an app restart is what that costs.
 | `attachment_max_bytes` | `u64` | `26214400` (25 MiB) | Binary upload cap per file; must be positive. |
 | `attachment_retention_days` | `u32` | `7` | Obsolete for uploads: attachment lifetime is now the session. This stored value has no effect on attachment cleanup. |
 | `mcp_server_enabled` | `bool` | `true` | Enable MCP HTTP server |
+| `plugin_http_destinations` | `Vec<String>` | `[]` | Owner URL patterns (manifest `allowedUrls` syntax) that every `net:http` plugin may reach without an account, localhost and LAN included. Only `http`/`https`; checked for the first URL and every redirect hop. Read on each request. An agent settings API write that adds a pattern needs confirmation. Account requests keep the account host rule (#2659-b083) |
 | `mcp_port` | `u16` | `3845` | Fixed port for MCP server (0 = OS-assigned) |
-| `mcp_capabilities` | `object` | `{denied:["settings","diagnostics"],migration_unknown_tools:[]}` | Native capability denials. Old `disabled_native_tools` migrates once; unknown names remain visible. Parent denials cover grouped actions; member denials remain scoped. Settings groups these keys by backend-owned domain, section and parent metadata; conditional availability is independent of denials. See MCP capability cutover documentation. |
+| `mcp_capabilities` | `object` | `{denied:["diagnostics"],migration_unknown_tools:[]}` | Native capability denials. Old `disabled_native_tools` migrates once; unknown names remain visible. Parent denials cover grouped actions; member denials remain scoped. Settings groups these keys by backend-owned domain, section and parent metadata; conditional availability is independent of denials. See MCP capability cutover documentation. |
 | `collapse_tools` | `bool` | `false` | Replace the full MCP tool list with 3 lazy-discovery meta-tools (`search_tools`, `get_tool_schema`, `call_tool`). Discovered native schemas are unchanged: managed commands still use one `call_tool` invocation of `session action=submit` and receive the bounded receipt in that response. Grok sessions use this surface automatically without changing the stored value — see [`mcp-http.md`](mcp-http.md#lazy-tool-discovery-collapse_tools). Size figures for both surfaces, and how to reproduce them, are in [Measuring the surfaces](mcp-http.md#measuring-the-surfaces) — the reduction is measured, never estimated |
 | `services` | `ServicesConfig` | `{}` | Nested remote-access config: `server`, `auth`, `tls`, `relay`, `push` (replaces the former flat `remote_access_*`/`push_enabled`/`relay_enabled` fields) |
 
@@ -419,6 +420,19 @@ Remote-access secrets under `services` are not persisted in plaintext
 `push.vapid_private_key` live in the OS keyring-backed credential vault. The
 JSON file keeps only the non-secret settings plus `session_token_exists`,
 `token_exists`, and `vapid_private_key_exists` booleans for UI state.
+
+`services.push.added_providers` (`string[]`, default `[]`) lists push service
+hosts the owner added beyond the built-in Google, Mozilla, Windows and Apple
+suffixes (#2668-aa16). An endpoint host matches an entry exactly or as a
+subdomain: `push.example.net` accepts `push.example.net` and
+`updates.push.example.net`, not `evilpush.example.net` or
+`push.example.net.evil.test`. An entry is a bare DNS host with at least two
+labels; the settings owner refuses URLs, wildcards, bare top-level domains and
+empty labels with `out_of_range`, and an invalid entry in a hand-edited file
+matches nothing. HTTPS stays required. The list is read at subscribe time and
+again before each send, so removing a host stops delivery to its saved
+subscriptions without deleting them. A settings-facade change needs the owner's
+confirmation, like the relay URL.
 
 A vault **read failure** is never treated as "the secret is absent": on error
 `hydrate_one_secret` keeps the `*_exists` flag that `config.json` recorded, so a
@@ -455,7 +469,7 @@ cleartext copy does not survive on disk.
 | `block_folding_enabled` | `bool` | `true` | Let the `block-fold-toggle` shortcut collapse a command block's output. Frontend-gated. Blocks already folded stay folded when this is off |
 | `scrollback_reflow` | `bool` | `true` | Re-wrap scrollback history on a column resize instead of truncating it. Backend-gated: `AppState::new_vt_log_buffer` applies it to a new grid and `commit_config_change` pushes a change to grids already open. Defaults `true` — including for a config.json written before the key existed — because the grid reflowed unconditionally before the flag had a consumer |
 | `index_strategy` | `String` | `"active_and_switch"` | Which repos get a BM25 content index: `"active_and_switch"` (the boot repo plus every repo switched to), `"active_only"` (boot repo only), `"all_sequential"`, `"disabled"`. Read from the in-memory config on every switch and every `RepoChanged` — never `load_app_config()`, which takes a cross-process file lock |
-| `index_memory_budget_mb` | `usize` | `1024` | Total heap the resident content indices may hold before `content_index::enforce_memory_budget` drops the least recently used. An ordinary repo indexes to 60–100 MB, so 1 GB holds 10–15 resident and only evicts for an outlier. An evicted index is snapshotted to `<data_dir>/content-index/` and reloaded on return, so eviction costs a stat walk rather than a rebuild. Configurable rather than a constant because the Rust backend does not hot-reload |
+| `index_memory_budget_mb` | `usize` | `256` | Approximate memory budget in MiB for resident content indices. The least recently used indices are evicted when the budget is exceeded. An evicted index is saved to `<data_dir>/content-index/` and reloaded and checked against disk on its next use. A single oversized index can exceed the budget. Existing saved values are not changed. |
 
 On macOS, the desktop process always opts out of App Nap, even while hidden and
 with no busy agent. This process-lifetime activity permits idle system sleep;
@@ -578,7 +592,6 @@ selectors, an agent launched by a named instance can connect its bridge to the
 default instance. Installation repairs incomplete allowlists even when the bridge
 command already matches. Existing variables and local-source object entries are
 preserved; Grok does not receive the Codex-only allowlist.
-
 
 **A target is written only when it is installed.** The writer creates every
 missing parent directory, so an unconditional pass used to create `~/.cursor/`,
@@ -786,6 +799,25 @@ Per-repository fields:
 | `dev_server_url` | `Option<String>` | `None` | URL opened by Design Mode for this repository; when unset, opens `about:blank`. Stored locally and excluded from `.tuic.json` and repository defaults |
 
 **Commands:** `load_repo_settings()`, `save_repo_settings(base, config)`, `check_has_custom_settings(path)`
+
+### Story Backends (`story-backends.json`, `story-connectors.json`)
+
+Optional machine-owned settings. Unbound projects use automatic native/Wiz
+selection. `story-backends.json` holds explicit per-project overrides:
+`{"backend":"native"}`, `{"backend":"wiz-stories"}`, or a legacy
+`{"command":"node","args":["/abs/adapter.mjs"]}`. Invalid explicit settings
+never fall back to automatic selection. Repository files cannot name commands.
+
+The Stories header's explicit approval action writes `story-connectors.json`.
+It is a JSON object keyed by canonical installation path. Each approval records
+`installation` (the same canonical path), `script` (the canonical connector entry),
+`digest` (SHA-256 of the entry bytes), and `version` (the installed plugin version).
+Approving one installation preserves the other approved installations. Approval
+is global to this TUIC instance, not per repository. Installation updates need
+renewed approval. Passive registry discovery is not approval. Connector approval
+belongs to the machine hosting the project, including remote daemons.
+See [Story backend protocol](story-backend-protocol.md) for detection, trust,
+status fields and the open-plan/execution guards.
 
 ### Repository Defaults (`repo-defaults.json`)
 
@@ -1048,11 +1080,13 @@ The `ego` entry supports optional `ego_mode` (`plan|default|edits|auto|yolo`) an
 
 `agents.json` stores `launch_instructions: string` as user additions at global and agent level. The composer emits enabled modules, global additions, then agent additions. Empty additions add nothing. `launch_modules` maps stable module IDs (`markers`, `working_with_user`, `waiting`, `git_worktree`, `process_safety`, `children`) to booleans; missing means enabled. Effective flags are global AND per-agent. `launch_instructions_disabled` suppresses modules and additions at either scope. `launch_additions_migrated` records the one-time conversion of legacy replacements: exact marker-default copies are removed, real custom text is retained, and empty replacements become explicit off. Migration runs inside the existing agents-file update lock. Root and child launch files are separate; only child files contain Children. See the user guide, "Launch Instructions". When mdkb is on PATH or in a known install directory (stat-only check, cached per process, reset by `write_files` and by `install_mdkb`/`uninstall_mdkb`), `launch_instructions::MDKB_RULE` is emitted after the modules and before additions.
 
+On Unix, the shared PATH shim consumes `TUIC_CLAUDE_SETTINGS` and adds Claude hook settings before instruction injection. Named commands, `env` prefixes and script wrappers use the same path; absolute-path manual commands bypass it. The variable is removed before agent exec so tool subprocesses do not inherit the implicit hook policy. Explicit settings, bare mode and administrative commands keep precedence.
+
 Each agent entry may contain `native_status_signals: boolean`. For Claude and Codex, an absent value means `true`; `false` disables launch argument injection. `hook_instrumentation` controls only explicit global installation and remains off when absent.
 
 Each agent entry may also contain `prevent_alt_screen: boolean`. An absent value means `true`. When true, TUIC uses a verified control where one exists: Claude's environment variable, Codex and Grok's `--no-alt-screen`, or OpenCode's `--mini`. A false value suppresses TUIC's screen control for that agent on new structured and shell launches. An agent without a verified control remains unaffected.
 
-Claude and Codex entries may contain `skip_trust_dialog: boolean`. An absent value means `true`. The setting applies only to MCP `agent spawn`: Codex receives a launch-only project trust override for the canonical working directory, including through custom launchers that forward arguments, while Claude's first exact startup picker is answered through the managed PTY. A false value leaves the CLI's normal trust question in place. TUICommander does not modify either CLI's saved trust file.
+Claude, Codex and ego entries may contain `skip_trust_dialog: boolean`. An absent value means `true`. The setting applies only to MCP `agent spawn`: Codex receives a launch-only project trust override for the canonical working directory, including through custom launchers that forward arguments, while Claude's first exact startup picker is answered through the managed PTY. An ego child receives `--trust-workspace`, which ego remembers for that workspace. A false value leaves the CLI's normal trust question in place. TUICommander does not modify either CLI's saved trust file.
 
 **Type:** `AgentsConfig`
 
@@ -1174,7 +1208,7 @@ config.json written before the field existed — see
 | `notifications` | `NotificationConfig` | `NotificationConfig::default()` |
 | `agent_settings` | `AgentSettings` | Default for one entry of `AgentsConfig.agents` — there is no single default for the map itself |
 | `repo_defaults` | `RepoDefaultsConfig` | `RepoDefaultsConfig::default()` — what a `repo-defaults.json`-less install loads |
-| `agents` | `AgentsConfig` | `AgentsConfig::default()` — `AgentsConfig`-level fields such as `headless_agent` |
+| `agents` | `AgentsConfig` | `AgentsConfig::default()` — `AgentsConfig`-level fields such as `headless_agent` and `workflow_profile` (run configuration name for workflow Agent steps) |
 | `github_accounts` | `GitHubAccountRegistry` | `GitHubAccountRegistry::default()` — `{ "accounts": [] }`, the same shape as `github_accounts.json`; Settings shows the "Add another GitHub account" entry point in basic mode only when accounts exist |
 | `launch_instructions` | `LaunchInstructionsDefaults` | `{ default_text, required_markers, effective_text }`: the composed global text, marker tokens recognized by TUIC, and per-agent effective text; `{VER}` is resolved to the running version |
 | `dictation` | `DictationConfig` | Desktop builds only — absent under `--no-default-features` (`tuic-remote`), where `mod dictation` does not compile and the route is not registered |
@@ -1207,7 +1241,6 @@ watcher errors and overflow force reconciliation. A full metadata check
 also runs after 30 minutes, or on every refresh if watching is unavailable.
 Watcher delivery is asynchronous, so edits become visible after their event
 arrives. The persisted parse-cache format does not change.
-
 
 **Module:** `src-tauri/src/claude_usage.rs`
 
@@ -1614,12 +1647,15 @@ from request JSON. Remote MCP mutations are refused; local MCP still requires th
 tool to be enabled. HTTP retains local-or-authenticated access, and native IPC
 retains OS-user trust. A peer registration grants no settings authority.
 
-Ordinary settings commit immediately. The host-owned policy requires approval for
+Ordinary settings commit immediately. The host-owned policy requires approval, for
+an agent-written change that adds authority (never for narrowing, disabling, lowering a
+timeout or a no-op, nor for the owner's own Settings window, `Caller::owner_ui`), for
 remote listener/auth/TLS/relay settings, the trusted Ego executable, custom launch
 executables/arguments/enablement, tunnel port/auto-connect, and upstream stdio
 execution selection (command, arguments, environment, directory, transport and
-enablement). Push/VAPID, outbound HTTP destinations and local MCP controls do not
-inherit confirmation from the broader catalogue annotations.
+enablement), and owner-added push providers (`services.push.added_providers`,
+#2668-aa16). Other Push/VAPID settings, outbound HTTP destinations and local MCP
+controls do not inherit confirmation from the broader catalogue annotations.
 
 Owners validate a proposed patch without writing. A protected edit returns
 `confirmation_required` and an opaque `proposalId`; `ui confirm` displays a
@@ -1743,6 +1779,14 @@ before substitution (TAB and LF remain). Without the file, the brief remains
 fail the action. Delivery still caps the brief at 12,000 characters and encloses
 it in the untrusted-content wrapper.
 
+### Repository child contract
+
+Place `.tuic-child-contract.md` in the working directory of an orchestrating
+agent, normally its repository root. Every managed child that agent spawns
+receives the rendered file under `## Child Contract`, before its task. The
+reader and `{{token}}` rules are those of the start-work brief above. See
+[MCP & HTTP Server](mcp-http.md#inter-agent-messaging) for the tokens.
+
 ### One-time beta update-channel enrollment
 
 On beta builds, loading an older `config.json` without the internal
@@ -1776,6 +1820,8 @@ visible; it does not resume every inactive tab.
 `mcp_work_item_writes` in `config.json` defaults to `false`, including when the field is absent in an older file. It permits only the `repo work_item_act` comment and transition operations. Reads need no opt-in. Use the existing configuration save surface to apply it live, or edit the file with the app stopped and restart. Supplying a flag in a work-item request cannot enable writes.
 
 `mcp_call_audit_enabled` in `config.json` gates recording and display of the MCP call audit. Default `true` when built with debug assertions, `false` otherwise, including when the field is absent from an older file. Live: no restart.
+
+`mcp_usage_rollup_enabled` in `config.json` gates the persistent daily MCP usage counts (#2808-5998). Default `true` in every build, including when the field is absent. Live: no restart. Data: `mcp_usage.sqlite3`, 90 days.
 
 ### Background tray and menu-bar icon
 
@@ -1832,14 +1878,13 @@ Tasks notice policy and per-item follow/comment baselines are JSON values in `ui
 
 ## MCP settings authority (#1787-4778)
 
-`settings_mcp_enabled` defaults to false, independent of the legacy config tool state. Only trusted Settings UI enables it; it is excluded from the writable settings catalogue. Native tool defaults disable settings and debug. App/owner adapters keep weak host references so the persistent facade cannot retain its AppState after shutdown.
+`settings_mcp_enabled` defaults to false, independent of the legacy config tool state. Only trusted Settings UI enables it; it is excluded from the writable settings catalogue. It is the one switch for the MCP `settings` tool: `settings` is not a capability denial (#2655-a6d5). On load, a saved `settings` denial, or a document with no saved capability policy (the old default denied settings), turns the switch off and removes the denial; a save that writes a `settings` denial does the same. No legacy combination widens access. Diagnostics keeps its own denial and stays denied by default. App/owner adapters keep weak host references so the persistent facade cannot retain its AppState after shutdown.
 
 ## Explicit settings choice discovery (#1908-c327)
 
 The internal settings owner service accepts `describe` and `refresh` with an explicit target, store and 1–128 dynamic field paths. Describe reads cached choices only; it never enumerates hardware or refreshes a network catalogue. Refresh calls the registered owner. Each choice result includes its resolver, availability and values: `null` means unavailable, while `[]` means successful discovery with no options. Cache entries are scoped to the owner target and configuration revision. A failed refresh replaces stale success with unavailable status.
 
 Notification output choices use the same bounded enumeration and `{name, is_default}` objects as the existing UI command. Discovery never saves notification configuration. This internal contract does not publish the later settings MCP/HTTP cutover.
-
 
 Agent model settings support typed model edits without starting a CLI. Explicit
 choice refresh probes only the addressed Claude run config with `--help`, using
@@ -1965,52 +2010,6 @@ mdkb's `external.list`, `external.upsert` and `external.delete` methods through
 is optional and read-only; neither RPC failures nor daemon absence roll back
 story mutations. No story mirror or new user configuration is created.
 
-
-### Issue triage configuration and ledger (#2324-424d)
-
-The optional `event_intake.triage` array defaults to empty. Each entry contains
-`repository`, `definition_id`, `policy_version`, `read_only_attested` and
-`rejection_label`. The repository must be a unique member of the intake allowlist.
-The separate triage definition uses `workspace.mode=existing` and no precheck; its
-cron admission is suppressed. Attestation is required, but does not restrict host
-git/gh credentials, environment, filesystem or MCP authority. Enforced ego
-isolation is future 2450-6845. See the [operator contract](../user-guide/automations.md#optional-triage-before-labelled-intake).
-
-Run snapshots add `trigger.kind=triage` with repository, issue_number and
-policy_version, plus optional `triage_decision={outcome,reason}`. The event key's
-`@triage` namespace is independent of the selected definition id. Triage records
-are exempt from normal history pruning so admission does not lose their decisions.
-Existing delivery rows with channel `github` and transitions `triage-comment` and
-`triage-label` record attempted/confirmed/unknown publication separately. An
-unknown send requires operator reconciliation and is never automatically replayed.
-This extends version-1 snapshot JSON; downgrading to a build without triage support
-after saving triage configuration or runs is unsupported.
-
-### Event workflow selection
-
-`automations.json` can opt in with `event_intake.workflow` containing
-`definition_id` and positive `definition_revision`. Omission or null preserves
-legacy event behavior. Event admission pins this selection in `AutomationRun.event_workflow`;
-`workflow_binding` records the native `run_id` and `story_id`. Both fields default
-to null for earlier snapshots. The native workflow uses the prepared isolated
-workspace and its own role profiles. Publication reloads its authoritative
-review/check receipts and verifies GitHub's pushed branch SHA. Publication success
-or refusal updates the completed event's durable `outcome`, not its execution status.
-See [reviewed issue workflows](../user-guide/automations.md#opt-in-reviewed-issue-workflows).
-
-### Review-only PR subscription
-
-`automations.json` has a default-empty `pull_request_reviews` object with
-`repositories: string[]` (`owner/name`) and `definition_id: string`. It is separate
-from labelled-issue `event_intake`. A nonempty allowlist reserves that definition
-for review-only ACP execution: scheduled and manual generic-agent dispatch are
-refused, and the same definition cannot also serve issue intake. Review runs use
-the poller's registered checkout. No additional endpoint or client-side scheduler
-is needed. The existing run SQLite store holds per-repository/PR latest observed
-heads, permanent head deduplication keys, publication claims and outcomes. A
-pending PR-review publication claim recovers to unknown, never to a retriable
-write. See [Incoming PR reviews](../user-guide/automations.md#incoming-pr-reviews-review-only).
-
 ## Archived worktree retention
 
 `archive_retention_days` is a `u32` in global repo defaults (default 0, Off), nullable in repository overrides and optional in `.tuic.json`. Explicit 0 overrides an enabled default. The backend resolves the same three-level precedence as the rendered settings. A positive value permits eligible archived checkout deletion during the existing repository refresh cleanup; it does not install a timer. See [Worktrees](../user-guide/worktrees.md#archived-worktree-retention) for age and recovery rules.
@@ -2021,3 +2020,36 @@ The default desktop capability grants `notification:allow-is-permission-granted`
 for the main, floating and panel windows. The notification plugin's injected
 initialization script probes this permission before application code runs.
 Request-permission and notification-delivery grants do not authorize that probe.
+
+## Grok hook lifecycle coverage
+
+The TUIC-owned Grok hooks register SessionStart, UserPromptSubmit, PreToolUse, permission_prompt Notification, PostToolUse, PostToolUseFailure, PermissionDenied, Stop, StopCancelled, StopFailure and SessionEnd. Installation and removal preserve sibling user hook files. Hooks run only with TUIC_SESSION and emit metadata to the terminal; no new application configuration keys are required.
+
+The agent silence rule (every agent session; parent mail and nudge for managed PTYs only) reads `TUIC_AGENT_STALL_MINUTES` from the daemon environment (default 30 awake minutes; 0 disables). Detached CLI commands read `TUIC_BG_TIMEOUT_SECONDS` (default 3600; accepted range 1–86400) before launch. These environment settings do not change saved agent profiles.
+
+### Backend continuity and approval identity
+
+A project without Wiz markers reports **No Wiz project markers**. For a marked
+project, automatic detection retains native while native plans are open or pinned
+native executions are active. The header explains **Native retained while …**;
+this is not fallback after a failed Wiz connector. Expand backend details to choose
+**Use TUIC native** or **Use automatic selection**. Explicit Wiz cannot replace
+open native work, and selection changes cannot interrupt active executions.
+Registry scopes resolve local > project > user for the canonical owning project;
+remove duplicate winning-scope installations in the plugin manager if requested.
+Approval binds the displayed installation and entry/version identity. Dependencies
+are not fingerprinted. A changed entry/version between display and click requires
+refresh and a new approval. Active runs pin backend provenance in their existing
+snapshot: adapter identity, canonical approved installation and entry, and the
+approved entry/version generation. The Node runtime path is not part of this
+persistent identity, so a runtime path upgrade alone does not change the backend.
+Runtime trust checks still reject repository-owned Node executables; the process
+cache restarts when its command or runtime changes.
+
+Active story runs admitted before pins existed resolve by the pre-pin rule: a
+legacy command binding, otherwise native. Overrides cannot be written while a run
+is active, so the current settings still answer it; an unpinned run on a project
+that has a backend override fails closed. Explicit cancellation remains available
+without reading the story backend. TUIC never cancels, restarts or reassigns runs
+automatically. No native or external records are migrated. Discovery overhead has
+not been measured; no cross-call discovery cache is used.

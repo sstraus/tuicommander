@@ -14,6 +14,12 @@ pub(crate) async fn create_pty(
     config: PtyConfig,
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
+    if !config.restored {
+        crate::agent_capabilities::save_root(
+            &state.data_dir,
+            config.tuic_session.as_deref().unwrap_or(&session_id),
+        )?;
+    }
 
     let shell = resolve_shell(config.shell.clone());
 
@@ -187,6 +193,12 @@ pub(crate) async fn create_pty_with_worktree(
 
     // Wrap PTY creation so we can clean up the worktree on failure.
     let session_id = Uuid::new_v4().to_string();
+    if !pty_config.restored {
+        crate::agent_capabilities::save_root(
+            &state.data_dir,
+            pty_config.tuic_session.as_deref().unwrap_or(&session_id),
+        )?;
+    }
     let rows = pty_config.rows.max(24);
     let cols = pty_config.cols.max(80);
     let shell = resolve_shell(pty_config.shell.clone());
@@ -688,7 +700,20 @@ pub(crate) fn enqueue_agent_command(
     text: String,
     idempotency_key: Option<String>,
     expected_draft: Option<String>,
+    automatic_completion_origin: Option<String>,
 ) -> Result<EnqueuedCommand, String> {
+    if let Some(origin) = automatic_completion_origin {
+        if expected_draft.is_some() {
+            return Err("Automatic completion cannot own a user draft".into());
+        }
+        return enqueue_automatic_completion(
+            &state,
+            &session_id,
+            &text,
+            idempotency_key.as_deref(),
+            &origin,
+        );
+    }
     if let Some(draft) = expected_draft {
         return enqueue_owned_draft(&state, &session_id, &text, &draft);
     }
@@ -799,8 +824,8 @@ pub(crate) fn subscribe_terminal_grid(
 /// Report how many grid frames the frontend has received in total, which opens
 /// the delivery gate once it has caught up with what was sent.
 ///
-/// The ticker (16 ms interval) is the sole normal damage-driven frame sender; this
-/// path only releases the gate. That caps the frame rate at ~60 Hz and prevents
+/// The ticker (16 ms pacing while active) is the sole normal damage-driven
+/// frame sender; this path only releases the gate. That caps the rate at ~60 Hz and prevents
 /// the tight ack→flush→ack loop that saturated the main thread.
 ///
 /// `received` is a total, not a delta, so a duplicated or reordered ack is

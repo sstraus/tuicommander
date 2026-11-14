@@ -22,6 +22,7 @@ fn configured_ego_launch_is_direct_and_has_exact_argv() {
             executable: executable.clone(),
             profile: String::new(),
             master_prompt: String::new(),
+            ai_chat: false,
         },
         &root,
     )
@@ -42,6 +43,7 @@ fn selected_user_profile_is_one_launch_argument() {
             executable: acp_support::absolute("/opt/ego/bin/ego"),
             profile: "coordinator".to_string(),
             master_prompt: String::new(),
+            ai_chat: false,
         },
         &root,
     )
@@ -73,6 +75,7 @@ fn ambiguous_profile_names_are_refused_before_launch() {
                 executable: acp_support::absolute("/opt/ego/bin/ego"),
                 profile: profile.to_string(),
                 master_prompt: String::new(),
+                ai_chat: false,
             },
             &acp_support::absolute("/private/tmp/worktree"),
         )
@@ -86,6 +89,7 @@ fn ambiguous_profile_names_are_refused_before_launch() {
                 executable: acp_support::absolute("/opt/ego/bin/ego"),
                 profile: too_long,
                 master_prompt: String::new(),
+                ai_chat: false,
             },
             &acp_support::absolute("/private/tmp/worktree"),
         )
@@ -172,7 +176,11 @@ fn initialize_is_v1_and_advertises_exact_client_capabilities() {
             // lets a person answer it. Ego reads exactly this key and settles
             // its questions `Unavailable` without it, so the claim here and the
             // seat in the actor have to be made and unmade together.
-            "elicitation": {"form": {}}
+            "elicitation": {"form": {}},
+            // The opt-ins to ego's child activity frames (ego story 772-d55a)
+            // and compacted updates (#2815). Ego sends each only to a client
+            // that names this exact version.
+            "_meta": {"ego": {"childActivity": {"version": 1}, "compacted": {"version": 1}}}
         })
     );
 }

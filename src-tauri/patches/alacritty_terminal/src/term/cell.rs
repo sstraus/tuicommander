@@ -268,6 +268,22 @@ impl GridCell for Cell {
             && self.extra.as_ref().map(|extra| extra.zerowidth.is_empty()) != Some(false)
     }
 
+    /// Like [`Self::is_empty`], but any foreground or background colour is allowed:
+    /// a space shows only its background, so padding a row to the old width is blank.
+    #[inline]
+    fn is_blank(&self) -> bool {
+        (self.c == ' ' || self.c == '\t')
+            && !self.flags.intersects(
+                Flags::INVERSE
+                    | Flags::ALL_UNDERLINES
+                    | Flags::STRIKEOUT
+                    | Flags::WRAPLINE
+                    | Flags::WIDE_CHAR_SPACER
+                    | Flags::LEADING_WIDE_CHAR_SPACER,
+            )
+            && self.extra.as_ref().map(|extra| extra.zerowidth.is_empty()) != Some(false)
+    }
+
     #[inline]
     fn flags(&self) -> &Flags {
         &self.flags

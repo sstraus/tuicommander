@@ -340,6 +340,7 @@ const DERIVED_BRANCH_FIELDS = [
 	"deletions",
 	"isMerged",
 	"lifecycleStatus",
+	"cleanup",
 	"lastActiveTerminal",
 	"lastCommitTs",
 	// Persisted, but session state all the same: it suppresses auto-spawn after the
@@ -391,6 +392,7 @@ function withLiveBranchFields(fresh: RepositoryState, live: RepositoryState | un
 			deletions: liveBranch.deletions,
 			isMerged: liveBranch.isMerged,
 			lifecycleStatus: liveBranch.lifecycleStatus,
+			cleanup: liveBranch.cleanup,
 			lastActiveTerminal: liveBranch.lastActiveTerminal,
 			lastCommitTs: liveBranch.lastCommitTs,
 			ciAutoHeal:
@@ -409,15 +411,28 @@ function withLiveBranchFields(fresh: RepositoryState, live: RepositoryState | un
 	return { ...incoming, workspaces };
 }
 
+/** Branch fields that only mirror `git`: recomputed on every refresh, never an edit. */
+const GIT_STAT_FIELDS = ["additions", "deletions", "isMerged", "lastCommitTs", "lifecycleStatus", "cleanup"] as const;
+
+function withoutGitStats(record: RepositoryState): unknown {
+	const view = cloneJson(record);
+	for (const branch of Object.values(view.workspaces ?? {})) {
+		for (const field of GIT_STAT_FIELDS) delete (branch as unknown as Record<string, unknown>)[field];
+	}
+	return view;
+}
+
 function keyedMutations<T extends RepositoryState | RepoGroup>(
 	before: Record<string, T>,
 	after: Record<string, T>,
+	/** Whether two different records still say the same thing; derived stats alone are no edit. */
+	sameIntent?: (previous: T | null, next: T | null) => boolean,
 ): KeyedRepositoryMutation[] {
 	const mutations: KeyedRepositoryMutation[] = [];
 	for (const id of new Set([...Object.keys(before), ...Object.keys(after)])) {
 		const previous = before[id] ?? null;
 		const next = after[id] ?? null;
-		if (!jsonEqual(previous, next)) {
+		if (!jsonEqual(previous, next) && !sameIntent?.(previous, next)) {
 			mutations.push({ id, before: previous, after: next });
 		}
 	}
@@ -427,7 +442,15 @@ function keyedMutations<T extends RepositoryState | RepoGroup>(
 function repositoryMutationBatch(before: RepositorySnapshot, after: RepositorySnapshot): RepositoryMutationBatch {
 	const mutation: RepositoryMutationBatch = {
 		mutationVersion: 1,
-		repos: keyedMutations(before.repos, after.repos),
+		// A diffstat tick moves derived fields every few seconds. Saving it rewrote the whole
+		// repositories.json (310 KB, ~5 GB a day); a stat is recomputed on load, so it rides
+		// along with the next real edit instead.
+		repos: keyedMutations(
+			before.repos,
+			after.repos,
+			(previous, next) =>
+				previous !== null && next !== null && jsonEqual(withoutGitStats(previous), withoutGitStats(next)),
+		),
 		groups: keyedMutations(before.groups, after.groups),
 	};
 	if (!jsonEqual(before.repoOrder, after.repoOrder)) {

@@ -133,8 +133,12 @@ async fn a_permission_is_seated_answered_and_the_answer_reaches_the_agent() {
         matches!(event, AcpClientEvent::TurnSettled { .. })
     })
     .await;
+    // The activity change for the open question (#2637-c6d3) may still be
+    // ahead of the settlement; the settlement is the first thing that is not one.
     assert!(matches!(
-        rest.first().map(|event| &event.event),
+        rest.iter()
+            .map(|event| &event.event)
+            .find(|event| !matches!(event, AcpClientEvent::ActivityChanged { .. })),
         Some(AcpClientEvent::PermissionSettled { .. })
     ));
     assert_eq!(rest.iter().filter_map(chunk).collect::<Vec<_>>(), ["after"]);

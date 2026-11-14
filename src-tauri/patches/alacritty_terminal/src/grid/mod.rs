@@ -24,6 +24,13 @@ pub trait GridCell: Sized {
     /// Check if the cell contains any content.
     fn is_empty(&self) -> bool;
 
+    /// Check if the cell draws nothing but its background colour.
+    ///
+    /// Reflow drops such cells at the end of a row instead of wrapping them.
+    fn is_blank(&self) -> bool {
+        self.is_empty()
+    }
+
     /// Perform an opinionated cell reset based on a template cell.
     fn reset(&mut self, template: &Self);
 

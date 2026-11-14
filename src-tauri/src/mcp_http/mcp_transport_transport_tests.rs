@@ -77,6 +77,7 @@ async fn post_test_tool_call(
     let response = mcp_post(
         State(state),
         ConnectInfo(loopback_addr()),
+        None,
         headers,
         Json(serde_json::json!({
             "jsonrpc": "2.0",
@@ -104,6 +105,7 @@ async fn post_tool_call_with_headers(
     let response = mcp_post(
         State(state),
         ConnectInfo(loopback_addr()),
+        None,
         headers,
         Json(serde_json::json!({
             "jsonrpc": "2.0",
@@ -177,6 +179,7 @@ async fn bridge_tool_result_carries_result_type_when_only_meta_names_the_revisio
     let response = mcp_post(
         State(test_state()),
         ConnectInfo(loopback_addr()),
+        None,
         HeaderMap::new(),
         Json(serde_json::json!({
             "jsonrpc": "2.0",
@@ -453,6 +456,7 @@ async fn mcp_post_collapsed_native_call_keeps_compact_text_envelope() {
     let response = mcp_post(
         State(state),
         ConnectInfo(loopback_addr()),
+        None,
         headers,
         Json(serde_json::json!({
             "jsonrpc": "2.0",
@@ -542,8 +546,9 @@ fn tool_call_text(body: &serde_json::Value) -> String {
 /// from errors), or documenting obsolete actor restrictions.
 #[test]
 fn story_tool_publishes_its_input_schema_and_tracking_only_actor_contract() {
-    let definition = native_tool_named("workflow");
-    let input = &definition["inputSchema"]["properties"]["input"];
+    let definition = native_tool_named("story");
+    // The story tool's root schema is StoryAction; StoryCommand resolves through root `$defs`.
+    let input = &definition["inputSchema"];
     assert!(
         input.to_string().contains("create_story")
             && input.to_string().contains("remove_dependency")
@@ -1577,6 +1582,7 @@ async fn initialize_result(state: &Arc<AppState>, params: serde_json::Value) -> 
     let response = mcp_post(
         State(Arc::clone(state)),
         ConnectInfo("127.0.0.1:1".parse().unwrap()),
+        None,
         HeaderMap::new(),
         Json(serde_json::json!({
             "jsonrpc": "2.0",
@@ -1761,6 +1767,7 @@ async fn proxied_initialize_reuses_eager_live_session_and_keeps_spawn_ready() {
     let response = mcp_post(
         State(Arc::clone(&state)),
         ConnectInfo("127.0.0.1:1".parse().unwrap()),
+        None,
         headers,
         Json(serde_json::json!({
             "jsonrpc": "2.0",
@@ -2093,7 +2100,7 @@ async fn agent_task_actions_keep_headerless_ownership_and_remote_cancel_guard() 
     .await;
     assert_eq!(
         refused["error"],
-        "Task cancellation is restricted to localhost connections"
+        "Task cancellation is restricted to localhost or authenticated connections"
     );
     assert_eq!(
         state.tasks.get(&id).unwrap().status,
@@ -2587,7 +2594,10 @@ async fn agent_spawn_sizes_the_vt_screen_to_the_pty() {
     let state = test_state();
     let spawned = handle_mcp_tool_call_with_context(
         &state,
-        "127.0.0.1:0".parse().unwrap(),
+        "127.0.0.1:0"
+            .parse::<std::net::SocketAddr>()
+            .unwrap()
+            .into(),
         "agent",
         &serde_json::json!({
             "action": "spawn",
@@ -2847,163 +2857,23 @@ fn tool_names(tools: &serde_json::Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-#[cfg(unix)]
-#[tokio::test]
-async fn mcp_run_history_matches_owner_event_cursor() {
-    // Catches: MCP omitting read actions, losing the event cursor, or using a foreign project.
-    let config = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-    let _guard = crate::config::set_config_dir_override(config.path().into());
-    let project = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-    let path = project.path().to_string_lossy().to_string();
-    let state = test_state();
-    state
-        .mcp
-        .to_session
-        .insert("run-mcp".into(), TEST_UUID_A.into());
-    insert_managed_test_session(&state, "pty-run", &path);
-    state.bind_live_pty(TEST_UUID_A, "pty-run");
-    crate::repo_watcher::start_watching(&path, &state).unwrap();
-    let plan = crate::stories::StoryStore::open()
-        .unwrap()
-        .create_plan(crate::stories::NewPlan {
-            project: path.clone(),
-            title: "Run history".into(),
-            source: "plan.md".into(),
-        })
-        .unwrap();
-    let definition = crate::workflows::WorkflowStore::open()
-        .unwrap()
-        .seed_templates(&path)
-        .unwrap()
-        .into_iter()
-        .find(|item| item.kind == crate::workflows::WorkflowKind::Plan)
-        .unwrap();
-    let store = crate::workflows::RunStore::open().unwrap();
-    let run = store
-        .start_plan(&path, &plan.id, &definition.id, 1, Default::default())
-        .unwrap();
-    let story = crate::stories::StoryStore::open()
-        .unwrap()
-        .create_story(crate::stories::NewStory {
-            story_type: None,
-            plan_id: plan.id.clone(),
-            title: "Question branch".into(),
-            criteria: vec!["Answered".into()],
-            priority: 1,
-            origin: crate::stories::StoryOrigin::Native,
-            file_scope: vec![],
-        })
-        .unwrap();
-    let started = store
-        .command(
-            &run.id,
-            "attempt",
-            crate::workflows::RunCommand::StartAttempt {
-                story_id: story.id,
-                node_id: "implement".into(),
-            },
-        )
-        .unwrap();
-    store
-        .command(
-            &run.id,
-            "ask",
-            crate::workflows::RunCommand::ReportAttempt {
-                attempt_id: started.snapshot.attempts[0].id.clone(),
-                generation: 1,
-                outcome: crate::workflows::AttemptOutcome::NeedsInput,
-            },
-        )
-        .unwrap();
-    store
-        .command(&run.id, "pause", crate::workflows::RunCommand::Pause)
-        .unwrap();
-    assert_eq!(store.question_inbox(&path).unwrap().unanswered_count, 1);
-    for input in [
-        serde_json::json!({"action":"question_inbox"}),
-        serde_json::json!({"action":"get","run_id":run.id}),
-        serde_json::json!({"action":"list_plan_runs","plan_id":plan.id,"limit":20}),
-        serde_json::json!({"action":"events","run_id":run.id,"after_sequence":1,"limit":1}),
-    ] {
-        let expected = to_json_or_error(crate::workflows::run_action(
-            &path,
-            serde_json::from_value(input.clone()).unwrap(),
-        ));
-        let actual = handle_mcp_tool_call(
-            &state,
-            loopback_addr(),
-            "workflow",
-            &serde_json::json!({"action":"run","input":input}),
-            Some("run-mcp"),
-        )
-        .await;
-        assert_eq!(actual, expected);
-    }
-    let result = handle_workflow_run(
-        &state,
-        &serde_json::json!({"input":{"action":"get","run_id":run.id}}),
-        None,
-    );
-    assert_eq!(
-        result["error"],
-        "workflow_run requires a bound live managed session"
-    );
-    let foreign = crate::stories::StoryStore::open()
-        .unwrap()
-        .create_plan(crate::stories::NewPlan {
-            project: "/another/project".into(),
-            title: "Foreign".into(),
-            source: "plan.md".into(),
-        })
-        .unwrap();
-    let result = handle_workflow_run(
-        &state,
-        &serde_json::json!({"input":{"action":"list_plan_runs","plan_id":foreign.id,"limit":20}}),
-        Some("run-mcp"),
-    );
-    assert!(
-        result
-            .to_string()
-            .contains("plan does not belong to project")
-    );
-}
-
+// Catches: capability filtering exposes a denied workflow action.
 #[test]
-fn workflow_run_schema_exposes_typed_starts_and_recovery_without_internal_receipts() {
-    // Catches: schema-less starts/recovery, unresolved embedded refs, or internal commands advertised.
-    let definition = native_tool_named("workflow");
-    let schema = &definition["inputSchema"]["properties"]["input"];
-    let encoded = schema.to_string();
-    for required in [
-        "question_inbox",
-        "answer_question",
-        "subject_digest",
-        "expected_revision",
-        "start_graph",
-        "request_id",
-        "expected_revision",
-        "after_sequence",
-        "resume_graph",
-        "activation_id",
-        "resolution",
-    ] {
-        assert!(encoded.contains(required), "missing {required}: {schema}");
-    }
+fn denied_workflow_action_is_not_advertised() {
+    let state = test_state();
+    state.config.write().mcp_capabilities =
+        crate::mcp_capabilities::McpCapabilities::from_legacy(&["workflow_run".into()]);
+    let workflow = filtered_native_tools(&state)
+        .into_iter()
+        .find(|tool| tool["name"] == "workflow")
+        .unwrap();
     assert!(
-        !encoded.contains("$ref"),
-        "embedded schema must inline subtypes"
+        !workflow["inputSchema"]["properties"]["action"]["enum"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|action| action == "run")
     );
-    for internal in [
-        "report_bound_attempt",
-        "bind_agent",
-        "start_graph_agent",
-        "expire_deadline",
-    ] {
-        assert!(
-            !encoded.contains(internal),
-            "internal command {internal} is advertised"
-        );
-    }
 }
 
 /// Which name gets the collapsed surface, and — the load-bearing half —
@@ -3059,6 +2929,7 @@ async fn a_bridge_session_reused_by_ego_still_lists_the_collapsed_surface() {
     let initialize = mcp_post(
         State(Arc::clone(&state)),
         ConnectInfo(loopback_addr()),
+        None,
         HeaderMap::new(),
         Json(serde_json::json!({
             "jsonrpc": "2.0",
@@ -3091,6 +2962,7 @@ async fn a_bridge_session_reused_by_ego_still_lists_the_collapsed_surface() {
         let response = mcp_post(
             State(Arc::clone(state)),
             ConnectInfo(loopback_addr()),
+            None,
             headers,
             Json(serde_json::json!({
                 "jsonrpc": "2.0",
@@ -3358,6 +3230,7 @@ async fn server_discover_result(
     let response = mcp_post(
         State(state.clone()),
         ConnectInfo("127.0.0.1:0".parse().unwrap()),
+        None,
         HeaderMap::new(),
         Json(request),
     )
@@ -3438,6 +3311,7 @@ async fn tools_list_result(
     let response = mcp_post(
         State(state.clone()),
         ConnectInfo("127.0.0.1:0".parse().unwrap()),
+        None,
         headers,
         Json(request),
     )
@@ -3604,6 +3478,7 @@ async fn stateless_tools_list_collapses_for_a_meta_tool_client() {
             let response = mcp_post(
                 State(state),
                 ConnectInfo("127.0.0.1:0".parse().unwrap()),
+                None,
                 HeaderMap::new(),
                 Json(request),
             )
@@ -3658,6 +3533,7 @@ async fn ego_discovers_the_collapsed_catalogue() {
     let response = mcp_post(
         State(state),
         ConnectInfo("127.0.0.1:0".parse().unwrap()),
+        None,
         HeaderMap::new(),
         Json(serde_json::json!({
             "jsonrpc": "2.0",
@@ -3699,6 +3575,7 @@ async fn an_unknown_method_is_still_method_not_found() {
     let response = mcp_post(
         State(test_state()),
         ConnectInfo("127.0.0.1:0".parse().unwrap()),
+        None,
         HeaderMap::new(),
         Json(serde_json::json!({
             "jsonrpc": "2.0",
@@ -4531,7 +4408,26 @@ async fn mcp_codex_spawn_carries_launch_instructions() {
 }
 
 #[cfg(unix)]
-const MOCK_CODEX_ARGV_SCRIPT: &str = "#!/bin/sh\nprintf '%s\\0' \"$@\" > \"$ARGV_OUTPUT.tmp\" && mv \"$ARGV_OUTPUT.tmp\" \"$ARGV_OUTPUT\"\n";
+const MOCK_CODEX_ARGV_SCRIPT: &str = "#!/bin/sh\n[ -n \"$ARGV_OUTPUT\" ] || exit 0\nprintf '%s\\0' \"$@\" > \"$ARGV_OUTPUT.tmp\" && mv \"$ARGV_OUTPUT.tmp\" \"$ARGV_OUTPUT\"\n";
+
+// Catches: the mock run without ARGV_OUTPUT (a `--help` probe) writes `.tmp` into its cwd.
+#[cfg(unix)]
+#[test]
+fn codex_mock_writes_nothing_without_an_output_path() {
+    let cwd = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let status = std::process::Command::new("/bin/sh")
+        .args(["-c", MOCK_CODEX_ARGV_SCRIPT, "mock-codex", "--help"])
+        .current_dir(cwd.path())
+        .env_remove("ARGV_OUTPUT")
+        .status()
+        .unwrap();
+    assert!(status.success(), "the probe itself must still succeed");
+    let left: Vec<_> = std::fs::read_dir(cwd.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert!(left.is_empty(), "the mock left files in its cwd: {left:?}");
+}
 
 // Catches: a paused mock writer publishes a partial argv prefix before finishing.
 #[cfg(unix)]
@@ -5422,11 +5318,55 @@ async fn published_request_executes() {
     assert!(reply["fields"].is_array(), "{reply}");
 }
 
+// Catches: owner enables one switch but the hidden second gate still denies settings.
+#[tokio::test]
+#[serial_test::serial]
+async fn single_settings_opt_in_exposes_tool() {
+    let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
+    let state = test_state();
+    let defaults = crate::config::AppConfig::default();
+    *state.config.write() = defaults.clone();
+    rebuild_tool_search_index(&state);
+    assert!(
+        !filtered_native_tools(&state)
+            .iter()
+            .any(|tool| tool["name"] == "settings"),
+        "default must keep settings off"
+    );
+    // The trusted Settings UI saves exactly the one visible switch.
+    let mut requested = defaults.clone();
+    requested.settings_mcp_enabled = true;
+    let effects = crate::config::commit_config_save(&state, defaults, requested).unwrap();
+    assert!(effects.tools_changed, "MCP clients must refresh tools/list");
+    assert!(
+        filtered_native_tools(&state)
+            .iter()
+            .any(|tool| tool["name"] == "settings"),
+        "one switch must expose settings"
+    );
+    let reply = handle_mcp_tool_call(
+        &state,
+        "127.0.0.1:12345".parse().unwrap(),
+        "settings",
+        &serde_json::json!({"action":"describe","limit":1}),
+        None,
+    )
+    .await;
+    assert!(reply["fields"].is_array(), "{reply}");
+    // Diagnostics keeps its own switch.
+    assert!(
+        !filtered_native_tools(&state)
+            .iter()
+            .any(|tool| tool["name"] == "debug")
+    );
+}
+
 // Catches: the collapsed call_tool path bypasses disabled settings access.
 #[tokio::test]
 async fn disabled_meta_call_denied() {
     let state = test_state();
-    state.config.write().mcp_capabilities.denied = vec!["settings".into()];
+    state.config.write().settings_mcp_enabled = false;
     let reply = handle_mcp_tool_call(
         &state,
         "127.0.0.1:12345".parse().unwrap(),
@@ -5863,6 +5803,7 @@ async fn managed_reconnect_restores_project_without_identity_guessing() {
     let response = mcp_post(
         State(state.clone()),
         ConnectInfo(loopback_addr()),
+        None,
         headers,
         Json(
             serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
@@ -5974,6 +5915,106 @@ async fn runtime_audit_projection(state: Arc<AppState>) -> serde_json::Value {
         .await
         .unwrap();
     serde_json::from_slice(&bytes).unwrap()
+}
+
+async fn usage_report(state: Arc<AppState>) -> serde_json::Value {
+    use axum::{body::Body, http::Request};
+    use tower::ServiceExt;
+    let response = crate::mcp_http::build_router(state, false, true)
+        .oneshot(
+            Request::get("/mcp/usage")
+                .extension(ConnectInfo(loopback_addr()))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    serde_json::from_slice(&bytes).unwrap()
+}
+
+fn usage_action<'a>(report: &'a serde_json::Value, role: &str, op: &str) -> &'a serde_json::Value {
+    let (tool, action) = op.split_once('.').unwrap_or((op, ""));
+    report["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["role"] == role)
+        .and_then(|r| {
+            r["actions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|a| a["tool"] == tool && a["action"] == action)
+        })
+        .unwrap_or_else(|| panic!("no {role}/{op} row in {report}"))
+}
+
+// Catches: a rejected call is not counted as invalid_arguments, a reply is not
+// counted as a call, or the rollup stores argument text or the caller's identity.
+#[tokio::test]
+async fn mcp_usage_rollup_counts_rejections_and_stores_no_arguments() {
+    let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
+    let state = test_state();
+    state.config.write().mcp_usage_rollup_enabled = true;
+    post_test_tool_call(
+        state.clone(),
+        "usage-sid-SECRETSID",
+        "session",
+        serde_json::json!({"action":"list"}),
+    )
+    .await;
+    for _ in 0..2 {
+        post_test_tool_call(
+            state.clone(),
+            "usage-sid-SECRETSID",
+            "ui",
+            serde_json::json!({"action":"design_eval","repo_path":"/SECRETPATH","script":"1","result_offset":-1}),
+        )
+        .await;
+    }
+    let report = usage_report(state.clone()).await;
+    let rejected = usage_action(&report, "orchestrator", "ui.design_eval");
+    assert_eq!(rejected["calls"], 2, "{report}");
+    assert_eq!(rejected["invalid_arguments"], 2, "{report}");
+    assert_eq!(rejected["application_errors"], 0, "{report}");
+    let listed = usage_action(&report, "orchestrator", "session.list");
+    assert_eq!(listed["calls"], 1);
+    assert_eq!(listed["invalid_arguments"], 0);
+    assert!(listed["response_bytes_max"].as_u64().unwrap() > 0);
+    let bytes = std::fs::read(dir.path().join("mcp_usage.sqlite3")).unwrap();
+    let wal = std::fs::read(dir.path().join("mcp_usage.sqlite3-wal")).unwrap_or_default();
+    for file in [bytes, wal] {
+        let text = String::from_utf8_lossy(&file);
+        assert!(
+            !text.contains("SECRET"),
+            "stored text names an argument or id"
+        );
+    }
+}
+
+// Catches: the rollup records while its switch is off.
+#[tokio::test]
+async fn mcp_usage_rollup_off_records_and_reports_nothing() {
+    let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
+    let state = test_state();
+    state.config.write().mcp_usage_rollup_enabled = false;
+    post_test_tool_call(
+        state.clone(),
+        "usage-off",
+        "session",
+        serde_json::json!({"action":"list"}),
+    )
+    .await;
+    let off = usage_report(state.clone()).await;
+    assert_eq!(off["enabled"], false);
+    state.config.write().mcp_usage_rollup_enabled = true;
+    assert_eq!(usage_report(state).await["roles"], serde_json::json!([]));
 }
 
 // Catches: audit rows still recorded or returned while the feature is disabled.
@@ -6197,7 +6238,7 @@ async fn mcp_outcome_record_groups_parent_but_preserves_targets_and_utf8_cost() 
         headers.insert(MCP_SESSION_HEADER, "audit-parent".parse().unwrap());
         let response = mcp_post(
             State(state.clone()),
-            ConnectInfo(loopback_addr()),
+            ConnectInfo(loopback_addr()), None,
             headers,
             Json(
                 serde_json::json!({"jsonrpc":"2.0","id":index,"method":"tools/call",
@@ -6379,7 +6420,7 @@ async fn design_capture_options_and_media_type_survive_mcp_dispatch() {
             serde_json::json!({"format":format,"quality":55,"max_long_edge":800})
         );
         let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
-        channel.reply(command["requestId"].as_str().unwrap(), serde_json::json!({"ok":true,"result":{"image":format!("data:image/{format};base64,{encoded}"),"quality":quality}}));
+        channel.reply(command["requestId"].as_str().unwrap(), serde_json::json!({"ok":true,"result":{"image":format!("data:image/{format};base64,{encoded}"),"quality":quality,"downscaled":format == "png"}}));
         let result = call.await.unwrap();
         let block = &result["content"][1];
         assert_eq!(block["type"], "image");
@@ -6389,10 +6430,93 @@ async fn design_capture_options_and_media_type_survive_mcp_dispatch() {
         assert_eq!(metadata["format"], format);
         assert_eq!(metadata["quality"], quality);
         assert_eq!(metadata["bytes"], bytes.len());
+        assert_eq!(metadata["downscaled"], format == "png");
         let path = std::path::Path::new(metadata["path"].as_str().unwrap());
         assert_eq!(path.extension().unwrap(), format);
         assert_eq!(std::fs::read(path).unwrap(), bytes);
     }
+}
+
+// Catches: scripts over the old command bound refused before the browser, or eval results over one page
+// lost instead of paged, or the paging cursor leaking into the browser command.
+#[cfg(all(unix, feature = "desktop"))]
+#[tokio::test]
+async fn design_eval_pages_large_results_and_accepts_large_scripts() {
+    let state = test_state();
+    insert_managed_test_session(&state, "eval-owner", "/repo");
+    state
+        .mcp
+        .to_session
+        .insert("eval-mcp".into(), "eval-owner".into());
+    let manager = crate::design_mode::manager(&state).await;
+    manager
+        .arm_extension("/repo".into(), "eval-owner".into())
+        .await;
+    let channel = manager
+        .command_channels
+        .lock()
+        .unwrap()
+        .get("/repo")
+        .unwrap()
+        .clone();
+    let script = format!("'{}'", "s".repeat(100 * 1024));
+    let value = format!("{}{}", "a".repeat(16 * 1024), "b".repeat(10 * 1024));
+    let text = serde_json::to_string(&value).unwrap();
+    let mut pages = String::new();
+    let mut offset = serde_json::json!(null);
+    for page in 0..3 {
+        let mut arguments =
+            serde_json::json!({"action":"design_eval","repo_path":"/repo","script":script});
+        if !offset.is_null() {
+            arguments["result_offset"] = offset.clone();
+        }
+        let owned = state.clone();
+        let call = tokio::spawn(async move {
+            handle_mcp_tool_call(&owned, loopback_addr(), "ui", &arguments, Some("eval-mcp")).await
+        });
+        // Setup bound, not the subject: a refused command never reaches the browser.
+        let command = tokio::time::timeout(std::time::Duration::from_secs(30), channel.next())
+            .await
+            .unwrap_or_else(|_| panic!("page {page}: the eval command never reached the browser"))
+            .unwrap();
+        assert_eq!(
+            command["args"],
+            serde_json::json!({"script":script}),
+            "page {page}"
+        );
+        channel.reply(
+            command["requestId"].as_str().unwrap(),
+            serde_json::json!({"ok":true,"result":{"value":value}}),
+        );
+        let result = call.await.unwrap();
+        assert_eq!(result["total_bytes"], text.len(), "{result}");
+        let evidence = result["evidence"].as_str().unwrap();
+        let body = evidence
+            .strip_prefix("```text\n")
+            .and_then(|rest| rest.strip_suffix("\n```"))
+            .unwrap();
+        assert!(
+            body.len() <= 16 * 1024,
+            "page {page} is {} bytes",
+            body.len()
+        );
+        pages.push_str(body);
+        offset = result["next_offset"].clone();
+        if offset.is_null() {
+            break;
+        }
+    }
+    assert!(offset.is_null(), "results never reached the last page");
+    assert_eq!(pages, text);
+    let reply = handle_mcp_tool_call(
+        &state,
+        loopback_addr(),
+        "ui",
+        &serde_json::json!({"action":"design_eval","repo_path":"/repo","script":"1","result_offset":-1}),
+        Some("eval-mcp"),
+    )
+    .await;
+    assert_eq!(reply["code"], "invalid_arguments", "{reply}");
 }
 
 // Catches: flat advertised UI fields cannot express Design Mode requests, or
@@ -6467,7 +6591,6 @@ async fn capability_cutover_rejects_retired_names_and_measures_catalogue() {
     );
     for name in [
         "task",
-        "story",
         "workflow_run",
         "workflow_launch",
         "workflow_report",
@@ -6501,23 +6624,18 @@ async fn capability_cutover_rejects_retired_names_and_measures_catalogue() {
 #[tokio::test]
 async fn migrated_capability_denials_filter_every_public_surface_without_index_refresh() {
     let state = test_state();
+    let caller = every_tool_caller(&state);
     for (old, tool, action, sibling) in [
         ("task", "agent", "task_get", "list_peers"),
-        ("story", "workflow", "story", "run"),
-        ("workflow_run", "workflow", "run", "story"),
-        (
-            "workflow_story_create",
-            "workflow",
-            "proposal_create",
-            "run",
-        ),
-        ("workflow_report", "workflow", "report", "run"),
-        ("workflow_launch", "workflow", "launch", "run"),
         ("design_mode", "ui", "design_status", "toast"),
     ] {
         state.config.write().mcp_capabilities =
             crate::mcp_capabilities::McpCapabilities::from_legacy(&[old.into()]);
-        let schema = handle_get_tool_schema(&state, &serde_json::json!({"tool_name":tool}));
+        let schema = handle_get_tool_schema_for_session(
+            &state,
+            &serde_json::json!({"tool_name":tool}),
+            caller,
+        );
         let actions = schema["inputSchema"]["properties"]["action"]["enum"]
             .as_array()
             .unwrap();
@@ -6535,9 +6653,10 @@ async fn migrated_capability_denials_filter_every_public_surface_without_index_r
         {
             assert_eq!(definition, &schema);
         }
-        let search = handle_search_tools(
+        let search = handle_search_tools_for_session(
             &state,
-            &serde_json::json!({"query":match tool { "agent" => "Managed peers mail", "workflow" => "Durable project work", "ui" => "TUIC interaction", _ => unreachable!() }, "limit":1, "schema_byte_budget":65536}),
+            &serde_json::json!({"query":match tool { "agent" => "Managed peers mail", "ui" => "TUIC interaction", _ => unreachable!() }, "limit":1, "schema_byte_budget":65536}),
+            caller,
         );
         assert_eq!(search["top_schema"], schema, "{old}: {search}");
         for (name, args) in [
@@ -6553,6 +6672,72 @@ async fn migrated_capability_denials_filter_every_public_surface_without_index_r
                 format!("Tool '{tool}' is disabled by configuration"),
                 "{old}: {reply}"
             );
+        }
+    }
+}
+
+/// Catches: the reader settles a fast child before spawn registers its task,
+/// or post-mortem task_get/output loses the OS failure or startup diagnostics.
+#[cfg(unix)]
+#[tokio::test]
+async fn agent_spawn_fast_exit_retains_task_and_diagnostics() {
+    for (command, code) in [
+        ("printf 'startup diagnostic\\n'; exit 7", 7),
+        ("printf 'startup diagnostic\\n'; kill -TERM $$", 143),
+        ("printf 'startup diagnostic\\n'; exit 0", 0),
+    ] {
+        let state = test_state();
+        let spawned = handle_agent(
+            &state,
+            "127.0.0.1:1".parse().unwrap(),
+            &serde_json::json!({
+                "action": "spawn", "name": "startup-test", "prompt": "startup test",
+                "binary_path": "/bin/sh", "args": ["-c", command, "{prompt}"],
+            }),
+            None,
+        );
+        assert!(spawned.get("error").is_none(), "{spawned}");
+        let sid = spawned["session_id"].as_str().unwrap();
+        let task = spawned["task_id"].as_str().unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        let settled = loop {
+            let settled = handle_agent_unified(
+                &state,
+                "127.0.0.1:1".parse().unwrap(),
+                &serde_json::json!({"action": "task_get", "task_id": task}),
+                None,
+            );
+            if settled["status"] != "working" {
+                break settled;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "fast child never settled: {settled}"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        };
+        assert_eq!(
+            settled["status"],
+            if code == 0 { "completed" } else { "failed" }
+        );
+        assert_eq!(settled["result"]["exit_code"], code, "{settled}");
+        assert!(!state.session_maps.sessions.contains_key(sid));
+        for format in ["raw", "clean"] {
+            let output = handle_session(
+                &state,
+                &serde_json::json!({
+                    "action": "output", "session_id": sid, "format": format,
+                }),
+                None,
+            );
+            assert!(
+                output["data"]
+                    .as_str()
+                    .unwrap()
+                    .contains("startup diagnostic"),
+                "{output}"
+            );
+            assert_eq!(output["exit_code"], code, "{output}");
         }
     }
 }

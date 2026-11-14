@@ -35,6 +35,25 @@ fn ipc_instance_paths_preserve_default_and_named_namespaces() {
     }
 }
 
+// Catches: an isolated named instance and the default instance getting the
+// same Windows pipe, so a tuic-remote child collides with the main app (#2986-027e).
+#[test]
+fn windows_pipe_name_is_unique_per_app_instance() {
+    let default = AppInstance::default();
+    let one = AppInstance::named("agent-test-one").unwrap();
+    let two = AppInstance::named("agent-test-two").unwrap();
+    assert_eq!(
+        tuic_ipc::pipe_name(&default),
+        r"\\.\pipe\tuicommander-mcp",
+        "the default pipe is the deployed contract"
+    );
+    assert_eq!(
+        tuic_ipc::pipe_name(&one),
+        r"\\.\pipe\tuicommander-mcp-agent-test-one"
+    );
+    assert_ne!(tuic_ipc::pipe_name(&one), tuic_ipc::pipe_name(&two));
+}
+
 // Catches: the alternate drifting from the `tuic-mcp-<hash>-<pid>.sock` shape
 // the bridge's fallback scan and the Local-connect identity check accept.
 #[test]

@@ -1,8 +1,9 @@
 //! Durable mail adapters. Identity is the existing MCP binding, never a body field.
+//! The inbound webhook is the one exception: its sender is always `webhook`.
 use std::{convert::Infallible, net::SocketAddr, sync::Arc};
 
 use axum::{
-    Json,
+    Extension, Json,
     extract::{ConnectInfo, Path, State},
     http::{HeaderMap, StatusCode},
     response::{
@@ -12,17 +13,18 @@ use axum::{
 };
 use serde_json::{Value, json};
 
+use super::guards::{CallerAuthority, UserAuthenticated};
 use crate::{AppState, mail_subscriptions};
 
 fn peer(
     state: &AppState,
-    addr: SocketAddr,
+    caller: CallerAuthority,
     headers: &HeaderMap,
 ) -> Result<String, (StatusCode, &'static str)> {
-    if !addr.ip().is_loopback() {
+    if !caller.is_owner() {
         return Err((
             StatusCode::FORBIDDEN,
-            "Inter-agent messaging is restricted to localhost connections",
+            "Inter-agent messaging is restricted to localhost or authenticated connections",
         ));
     }
     if !state.config.read().mcp_capabilities.allows("agent", None) {
@@ -44,10 +46,12 @@ fn peer(
 pub(super) async fn action(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    user: Option<Extension<UserAuthenticated>>,
     headers: HeaderMap,
     Json(args): Json<Value>,
 ) -> Response {
-    let peer = match peer(&state, addr, &headers) {
+    let caller = CallerAuthority::from_request(addr, user.map(|Extension(marker)| marker));
+    let peer = match peer(&state, caller, &headers) {
         Ok(peer) => peer,
         Err(reply) => return reply.into_response(),
     };
@@ -64,15 +68,38 @@ pub(super) async fn action(
     Json(mail_subscriptions::read(&state, &peer, &args).await).into_response()
 }
 
+/// Inbound webhook: `POST /agent/webhook/{to}` files the raw body as mail for the
+/// peer that `to` names. The route caps the body at the mail size limit.
+pub(super) async fn webhook(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<super::guards::Authenticated>>,
+    Path(to): Path<String>,
+    body: String,
+) -> Response {
+    if let Err(reply) = super::guards::require_local_or_auth(&addr, auth.is_some()) {
+        return reply.into_response();
+    }
+    let reply = super::mcp_transport_peer::webhook_send(&state, &to, &body).await;
+    let status = if reply.get("error").is_some() {
+        StatusCode::BAD_REQUEST
+    } else {
+        StatusCode::OK
+    };
+    (status, Json(reply)).into_response()
+}
+
 /// One connection carries all actionable batches; routine traffic does not emit.
 /// Reconnect replays an unacknowledged batch; acknowledging it resumes the stream.
 pub(super) async fn events(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    user: Option<Extension<UserAuthenticated>>,
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    let peer = match peer(&state, addr, &headers) {
+    let caller = CallerAuthority::from_request(addr, user.map(|Extension(marker)| marker));
+    let peer = match peer(&state, caller, &headers) {
         Ok(peer) => peer,
         Err(reply) => return reply.into_response(),
     };
@@ -127,6 +154,7 @@ mod tests {
         let reply = action(
             State(state.clone()),
             ConnectInfo(addr),
+            None,
             headers.clone(),
             Json(json!({"action":"subscribe","subscription_id":"http"})),
         )
@@ -138,12 +166,14 @@ mod tests {
             from_name: "tuic".into(),
             content: r#"{"type":"state_change","state":"idle"}"#.into(),
             timestamp: 1,
+            report: None,
             delivered_via_channel: false,
         };
         state.push_agent_inbox("parent", routine.clone());
         let response = events(
             State(state.clone()),
             ConnectInfo(addr),
+            None,
             headers.clone(),
             Path("http".into()),
         )
@@ -176,6 +206,7 @@ mod tests {
         let response = action(
             State(state.clone()),
             ConnectInfo(addr),
+            None,
             headers.clone(),
             Json(json!({"action":"ack","subscription_id":"http","cursor":batch["cursor"]})),
         )
@@ -193,6 +224,7 @@ mod tests {
         let denied = events(
             State(state.clone()),
             ConnectInfo("192.0.2.1:1234".parse().unwrap()),
+            None,
             headers.clone(),
             Path("http".into()),
         )
@@ -201,10 +233,109 @@ mod tests {
         let denied = events(
             State(state),
             ConnectInfo(addr),
+            None,
             HeaderMap::new(),
             Path("http".into()),
         )
         .await;
         assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    const WEBHOOK_ALICE: &str = "550e8400-e29b-41d4-a716-446655440c01";
+    const WEBHOOK_BOB: &str = "550e8400-e29b-41d4-a716-446655440c02";
+
+    fn webhook_state() -> Arc<AppState> {
+        let state = super::super::tests::test_state();
+        for (tuic, name, mcp) in [
+            (WEBHOOK_ALICE, "alice", "mcp-webhook-a"),
+            (WEBHOOK_BOB, "bob", "mcp-webhook-b"),
+        ] {
+            super::super::mcp_transport_peer::handle_messaging(
+                &state,
+                &json!({"action":"register","tuic_session":tuic,"name":name}),
+                Some(mcp),
+            );
+        }
+        state
+    }
+
+    /// Posts through the production router, so the route's body limit applies.
+    async fn post_webhook(state: &Arc<AppState>, to: &str, body: String) -> Response {
+        use tower::ServiceExt;
+        let mut request = axum::http::Request::post(format!("/agent/webhook/{to}"))
+            .header(axum::http::header::HOST, "127.0.0.1:9876")
+            .body(axum::body::Body::from(body))
+            .unwrap();
+        request
+            .extensions_mut()
+            .insert(ConnectInfo("127.0.0.1:1234".parse::<SocketAddr>().unwrap()));
+        super::super::build_router(state.clone(), false, true)
+            .oneshot(request)
+            .await
+            .unwrap()
+    }
+
+    fn inbox(state: &AppState, tuic: &str) -> Vec<crate::state::AgentMessage> {
+        state
+            .agent_inbox
+            .get(tuic)
+            .map(|inbox| inbox.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    // Catches: the webhook body reaching another peer's inbox, or being filed
+    // under a peer identity instead of the fixed webhook sender.
+    #[tokio::test]
+    async fn webhook_files_the_body_as_mail_for_the_named_peer() {
+        let state = webhook_state();
+        let response = post_webhook(&state, "alice", "build finished: 3 failures".into()).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let mail = inbox(&state, WEBHOOK_ALICE);
+        assert_eq!(mail.len(), 1, "{mail:?}");
+        assert_eq!(mail[0].content, "build finished: 3 failures");
+        assert_eq!(mail[0].from_tuic_session, "webhook");
+        assert_eq!(mail[0].from_name, "webhook");
+        assert_eq!(
+            inbox(&state, WEBHOOK_BOB),
+            Vec::<crate::state::AgentMessage>::new()
+        );
+    }
+
+    // Catches: a payload for an unknown recipient silently accepted, or routed
+    // to some other registered agent.
+    #[tokio::test]
+    async fn webhook_refuses_an_unknown_recipient_and_files_nothing() {
+        let state = webhook_state();
+        let response = post_webhook(&state, "nobody", "result".into()).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&body).unwrap();
+        assert!(
+            body["error"].as_str().unwrap().contains("not registered"),
+            "{body}"
+        );
+        assert_eq!(
+            inbox(&state, WEBHOOK_ALICE),
+            Vec::<crate::state::AgentMessage>::new()
+        );
+        assert_eq!(
+            inbox(&state, WEBHOOK_BOB),
+            Vec::<crate::state::AgentMessage>::new()
+        );
+    }
+
+    // Catches: an unbounded body accepted into the inbox.
+    #[tokio::test]
+    async fn webhook_refuses_an_oversized_payload() {
+        let state = webhook_state();
+        let oversized = "x".repeat(crate::state::AGENT_MESSAGE_MAX_BYTES + 1);
+        let response = post_webhook(&state, "alice", oversized).await;
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(
+            inbox(&state, WEBHOOK_ALICE),
+            Vec::<crate::state::AgentMessage>::new()
+        );
     }
 }

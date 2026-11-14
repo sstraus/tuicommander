@@ -737,7 +737,7 @@ export interface PluginHost {
 
 	// -- Tier 3b: Filesystem operations (capability-gated) --
 
-	/** Read a file as UTF-8 text. Path must be absolute and within $HOME. Requires "fs:read". */
+	/** Read a file as UTF-8 text. Path must be absolute; any file the user can access. Requires "fs:read". */
 	readFile(absolutePath: string): Promise<string>;
 
 	/**
@@ -753,6 +753,12 @@ export interface PluginHost {
 
 	/** Read a file as base64 bytes. Defaults to 10 MiB; maxBytes is positive and host-capped at 512 MiB. Requires "fs:read". */
 	readFileBase64(absolutePath: string, options?: { maxBytes?: number }): Promise<string>;
+
+	/** File size in bytes. Absolute path, fs:read required. */
+	fileSize(absolutePath: string): Promise<number>;
+
+	/** Exact binary range as Base64; 8 MiB maximum, rejects ranges past EOF. Requires fs:read. */
+	readFileRange(absolutePath: string, offset: number, length: number): Promise<string>;
 
 	/**
 	 * Read the last N bytes of a file, skipping partial first line.
@@ -819,7 +825,7 @@ export interface PluginHost {
 
 	/**
 	 * Watch a path for filesystem changes. Requires "fs:watch".
-	 * @param path - Absolute path within $HOME
+	 * @param path - Absolute path the user can access
 	 * @param callback - Called with batched change events
 	 * @param options - recursive (default false), debounceMs (default 300)
 	 * @returns Disposable to stop watching
@@ -866,7 +872,6 @@ export interface PluginHost {
 	/**
 	 * Read credentials from the system credential store by service name.
 	 * Requires "credentials:read" capability.
-	 * First call from a plugin shows a user consent dialog.
 	 * Returns the raw credential JSON string, or null if not found.
 	 */
 	readCredential(serviceName: string): Promise<string | null>;
@@ -893,8 +898,10 @@ export interface PluginHost {
 	 * @param binary - Binary name (e.g. "mdkb")
 	 * @param args - Command arguments (e.g. ["--format", "json", "status"])
 	 * @param cwd - Optional working directory (must be absolute, within $HOME)
+	 * @param options.timeoutMs - Optional deadline in whole milliseconds: default 30 000, maximum 3 600 000.
+	 *   The deadline starts when the command starts, not while it waits for one of the plugin's 4 slots.
 	 */
-	execCli(binary: string, args: string[], cwd?: string): Promise<string>;
+	execCli(binary: string, args: string[], cwd?: string, options?: { timeoutMs?: number }): Promise<string>;
 
 	// -- Tier 4: Scoped Tauri invoke (whitelisted commands only) --
 

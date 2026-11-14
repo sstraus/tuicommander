@@ -22,7 +22,29 @@ describe("uiStore", () => {
 
 		store = (await import("../../stores/ui")).uiStore;
 		await store.hydrate();
+		await (await import("../../stores/activityStore")).activityStore.hydrate();
 		mockInvoke.mockClear();
+	});
+
+	it("ranks branch launches before repository history without leaking other repositories or reordering ties", () => {
+		// Catches: stale repository preferences overriding the branch, or ties losing the configured order.
+		const entries = [{ key: "first" }, { key: "second" }, { key: "third" }];
+		store.recordAgentLaunch("/repo", "main", "second");
+		store.recordAgentLaunch("/repo", "main", "second");
+		store.recordAgentLaunch("/repo", "feature", "third");
+		expect(store.rankAgentLaunches("/repo", "feature", entries).map((x) => x.key)).toEqual([
+			"third",
+			"first",
+			"second",
+		]);
+		expect(store.rankAgentLaunches("/repo", "new", entries).map((x) => x.key)).toEqual(["second", "third", "first"]);
+		expect(store.rankAgentLaunches("/other", "feature", entries)).toEqual(entries);
+		store.recordAgentLaunch("/repo", "feature", "first");
+		expect(store.rankAgentLaunches("/repo", "feature", entries).map((x) => x.key)).toEqual([
+			"first",
+			"third",
+			"second",
+		]);
 	});
 
 	afterEach(() => {
@@ -88,6 +110,7 @@ describe("uiStore", () => {
 			const restarted = (await import("../../stores/ui")).uiStore;
 			await testInScopeAsync(async () => {
 				await restarted.hydrate();
+				await (await import("../../stores/activityStore")).activityStore.hydrate();
 				expect(restarted.state.editorWrapText).toBe(false);
 				expect(restarted.state.editorWrapCode).toBe(true);
 			});
@@ -96,9 +119,9 @@ describe("uiStore", () => {
 
 	describe("sidebar density", () => {
 		// Catches: the toggle changing the view but not the saved prefs, so the choice is lost on restart.
-		it("cycles auto, compact, rich and saves each choice", () => {
-			testInScope(() => {
-				expect(store.state.sidebarDensityMode).toBe("auto");
+		it("cycles rich, compact, harness and saves each choice", async () => {
+			await testInScopeAsync(async () => {
+				expect(store.state.sidebarDensityMode).toBe("rich");
 				store.cycleSidebarDensityMode();
 				expect(store.state.sidebarDensityMode).toBe("compact");
 				flushPersist();
@@ -107,9 +130,16 @@ describe("uiStore", () => {
 					config: expect.objectContaining({ sidebar_density: "compact" }),
 				});
 				store.cycleSidebarDensityMode();
-				expect(store.state.sidebarDensityMode).toBe("rich");
+				expect(store.state.sidebarDensityMode).toBe("harness");
+				expect(store.state.repoFilterHarnessOnly).toBe(true);
+				await vi.advanceTimersByTimeAsync(600);
+				expect(mockInvoke).toHaveBeenCalledWith("save_ui_prefs", {
+					base: expect.anything(),
+					config: expect.objectContaining({ sidebar_density: "harness" }),
+				});
 				store.cycleSidebarDensityMode();
-				expect(store.state.sidebarDensityMode).toBe("auto");
+				expect(store.state.sidebarDensityMode).toBe("rich");
+				expect(store.state.repoFilterHarnessOnly).toBe(false);
 			});
 		});
 
@@ -126,6 +156,65 @@ describe("uiStore", () => {
 				mockInvoke.mockResolvedValueOnce({ sidebar_density: "touch" });
 				await store.hydrate();
 				expect(store.state.sidebarDensityMode).toBe("rich");
+			});
+		});
+		it.each(["auto", undefined])(
+			"defaults old preferences to rich (%s) — catches stale filters reopening H",
+			async (mode) => {
+				mockInvoke.mockResolvedValueOnce({ sidebar_density: mode, repo_filter_harness_only: true });
+				await testInScopeAsync(async () => {
+					await store.hydrate();
+					expect(store.state.sidebarDensityMode).toBe("rich");
+					expect(store.state.repoFilterHarnessOnly).toBe(false);
+				});
+			},
+		);
+
+		it("starts in rich when H was saved — catches hidden sessions after restart", async () => {
+			mockInvoke.mockResolvedValueOnce({ sidebar_density: "harness" });
+			await testInScopeAsync(async () => {
+				await store.hydrate();
+				expect(store.state.sidebarDensityMode).toBe("rich");
+				expect(store.state.repoFilterHarnessOnly).toBe(false);
+			});
+		});
+
+		it("keeps H when the preferences sync re-reads it — catches runtime refresh switching H to R", async () => {
+			const { settingsRefresh } = await import("../../services/settingsRefresh");
+			let apply: ((value: unknown) => void) | undefined;
+			vi.spyOn(settingsRefresh, "register").mockImplementation((reader) => {
+				if (reader.section === "preferences") apply = reader.apply as (value: unknown) => void;
+				return () => {};
+			});
+			await testInScopeAsync(async () => {
+				const stop = store.startRemoteSync();
+				store.cycleSidebarDensityMode();
+				store.cycleSidebarDensityMode();
+				expect(store.state.sidebarDensityMode).toBe("harness");
+				await vi.advanceTimersByTimeAsync(600);
+				apply!({ sidebar_density: "harness", repo_filter_harness_only: true });
+				expect(store.state.sidebarDensityMode).toBe("harness");
+				apply!({ sidebar_density: "compact" });
+				expect(store.state.sidebarDensityMode).toBe("compact");
+				stop();
+			});
+		});
+
+		it.each(["rich", "compact"] as const)("restores saved %s mode", async (mode) => {
+			// Catches: resetting every saved mode instead of only the live-session filter.
+			mockInvoke.mockResolvedValueOnce({ sidebar_density: mode });
+			await store.hydrate();
+			expect(store.state.sidebarDensityMode).toBe(mode);
+		});
+
+		it("clears manual H through Show all — catches a latched filter after leaving H", async () => {
+			await testInScopeAsync(async () => {
+				store.cycleSidebarDensityMode();
+				store.cycleSidebarDensityMode();
+				expect(store.state.repoFilterHarnessOnly).toBe(true);
+				store.setRepoFilterHarnessOnly(false);
+				expect(store.state.sidebarDensityMode).toBe("rich");
+				expect(store.state.repoFilterHarnessOnly).toBe(false);
 			});
 		});
 	});

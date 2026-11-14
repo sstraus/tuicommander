@@ -20,9 +20,10 @@ Once enabled, the settings panel shows the access URL: `http://<your-ip>:<port>`
 
 On macOS, TUICommander can use the installed Tailscale app when no `tailscale`
 CLI is on its PATH, including launches from Finder. Status detection, peer lookup
-and certificate requests run the app executable with `TAILSCALE_BE_CLI=1`.
-You do not need to set this variable globally. A standalone CLI on PATH keeps
-its existing environment.
+and certificate requests always set `TAILSCALE_BE_CLI=1` on the Tailscale child
+process, including executables found on PATH that can be symlinks to the app.
+You do not need to set this variable globally or launch TUICommander from a
+terminal. The parent process environment does not change.
 
 The **Tailscale HTTPS** status reports **HTTPS active** only while the server
 has loaded a certificate and its TLS listener is running. Tailscale's HTTPS
@@ -86,6 +87,7 @@ exact framing is in
 ## Security
 
 - **Authentication** — QR URL token, session cookie or Basic Auth with bcrypt-hashed passwords. HTTP requires credentials even from this computer or the LAN; the old LAN authentication bypass no longer applies. Local CLI/MCP IPC remains available without HTTP credentials.
+- **Failed sign-ins** — After 5 different wrong passwords from one address within 5 minutes (`auth_rate_limit_max`, `auth_rate_limit_window_secs`), that address must wait until the window ends, even with the correct password. The login page shows the wait. To sign in at once, scan the QR code in **Settings → Remote Access** on the host computer; a QR sign-in also clears the lockout for that address.
 - **Secret storage** — Session tokens, relay bearer tokens, and push VAPID
   private keys are stored in the OS keyring-backed credential vault; config
   files and `/config` responses expose only non-secret settings and existence
@@ -102,7 +104,7 @@ Separate from remote access, TUICommander runs an **HTTP API server** for AI too
 - Bridge configs are auto-installed on first launch for supported agents (Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini, Codex, Grok, opencode, Droid, goose, pi) — and only for the ones present on the machine, so TUICommander never creates a config directory for a tool you do not have. On every subsequent launch, the bridge path is verified and updated if stale (from reinstalls, updates, or moves)
 - The `mcp_server_enabled` config key controls whether MCP protocol tools are exposed, not the server itself
 - **Settings** → **MCP** → **HTTP API Server** shows server status and active session count
-- Local MCP callers submit one managed-agent command with `session action=submit`; the same response reports child terminal movement or a precise timeout, so callers must not split text/Enter or poll afterward. Raw `session action=input` remains write-only. Mutating session actions, including `submit`, are not exposed to non-loopback MCP clients
+- Local MCP callers submit one managed-agent command with `session action=submit`; the same response reports child terminal movement or a precise timeout, so callers must not split text/Enter or poll afterward. Raw `session action=input` remains write-only. Mutating session actions, including `submit`, agent spawn, launch and mail, are available to a remote MCP client that signs in with the URL token, session cookie or Basic Auth; a client without credentials gets none of them
 
 The Unix socket is accessible only to the current user (filesystem permissions) and requires no authentication — it's designed for local tool integration, not remote access.
 
@@ -173,16 +175,28 @@ Both mobile composers use **+**, a text box with a microphone when browser speec
 inserts its `@path` into the draft; review the draft and tap Send when ready.
 In mobile AI Chat, images join the image draft and other files appear as file
 chips until Send. Android Chrome can also share a file into the installed PWA;
-the shared file opens as an AI Chat draft. iOS Safari currently requires the
-**+ → Attach file** because it does not support Web Share Target.
+the shared file opens as an AI Chat draft.
+
 The + menu also offers **Queue** in terminals, **Commands (/)** in agent terminals, and **Park draft / Restore parked draft / Swap parked
 draft** in AI Chat. Chat shows **Queue** and **Stop** while a turn is running.
 Terminal long-press on Send still opens Queue. In terminal **CLI** and **Chat**, a **Queued** list above the input shows the pending prompt text, including prompts queued in CLI or on desktop. Entries disappear when delivered. Tap **Hide** beside the queued count to hide the list without removing work. The count stays visible and updates; tap it or **Show** to reopen the list. When the queue empties, the next queued prompt opens the list again. Tap **Cancel** to remove one or **Clear all** to remove the listed user prompts. Server mail wakes and spawned task prompts do not appear in this mobile list or count and are not removed by these actions. Ordinary **Send** still submits now; switching to Chat does not change that. If a host returns queue data that is not an array, the mobile list stays empty and the session remains usable. Failed queue requests still show the existing retry alert, except an unsupported endpoint with no pending work. Terminal parking is not offered:
 the existing parked-draft store belongs to AI Chat. Tap outside the menu or
 press Escape to close it. Desktop AI Chat and Ctrl+S retain their controls.
 
-See [Chrome's Share Target guide](https://developer.chrome.com/docs/capabilities/web-apis/web-share-target)
-and [WebKit's open support issue](https://bugs.webkit.org/show_bug.cgi?id=194593).
+iOS does not offer the installed web app in the share sheet: WebKit does not
+implement Web Share Target
+([WebKit bug 194593](https://bugs.webkit.org/show_bug.cgi?id=194593), status NEW,
+"Add support for Web Share Target API"; see
+[Chrome's Share Target guide](https://developer.chrome.com/docs/capabilities/web-apis/web-share-target)
+for the standard). To send an image, PDF or text file from another iOS app
+instead:
+
+1. In the other app, tap **Share → Save to Files** and choose a folder.
+2. Open the TUIC web app, tap **+ → Attach file**, and choose that file from
+   **Files**. The file then reaches the draft as described above.
+
+**Attach file** accepts only images, PDFs and text files; you cannot pick other
+file types from **Files**.
 
 ### Receive and answer an agent's question away from the desk
 
@@ -199,6 +213,11 @@ and [WebKit's open support issue](https://bugs.webkit.org/show_bug.cgi?id=194593
    display. A 404 means no subscription; `stale_removed` after HTTP 410 means
    the phone must re-subscribe. A 503 means push is disabled or the VAPID key is
    unavailable. Confirm the notification actually appears on the phone.
+   A 400 on subscribe means the phone's browser uses a push service host that
+   TUICommander does not know. In **Settings → All Settings**, add that host
+   (for example `push.example.net`) to **added providers**
+   (`/services/push/added_providers`), approve the confirmation, then subscribe
+   again. HTTPS is still required.
 4. If the agent was spawned by another agent, turn off **Settings → Notifications → Silence subagent sounds and notifications** on the host for this delivery check. This setting also controls mobile sounds and session Web Push; it defaults on. Have a managed agent report `progress type=blocked` with its question.
    After the desktop is unfocused, or the Mac has had no HID input for two
    minutes, the phone notification contains the question and opens that
@@ -846,6 +865,23 @@ an explicit no-agent-config policy. If a worker needs to own agent integration,
 give it a separate OS user and HOME rather than sharing those files with another
 owner.
 
+### Workers that take work only from assignments
+
+Start a worker with `--no-automations` when all its work must arrive through
+assigned workflow runs:
+
+```bash
+TUIC_PORT=9877 ./tuic-remote --no-automations
+```
+
+The flag sets `RemoteOptions.automations` to `false`. The daemon then runs no
+automation scheduler and no event intake: no schedule, labelled issue or
+pull-request review starts a run or session, and a manual automation start is
+refused with a message that names the flag. Steps of workflow runs started
+through the workflow API keep running. On start, runs a previous process left
+Reserved or Running are settled, and a completed event run still reports its
+draft PR. Without the flag, automations run as before.
+
 The daemon serves:
 - The HTTP API (sessions, terminals, git, filesystem, agents)
 - WebSocket terminal streaming
@@ -1034,7 +1070,7 @@ Leaving the action alone keeps the original saved address.
 
 ## Remote Settings startup limits
 
-The shared Settings HTTP endpoint retains local-or-authenticated access; MCP mutation remains loopback-only. A local request does not implicitly target a remote daemon. Select the owner explicitly, keep its read revision, and never treat a remote invalidation cursor as a local CAS token. [Startup workflows](../backend/settings-startup.md) covers confirmation, device-login state and readback after uncertain or partial persistence. Secrets remain write-only.
+The shared Settings HTTP endpoint and the MCP `settings` tool both accept local or authenticated callers: an authenticated remote MCP client can read, propose and confirm settings changes like a loopback one. Proposals stay bound to their MCP connection, the exact edit and a 300-second expiry, and each one still needs a human answer in the confirmation dialog. A local request does not implicitly target a remote daemon. Select the owner explicitly, keep its read revision, and never treat a remote invalidation cursor as a local CAS token. [Startup workflows](../backend/settings-startup.md) covers confirmation, device-login state and readback after uncertain or partial persistence. Secrets remain write-only.
 
 Typed Ego startup login returns a session on the explicitly selected daemon.
 Open that session in the owning client's terminal view to authenticate, then

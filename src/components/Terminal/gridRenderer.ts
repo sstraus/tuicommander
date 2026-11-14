@@ -1409,26 +1409,31 @@ export function createGridRenderer(ctx: GridContext2D, deps: GridRendererDeps): 
 			paintedProjection === ";" &&
 			Number.isInteger(m.cellHeight * m.dpr) &&
 			Number.isInteger(scrollRows) &&
-			scrollRows > 0 &&
-			scrollRows < rowCount &&
+			scrollRows !== 0 &&
+			Math.abs(scrollRows) < rowCount &&
 			rowCount === paintedRows.size &&
 			rowCount * m.cellHeight <= ctx.canvas.height / m.dpr &&
 			Array.from({ length: rowCount }, (_, slot) => displayRows.has(slot) && paintedRows.has(slot)).every(Boolean);
 		if (canCopy) {
-			const height = (rowCount - scrollRows) * m.cellHeight;
+			// Toward newer rows the retained pixels move up; back into history they move down.
+			const shift = Math.abs(scrollRows);
+			const height = (rowCount - shift) * m.cellHeight;
+			const from = Math.max(0, scrollRows);
+			const to = Math.max(0, -scrollRows);
 			ctx.drawImage(
 				ctx.canvas,
 				0,
-				scrollRows * m.cellHeight * m.dpr,
+				from * m.cellHeight * m.dpr,
 				ctx.canvas.width,
 				height * m.dpr,
 				-GUTTER_PX,
-				0,
+				to * m.cellHeight,
 				w,
 				height,
 			);
 			for (const [slot, row] of displayRows) {
-				if (slot < rowCount - scrollRows && sameRow(paintedRows.get(slot + scrollRows), row)) continue;
+				const source = slot + scrollRows;
+				if (source >= 0 && source < rowCount && sameRow(paintedRows.get(source), row)) continue;
 				const y = slot * m.cellHeight;
 				ctx.fillStyle = cachedBgDefault;
 				ctx.fillRect(-GUTTER_PX, y, w, m.cellHeight);

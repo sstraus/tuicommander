@@ -32,6 +32,14 @@
     "reason": "Intentional specialized diagram label and expansion affordance; not a form or view-switch control."
   },
   {
+    "file": "src/components/StoriesDialog/StoriesDialog.module.css",
+    "reason": "Story status tone on the shared Select (story 2769-0c71): border colour and style only, the shared 1px width and control height stay unchanged.",
+    "rules": [
+      "[[],\".phaseSelector select\",[\"border-color: var(--phase-tone, var(--border))\"]]",
+      "[[],\".phaseSelector[data-status=\\\"wont_fix\\\"] select\",[\"border-style: dashed\"]]"
+    ]
+  },
+  {
     "file": "src/mobile/components/CommandInput.module.css",
     "reason": "Native embedded composer layout (data-control-layout=composer), not a standalone form field; preserves content sizing and draft selection.",
     "rules": [

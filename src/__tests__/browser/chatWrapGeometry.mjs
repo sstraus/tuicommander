@@ -5,6 +5,8 @@ import {homedir} from 'node:os';
 import {createServer} from 'vite';
 import solid from 'vite-plugin-solid';
 const directory=resolve(process.env.TUIC_CHAT_WRAP_DIR);
+const page=process.env.TUIC_CHAT_WRAP_PAGE??'chatWrapGeometry';
+const widths=(process.env.TUIC_CHAT_WRAP_WIDTHS??'420,960').split(',').map(Number);
 const phase=process.env.TUIC_CHAT_WRAP_PHASE??'after';
 await mkdir(directory,{recursive:true});
 const server=await createServer({configFile:false,plugins:[solid()],cacheDir:'.tmp/chat-wrap-vite',logLevel:'error',define:{__APP_VERSION__:JSON.stringify('geometry'),__BUILD_GIT_HASH__:JSON.stringify('geometry')},server:{host:'127.0.0.1',port:0}});
@@ -23,9 +25,9 @@ try {
  const {sessionId}=await send('Target.attachToTarget',{targetId,flatten:true});
  const evaluate=async expression=>{const result=await send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true},sessionId);if(result.exceptionDetails)throw new Error(JSON.stringify(result.exceptionDetails));return result.result.value;};
  const samples=[];
- for(const width of [420,960]){
+ for(const width of widths){
   await send('Emulation.setDeviceMetricsOverride',{width:1400,height:1000,deviceScaleFactor:1,mobile:false},sessionId);
-  await send('Page.navigate',{url:`http://127.0.0.1:${server.httpServer.address().port}/src/__tests__/browser/chatWrapGeometry.html?width=${width}`},sessionId);
+  await send('Page.navigate',{url:`http://127.0.0.1:${server.httpServer.address().port}/src/__tests__/browser/${page}.html?width=${width}`},sessionId);
   await evaluate(`new Promise((ok,fail)=>{const stop=setTimeout(()=>fail(new Error('Real Transcript did not publish measurements')),20000);const check=()=>{const result=document.querySelector('#geometry-result');if(result){clearTimeout(stop);ok();}else requestAnimationFrame(check);};check();})`);
   samples.push(await evaluate(`JSON.parse(document.querySelector('#geometry-result').textContent)`));
   const screenshot=await send('Page.captureScreenshot',{format:'png'},sessionId);

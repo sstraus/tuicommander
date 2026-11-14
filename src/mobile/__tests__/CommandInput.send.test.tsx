@@ -139,6 +139,41 @@ describe("mobile slash submission", () => {
 		expect(writes.map((write) => write.data)).toEqual(["/model opus", "\r"]);
 	});
 
+	// Catches: a failed Enter leaves the PTY holding the command while the composer reads empty,
+	// so the next Send is typed onto it ("/help/model sonnet").
+	it("keeps the draft in sync with the terminal when Enter never arrives", async () => {
+		const line = { text: "" };
+		const apply = (data: string) => {
+			if (data === "\r") return;
+			for (const ch of data) line.text = ch === "\x7f" ? line.text.slice(0, -1) : line.text + ch;
+		};
+		const original = vi.mocked(rpc).getMockImplementation();
+		let rejectEnter = true;
+		vi.mocked(rpc).mockImplementation((async (_command: string, args?: { data?: string }) => {
+			const data = args?.data;
+			if (data === undefined) return undefined;
+			writes.push({ data, at: Date.now() });
+			if (data === "\r" && rejectEnter) throw new Error("Server unreachable");
+			apply(data);
+		}) as typeof rpc);
+		try {
+			const { container } = render(() => <CommandInput sessionId="disposable" agentType="claude" />);
+			const input = container.querySelector("textarea")!;
+			fireEvent.input(input, { target: { value: "/help" } });
+			fireEvent.click(container.querySelector("button.send")!);
+			await waitFor(() => expect(writes.filter((write) => write.data === "\r").length).toBe(3), { timeout: 4000 });
+			await waitFor(() => expect(input.value).toBe("/help"));
+			rejectEnter = false;
+			fireEvent.input(input, { target: { value: "/model sonnet" } });
+			await waitFor(() => expect(line.text).toBe("/model sonnet"));
+			fireEvent.click(container.querySelector("button.send")!);
+			await waitFor(() => expect(writes.filter((write) => write.data === "\r").length).toBe(4));
+			expect(line.text).toBe("/model sonnet");
+		} finally {
+			vi.mocked(rpc).mockImplementation(original!);
+		}
+	});
+
 	it("does not press Enter while the final mobile write is still in flight", async () => {
 		let releaseWrite!: () => void;
 		const inFlight = new Promise<void>((resolve) => {
@@ -189,4 +224,22 @@ it("starts Chat working feedback on mobile Send, not while typing", async () => 
 	expect(view.getByText("Working…")).toBeTruthy();
 	setBusy(false);
 	expect(view.queryByText("Working…")).toBeNull();
+});
+
+// Catches: the restored parked draft reaching the PTY in the same read as the
+// Enter, so the agent takes Enter plus the draft as one paste and never submits.
+it("restores a parked native draft only after the agent Enter gap", async () => {
+	const { container } = render(() => <CommandInput sessionId="park-native-gap" agentType="claude" />);
+	const input = container.querySelector("textarea")!;
+	fireEvent.input(input, { target: { value: "parked draft" } });
+	fireEvent.keyDown(input, { key: "s", ctrlKey: true });
+	fireEvent.input(input, { target: { value: "now" } });
+	writes.length = 0;
+	fireEvent.click(container.querySelector("button.send")!);
+	await waitFor(() => expect(input.value).toBe("parked draft"));
+	const enter = writes.findIndex((write) => write.data === "\r");
+	const restore = writes.findIndex((write, index) => index > enter && write.data.includes("parked draft"));
+	expect(enter).toBeGreaterThanOrEqual(0);
+	expect(restore).toBeGreaterThan(enter);
+	expect(writes[restore].at - writes[enter].at).toBeGreaterThanOrEqual(40);
 });

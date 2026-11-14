@@ -34,7 +34,7 @@ interface TerminalData {
   shellState: ShellState;           // "busy" | "idle" | null
   activity: boolean;
   unseen: boolean;                  // Terminal completed work while user wasn't viewing it
-  progress: number | null;          // OSC 9;4 progress (0-100), null when inactive
+  progress: number | "indeterminate" | null; // OSC 9;4 progress (0-100), "indeterminate" for state 3, null when inactive
   agentType: AgentType | null;      // Detected foreground agent process (e.g. "claude")
   pendingResumeCommand: string | null; // Set at restore time, consumed on first shell idle
   pendingInitCommand: string | null;   // Setup/run script to auto-execute on first shell idle

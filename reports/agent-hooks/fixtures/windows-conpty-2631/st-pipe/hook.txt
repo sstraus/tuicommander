@@ -1,0 +1,3 @@
+hook_pid=812 terminator=st
+console_mode_ok=1 console_mode=0x7 error=None
+write_ok=1 requested=120 written=120 error=None elapsed_us=711

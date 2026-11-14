@@ -15,8 +15,9 @@
 use agent_client_protocol::schema::v1;
 use serde_json::{Value, json};
 use tuicommander_lib::acp::{
-    AcpAttachmentState, AcpClientEvent, AcpConnectionId, AcpConnectionState, AcpEventEnvelope,
-    AcpHostRequestId, AcpPendingInteraction, AcpSessionAuthority, AcpStreamFrame,
+    AcpActiveTool, AcpAttachmentState, AcpChatActivity, AcpChatActivityState, AcpChildActivity,
+    AcpClientEvent, AcpConnectionId, AcpConnectionState, AcpEventEnvelope, AcpHostRequestId,
+    AcpHumanWait, AcpHumanWaitKind, AcpPendingInteraction, AcpSessionAuthority, AcpStreamFrame,
 };
 
 const SESSION: &str = "01932d5e-0000-7000-8000-0000000000aa";
@@ -271,5 +272,46 @@ fn a_tool_call_kind_does_not_overwrite_the_event_kind() {
         value.get("kind").and_then(Value::as_str),
         Some("sessionUpdate"),
         "the event lost its own tag to the tool call's: {text}"
+    );
+}
+
+/// Story 2637: the activity event carries the whole activity in camel case.
+///
+/// The frontend keeps whichever of the snapshot and the stream has the higher
+/// `revision`, so the field names here are what a reconnect compares on.
+#[test]
+fn an_activity_change_carries_the_whole_activity_in_camel_case() {
+    let request_id = AcpHostRequestId::new();
+    let activity = AcpChatActivity {
+        state: AcpChatActivityState::Awaiting,
+        human_waits: vec![AcpHumanWait {
+            request_id,
+            kind: AcpHumanWaitKind::Question,
+        }],
+        tools: vec![AcpActiveTool {
+            tool_call_id: "call-1".into(),
+            title: "Write a file".into(),
+        }],
+        children: vec![AcpChildActivity {
+            turn_id: "t".into(),
+            item_id: "i".into(),
+            child: json!({"kind": "foreground", "turn": "f"}),
+        }],
+        interrupted: false,
+        revision: 7,
+    };
+    assert_eq!(
+        wire(AcpClientEvent::ActivityChanged { activity }),
+        json!({
+            "kind": "activityChanged",
+            "activity": {
+                "state": "awaiting",
+                "humanWaits": [{"requestId": request_id.to_string(), "kind": "question"}],
+                "tools": [{"toolCallId": "call-1", "title": "Write a file"}],
+                "children": [{"turnId": "t", "itemId": "i", "child": {"kind": "foreground", "turn": "f"}}],
+                "interrupted": false,
+                "revision": 7
+            }
+        })
     );
 }

@@ -1,7 +1,6 @@
 # Native workflow graph runtime
 
 **Status:** Approved staged design; slices A/B and the serial slice C executor are implemented. **Date:** 2026-10-03.
-**Story:** 1446-ff21. **Source baseline:** `140e8950deae7e4bb7a2f4498c7a23c95eacca21`.
 **Scope:** Execute published Story delivery and Resolve plan graphs in the owning Rust daemon. Slice A introduces no scheduler or agent effects; executable delivery remains unavailable.
 
 ## Consumer contract
@@ -14,7 +13,7 @@ This proposal preserves the existing `human` closure policy as explicit approval
 
 ## Verified starting point
 
-Read [workflow contracts](../backend/workflows.md), [native workflow plan](../../plans/native-story-workflows.md), the definition store/validator, run model/store/reducer, prompt renderer, managed MCP launch/report handlers, Designer, StoriesDialog and related tests. The study and disposable fixture remain in `~/Gits/.tmp/wf-verify/`.
+See [workflow contracts](../backend/workflows.md), the definition store/validator, run model/store/reducer, prompt renderer, managed MCP launch/report handlers, Designer, StoriesDialog and related tests.
 
 | Existing seam | Current behavior | Design change |
 |---|---|---|
@@ -30,7 +29,7 @@ Read [workflow contracts](../backend/workflows.md), [native workflow plan](../..
 | `workflow-run-changed` | Desktop/SSE cursor hint; paged event replay | Retain hint; include new node and decision events in the same history |
 | StoriesDialog/Designer | Manual work, history, input/resume, editable/published definitions | Start workflow and cancel/recovery controls; executable node settings; clients never schedule |
 
-At this baseline the seeded Story delivery has seven nodes and eight links. `repair` is a Loop returning to `implement`, not a second repair agent. Resolve plan has eight nodes and ten links. Counts are observations, not invariants to pin in tests. The earlier study says 37 cases but contains 36 data rows; the matrix below adds concurrent runs on different plans as a distinct case, making 37.
+At this baseline the seeded Story delivery has seven nodes and eight links. `repair` is a Loop returning to `implement`, not a second repair agent. Resolve plan has eight nodes and ten links. Counts are observations, not invariants to pin in tests. The validation matrix below includes concurrent runs on different plans.
 
 ## Ownership and scheduling
 
@@ -66,7 +65,7 @@ Events include graph start, node activation/completion, selected edge, decision 
 
 Bump the persisted schema version and add explicit runtime-contract fields and event migrations. Published definitions retain their original bytes. New starts can use the approved runtime interpretation of an old valid graph; store that interpretation in the run. Published settings changed by this proposal require a new definition revision.
 
-Legacy command-driven runs lack graph positions. Preserve read/replay/cancel/receipt access; do not guess positions from their attempt list, silently start agents, or manufacture approval evidence. Proposed default is to refuse graph resume of a legacy run and offer cancellation followed by a new start after reservations are released. Boss approved this behavior on 2026-10-03. Older binaries must refuse a newer database rather than corrupt it. There is no parallel legacy graph executor.
+Legacy command-driven runs lack graph positions. Preserve read/replay/cancel/receipt access; do not guess positions from their attempt list, silently start agents, or manufacture approval evidence. Proposed default is to refuse graph resume of a legacy run and offer cancellation followed by a new start after reservations are released. Older binaries must refuse a newer database rather than corrupt it. There is no parallel legacy graph executor.
 
 ## Node semantics
 
@@ -138,7 +137,7 @@ Recommended design:
 - Publication requires structured forks with a common matching Join, no branch escape before joining and no loop crossing a fork boundary. Agent nodes retain one successor; adding a second connection must not secretly become a fork. Conditions may branch inside a fork, but each selected path reaches the matching Join.
 - On branch failure, pause the scope, preserve completed arrivals and fence the failed activation. Explicit retry replaces only that generation. Cancel invalidates every outstanding branch. Do not treat a cancelled branch as successful arrival.
 
-Boss approved Fork plus paired all-Join for enforced read-only review/validation branches. It is not present in the baseline palette. Slice A adds its schema/validator; G adds execution and client editing. Do not claim its runtime verified before G and H.
+The design uses Fork plus paired all-Join for enforced read-only review/validation branches. It is not present in the baseline palette. Slice A adds its schema/validator; G adds execution and client editing. Do not claim its runtime verified before G and H.
 
 ## Worktrees, concurrency and dependencies
 
@@ -150,7 +149,7 @@ Within a run, retain `max_parallel_stories`, dependency receipts and file-scope 
 
 Dependent release uses the current shared integration predicate. Done alone is insufficient; WontFix never supplies delivered output. A dispatch with no ready stories checks for active children, blocked prerequisites and open planning rather than treating emptiness as completed. An included WontFix story requires an explicit independent plan-disposition decision before plan closure; its dependents remain blocked until their requirements are changed through the existing operator action.
 
-Integration remains explicit in the first executable slice. At successful story End, persist graph completion/approval and show delivery waiting_integration until the operator merges and `record_integration` verifies it. Story Dispatch's completed edge requires that receipt. An operator-only integration effect can be added later after Boss approves automatic merge authority; a coordinator report alone can never merge. A canonical ref advance requires existing recertification; approvals/checks must not silently survive it.
+Integration remains explicit in the first executable slice. At successful story End, persist graph completion/approval and show delivery waiting_integration until the operator merges and `record_integration` verifies it. Story Dispatch's completed edge requires that receipt. An operator-only integration effect can be added later after a separate automatic-merge design is approved; a coordinator report alone can never merge. A canonical ref advance requires existing recertification; approvals/checks must not silently survive it.
 
 ## Failure, side effects and recovery
 
@@ -178,7 +177,7 @@ Restart preserves the current conservative rule: pause active executions and req
 
 Add a **Start workflow** control to the selected native story/plan. Keep **Start work** as manual story work. The client sends a published definition ID/revision, start request ID, expected story/plan revision, bounded limits and an allowed role-profile selection. Drafts cannot start. Backend validates policy, ownership, checks, reservations, resource availability and pins the selected revision in one transaction. The response includes the durable run ID and initial sequence; scheduling is daemon work after commit.
 
-Extend existing `workflow_run_action` with `start_story` and the start-key contract for `start_plan`. Expose a `workflow action=run` MCP entry with generated Rust schema for start/get/list/events, cancel, answer/resume and effect resolution as authorized. Use the same backend service for IPC, guarded HTTP and MCP. Managed actors may read their owning project and submit their own bound reports/proposals; operator mutations require the configured operator authorization. Loopback transport does not establish human identity or permission. Resolve the existing local-agent/operator authorization concern tracked by story 956-9745 before enabling autonomous execution of editable command policies.
+Extend existing `workflow_run_action` with `start_story` and the start-key contract for `start_plan`. Expose a `workflow action=run` MCP entry with generated Rust schema for start/get/list/events, cancel, answer/resume and effect resolution as authorized. Use the same backend service for IPC, guarded HTTP and MCP. Managed actors may read their owning project and submit their own bound reports/proposals; operator mutations require the configured operator authorization. Loopback transport does not establish human identity or permission. Resolve the existing local-agent/operator authorization concern before enabling autonomous execution of editable command policies.
 
 Add HTTP/WS parity for every IPC surface and map actions through `COMMAND_TABLE`, its generated-path Vitest assertion and Rust route probe. Carry canonical owner path so connected-remote starts reach that daemon. Publish changes through the existing dual-emitted desktop/SSE cursor event. MCP events are paged by the same sequence; they do not depend on the agent remembering inbox mail. Add graph activation/decision inspector data to Run history; it must show waits, selected edges, actor provenance and interrupted attempts honestly.
 
@@ -186,13 +185,13 @@ Run controls use expected sequence, stable request IDs and payload hashes. Cance
 
 ## Automated test strategy and 37-case mapping
 
-These are planned tests, not runs or passes. Write behavior tests only where they protect the named failure below. Existing valid tests remain in place; extend them rather than duplicating coverage. Each implementation slice makes all code/test changes first, then runs its focused validation once; no runtime RED reconfirmation, per-edit builds, mutation or coverage gates. A failed final run is diagnosed and corrected before one rerun.
+These are planned tests, not runs or passes. Write behavior tests only where they protect the named failure below. Existing valid tests remain in place; extend them rather than duplicating coverage.
 
 Use three layers:
 
 - **Rust domain:** pure reducer/policy with real store transactions and controlled clock; an in-process recorded-effect adapter only for TUIC-owned side-effect boundaries. Test the event/receipt contract, not a mocked model conversation. Startup/crash tests open real isolated SQLite databases and recover committed boundaries.
 - **Service/transport:** actual route/router and managed identity resolution; reuse launch/report tests, check runner and toy Git repositories for digest/integration behavior. Generated IPC/HTTP route parity and MCP schema assertions protect consumers.
-- **Headless E2E/UI:** later build `tuic-remote` from the delivered worktree and run against the disposable repository with cheap sol/sonnet profiles. Use actual agent reports, not hand-authored fixtures pretending to be captured external output. Record real report payloads for repeatable contract tests. Browser automation uses the mandated stealth wrapper and named session, screenshots and native trusted interactions.
+- **Headless E2E/UI:** later build `tuic-remote` from the delivered worktree and run against the disposable repository with configured role profiles. Use actual agent reports, not hand-authored fixtures pretending to be captured external output. Record real report payloads for repeatable contract tests. Browser checks use isolated sessions, screenshots and trusted interactions.
 
 | # | Case and expected outcome | Planned test / named bug | Layer |
 |---|---|---|---|
@@ -236,7 +235,7 @@ Use three layers:
 
 Add adversarial cases to these behavioral tests: duplicate command with changed payload, false check digest, edited criteria during review, cancellation after report before successor commit, two executor owners, missing run config, unpublished draft start, uncertain effect resolution before resume, fork branch failure and plan revision change after final verification. These are boundary variants, not arbitrary test-count targets.
 
-The later environment reuses `setup-fixture.py`, `fixture-spec.json` and the tiny repository under `~/Gits/.tmp/wf-verify/`. Native story IDs come from the service. Drive known negative/ambiguous conditions through exact file/check/input state, rather than assuming a prompt guarantees a model verdict. Use the later approved named config path **only** for E2E once executable runtime exists; remove it and test registrations afterward. No desktop launch, real repository mutation or production-config use is permitted. Record source revision, graph revisions, role profiles, run IDs, actor IDs, artifacts and complete expected/observed matrix; preserve reusable repository/evidence.
+End-to-end verification uses a disposable repository and isolated instance configuration. Drive negative and ambiguous conditions through exact file, check and input state. Record source and graph revisions, role profiles, run and actor IDs, artifacts and the expected/observed matrix. Remove test registrations and instance configuration afterward.
 
 ## Landable slices
 
@@ -244,7 +243,7 @@ Each slice has a truthful capability boundary. A graph may be saved as draft whi
 
 | Slice | Deliverable and reuse | Acceptance and focused validation |
 |---|---|---|
-| A. Semantics and schema | Keep decision 1 open until D; add versioned activation/token/decision/loop state, replay and executable graph validator; retain definition store | Cases 12, 14, 15, 18-22. Target changed definition/reducer/store tests; schema reopen/replay |
+| A. Semantics and schema | Add versioned activation/token/decision/loop state, replay and executable graph validator; retain definition store | Cases 12, 14, 15, 18-22. Target changed definition/reducer/store tests; schema reopen/replay |
 | B. Daemon executor | AppState runtime, owner lock, durable initial activation, predecessor checks, timers and pause/resume/cancel | Cases 01, 06-07, 25-26, 28, 37. Scheduler/store/ownership tests; no model/provider dependency |
 | C. Agent effects and identity | Extract launch adapter, worktree effects, reservations, operation keys, fenced reports/exits and durable role authority | Cases 08-11, 23-24, 27, 32. Managed launch/report tests plus real process boundary probes |
 | D. Story policy | Pre-approval checks, independent approval receipt, Judge/Gate/Loop/Pause/Notify/exclusive Join; typed resolution | Cases 02-05, 12-17, 33. Policy matrix, receipt and cross-store crash tests |
@@ -253,33 +252,27 @@ Each slice has a truthful capability boundary. A graph may be saved as draft whi
 | G. Structured parallel graph branches | Explicit Fork, paired all-Join, enforced read-only branches, scopes/generations and failure handling | Cases 17, 23, 25, 27 with branch variants. Token/concurrency tests; otherwise capability visibly unavailable |
 | H. Isolated end-to-end verification | Build delivered headless binary; actual cheap agents and browser UI; execute and record all 37 cases | Functional matrix plus runtime crash/restart/approval evidence. No unsupported case counted passed |
 
-Ordering: A -> B -> C -> D -> E -> F -> H. G is in scope, depends on A-D and lands before H. Story 956-9745 must land before B enables autonomous scheduling; decision 1 must be resolved before D. A-F may land incrementally with executable publication/start disabled until the seed contracts are supported. Update existing native-workflow plan through its management command after decisions; do not change its status by editing front matter.
+Ordering: A -> B -> C -> D -> E -> F -> H. G is in scope, depends on A-D and lands before H. The operator-authorization contract must be enforced before autonomous scheduling; approval authority must be defined before D. A-F may land incrementally with executable publication/start disabled until the seed contracts are supported.
 
-The coordinator owns broad integration validation after implementation: one final remote run through `build-slot.sh --remote` with the TUIC library scope it authorized, touched Vitest files and `cargo build --bin tuic-remote --no-default-features`. Per-slice checks remain targeted and serialized; do not use that broad gate after every edit. Apply repository temp wrappers, mbx and BUILD_FREEZE policy to any eventual Cargo run. This design commit requires Markdown/link/diff checks only, no application suite.
-
-## Decided (Boss, 2026-10-03)
+## Design decisions
 
 - **0 — Delivery:** GO for the native runtime, slice by slice A -> F, then H. Slice G is included after A-D and before H.
 - **2 — Parallel branches:** Explicit Fork with paired Join `all`, restricted to enforced read-only review/validation branches. Writable intra-story composition is outside this scope.
 - **3 — Pause and repairs:** Pin `resume_to` and require typed resolution. `max_iterations=3` permits the initial implementation plus three repairs. Resume never resets counters.
 - **4 — Plan verification:** Executable Resolve plan publication requires deterministic final checks. A caller-supplied boolean cannot certify completion.
 - **5 — Legacy runs:** Inspect and cancel only; no resume and no guessed graph positions. New execution requires a new graph run.
-- **6 — Authorization prerequisite:** Close and land story 956-9745 before enabling autonomous scheduling. It is a prerequisite of slice B. Slice A does not enable an executor.
+- **6 — Authorization prerequisite:** Enforce operator authorization before enabling autonomous scheduling. It is a prerequisite of slice B. Slice A does not enable an executor.
 - **7 — Resource/profile defaults:** Two parallel stories by default, a per-project spawn limit, explicit sonnet/sol profiles, and visible errors when a required profile is missing.
 
-## Open decision for Boss
+## Approval and integration authority
 
-**1 — Approval and integration authority (decided, Boss 2026-10-03):** approval comes from an independent reviewer; a workflow implementer may not approve even after claim release or exit. Merge remains explicit, never automatic. An included WontFix never releases dependents.
-
-The named Mac instance path `~/Library/Application Support/com.tuic.commander/instances/wf-verify` is authorized solely for later E2E and cleanup. It is not used in slice A.
-
+**1 — Approval and integration authority:** approval comes from an independent reviewer; a workflow implementer may not approve even after claim release or exit. Merge remains explicit, never automatic. An included WontFix never releases dependents.
 
 ## Slice A implementation boundary
 
 Run-store schema 2 and event contract 2 persist serial transitions through the existing immediate transaction and replay reducer. The event contract selects executable graph validation and replay semantics; future contracts must retain the version-2 semantics. Activations retain predecessor and edge provenance, with a 4096-activation history bound. All settings/checks are copied from the run-pinned published revision; current drafts are never traversed. Judge/Gate/Dispatch decisions require one published outcome and bounded string actor/reason/evidence provenance, without granting approval authority. Loop counts are scoped to the graph execution and node and do not reset on resume. Pause follows the pinned target and stores a bounded string resolution. ResolvePause and Resume share uncertain-effect and unanswered-input checks, including event replay.
 
 Executable graph start requires deterministic final checks and pinned Pause targets. Normal publication retains its existing semantics for UI/API consumers, including built-in Pause nodes without resume targets and plans without checks. Fork/all-Join schema and execution wait for G; Join retains exclusive serial merge semantics. No executor, start control, new MCP surface, role authorization, process effect or approval/merge policy is enabled by A.
-
 
 ## Slice B implementation boundary
 
@@ -293,11 +286,9 @@ Workflow graph slice C: the owning daemon executes pinned serial Agent/Judge/Loo
 
 Resolve plan create/dispatch/replan remains slice E. Independent approval automation remains D. Historical seeded definitions remain record-only; executable root start checks capabilities.
 
-
 ### Slice D capability boundary
 
 Story Judge waits for daemon-computed pre-approval checks and an independent native approval transition before yes. Native history retains the approving session and revision; the bound report and current Git digest retain the artifact subject. Failed checks cannot approve. Gate selects pass/fail from current deterministic receipts. Merge stays explicit; plan dispatch follows in E. No new persistence format is introduced.
-
 
 ### Slice E capability boundary
 
@@ -305,4 +296,12 @@ Plan agents and repeated Create Stories visits reuse managed attempts and idempo
 
 ### Slice F capability boundary (2026-10-06)
 
-Public `start_graph` reaches the owning daemon over the existing IPC/HTTP action route and generated `workflow action=run` MCP schema. Story starts pin publications and request IDs; run history shows graph positions, decision evidence, pause targets and complete paged event payloads. Graph resume is explicit and sequence-fenced. Public plan starts share the graph-root entry point with slice E dispatch; the story-only UI selector leaves plan start visibly unavailable. Visual verification is owed while the screen is locked; no browser/E2E pass is claimed.
+Public `start_graph` reaches the owning daemon over the existing IPC/HTTP action route and generated `workflow action=run` MCP schema. Story starts pin publications and request IDs; run history shows graph positions, decision evidence, pause targets and complete paged event payloads. Graph resume is explicit and sequence-fenced. Public plan starts share the graph-root entry point with slice E dispatch; the story-only UI selector leaves plan start visibly unavailable. Browser and end-to-end verification are separate from the API capability boundary.
+
+## Neutral catalog contract boundary
+
+The independent neutral rework now defines immutable reusable script/subflow
+descriptors and publication format 4. This is not a migration of this runtime.
+The existing executor remains unchanged; target pins and typed output validation
+do not supply dispatch authority or make adapters executable. See the internal
+contract boundary in the backend workflow reference.

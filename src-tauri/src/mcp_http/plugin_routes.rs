@@ -65,6 +65,33 @@ pub(super) async fn plugin_fs_read_base64(
 }
 
 #[derive(Deserialize)]
+pub(super) struct FsRangeQuery {
+    pub path: String,
+    pub offset: u64,
+    pub length: u64,
+}
+
+pub(super) async fn plugin_fs_size(
+    State(state): State<Arc<AppState>>,
+    AxumPath(plugin_id): AxumPath<String>,
+    Query(q): Query<FsReadQuery>,
+) -> Response {
+    json_result(crate::plugin_fs::plugin_file_size_impl(&state, q.path, plugin_id).await)
+}
+pub(super) async fn plugin_fs_range(
+    State(state): State<Arc<AppState>>,
+    AxumPath(plugin_id): AxumPath<String>,
+    Query(q): Query<FsRangeQuery>,
+) -> Response {
+    json_result(
+        crate::plugin_fs::plugin_read_file_range_impl(
+            &state, q.path, q.offset, q.length, plugin_id,
+        )
+        .await,
+    )
+}
+
+#[derive(Deserialize)]
 pub(super) struct FsTailQuery {
     pub path: String,
     #[serde(rename = "maxBytes")]
@@ -222,6 +249,8 @@ pub(super) struct ExecBody {
     pub binary: String,
     pub args: Vec<String>,
     pub cwd: Option<String>,
+    #[serde(rename = "timeoutMs")]
+    pub timeout_ms: Option<u64>,
 }
 
 pub(super) async fn plugin_exec(
@@ -236,6 +265,7 @@ pub(super) async fn plugin_exec(
             body.args,
             body.cwd,
             plugin_id,
+            body.timeout_ms,
         )
         .await,
     )

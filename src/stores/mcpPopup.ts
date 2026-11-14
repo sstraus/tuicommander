@@ -4,6 +4,7 @@ import { reportSettingsConflicts, settingsRefresh } from "../services/settingsRe
 import { rpc, type UpstreamMcpConfig, type UpstreamMcpServer } from "../transport";
 import { getRemoteBaseUrl } from "../transportRuntime";
 import { mergeSettingsSnapshot } from "../utils/mergeSettingsSnapshot";
+import { reconcileById } from "../utils/reconcileById";
 import { type RemoteEventPayload, remoteEventOrigin } from "../utils/remoteEventOrigin";
 import { appLogger } from "./appLogger";
 import { repoSettingsStore } from "./repoSettings";
@@ -89,7 +90,10 @@ function createMcpPopupStore() {
 			]);
 			acknowledgedServers = cfg.servers ?? [];
 			setState("servers", cfg.servers ?? []);
-			setState("status", snap?.upstreams ?? []);
+			setState(
+				"status",
+				reconcileById(snap?.upstreams ?? [], state.status, (u) => u.name),
+			);
 			setState("projectAllowlist", resolveProjectAllowlist());
 		} catch (err) {
 			appLogger.debug("mcp", "McpPopup loadConfig failed", err);
@@ -100,7 +104,10 @@ function createMcpPopupStore() {
 	async function refreshStatus(): Promise<void> {
 		try {
 			const snap = await invoke<{ upstreams: UpstreamStatusEntry[] }>("get_mcp_upstream_status");
-			setState("status", snap?.upstreams ?? []);
+			setState(
+				"status",
+				reconcileById(snap?.upstreams ?? [], state.status, (u) => u.name),
+			);
 		} catch {
 			// Transient failure — ignore
 		}

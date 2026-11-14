@@ -18,8 +18,9 @@ import { t } from "../../i18n";
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { registerModal } from "../../stores/modalStack";
-import { storiesUi } from "../../stores/storiesUi";
-import { workflowRunSignals } from "../../stores/workflowRunSignals";
+import { repositoriesStore } from "../../stores/repositories";
+import { type StoriesTarget, storiesUi } from "../../stores/storiesUi";
+import { workflowsUi } from "../../stores/workflowsUi";
 import { HttpRpcError, isTauri } from "../../transport";
 import type { PlanState, StoryStatus, StoryType, StoryVisibility } from "../../types/stories.gen";
 import { openFileAction } from "../../utils/filePreview";
@@ -31,13 +32,13 @@ import { PanelWindowControls } from "../ui/PanelWindowControls";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { Select } from "../ui/Select";
 import { Textarea } from "../ui/Textarea";
-import { WorkflowDesigner } from "../WorkflowDesigner/WorkflowDesigner";
 import { type EditablePlan, PlanEditForm, type PlanEditPatch } from "./PlanEditForm";
-import { RunIncidents } from "./RunIncidents";
 import s from "./StoriesDialog.module.css";
-import { type EditableStory, StoryEditForm, type StoryEditPatch } from "./StoryEditForm";
+import { StoryDelivery } from "./StoryDelivery";
+import { type EditableStory, StoryEditForm, type StoryEditPatch, type StoryEdits } from "./StoryEditForm";
 import { StoryMetadata } from "./StoryMetadata";
 import { StoryNotes } from "./StoryNotes";
+import { WaitingOnYou } from "./WaitingOnYou";
 
 interface Plan extends EditablePlan {
 	archived: boolean;
@@ -58,6 +59,8 @@ interface Story extends EditableStory {
 	status: StoryStatus;
 	claimSession: string | null;
 	abandoned: boolean;
+	/** Done in its external backend without a TUIC integration receipt. */
+	completedOutside?: boolean;
 }
 interface PhaseMove {
 	status: StoryStatus;
@@ -69,9 +72,22 @@ interface PhaseChoices {
 	error?: string;
 }
 
+interface BackendStatus {
+	backend: string;
+	label: string;
+	provenance: string;
+	reason: string;
+	availability: string;
+	installation: string | null;
+	generation?: string | null;
+	version: string | null;
+	error: string | null;
+}
+
 const ALL_PLANS = "all-plans";
 
 type Reply =
+	| { type: "backend_status"; value: BackendStatus }
 	| { type: "plan"; value: Plan }
 	| { type: "plans"; value: Plan[] }
 	| { type: "plan_sources"; value: PlanSource[] }
@@ -92,69 +108,6 @@ type Reply =
 	| { type: "stories"; value: Story[] }
 	| { type: "available_transitions"; value: PhaseChoices };
 
-interface RunGraph {
-	id: string;
-	targetId: string;
-	definition: {
-		id: string;
-		revision: number;
-		graph: {
-			nodes: { id: string; kind: { type: string } }[];
-			edges: { from: string; to: string; outcome?: string | null }[];
-		};
-	};
-	activations: { id: string; nodeId: string; state: string; edgeIndex: number | null }[];
-	decisions: {
-		activationId: string;
-		edgeIndex: number;
-		evidence: { actor: string; reason: string; references: string[] };
-	}[];
-	loops: { nodeId: string; repeats: number }[];
-	pauses: { activationId: string; resumeTo: string; evidence: { reason: string }; resolution: string | null }[];
-	completed: boolean;
-}
-interface RunQuestion {
-	id: string;
-	revision: number;
-	attemptId: string;
-	subjectDigest: string;
-	state: string;
-	schema: { type: string; options?: string[] };
-	request: { question: string; options: string[] };
-}
-interface RunSnapshot {
-	questions?: RunQuestion[];
-	id: string;
-	planId: string;
-	status: string;
-	pauseCause?: string;
-	sequence: number;
-	startedMs: number;
-	rootTarget?: { type: string; id: string } | null;
-	graphExecutions?: RunGraph[];
-	stories: { storyId: string; accepted: boolean }[];
-	attempts: {
-		id: string;
-		storyId: string;
-		nodeId: string;
-		state: string;
-		outcome: string | null;
-		inputAnswer?: string | null;
-		report?: { inputRequest?: { question: string; options: string[] } | null } | null;
-	}[];
-}
-interface RunEvent {
-	sequence: number;
-	atMs: number;
-	kind: { type: string; [field: string]: unknown };
-}
-type RunReply =
-	| { type: "runs"; value: RunSnapshot[] }
-	| { type: "snapshot"; value: RunSnapshot }
-	| { type: "events"; value: RunEvent[] }
-	| { type: "receipt"; value: { snapshot: RunSnapshot; event?: RunEvent } }
-	| { type: "readiness"; value: string[] };
-
 const missingBackendMessage = () =>
 	t(
 		"stories.error.missingBackend",
@@ -166,6 +119,13 @@ class MissingStoriesBackendError extends Error {
 		super(missingBackendMessage());
 	}
 }
+
+/** The backend probe answers with a capability descriptor; anything else is an older backend. */
+const isStoryCapabilities = (value: unknown): boolean =>
+	typeof value === "object" &&
+	value !== null &&
+	typeof (value as { backend?: unknown }).backend === "string" &&
+	typeof (value as { operations?: unknown }).operations === "object";
 
 const statusLabel = (status: StoryStatus): string => {
 	switch (status) {
@@ -197,7 +157,7 @@ function PhaseSelector(props: {
 }) {
 	const moves = () => (props.choices?.revision === props.story.revision ? props.choices.moves : []);
 	return (
-		<label class={s.phaseSelector}>
+		<label class={s.phaseSelector} data-status={props.story.status}>
 			<span>{t("stories.phase.label", "Phase")}</span>
 			<Select
 				aria-label={props.label}
@@ -417,61 +377,32 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 		if (!dependencyId()) return t("stories.dependencyRequired", "Select a story to add a dependency.");
 		return "";
 	};
-	const [showRuns, setShowRuns] = createSignal(false);
-	const [showDesigner, setShowDesigner] = createSignal(false);
-	const [runs, setRuns] = createSignal<RunSnapshot[]>([]);
-	const [selectedRunId, setSelectedRunId] = createSignal<string | null>(null);
-	const [run, setRun] = createSignal<RunSnapshot | null>(null);
-	const [runEvents, setRunEvents] = createSignal<RunEvent[]>([]);
-	const [runLoading, setRunLoading] = createSignal(false);
-	const [runError, setRunError] = createSignal("");
-	const [inputAnswer, setInputAnswer] = createSignal("");
-	const [startOpen, setStartOpen] = createSignal(false);
-	const [publishedChoices, setPublishedChoices] = createSignal<
-		{ id: string; name: string; latestPublishedRevision: number }[]
-	>([]);
-	const [workflowChoice, setWorkflowChoice] = createSignal("");
-	const [startProblems, setStartProblems] = createSignal<string[]>([]);
-	const [checkingStart, setCheckingStart] = createSignal(true);
-	const routingPolicyMissing = () => startProblems().includes("effective host routing policy is not imported");
-	// The definition whose readiness answer is in; Start waits for it.
-	const [readyFor, setReadyFor] = createSignal("");
-	const [recoveryExecution, setRecoveryExecution] = createSignal("");
-	const [recoveryActivation, setRecoveryActivation] = createSignal("");
-	const [resolution, setResolution] = createSignal("");
-	let startRequestId = "";
-	createEffect(on(storyId, () => setStartOpen(false)));
-	createEffect(
-		on(selectedRunId, () => {
-			setRecoveryExecution("");
-			setRecoveryActivation("");
-			setResolution("");
-		}),
-	);
-	// One pending activation leaves nothing to choose: offer it, the operator still writes the resolution.
-	createEffect(() => {
-		const current = run();
-		if (current?.status !== "paused" || untrack(recoveryExecution)) return;
-		const pending = (current.graphExecutions ?? []).flatMap((graph) =>
-			graph.activations
-				.filter((activation) => activation.state === "ready" || activation.state === "running")
-				.map((activation) => ({ execution: graph.id, activation: activation.id })),
-		);
-		if (pending.length !== 1) return;
-		setRecoveryExecution(pending[0].execution);
-		setRecoveryActivation(pending[0].activation);
-	});
 	const cancelDragOnBlur = () => cancelStoryDrag?.();
 	onMount(() => window.addEventListener("blur", cancelDragOnBlur));
 	onCleanup(() => window.removeEventListener("blur", cancelDragOnBlur));
 	let closeButton: HTMLButtonElement | undefined;
 	let request = 0;
-	let runRequest = 0;
 	onCleanup(() => {
 		++request;
-		++runRequest;
 	});
-	let capabilitiesReady = false;
+	const [backendStatus, setBackendStatus] = createSignal<BackendStatus | null>(null);
+	const [capabilitiesReady, setCapabilitiesReady] = createSignal(false);
+	// What the project's story backend supports; an external adapter declares fewer operations.
+	const [operations, setOperations] = createSignal<Record<string, boolean | StoryEdits>>({});
+	const can = (operation: string): boolean =>
+		capabilitiesReady() &&
+		(!backendStatus() || backendStatus()?.availability === "available") &&
+		operations()[operation] !== false;
+	const storyEdits = (): StoryEdits | undefined => {
+		const edits = operations().story_edits;
+		return edits && typeof edits === "object" ? edits : undefined;
+	};
+	const canEditStory = () =>
+		can("update_story") ||
+		(can("story_edits") &&
+			["title", "priority", "problem", "criteria_add"].some(
+				(field) => storyEdits()?.[field as keyof StoryEdits] === true,
+			));
 	// A dependency choice belongs to the story it was made for.
 	createEffect(on(storyId, () => setDependencyId("")));
 
@@ -482,24 +413,7 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 	const selectedPlan = () => plans().find((plan) => plan.id === planId());
 	const selectedStory = () => stories().find((story) => story.id === storyId());
 	const storyPlan = () => plans().find((plan) => plan.id === selectedStory()?.planId);
-	const runPlanId = () => selectedPlan()?.id ?? storyPlan()?.id;
 	const planTitleFor = (story: Story) => plans().find((plan) => plan.id === story.planId)?.title ?? story.planId;
-	const pendingQuestion = () => run()?.questions?.find((question) => question.state === "pending");
-	const pendingInput = () => {
-		const selected = run();
-		if (selected?.questions) {
-			const question = pendingQuestion();
-			return selected.attempts.find((attempt) => attempt.id === question?.attemptId);
-		}
-		return selected?.attempts.find(
-			(attempt) => attempt.outcome === "needs_input" && !attempt.inputAnswer && attempt.report?.inputRequest,
-		);
-	};
-	const pendingOptions = () => {
-		const question = pendingQuestion();
-		return question ? (question.schema.options ?? []) : (pendingInput()?.report?.inputRequest?.options ?? []);
-	};
-
 	const fail = (cause: unknown): void => {
 		const message = String(cause);
 		appLogger.warn("store", "Stories: action failed", { error: message });
@@ -510,15 +424,23 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 				: detail,
 		);
 	};
-	const ensureCapabilities = async (): Promise<void> => {
-		if (capabilitiesReady) return;
+	const ensureCapabilities = async (current: number, project: string): Promise<void> => {
 		try {
-			if ((await invoke<unknown>("story_capabilities")) !== true) throw new MissingStoriesBackendError();
-			capabilitiesReady = true;
+			const capabilities = await invoke<unknown>("story_capabilities", { project });
+			if (!isStoryCapabilities(capabilities)) throw new MissingStoriesBackendError();
+			if (current !== request || project !== props.project) return;
+			setOperations((capabilities as { operations: Record<string, boolean | StoryEdits> }).operations);
+			setCapabilitiesReady(true);
 		} catch (cause) {
+			if (current === request && project === props.project) {
+				setCapabilitiesReady(false);
+				setBackendStatus((status) =>
+					status ? { ...status, availability: "unavailable", error: String(cause) } : status,
+				);
+			}
 			if (
 				cause instanceof MissingStoriesBackendError ||
-				isTauri() ||
+				(isTauri() && String(cause).includes("story_capabilities not found")) ||
 				(cause instanceof HttpRpcError && cause.status === 404)
 			) {
 				throw new MissingStoriesBackendError();
@@ -534,228 +456,55 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 		return reply as Reply;
 	};
 
-	const callRun = (action: Record<string, unknown>) =>
-		invoke<RunReply>("workflow_run_action", { project: props.project, action });
-
-	async function loadRun(runId: string): Promise<void> {
-		const current = ++runRequest;
-		const after = untrack(() => (run()?.id === runId ? (runEvents().at(-1)?.sequence ?? 0) : 0));
-		setRunLoading(true);
-		setRunError("");
-		try {
-			const [snapshot, events] = await Promise.all([
-				callRun({ action: "get", run_id: runId }),
-				callRun({ action: "events", run_id: runId, after_sequence: after, limit: 100 }),
-			]);
-			if (snapshot.type !== "snapshot" || events.type !== "events") throw new Error("Invalid run response");
-			if (current !== runRequest) return;
-			setRun(snapshot.value);
-			setRuns((previous) => previous.map((item) => (item.id === snapshot.value.id ? snapshot.value : item)));
-			setRunEvents((previous) => (after ? [...previous, ...events.value] : events.value));
-		} catch (cause) {
-			if (current === runRequest) setRunError(String(cause));
-		} finally {
-			if (current === runRequest) setRunLoading(false);
-		}
+	function invalidateBackendContent(): void {
+		setCapabilitiesReady(false);
+		setPlans([]);
+		setStories([]);
+		setPlanId(null);
+		setStoryId(null);
+		setEditingPlan(null);
+		setEditing(null);
+		setNewPlan(false);
+		setNewStory(false);
 	}
-
-	async function openRuns(): Promise<void> {
-		const currentPlan = runPlanId();
-		if (!currentPlan) return;
-		if (run()?.planId !== currentPlan) {
-			++runRequest;
-			setRuns([]);
-			setSelectedRunId(null);
-			setRun(null);
-			setRunEvents([]);
-		}
-		setShowRuns(true);
-		setRunLoading(true);
-		setRunError("");
-		try {
-			const reply = await callRun({ action: "list_plan_runs", plan_id: currentPlan, limit: 20 });
-			if (reply.type !== "runs") throw new Error("Invalid run list response");
-			if (currentPlan !== runPlanId() || !showRuns()) return;
-			setRuns(reply.value);
-			const selected = reply.value.find((item) => item.id === selectedRunId())?.id ?? reply.value[0]?.id ?? null;
-			const unchanged = selected === selectedRunId();
-			setSelectedRunId(selected);
-			if (!selected) {
-				setRun(null);
-				setRunEvents([]);
-				setRunLoading(false);
-			} else if (unchanged) await loadRun(selected);
-		} catch (cause) {
-			setRunError(String(cause));
-			setRunLoading(false);
-		}
-	}
-
-	async function answerRunInput(event: SubmitEvent): Promise<void> {
-		event.preventDefault();
-		const selected = run();
-		const attempt = pendingInput();
-		const answer = inputAnswer().trim();
-		if (!selected || !attempt || !answer) return;
-		setRunLoading(true);
-		setRunError("");
-		try {
-			const question = pendingQuestion();
-			const reply = await callRun({
-				action: "command",
-				run_id: selected.id,
-				command_id: question ? `answer-question:${question.id}:${question.revision}` : `answer-input:${attempt.id}`,
-				expected_sequence: selected.sequence,
-				command: question
-					? {
-							action: "answer_question",
-							question_id: question.id,
-							expected_revision: question.revision,
-							subject_digest: question.subjectDigest,
-							actor: { kind: "human", id: "stories-dialog" },
-							answer:
-								question.schema.type === "boolean" || question.schema.type === "multiple_choice"
-									? JSON.parse(answer)
-									: answer,
-						}
-					: { action: "answer_input", attempt_id: attempt.id, answer },
-			});
-			if (reply.type !== "receipt") throw new Error("Invalid run response");
-			setRun(reply.value.snapshot);
-			setInputAnswer("");
-		} catch (cause) {
-			setRunError(String(cause));
-		} finally {
-			setRunLoading(false);
-		}
-	}
-
-	async function controlRun(command: Record<string, unknown>): Promise<void> {
-		const selected = run();
-		if (!selected) return;
-		setRunLoading(true);
-		setRunError("");
-		try {
-			const reply = await callRun({
-				action: "command",
-				run_id: selected.id,
-				command_id: crypto.randomUUID(),
-				expected_sequence: selected.sequence,
-				command,
-			});
-			if (selectedRunId() !== selected.id) return;
-			if (reply.type !== "receipt") throw new Error("Invalid run response");
-			setRun(reply.value.snapshot);
-			setRecoveryExecution("");
-			setRecoveryActivation("");
-			setResolution("");
-			await loadRun(selected.id);
-		} catch (cause) {
-			if (selectedRunId() === selected.id) setRunError(String(cause));
-		} finally {
-			if (selectedRunId() === selected.id) setRunLoading(false);
-		}
-	}
-
-	async function checkStartReadiness(definitionId: string): Promise<void> {
-		const workflow = publishedChoices().find((item) => item.id === definitionId);
-		setStartProblems([]);
-		setReadyFor("");
-		if (!workflow) return;
-		try {
-			const reply = await callRun({
-				action: "start_readiness",
-				definition_id: workflow.id,
-				definition_revision: workflow.latestPublishedRevision,
-			});
-			if (reply.type !== "readiness") throw new Error("Invalid run response");
-			if (workflowChoice() === definitionId) {
-				setStartProblems(reply.value);
-				setReadyFor(definitionId);
-			}
-		} catch (cause) {
-			if (workflowChoice() === definitionId) setStartProblems([`Could not check the start requirements: ${cause}`]);
-		}
-	}
-
-	async function openStart(open = true): Promise<void> {
-		if (open) {
-			setBusy(true);
-			setError("");
-		}
-		const selected = storyId();
-		try {
-			const reply = await invoke<{
-				type: string;
-				value: { id: string; name: string; kind: string; latestPublishedRevision: number | null }[];
-			}>("workflow_definition_action", { project: props.project, action: { action: "list_drafts" } });
-			if (reply.type !== "drafts") throw new Error("Invalid workflow response");
-			if (open && selected !== storyId()) return;
-			const choices = reply.value.filter(
-				(item): item is typeof item & { latestPublishedRevision: number } =>
-					item.kind === "story" && item.latestPublishedRevision !== null,
-			);
-			setPublishedChoices(choices);
-			setWorkflowChoice(choices[0]?.id ?? "");
-			startRequestId = crypto.randomUUID();
-			if (open) setStartOpen(true);
-			await checkStartReadiness(choices[0]?.id ?? "");
-		} catch (cause) {
-			if (open) fail(cause);
-		} finally {
-			if (open) setBusy(false);
-			setCheckingStart(false);
-		}
-	}
-
-	async function startStoryWorkflow(event: SubmitEvent): Promise<void> {
-		event.preventDefault();
-		const selected = selectedStory();
-		const workflow = publishedChoices().find((item) => item.id === workflowChoice());
-		if (!selected || !workflow) return;
-		setBusy(true);
-		setError("");
-		try {
-			const reply = await callRun({
-				action: "start_graph",
-				target: { type: "story", id: selected.id },
-				expected_revision: selected.revision,
-				definition_id: workflow.id,
-				definition_revision: workflow.latestPublishedRevision,
-				request_id: startRequestId,
-			});
-			if (reply.type !== "snapshot") throw new Error("Invalid run response");
-			if (selected.id !== storyId()) return;
-			setStartOpen(false);
-			setShowDesigner(false);
-			setShowRuns(true);
-			setRuns((previous) => [reply.value, ...previous.filter((item) => item.id !== reply.value.id)]);
-			const unchanged = selectedRunId() === reply.value.id;
-			setRun(null);
-			setRunEvents([]);
-			setSelectedRunId(reply.value.id);
-			if (unchanged) await loadRun(reply.value.id);
-		} catch (cause) {
-			fail(cause);
-		} finally {
-			setBusy(false);
-		}
-	}
-
-	createEffect(() => {
-		const runId = selectedRunId();
-		if (!showRuns() || !runId) return;
-		workflowRunSignals.sequence(selectedPlan()?.project ?? props.project, runId);
-		workflowRunSignals.resyncRevision();
-		void loadRun(runId);
-	});
 
 	async function refresh(preferredPlan = planId(), preferredStory = storyId()): Promise<void> {
 		const current = ++request;
+		const project = props.project;
 		setLoading(true);
 		setError("");
 		try {
-			await ensureCapabilities();
+			let status: Reply;
+			try {
+				status = await call({ action: "backend_status" });
+			} catch (cause) {
+				if (
+					(cause instanceof HttpRpcError && cause.status === 404) ||
+					String(cause).includes("story_capabilities not found")
+				)
+					throw new MissingStoriesBackendError();
+				throw cause;
+			}
+			if (current !== request || project !== props.project) return;
+			if (status?.type !== "backend_status") throw new MissingStoriesBackendError();
+			if (status.type === "backend_status") {
+				const previous = backendStatus();
+				setBackendStatus(status.value);
+				if (
+					(previous &&
+						(previous.backend !== status.value.backend ||
+							previous.generation !== status.value.generation ||
+							previous.version !== status.value.version)) ||
+					status.value.availability !== "available"
+				) {
+					invalidateBackendContent();
+					preferredPlan = null;
+					preferredStory = null;
+				}
+				if (status.value.availability !== "available") throw new Error(status.value.error ?? status.value.reason);
+			}
+			await ensureCapabilities(current, project);
+			if (current !== request || project !== props.project) return;
 			const list = await call({ action: "list_plans", ...(archivedPlans() ? { archived: true } : {}) });
 			if (list.type !== "plans") throw new Error(t("stories.error.invalidPlan", "Invalid plan response"));
 			let available: PlanSource[] | undefined;
@@ -834,7 +583,15 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 					}
 				}),
 			);
-			if (current !== request) return;
+			const confirmed = await call({ action: "backend_status" });
+			if (current !== request || project !== props.project) return;
+			if (confirmed.type !== "backend_status" || JSON.stringify(confirmed.value) !== JSON.stringify(status.value)) {
+				batch(() => {
+					setBackendStatus(confirmed.type === "backend_status" ? confirmed.value : null);
+					invalidateBackendContent();
+				});
+				throw new Error(t("stories.backend.changed", "Story backend changed during refresh; refresh again."));
+			}
 			if (available) {
 				setPlanSources(available);
 				if (available.length > 0) setNewPlan(true);
@@ -853,7 +610,6 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 			setStoryId(
 				preferredStory && selectableIds.includes(preferredStory) ? preferredStory : (selectableIds[0] ?? null),
 			);
-			if (checkingStart()) void openStart(false);
 		} catch (cause) {
 			if (current === request) {
 				setReadFailed(true);
@@ -1151,10 +907,60 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 		});
 	}
 
+	/** Land on a waiting item's source: its plan and story. */
+	async function reveal(target: Pick<StoriesTarget, "planId" | "storyId">): Promise<void> {
+		await refresh(target.planId ?? planId(), target.storyId ?? storyId());
+	}
+
+	createEffect(
+		on(
+			() => [props.project, repositoriesStore.getRevision(props.project)] as const,
+			([project], previous) => {
+				if (previous && previous[0] === project) {
+					void refresh();
+					return;
+				}
+				++request;
+				setBackendStatus(null);
+				setCapabilitiesReady(false);
+				setPlans([]);
+				setStories([]);
+				void refresh(null, null);
+			},
+			{ defer: true },
+		),
+	);
+
+	async function approveConnector(): Promise<void> {
+		const installation = backendStatus()?.installation;
+		const expected_identity = backendStatus()?.generation;
+		if (!installation || !expected_identity) return;
+		setBusy(true);
+		try {
+			await call({ action: "approve_connector", installation, expected_identity });
+			await refresh(null, null);
+		} catch (cause) {
+			fail(cause);
+		} finally {
+			setBusy(false);
+		}
+	}
+
 	onMount(() => {
 		closeButton?.focus();
-		void refresh();
+		const target = storiesUi.takeTarget(props.project);
+		void (target ? reveal(target) : refresh());
 	});
+	createEffect(
+		on(
+			storiesUi.target,
+			() => {
+				const target = storiesUi.takeTarget(props.project);
+				if (target) void reveal(target);
+			},
+			{ defer: true },
+		),
+	);
 
 	return (
 		<div
@@ -1172,61 +978,66 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 				<header class={s.header}>
 					<div>
 						<h2>{t("stories.title", "Plans and Stories")}</h2>
+						<Show
+							when={backendStatus()}
+							fallback={<span>{t("stories.backend.checking", "Checking story backend…")}</span>}
+						>
+							{(status) => (
+								<div aria-label={t("stories.backend.label", "Story backend")}>
+									<span>
+										{status().label} · {status().provenance} · {status().availability}
+									</span>
+									<details>
+										<summary>{status().reason}</summary>
+										<p>
+											{status().backend} {status().version}
+										</p>
+										<p>{status().installation}</p>
+										<p>{status().generation}</p>
+										<Show when={status().error}>
+											<p>{status().error}</p>
+										</Show>
+										<Button
+											size="compact"
+											type="button"
+											disabled={busy()}
+											onClick={() => void mutate({ action: "set_backend", backend: "native" }, null, null)}
+										>
+											{t("stories.backend.native", "Use TUIC native")}
+										</Button>
+										<Button
+											size="compact"
+											type="button"
+											disabled={busy()}
+											onClick={() => void mutate({ action: "set_backend", backend: "automatic" }, null, null)}
+										>
+											{t("stories.backend.automatic", "Use automatic selection")}
+										</Button>
+									</details>
+									<Show when={status().availability === "approval_required" && status().installation}>
+										<p>
+											{t(
+												"stories.backend.approvalHint",
+												"Approve this entry/version for applicable Wiz projects. Dependencies are not fingerprinted; a changed entry/version needs new approval.",
+											)}
+										</p>
+										<p>{status().installation}</p>
+										<p>{status().generation}</p>
+										<Button size="compact" type="button" disabled={busy()} onClick={() => void approveConnector()}>
+											{t("stories.backend.approve", "Approve installed Wiz connector")}
+										</Button>
+									</Show>
+								</div>
+							)}
+						</Show>
 						<span class={s.project} title={props.project}>
 							{props.project}
 						</span>
 					</div>
 					<div class={s.headerActions}>
-						<Button
-							size="compact"
-							type="button"
-							aria-pressed={!showRuns() && !showDesigner()}
-							onClick={() => {
-								setShowRuns(false);
-								setShowDesigner(false);
-							}}
-						>
-							Stories
-						</Button>
-						<Show when={!checkingStart() && !routingPolicyMissing()}>
-							<Button
-								size="compact"
-								type="button"
-								disabled={
-									busy() ||
-									storyPlan()?.archived ||
-									selectedStory()?.archived ||
-									selectedStory()?.status !== "ready" ||
-									!!selectedStory()?.claimSession
-								}
-								onClick={() => void openStart()}
-							>
-								Start story workflow
-							</Button>
-						</Show>
-						{/* DEFERRED (2026-10-22) — "Start plan workflow" is hidden until the slice E plan dispatch entry point exists (audit 2137 A11). */}
-						<Button
-							size="compact"
-							type="button"
-							aria-pressed={showRuns()}
-							disabled={!runPlanId()}
-							onClick={() => {
-								setShowDesigner(false);
-								void openRuns();
-							}}
-						>
-							Run history
-						</Button>
-						<Button
-							size="compact"
-							type="button"
-							aria-pressed={showDesigner()}
-							onClick={() => {
-								setShowRuns(false);
-								setShowDesigner(true);
-							}}
-						>
-							Designer
+						{/* Definitions and the Designer live in the Workflows space (Boss Q6=A); it opens on top, so this selection stays. */}
+						<Button size="compact" type="button" onClick={() => workflowsUi.open(props.project)}>
+							Workflows
 						</Button>
 					</div>
 					<div class={s.windowControls}>
@@ -1241,6 +1052,10 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 						/>
 					</div>
 				</header>
+				<WaitingOnYou
+					project={props.project}
+					onSelect={(item) => void reveal({ ...item, storyId: item.story?.id ?? null })}
+				/>
 				<Show when={error()}>
 					<div class={s.error} role="alert">
 						{error()}{" "}
@@ -1254,1156 +1069,836 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 						{t("stories.loading", "Loading plans and stories…")}
 					</div>
 				</Show>
-				<Show when={routingPolicyMissing()}>
-					<p class={s.message}>Workflow runs need a routing policy; its controls arrive in a later version.</p>
+				<Show when={editingPlan()} keyed>
+					{(plan) => (
+						<section class={s.editorContent} aria-label={t("stories.planEdit.open", "Edit plan")}>
+							<PlanEditForm
+								plan={plan}
+								sources={planSources()}
+								sourcesLoading={sourcesLoading()}
+								busy={busy()}
+								error={planEditError()}
+								onRefreshSources={() => void loadPlanSources()}
+								onOpenSource={(source) => {
+									if (/^https?:\/\//i.test(source)) handleOpenUrl(source);
+									else {
+										openFileAction(source, props.project);
+										props.onClose();
+									}
+								}}
+								onSave={savePlan}
+								onCancel={cancelPlanEdit}
+							/>
+						</section>
+					)}
 				</Show>
-				<Show when={startOpen() && !routingPolicyMissing()}>
-					<form class={s.form} onSubmit={(event) => void startStoryWorkflow(event)}>
-						<p>Start · {selectedStory()?.title}</p>
-						<Show
-							when={publishedChoices().length > 0}
-							fallback={<p>No published story workflow. Publish one in Designer.</p>}
-						>
-							<label>
-								Published workflow
-								<Select
-									value={workflowChoice()}
-									onChange={(event) => {
-										setWorkflowChoice(event.currentTarget.value);
-										startRequestId = crypto.randomUUID();
-										void checkStartReadiness(event.currentTarget.value);
+				<Show when={newStory() && !editingPlan()}>
+					<section class={s.editorContent} aria-label={t("stories.newStory", "New story")}>
+						<div class={s.editorHeading}>
+							<h3>{t("stories.newStory", "New story")}</h3>
+						</div>
+						<Show when={newStory() && planId() && !selectedPlan()?.archived}>
+							<form class={s.form} onSubmit={(event) => void createStory(event)}>
+								<label>
+									{t("stories.ai.request", "Request")}
+									<Textarea
+										value={storyRequest()}
+										maxlength={20000}
+										disabled={filling()}
+										onInput={(event) => setStoryRequest(event.currentTarget.value)}
+									/>
+								</label>
+								<div class={s.headerActions}>
+									<Button disabled={filling() || busy() || !storyRequest().trim()} onClick={() => void fillStory()}>
+										{t("stories.ai.fill", "Fill with AI")}
+									</Button>
+									<Show when={filling()}>
+										<Button disabled={cancellingFill()} onClick={() => void cancelFill()}>
+											{t("stories.ai.cancel", "Cancel fill")}
+										</Button>
+									</Show>
+								</div>
+								<Show when={filling()}>
+									<p role="status" class={s.muted}>
+										{cancellingFill()
+											? t("stories.ai.cancelling", "Cancelling fill…")
+											: t("stories.ai.filling", "Filling story fields…")}
+									</p>
+								</Show>
+								<Show when={fillNotice()}>
+									<p role="status" class={s.muted}>
+										{fillNotice()}
+									</p>
+								</Show>
+								<Show when={fillError()}>
+									<p role="alert" class={s.error}>
+										{fillError()}
+									</p>
+								</Show>
+								<label>
+									{t("stories.titleLabel", "Title")}
+									<Input
+										disabled={filling()}
+										required
+										maxlength="200"
+										value={storyTitle()}
+										onInput={(event) => setStoryTitle(event.currentTarget.value)}
+									/>
+								</label>
+								<label>
+									{t("stories.edit.problem", "Problem (optional)")}
+									<Textarea
+										maxlength={20000}
+										disabled={filling()}
+										value={storyProblem()}
+										onInput={(event) => setStoryProblem(event.currentTarget.value)}
+									/>
+								</label>
+								<label>
+									{t("stories.criteriaInput", "Acceptance criteria, one per line")}
+									<Textarea
+										disabled={filling()}
+										required
+										value={criteriaText()}
+										onInput={(event) => setCriteriaText(event.currentTarget.value)}
+									/>
+								</label>
+								<label>
+									{t("stories.scopeInput", "File scope, one relative path per line")}
+									<Textarea
+										disabled={filling()}
+										value={scopeText()}
+										onInput={(event) => setScopeText(event.currentTarget.value)}
+									/>
+								</label>
+								<label>
+									{t("stories.typeLabel", "Story type")}
+									<Select
+										disabled={filling()}
+										value={newStoryType()}
+										onChange={(event) => setNewStoryType(event.currentTarget.value as StoryType | "untyped")}
+									>
+										<option value="untyped">{storyTypeLabel(undefined)}</option>
+										<For each={STORY_TYPES}>{(kind) => <option value={kind}>{storyTypeLabel(kind)}</option>}</For>
+									</Select>
+								</label>
+								<label>
+									{t("stories.metadata.origin", "Origin")}
+									<Select
+										disabled={filling()}
+										value={originType()}
+										onChange={(event) => setOriginType(event.currentTarget.value as "native" | "plan_step")}
+									>
+										<option value="native">{t("stories.metadata.native", "Native")}</option>
+										<option value="plan_step">{t("stories.metadata.planStep", "Plan step")}</option>
+									</Select>
+								</label>
+								<Show when={originType() === "plan_step"}>
+									<label>
+										{t("stories.metadata.planStep", "Plan step")}
+										<Input
+											disabled={filling()}
+											required
+											maxlength="200"
+											value={planStep()}
+											onInput={(event) => setPlanStep(event.currentTarget.value)}
+										/>
+									</label>
+								</Show>
+								<label>
+									{t("stories.priority", "Priority")}
+									<Select
+										disabled={filling()}
+										value={priority()}
+										onChange={(event) => setPriority(Number(event.currentTarget.value))}
+									>
+										<option value="1">P1</option>
+										<option value="2">P2</option>
+										<option value="3">P3</option>
+									</Select>
+								</label>
+								<div class={s.inline}>
+									<Button variant="primary" type="submit" disabled={busy() || filling()}>
+										{t("stories.createStory", "Create story")}
+									</Button>
+									<Button
+										disabled={busy()}
+										onClick={() => {
+											void cancelFill();
+											setNewStory(false);
+										}}
+									>
+										{t("stories.edit.cancel", "Cancel")}
+									</Button>
+								</div>
+							</form>
+						</Show>
+					</section>
+				</Show>
+				<Show when={!editingPlan() && !newStory() && !readFailed()}>
+					<div class={s.content} classList={{ [s.kanbanContent]: storiesUi.view() === "kanban" }}>
+						<aside class={s.planColumn} aria-label={t("stories.plans", "Plans")}>
+							<div class={s.columnHeader}>
+								<h3>{t("stories.plans", "Plans")}</h3>
+								<Button
+									type="button"
+									disabled={!can("create_plan")}
+									onClick={() => {
+										if (!newPlan()) void loadPlanSources();
+										setNewPlan(!newPlan());
 									}}
 								>
-									<For each={publishedChoices()}>
-										{(workflow) => (
-											<option value={workflow.id}>
-												{workflow.name} · revision {workflow.latestPublishedRevision}
-											</option>
-										)}
-									</For>
-								</Select>
-							</label>
-							<Show when={startProblems().length > 0}>
-								<div role="alert" class={s.error}>
-									<For each={startProblems()}>{(problem) => <p>{problem}</p>}</For>
-								</div>
-							</Show>
-							<Button
-								variant="primary"
-								type="submit"
-								disabled={busy() || readyFor() !== workflowChoice() || startProblems().length > 0}
-							>
-								Start published workflow
-							</Button>
-						</Show>
-						<Button type="button" onClick={() => setStartOpen(false)}>
-							Dismiss
-						</Button>
-					</form>
-				</Show>
-				<Show when={showDesigner()}>
-					<WorkflowDesigner project={props.project} />
-				</Show>
-				<Show when={showRuns()}>
-					<div class={s.runContent}>
-						<aside class={s.runList} aria-label="Plan runs">
-							<div class={s.columnHeader}>
-								<h3>
-									Runs ·{" "}
-									{plans().find((plan) => plan.id === run()?.planId)?.title ??
-										storyPlan()?.title ??
-										selectedPlan()?.title}
-								</h3>
-								<Button type="button" onClick={() => void openRuns()}>
-									Refresh
+									{t("stories.newPlan", "New plan")}
 								</Button>
 							</div>
-							<Show when={!runLoading() && runs().length === 0}>
-								<p class={s.empty}>No workflow runs for this plan.</p>
+							<div class={s.filters}>
+								<label class={s.archiveToggle}>
+									<input
+										type="checkbox"
+										checked={archivedPlans()}
+										disabled={busy()}
+										onChange={(event) => {
+											setArchivedPlans(event.currentTarget.checked);
+											setNewPlan(false);
+											void refresh(planId() === ALL_PLANS ? ALL_PLANS : null, null);
+										}}
+									/>
+									{t("stories.archive.plans", "Archived plans")}
+								</label>
+							</div>
+							<Show when={selectedPlan()}>
+								<div class={s.planActions} role="group" aria-label={t("stories.planEdit.actions", "Plan actions")}>
+									<Button
+										size="compact"
+										disabled={busy() || !can("update_plan")}
+										onClick={() => {
+											const plan = selectedPlan();
+											if (plan) {
+												setEditingPlan({ ...plan });
+												setPlanEditError("");
+												void loadPlanSources();
+											}
+										}}
+									>
+										{t("stories.planEdit.open", "Edit plan")}
+									</Button>
+									<Show when={selectedPlan()}>
+										{(plan) => (
+											<Button
+												size="compact"
+												type="button"
+												disabled={busy() || !can("archive_plan")}
+												onClick={() =>
+													void mutate({
+														action: plan().archived ? "unarchive_plan" : "archive_plan",
+														plan_id: plan().id,
+														expected_revision: plan().revision,
+													})
+												}
+											>
+												{plan().archived
+													? t("stories.archive.restorePlan", "Restore plan")
+													: t("stories.archive.archivePlan", "Archive plan")}
+											</Button>
+										)}
+									</Show>
+								</div>
+							</Show>
+							<Show when={selectedPlan() && wontFixCount() > 0}>
+								<p class={s.planNotice}>
+									{allCancelled()
+										? t("stories.allCancelled", "All cancelled")
+										: t("stories.wontFixCount", "{count} won't fix", { count: String(wontFixCount()) })}
+								</p>
+							</Show>
+							<Show when={newPlan()}>
+								<div class={s.form}>
+									<div class={s.sourceHeader}>
+										<span>{t("stories.existingPlans", "Plans in this project")}</span>
+										<Button
+											size="compact"
+											type="button"
+											disabled={sourcesLoading()}
+											onClick={() => void loadPlanSources()}
+										>
+											{t("stories.refreshPlans", "Refresh")}
+										</Button>
+									</div>
+									<Show when={sourcesLoading()}>
+										<span>{t("stories.loading", "Loading plans and stories…")}</span>
+									</Show>
+									<For each={planSources().filter((source) => !plans().some((plan) => plan.source === source.source))}>
+										{(candidate) => (
+											<button
+												data-control-layout="row"
+												class={s.item}
+												type="button"
+												disabled={busy()}
+												onClick={() => void addPlanSource(candidate.source)}
+											>
+												{candidate.title}
+												<small>{candidate.source}</small>
+											</button>
+										)}
+									</For>
+									<details>
+										<summary>{t("stories.addFromPath", "Add from path or link")}</summary>
+										<form class={s.manualForm} onSubmit={(event) => void createPlan(event)}>
+											<label>
+												{t("stories.planSource", "Plan document or link")}
+												<Input
+													required
+													value={planSource()}
+													onInput={(event) => setPlanSource(event.currentTarget.value)}
+												/>
+											</label>
+											<Show when={/^https?:\/\//i.test(planSource())}>
+												<label>
+													{t("stories.titleLabel", "Title")}
+													<Input
+														required
+														maxlength="200"
+														value={planTitle()}
+														onInput={(event) => setPlanTitle(event.currentTarget.value)}
+													/>
+												</label>
+											</Show>
+											<Button variant="primary" type="submit" disabled={busy()}>
+												{t("stories.createPlan", "Create plan")}
+											</Button>
+										</form>
+									</details>
+								</div>
+							</Show>
+							<Show when={!loading() && plans().length === 0}>
+								<p class={s.empty}>{t("stories.emptyPlans", "Create a plan to begin.")}</p>
 							</Show>
 							<nav class={s.items}>
-								<For each={runs()}>
-									{(item) => (
+								<button
+									data-control-layout="row"
+									type="button"
+									class={s.item}
+									aria-current={planId() === ALL_PLANS ? "true" : undefined}
+									onClick={() => void refresh(ALL_PLANS, null)}
+								>
+									{t("stories.allPlans", "All plans")}
+								</button>
+								<For each={plans()}>
+									{(plan) => (
 										<button
 											data-control-layout="row"
 											type="button"
 											class={s.item}
-											aria-current={selectedRunId() === item.id ? "true" : undefined}
-											onClick={() => setSelectedRunId(item.id)}
+											aria-current={planId() === plan.id ? "true" : undefined}
+											onClick={() => void refresh(plan.id, null)}
 										>
-											<span>{new Date(item.startedMs).toLocaleString()}</span>
-											<small>
-												{item.status} · {item.stories.length} {item.stories.length === 1 ? "story" : "stories"} · #
-												{item.sequence}
-											</small>
+											{plan.title}
 										</button>
 									)}
 								</For>
 							</nav>
 						</aside>
-						<section class={s.runDetail} aria-label="Run timeline">
-							<Show when={runError()}>
-								<p class={s.error} role="alert">
-									{runError()}
+						<section class={s.storyColumn} aria-label={t("stories.stories", "Stories")}>
+							<div class={s.columnHeader}>
+								<h3>{t("stories.stories", "Stories")}</h3>
+								<Button
+									type="button"
+									disabled={!selectedPlan() || selectedPlan()?.archived || !can("create_story")}
+									onClick={() => setNewStory(!newStory())}
+								>
+									{t("stories.newStory", "New story")}
+								</Button>
+							</div>
+							<div class={s.filters}>
+								<label class={s.archiveToggle}>
+									<input
+										type="checkbox"
+										checked={archivedStories()}
+										disabled={busy()}
+										onChange={(event) => {
+											setArchivedStories(event.currentTarget.checked);
+											void refresh(planId(), null);
+										}}
+									/>
+									{t("stories.archive.stories", "Archived stories")}
+								</label>
+								<label>
+									{t("stories.filter.status", "Status")}
+									<Select
+										value={storiesUi.visibility()}
+										onChange={(event) => {
+											storiesUi.setVisibility(event.currentTarget.value as StoryVisibility);
+											changeFilters();
+										}}
+									>
+										<option value="all">{t("stories.filter.allStatuses", "All statuses")}</option>
+										<option value="open">{t("stories.filter.open", "Open only")}</option>
+										<option value="closed">{t("stories.filter.closed", "Closed only")}</option>
+										<option value="qa">{t("stories.filter.qa", "QA only")}</option>
+									</Select>
+								</label>
+								<label>
+									{t("stories.typeLabel", "Story type")}
+									<Select
+										value={storiesUi.storyType()}
+										onChange={(event) => {
+											storiesUi.setStoryType(event.currentTarget.value as StoryType | "all" | "untyped");
+											changeFilters();
+										}}
+									>
+										<option value="all">{t("stories.filter.allTypes", "All types")}</option>
+										<option value="untyped">{storyTypeLabel(undefined)}</option>
+										<For each={STORY_TYPES}>{(kind) => <option value={kind}>{storyTypeLabel(kind)}</option>}</For>
+									</Select>
+								</label>
+								<SegmentedControl
+									class={s.viewSwitch}
+									aria-label={t("stories.view.label", "Story view")}
+									value={storiesUi.view()}
+									onChange={storiesUi.setView}
+									options={[
+										{ id: "list", label: t("stories.view.list", "List") },
+										{ id: "kanban", label: t("stories.view.kanban", "Kanban") },
+									]}
+								/>
+							</div>
+
+							<Show when={!loading() && planId() && listedStories().length === 0}>
+								<p class={s.empty}>
+									{stories().length || planId() === ALL_PLANS
+										? t("stories.filter.empty", "No stories match these filters.")
+										: t("stories.emptyStories", "This plan has no stories.")}
 								</p>
 							</Show>
-							<Show when={runLoading()}>
-								<p class={s.message} role="status">
-									Loading run…
+							{/* DEFERRED (2026-10-23) — core and the independently released Wiz plugin keep
+                                separate boards; extract a shared package when a third consumer needs one. */}
+							<Show
+								when={storiesUi.view() === "kanban"}
+								fallback={
+									<nav class={s.items}>
+										<For each={listedStories()}>
+											{(story) => (
+												<div class={s.storyListRow}>
+													<button
+														data-control-layout="row"
+														type="button"
+														class={s.item}
+														aria-current={storyId() === story.id ? "true" : undefined}
+														onClick={() => setStoryId(story.id)}
+													>
+														<span>{story.title}</span>
+														<small>{planTitleFor(story)}</small>
+														<small>
+															{statusLabel(story.status)}
+															{story.completedOutside
+																? ` · ${t("stories.completedOutside", "completed outside TUIC")}`
+																: ""}{" "}
+															· {storyTypeLabel(story.storyType)}
+														</small>
+													</button>
+													<PhaseSelector
+														story={story}
+														choices={phaseChoices().get(story.id)}
+														disabled={busy() || loading() || !!editing() || !can("transitions")}
+														label={t("stories.phase.forStory", "Phase for {title}", { title: story.title })}
+														onMove={moveStory}
+													/>
+												</div>
+											)}
+										</For>
+									</nav>
+								}
+							>
+								<div ref={boardRoot} class={s.board} role="region" aria-label={t("stories.view.kanban", "Kanban")}>
+									<For each={columns()}>
+										{(column) => (
+											<section
+												class={s.boardColumn}
+												aria-label={statusLabel(column.status)}
+												data-story-column={column.status}
+												data-drop-allowed={
+													draggedStory() && legalMove(draggedStory()!, column.status) ? "true" : undefined
+												}
+												data-drop-target={dropTarget() === column.status ? "true" : undefined}
+											>
+												<header class={s.boardColumnHeader} data-status={column.status}>
+													<span>{statusLabel(column.status)}</span>
+													<span>{column.storyIds.length}</span>
+												</header>
+												<div class={s.boardCards}>
+													<Show
+														when={column.storyIds.length}
+														fallback={<p class={s.boardEmpty}>{t("stories.board.empty", "No stories")}</p>}
+													>
+														<For each={column.storyIds}>
+															{(id) => (
+																<Show when={storiesById().get(id)}>
+																	{(story) => (
+																		<button
+																			data-control-layout="card"
+																			type="button"
+																			class={s.boardCard}
+																			aria-current={storyId() === id ? "true" : undefined}
+																			onPointerDown={(event) => {
+																				suppressCardClick = false;
+																				startStoryDrag(event, story());
+																			}}
+																			onClick={(event) => {
+																				if (suppressCardClick) {
+																					suppressCardClick = false;
+																					event.preventDefault();
+																					return;
+																				}
+																				setStoryId(id);
+																			}}
+																		>
+																			<small class={s.boardCardId}>{story().id}</small>
+																			<span>{story().title}</span>
+																			<small>{planTitleFor(story())}</small>
+																			<small>
+																				{storyTypeLabel(story().storyType)} · P{story().priority}
+																			</small>
+																		</button>
+																	)}
+																</Show>
+															)}
+														</For>
+													</Show>
+												</div>
+											</section>
+										)}
+									</For>
+								</div>
+							</Show>
+						</section>
+						<section class={s.detail} aria-label={t("stories.details", "Story details")}>
+							<Show when={selectedPlan()}>
+								<p class={s.planState}>
+									{t("stories.state", "State")}: {planStateLabel(planState())}
 								</p>
 							</Show>
-							<Show when={run()}>
-								{(selected) => (
+							<Show
+								when={selectedStory()}
+								fallback={
+									<Show
+										when={selectedPlan()}
+										fallback={<p class={s.empty}>{t("stories.selectPlan", "Select or create a plan.")}</p>}
+									>
+										{(plan) => (
+											<div class={s.planDetail}>
+												<h3>{plan().title}</h3>
+												<p>
+													{t("stories.source", "Source")}: {plan().source}
+												</p>
+											</div>
+										)}
+									</Show>
+								}
+							>
+								{(story) => (
 									<>
 										<div class={s.detailHeader}>
 											<div>
-												<span class={s.eyebrow}>Run · {selected().id}</span>
-												<h3>{selectedPlan()?.title}</h3>
+												<span class={s.eyebrow}>
+													{t("stories.story", "Story")} · P{story().priority} · {storyTypeLabel(story().storyType)}
+												</span>
+												<h3>{story().title}</h3>
 											</div>
-											<span class={s.status} data-status={selected().status}>
-												{selected().status.replaceAll("_", " ")}
-											</span>
-										</div>
-										<p class={s.muted}>
-											{selected().stories.length} {selected().stories.length === 1 ? "story" : "stories"} ·{" "}
-											{selected().attempts.length} {selected().attempts.length === 1 ? "attempt" : "attempts"} ·
-											sequence {selected().sequence}
-										</p>
-										<RunIncidents project={props.project} runId={selected().id} sequence={selected().sequence} />
-										<For
-											each={selected().questions?.filter(
-												(question) => question.state === "timed_out" || question.state === "incomplete",
-											)}
-										>
-											{(question) => (
-												<p class={s.muted}>
-													{question.request.question} · {question.state.replaceAll("_", " ")}
-												</p>
-											)}
-										</For>
-										<Show when={pendingInput()}>
-											{(attempt) => (
-												<form class={s.form} onSubmit={(event) => void answerRunInput(event)}>
-													<p>{attempt().report?.inputRequest?.question}</p>
-													<label>
-														Answer
-														<Input
-															value={inputAnswer()}
-															onInput={(event) => setInputAnswer(event.currentTarget.value)}
-														/>
-													</label>
-													<Show when={pendingOptions().length}>
-														<small>Suggested: {pendingOptions().join(", ")}</small>
-													</Show>
-													<Button variant="primary" type="submit" disabled={runLoading() || !inputAnswer().trim()}>
-														Record answer
-													</Button>
-												</form>
-											)}
-										</Show>
-
-										<Show when={!selected().graphExecutions?.length}>
-											<p class={s.muted}>Legacy run · inspect or cancel only.</p>
-										</Show>
-										<Show when={selected().status === "running" && !!selected().graphExecutions?.length}>
-											<Button
-												type="button"
-												class={s.loadMore}
-												disabled={runLoading()}
-												onClick={() => void controlRun({ action: "pause" })}
-											>
-												Pause run
-											</Button>
-										</Show>
-										<Show when={selected().status === "running" || selected().status === "paused"}>
-											<Button
-												type="button"
-												class={s.loadMore}
-												disabled={runLoading()}
-												onClick={() => void controlRun({ action: "cancel" })}
-											>
-												Cancel run
-											</Button>
-										</Show>
-										<Show when={selected().status === "paused" && selected().pauseCause}>
-											<p role="status">Paused: {selected().pauseCause}</p>
-										</Show>
-										<For each={selected().graphExecutions ?? []}>
-											{(graph) => (
-												<section aria-label={`Graph ${graph.id}`}>
-													<h4>
-														{graph.id} · {graph.targetId} · revision {graph.definition.revision}
-													</h4>
-													<For each={graph.activations}>
-														{(activation) => (
-															<p>
-																{activation.id} · {activation.nodeId} ·{" "}
-																{selected().status === "cancelled" && activation.state !== "completed"
-																	? "cancelled"
-																	: activation.state}
-															</p>
-														)}
-													</For>
-													<For each={graph.decisions}>
-														{(decision) => (
-															<p>
-																Decision · {decision.activationId} ·{" "}
-																{graph.definition.graph.edges[decision.edgeIndex]?.outcome} · {decision.evidence.actor}{" "}
-																· {decision.evidence.reason} · {decision.evidence.references.join(", ")}
-															</p>
-														)}
-													</For>
-													<For each={graph.loops}>
-														{(loop) => (
-															<p>
-																Loop · {loop.nodeId} · {loop.repeats} repeats
-															</p>
-														)}
-													</For>
-													<For each={graph.pauses}>
-														{(pause) => (
-															<p>
-																Pause · {pause.activationId} · {pause.evidence.reason} · resume to {pause.resumeTo} ·{" "}
-																{pause.resolution ?? "unresolved"}
-															</p>
-														)}
-													</For>
-												</section>
-											)}
-										</For>
-										<Show
-											when={selected().status === "paused" && !!selected().graphExecutions?.length && !pendingInput()}
-										>
-											<form
-												class={s.form}
-												onSubmit={(event) => {
-													event.preventDefault();
-													void controlRun({
-														action: "resume_graph",
-														execution_id: recoveryExecution(),
-														activation_id: recoveryActivation(),
-														resolution: resolution().trim(),
-													});
-												}}
-											>
-												<label>
-													Execution
-													<Select
-														value={recoveryExecution()}
-														onChange={(event) => {
-															setRecoveryExecution(event.currentTarget.value);
-															setRecoveryActivation("");
-														}}
-													>
-														<option value="">Select execution</option>
-														<For each={selected().graphExecutions ?? []}>
-															{(graph) => (
-																<option value={graph.id}>
-																	{graph.id} · {graph.targetId}
-																</option>
-															)}
-														</For>
-													</Select>
-												</label>
-												<label>
-													Resume activation
-													<Select
-														value={recoveryActivation()}
-														onChange={(event) => setRecoveryActivation(event.currentTarget.value)}
-													>
-														<option value="">Select activation</option>
-														<For
-															each={
-																selected()
-																	.graphExecutions?.find((graph) => graph.id === recoveryExecution())
-																	?.activations.filter((activation) => activation.state !== "completed") ?? []
-															}
-														>
-															{(activation) => (
-																<option value={activation.id}>
-																	{activation.id} · {activation.nodeId} · {activation.state}
-																</option>
-															)}
-														</For>
-													</Select>
-												</label>
-												<label>
-													Resolution
-													<Textarea
-														value={resolution()}
-														onInput={(event) => setResolution(event.currentTarget.value)}
-														maxLength={4096}
-													/>
-												</label>
-												<Button
-													variant="primary"
-													type="submit"
-													disabled={
-														runLoading() || !recoveryExecution() || !recoveryActivation() || !resolution().trim()
+											<div class={s.storyHeaderActions} data-story-header-actions>
+												<Show
+													when={
+														!editing() &&
+														!story().archived &&
+														!storyPlan()?.archived &&
+														["backlog", "ready"].includes(story().status) &&
+														!story().claimSession
 													}
 												>
-													Resume run
+													<Button
+														variant="primary"
+														type="button"
+														disabled={busy() || !canEditStory()}
+														onClick={() => {
+															setEditing(structuredClone(story()));
+															setEditError("");
+														}}
+													>
+														{t("stories.edit.open", "Edit")}
+													</Button>
+												</Show>
+												<Show when={!editing()}>
+													<PhaseSelector
+														story={story()}
+														choices={phaseChoices().get(story().id)}
+														disabled={busy() || loading() || !can("transitions")}
+														label={t("stories.phase.label", "Phase")}
+														onMove={moveStory}
+													/>
+												</Show>
+											</div>
+										</div>
+										<StoryMetadata project={props.project} story={story()} />
+										<Show when={!editing() && !story().archived}>
+											<StoryDelivery project={props.project} storyId={story().id} />
+										</Show>
+										<Show when={editing()} keyed>
+											{(snapshot) => (
+												<StoryEditForm
+													story={snapshot}
+													storyEdits={storyEdits()}
+													candidates={stories().filter(
+														(candidate) => candidate.planId === snapshot.planId && candidate.id !== snapshot.id,
+													)}
+													busy={busy()}
+													error={editError()}
+													onSave={saveStory}
+													onCancel={cancelEdit}
+												/>
+											)}
+										</Show>
+										<Show when={!editing()}>
+											<section>
+												<h4>{t("stories.criteria", "Acceptance criteria")}</h4>
+												<ul class={s.criteria}>
+													<For each={story().criteria}>
+														{(criterion, index) => (
+															<li>
+																<label>
+																	<input
+																		type="checkbox"
+																		checked={story().checked[index()]}
+																		disabled={
+																			story().archived ||
+																			storyPlan()?.archived ||
+																			!["in_progress", "qa"].includes(story().status) ||
+																			busy()
+																		}
+																		onChange={() =>
+																			transition({
+																				[story().checked[index()] ? "uncheck_criterion" : "check_criterion"]: index(),
+																			})
+																		}
+																	/>
+																	<span>{criterion}</span>
+																</label>
+															</li>
+														)}
+													</For>
+												</ul>
+											</section>
+											<section>
+												<h4>{t("stories.dependencies", "Dependencies")}</h4>
+												<Show
+													when={story().dependencies.length}
+													fallback={<p class={s.muted}>{t("stories.none", "None")}</p>}
+												>
+													<ul>
+														<For each={story().dependencies}>
+															{(id) => {
+																const dependency = stories().find((item) => item.id === id);
+																return (
+																	<li class={s.dependencyRow}>
+																		<span>
+																			{dependency?.title ?? id} ·{" "}
+																			{dependency ? statusLabel(dependency.status) : t("stories.unknown", "Unknown")}
+																			{dependency?.abandoned ? ` · ${t("stories.abandoned", "abandoned")}` : ""}
+																		</span>
+																		<Show
+																			when={
+																				!story().archived &&
+																				!storyPlan()?.archived &&
+																				story().status === "backlog" &&
+																				dependency?.status === "wont_fix"
+																			}
+																		>
+																			<Button
+																				type="button"
+																				disabled={busy() || !can("dependencies")}
+																				aria-label={t("stories.removeNamedDependency", "Remove {title}", {
+																					title: dependency?.title ?? id,
+																				})}
+																				onClick={() => removeDependency(id)}
+																			>
+																				{t("stories.remove", "Remove")}
+																			</Button>
+																		</Show>
+																	</li>
+																);
+															}}
+														</For>
+													</ul>
+												</Show>
+												<Show
+													when={
+														!story().archived &&
+														!storyPlan()?.archived &&
+														(story().status === "ready" || story().status === "backlog")
+													}
+												>
+													<p id={dependencyHintId} hidden>
+														{dependencyReason()}
+													</p>
+													<div class={s.inline}>
+														<Select
+															aria-label={t("stories.addDependency", "Add dependency")}
+															value={dependencyId()}
+															onChange={(event) => setDependencyId(event.currentTarget.value)}
+														>
+															<option value="">{t("stories.selectStory", "Select story")}</option>
+															<For
+																each={stories().filter(
+																	(candidate) =>
+																		candidate.planId === story().planId &&
+																		candidate.id !== story().id &&
+																		!story().dependencies.includes(candidate.id),
+																)}
+															>
+																{(candidate) => <option value={candidate.id}>{candidate.title}</option>}
+															</For>
+														</Select>
+														<Button
+															type="button"
+															disabled={!!dependencyReason() || !can("dependencies")}
+															title={dependencyReason()}
+															aria-describedby={dependencyHintId}
+															onClick={addDependency}
+														>
+															{t("stories.addDependency", "Add dependency")}
+														</Button>
+													</div>
+												</Show>
+											</section>
+											<section>
+												<h4>{t("stories.fileScope", "File scope")}</h4>
+												<Show
+													when={story().fileScope.length}
+													fallback={<p class={s.muted}>{t("stories.unspecified", "Unspecified")}</p>}
+												>
+													<ul>
+														<For each={story().fileScope}>{(path) => <li class={s.path}>{path}</li>}</For>
+													</ul>
+												</Show>
+											</section>
+											<div class={s.actions}>
+												<Show when={!story().archived && !storyPlan()?.archived && can("transitions")}>
+													<Show when={story().status === "ready"}>
+														<Button
+															variant="primary"
+															type="button"
+															disabled={busy()}
+															onClick={() => transition("start_manual")}
+														>
+															{t("stories.startWork", "Start work")}
+														</Button>
+													</Show>
+													<Show when={story().status === "in_progress"}>
+														<Button
+															variant="primary"
+															type="button"
+															disabled={busy()}
+															onClick={() => transition("submit_review")}
+														>
+															{t("stories.submitReview", "Submit for review")}
+														</Button>
+													</Show>
+													<Show when={story().status === "review"}>
+														<Button
+															variant="primary"
+															type="button"
+															disabled={busy()}
+															onClick={() => transition("approve")}
+														>
+															{t("stories.approve", "Approve")}
+														</Button>
+														<Button type="button" disabled={busy()} onClick={() => transition("reject_review")}>
+															{t("stories.requestChanges", "Request changes")}
+														</Button>
+													</Show>
+													<Show when={["in_progress", "review"].includes(story().status)}>
+														<Button type="button" disabled={busy()} onClick={() => transition("submit_qa")}>
+															{t("stories.submitQa", "Submit for QA")}
+														</Button>
+													</Show>
+													<Show when={story().status === "qa"}>
+														<Button
+															variant="primary"
+															type="button"
+															disabled={busy()}
+															onClick={() => transition("approve")}
+														>
+															{t("stories.qaPassed", "QA passed")}
+														</Button>
+														<Button type="button" disabled={busy()} onClick={() => transition("reject_qa")}>
+															{t("stories.qaFailed", "QA failed")}
+														</Button>
+													</Show>
+													<Show when={["ready", "in_progress", "review", "qa"].includes(story().status)}>
+														<Button type="button" disabled={busy()} onClick={() => transition("block")}>
+															{t("stories.block", "Block")}
+														</Button>
+													</Show>
+													<Show when={story().status === "blocked"}>
+														<Button
+															variant="primary"
+															type="button"
+															disabled={busy()}
+															onClick={() => transition("unblock")}
+														>
+															{t("stories.unblock", "Unblock")}
+														</Button>
+													</Show>
+													<Show when={story().status !== "done" && story().status !== "wont_fix"}>
+														<Button
+															variant="danger"
+															type="button"
+															disabled={busy()}
+															onClick={() => transition("wont_fix")}
+														>
+															{t("stories.status.wontFix", "Won't fix")}
+														</Button>
+													</Show>
+												</Show>
+												<Button
+													type="button"
+													disabled={busy() || !!story().claimSession || !can("archive_story")}
+													onClick={() =>
+														void mutate({
+															action: story().archived ? "unarchive_story" : "archive_story",
+															story_id: story().id,
+															expected_revision: story().revision,
+														})
+													}
+												>
+													{story().archived
+														? t("stories.archive.restoreStory", "Restore story")
+														: t("stories.archive.archiveStory", "Archive story")}
 												</Button>
-											</form>
+											</div>
 										</Show>
-										<ol class={s.timeline}>
-											<For each={runEvents()}>
-												{(event) => (
-													<li>
-														<span class={s.eventSequence}>#{event.sequence}</span>
-														<div>
-															<span>{event.kind.type.replaceAll("_", " ")}</span>
-															<details>
-																<summary>Event details</summary>
-																<pre>{JSON.stringify(event.kind, null, 2)}</pre>
-															</details>
-														</div>
-														<time>{new Date(event.atMs).toLocaleTimeString()}</time>
-													</li>
+										{/* Notes load independently; never suspend the host's whole-dialog lazy boundary. */}
+										<Suspense
+											fallback={
+												<p class={s.muted} role="status">
+													{t("stories.notes.loading", "Loading notes…")}
+												</p>
+											}
+										>
+											<Show when={`${props.project}:${story().id}`} keyed>
+												{(_storyKey) => (
+													<StoryNotes
+														project={props.project}
+														storyId={story().id}
+														revision={story().revision}
+														busy={busy() || !can("notes")}
+													/>
 												)}
-											</For>
-										</ol>
-										<Show when={(runEvents().at(-1)?.sequence ?? 0) < selected().sequence}>
-											<Button
-												type="button"
-												class={s.loadMore}
-												disabled={runLoading()}
-												onClick={() => void loadRun(selected().id)}
-											>
-												Load more events
-											</Button>
-										</Show>
+											</Show>
+										</Suspense>
 									</>
 								)}
 							</Show>
 						</section>
 					</div>
-				</Show>
-				<Show when={!showRuns() && !showDesigner()}>
-					<Show when={editingPlan()} keyed>
-						{(plan) => (
-							<section class={s.editorContent} aria-label={t("stories.planEdit.open", "Edit plan")}>
-								<PlanEditForm
-									plan={plan}
-									sources={planSources()}
-									sourcesLoading={sourcesLoading()}
-									busy={busy()}
-									error={planEditError()}
-									onRefreshSources={() => void loadPlanSources()}
-									onOpenSource={(source) => {
-										if (/^https?:\/\//i.test(source)) handleOpenUrl(source);
-										else {
-											openFileAction(source, props.project);
-											props.onClose();
-										}
-									}}
-									onSave={savePlan}
-									onCancel={cancelPlanEdit}
-								/>
-							</section>
-						)}
-					</Show>
-					<Show when={newStory() && !editingPlan()}>
-						<section class={s.editorContent} aria-label={t("stories.newStory", "New story")}>
-							<div class={s.editorHeading}>
-								<h3>{t("stories.newStory", "New story")}</h3>
-							</div>
-							<Show when={newStory() && planId() && !selectedPlan()?.archived}>
-								<form class={s.form} onSubmit={(event) => void createStory(event)}>
-									<label>
-										{t("stories.ai.request", "Request")}
-										<Textarea
-											value={storyRequest()}
-											maxlength={20000}
-											disabled={filling()}
-											onInput={(event) => setStoryRequest(event.currentTarget.value)}
-										/>
-									</label>
-									<div class={s.headerActions}>
-										<Button disabled={filling() || busy() || !storyRequest().trim()} onClick={() => void fillStory()}>
-											{t("stories.ai.fill", "Fill with AI")}
-										</Button>
-										<Show when={filling()}>
-											<Button disabled={cancellingFill()} onClick={() => void cancelFill()}>
-												{t("stories.ai.cancel", "Cancel fill")}
-											</Button>
-										</Show>
-									</div>
-									<Show when={filling()}>
-										<p role="status" class={s.muted}>
-											{cancellingFill()
-												? t("stories.ai.cancelling", "Cancelling fill…")
-												: t("stories.ai.filling", "Filling story fields…")}
-										</p>
-									</Show>
-									<Show when={fillNotice()}>
-										<p role="status" class={s.muted}>
-											{fillNotice()}
-										</p>
-									</Show>
-									<Show when={fillError()}>
-										<p role="alert" class={s.error}>
-											{fillError()}
-										</p>
-									</Show>
-									<label>
-										{t("stories.titleLabel", "Title")}
-										<Input
-											disabled={filling()}
-											required
-											maxlength="200"
-											value={storyTitle()}
-											onInput={(event) => setStoryTitle(event.currentTarget.value)}
-										/>
-									</label>
-									<label>
-										{t("stories.edit.problem", "Problem (optional)")}
-										<Textarea
-											maxlength={20000}
-											disabled={filling()}
-											value={storyProblem()}
-											onInput={(event) => setStoryProblem(event.currentTarget.value)}
-										/>
-									</label>
-									<label>
-										{t("stories.criteriaInput", "Acceptance criteria, one per line")}
-										<Textarea
-											disabled={filling()}
-											required
-											value={criteriaText()}
-											onInput={(event) => setCriteriaText(event.currentTarget.value)}
-										/>
-									</label>
-									<label>
-										{t("stories.scopeInput", "File scope, one relative path per line")}
-										<Textarea
-											disabled={filling()}
-											value={scopeText()}
-											onInput={(event) => setScopeText(event.currentTarget.value)}
-										/>
-									</label>
-									<label>
-										{t("stories.typeLabel", "Story type")}
-										<Select
-											disabled={filling()}
-											value={newStoryType()}
-											onChange={(event) => setNewStoryType(event.currentTarget.value as StoryType | "untyped")}
-										>
-											<option value="untyped">{storyTypeLabel(undefined)}</option>
-											<For each={STORY_TYPES}>{(kind) => <option value={kind}>{storyTypeLabel(kind)}</option>}</For>
-										</Select>
-									</label>
-									<label>
-										{t("stories.metadata.origin", "Origin")}
-										<Select
-											disabled={filling()}
-											value={originType()}
-											onChange={(event) => setOriginType(event.currentTarget.value as "native" | "plan_step")}
-										>
-											<option value="native">{t("stories.metadata.native", "Native")}</option>
-											<option value="plan_step">{t("stories.metadata.planStep", "Plan step")}</option>
-										</Select>
-									</label>
-									<Show when={originType() === "plan_step"}>
-										<label>
-											{t("stories.metadata.planStep", "Plan step")}
-											<Input
-												disabled={filling()}
-												required
-												maxlength="200"
-												value={planStep()}
-												onInput={(event) => setPlanStep(event.currentTarget.value)}
-											/>
-										</label>
-									</Show>
-									<label>
-										{t("stories.priority", "Priority")}
-										<Select
-											disabled={filling()}
-											value={priority()}
-											onChange={(event) => setPriority(Number(event.currentTarget.value))}
-										>
-											<option value="1">P1</option>
-											<option value="2">P2</option>
-											<option value="3">P3</option>
-										</Select>
-									</label>
-									<div class={s.inline}>
-										<Button variant="primary" type="submit" disabled={busy() || filling()}>
-											{t("stories.createStory", "Create story")}
-										</Button>
-										<Button
-											disabled={busy()}
-											onClick={() => {
-												void cancelFill();
-												setNewStory(false);
-											}}
-										>
-											{t("stories.edit.cancel", "Cancel")}
-										</Button>
-									</div>
-								</form>
-							</Show>
-						</section>
-					</Show>
-					<Show when={!editingPlan() && !newStory() && !readFailed()}>
-						<div class={s.content} classList={{ [s.kanbanContent]: storiesUi.view() === "kanban" }}>
-							<aside class={s.planColumn} aria-label={t("stories.plans", "Plans")}>
-								<div class={s.columnHeader}>
-									<h3>{t("stories.plans", "Plans")}</h3>
-									<Button
-										type="button"
-										onClick={() => {
-											if (!newPlan()) void loadPlanSources();
-											setNewPlan(!newPlan());
-										}}
-									>
-										{t("stories.newPlan", "New plan")}
-									</Button>
-								</div>
-								<div class={s.filters}>
-									<label class={s.archiveToggle}>
-										<input
-											type="checkbox"
-											checked={archivedPlans()}
-											disabled={busy()}
-											onChange={(event) => {
-												setArchivedPlans(event.currentTarget.checked);
-												setNewPlan(false);
-												void refresh(planId() === ALL_PLANS ? ALL_PLANS : null, null);
-											}}
-										/>
-										{t("stories.archive.plans", "Archived plans")}
-									</label>
-								</div>
-								<Show when={selectedPlan()}>
-									<div class={s.planActions} role="group" aria-label={t("stories.planEdit.actions", "Plan actions")}>
-										<Button
-											size="compact"
-											disabled={busy()}
-											onClick={() => {
-												const plan = selectedPlan();
-												if (plan) {
-													setEditingPlan({ ...plan });
-													setPlanEditError("");
-													void loadPlanSources();
-												}
-											}}
-										>
-											{t("stories.planEdit.open", "Edit plan")}
-										</Button>
-										<Show when={selectedPlan()}>
-											{(plan) => (
-												<Button
-													size="compact"
-													type="button"
-													disabled={busy()}
-													onClick={() =>
-														void mutate({
-															action: plan().archived ? "unarchive_plan" : "archive_plan",
-															plan_id: plan().id,
-															expected_revision: plan().revision,
-														})
-													}
-												>
-													{plan().archived
-														? t("stories.archive.restorePlan", "Restore plan")
-														: t("stories.archive.archivePlan", "Archive plan")}
-												</Button>
-											)}
-										</Show>
-									</div>
-								</Show>
-								<Show when={selectedPlan() && wontFixCount() > 0}>
-									<p class={s.planNotice}>
-										{allCancelled()
-											? t("stories.allCancelled", "All cancelled")
-											: t("stories.wontFixCount", "{count} won't fix", { count: String(wontFixCount()) })}
-									</p>
-								</Show>
-								<Show when={newPlan()}>
-									<div class={s.form}>
-										<div class={s.sourceHeader}>
-											<span>{t("stories.existingPlans", "Plans in this project")}</span>
-											<Button
-												size="compact"
-												type="button"
-												disabled={sourcesLoading()}
-												onClick={() => void loadPlanSources()}
-											>
-												{t("stories.refreshPlans", "Refresh")}
-											</Button>
-										</div>
-										<Show when={sourcesLoading()}>
-											<span>{t("stories.loading", "Loading plans and stories…")}</span>
-										</Show>
-										<For
-											each={planSources().filter((source) => !plans().some((plan) => plan.source === source.source))}
-										>
-											{(candidate) => (
-												<button
-													data-control-layout="row"
-													class={s.item}
-													type="button"
-													disabled={busy()}
-													onClick={() => void addPlanSource(candidate.source)}
-												>
-													{candidate.title}
-													<small>{candidate.source}</small>
-												</button>
-											)}
-										</For>
-										<details>
-											<summary>{t("stories.addFromPath", "Add from path or link")}</summary>
-											<form class={s.manualForm} onSubmit={(event) => void createPlan(event)}>
-												<label>
-													{t("stories.planSource", "Plan document or link")}
-													<Input
-														required
-														value={planSource()}
-														onInput={(event) => setPlanSource(event.currentTarget.value)}
-													/>
-												</label>
-												<Show when={/^https?:\/\//i.test(planSource())}>
-													<label>
-														{t("stories.titleLabel", "Title")}
-														<Input
-															required
-															maxlength="200"
-															value={planTitle()}
-															onInput={(event) => setPlanTitle(event.currentTarget.value)}
-														/>
-													</label>
-												</Show>
-												<Button variant="primary" type="submit" disabled={busy()}>
-													{t("stories.createPlan", "Create plan")}
-												</Button>
-											</form>
-										</details>
-									</div>
-								</Show>
-								<Show when={!loading() && plans().length === 0}>
-									<p class={s.empty}>{t("stories.emptyPlans", "Create a plan to begin.")}</p>
-								</Show>
-								<nav class={s.items}>
-									<button
-										data-control-layout="row"
-										type="button"
-										class={s.item}
-										aria-current={planId() === ALL_PLANS ? "true" : undefined}
-										onClick={() => void refresh(ALL_PLANS, null)}
-									>
-										{t("stories.allPlans", "All plans")}
-									</button>
-									<For each={plans()}>
-										{(plan) => (
-											<button
-												data-control-layout="row"
-												type="button"
-												class={s.item}
-												aria-current={planId() === plan.id ? "true" : undefined}
-												onClick={() => void refresh(plan.id, null)}
-											>
-												{plan.title}
-											</button>
-										)}
-									</For>
-								</nav>
-							</aside>
-							<section class={s.storyColumn} aria-label={t("stories.stories", "Stories")}>
-								<div class={s.columnHeader}>
-									<h3>{t("stories.stories", "Stories")}</h3>
-									<Button
-										type="button"
-										disabled={!selectedPlan() || selectedPlan()?.archived}
-										onClick={() => setNewStory(!newStory())}
-									>
-										{t("stories.newStory", "New story")}
-									</Button>
-								</div>
-								<div class={s.filters}>
-									<label class={s.archiveToggle}>
-										<input
-											type="checkbox"
-											checked={archivedStories()}
-											disabled={busy()}
-											onChange={(event) => {
-												setArchivedStories(event.currentTarget.checked);
-												void refresh(planId(), null);
-											}}
-										/>
-										{t("stories.archive.stories", "Archived stories")}
-									</label>
-									<label>
-										{t("stories.filter.status", "Status")}
-										<Select
-											value={storiesUi.visibility()}
-											onChange={(event) => {
-												storiesUi.setVisibility(event.currentTarget.value as StoryVisibility);
-												changeFilters();
-											}}
-										>
-											<option value="all">{t("stories.filter.allStatuses", "All statuses")}</option>
-											<option value="open">{t("stories.filter.open", "Open only")}</option>
-											<option value="closed">{t("stories.filter.closed", "Closed only")}</option>
-											<option value="qa">{t("stories.filter.qa", "QA only")}</option>
-										</Select>
-									</label>
-									<label>
-										{t("stories.typeLabel", "Story type")}
-										<Select
-											value={storiesUi.storyType()}
-											onChange={(event) => {
-												storiesUi.setStoryType(event.currentTarget.value as StoryType | "all" | "untyped");
-												changeFilters();
-											}}
-										>
-											<option value="all">{t("stories.filter.allTypes", "All types")}</option>
-											<option value="untyped">{storyTypeLabel(undefined)}</option>
-											<For each={STORY_TYPES}>{(kind) => <option value={kind}>{storyTypeLabel(kind)}</option>}</For>
-										</Select>
-									</label>
-									<SegmentedControl
-										class={s.viewSwitch}
-										aria-label={t("stories.view.label", "Story view")}
-										value={storiesUi.view()}
-										onChange={storiesUi.setView}
-										options={[
-											{ id: "list", label: t("stories.view.list", "List") },
-											{ id: "kanban", label: t("stories.view.kanban", "Kanban") },
-										]}
-									/>
-								</div>
-
-								<Show when={!loading() && planId() && listedStories().length === 0}>
-									<p class={s.empty}>
-										{stories().length || planId() === ALL_PLANS
-											? t("stories.filter.empty", "No stories match these filters.")
-											: t("stories.emptyStories", "This plan has no stories.")}
-									</p>
-								</Show>
-								{/* DEFERRED (2026-10-23) — core and the independently released Wiz plugin keep
-                                separate boards; extract a shared package when a third consumer needs one. */}
-								<Show
-									when={storiesUi.view() === "kanban"}
-									fallback={
-										<nav class={s.items}>
-											<For each={listedStories()}>
-												{(story) => (
-													<div class={s.storyListRow}>
-														<button
-															data-control-layout="row"
-															type="button"
-															class={s.item}
-															aria-current={storyId() === story.id ? "true" : undefined}
-															onClick={() => setStoryId(story.id)}
-														>
-															<span>{story.title}</span>
-															<small>{planTitleFor(story)}</small>
-															<small>
-																{statusLabel(story.status)} · {storyTypeLabel(story.storyType)}
-															</small>
-														</button>
-														<PhaseSelector
-															story={story}
-															choices={phaseChoices().get(story.id)}
-															disabled={busy() || loading() || !!editing()}
-															label={t("stories.phase.forStory", "Phase for {title}", { title: story.title })}
-															onMove={moveStory}
-														/>
-													</div>
-												)}
-											</For>
-										</nav>
-									}
-								>
-									<div ref={boardRoot} class={s.board} role="region" aria-label={t("stories.view.kanban", "Kanban")}>
-										<For each={columns()}>
-											{(column) => (
-												<section
-													class={s.boardColumn}
-													aria-label={statusLabel(column.status)}
-													data-story-column={column.status}
-													data-drop-allowed={
-														draggedStory() && legalMove(draggedStory()!, column.status) ? "true" : undefined
-													}
-													data-drop-target={dropTarget() === column.status ? "true" : undefined}
-												>
-													<header class={s.boardColumnHeader} data-status={column.status}>
-														<span>{statusLabel(column.status)}</span>
-														<span>{column.storyIds.length}</span>
-													</header>
-													<div class={s.boardCards}>
-														<Show
-															when={column.storyIds.length}
-															fallback={<p class={s.boardEmpty}>{t("stories.board.empty", "No stories")}</p>}
-														>
-															<For each={column.storyIds}>
-																{(id) => (
-																	<Show when={storiesById().get(id)}>
-																		{(story) => (
-																			<button
-																				data-control-layout="card"
-																				type="button"
-																				class={s.boardCard}
-																				aria-current={storyId() === id ? "true" : undefined}
-																				onPointerDown={(event) => {
-																					suppressCardClick = false;
-																					startStoryDrag(event, story());
-																				}}
-																				onClick={(event) => {
-																					if (suppressCardClick) {
-																						suppressCardClick = false;
-																						event.preventDefault();
-																						return;
-																					}
-																					setStoryId(id);
-																				}}
-																			>
-																				<small class={s.boardCardId}>{story().id}</small>
-																				<span>{story().title}</span>
-																				<small>{planTitleFor(story())}</small>
-																				<small>
-																					{storyTypeLabel(story().storyType)} · P{story().priority}
-																				</small>
-																			</button>
-																		)}
-																	</Show>
-																)}
-															</For>
-														</Show>
-													</div>
-												</section>
-											)}
-										</For>
-									</div>
-								</Show>
-							</section>
-							<section class={s.detail} aria-label={t("stories.details", "Story details")}>
-								<Show when={selectedPlan()}>
-									<p class={s.planState}>
-										{t("stories.state", "State")}: {planStateLabel(planState())}
-									</p>
-								</Show>
-								<Show
-									when={selectedStory()}
-									fallback={
-										<Show
-											when={selectedPlan()}
-											fallback={<p class={s.empty}>{t("stories.selectPlan", "Select or create a plan.")}</p>}
-										>
-											{(plan) => (
-												<div class={s.planDetail}>
-													<h3>{plan().title}</h3>
-													<p>
-														{t("stories.source", "Source")}: {plan().source}
-													</p>
-												</div>
-											)}
-										</Show>
-									}
-								>
-									{(story) => (
-										<>
-											<div class={s.detailHeader}>
-												<div>
-													<span class={s.eyebrow}>
-														{t("stories.story", "Story")} · P{story().priority} · {storyTypeLabel(story().storyType)}
-													</span>
-													<h3>{story().title}</h3>
-												</div>
-												<div class={s.storyHeaderActions} data-story-header-actions>
-													<Show
-														when={
-															!editing() &&
-															!story().archived &&
-															!storyPlan()?.archived &&
-															["backlog", "ready"].includes(story().status) &&
-															!story().claimSession
-														}
-													>
-														<Button
-															variant="primary"
-															type="button"
-															disabled={busy()}
-															onClick={() => {
-																setEditing(structuredClone(story()));
-																setEditError("");
-															}}
-														>
-															{t("stories.edit.open", "Edit")}
-														</Button>
-													</Show>
-													<Show when={!editing()}>
-														<PhaseSelector
-															story={story()}
-															choices={phaseChoices().get(story().id)}
-															disabled={busy() || loading()}
-															label={t("stories.phase.label", "Phase")}
-															onMove={moveStory}
-														/>
-													</Show>
-												</div>
-											</div>
-											<StoryMetadata project={props.project} story={story()} />
-											<Show when={editing()} keyed>
-												{(snapshot) => (
-													<StoryEditForm
-														story={snapshot}
-														candidates={stories().filter(
-															(candidate) => candidate.planId === snapshot.planId && candidate.id !== snapshot.id,
-														)}
-														busy={busy()}
-														error={editError()}
-														onSave={saveStory}
-														onCancel={cancelEdit}
-													/>
-												)}
-											</Show>
-											<Show when={!editing()}>
-												<section>
-													<h4>{t("stories.criteria", "Acceptance criteria")}</h4>
-													<ul class={s.criteria}>
-														<For each={story().criteria}>
-															{(criterion, index) => (
-																<li>
-																	<label>
-																		<input
-																			type="checkbox"
-																			checked={story().checked[index()]}
-																			disabled={
-																				story().archived ||
-																				storyPlan()?.archived ||
-																				!["in_progress", "qa"].includes(story().status) ||
-																				busy()
-																			}
-																			onChange={() =>
-																				transition({
-																					[story().checked[index()] ? "uncheck_criterion" : "check_criterion"]: index(),
-																				})
-																			}
-																		/>
-																		<span>{criterion}</span>
-																	</label>
-																</li>
-															)}
-														</For>
-													</ul>
-												</section>
-												<section>
-													<h4>{t("stories.dependencies", "Dependencies")}</h4>
-													<Show
-														when={story().dependencies.length}
-														fallback={<p class={s.muted}>{t("stories.none", "None")}</p>}
-													>
-														<ul>
-															<For each={story().dependencies}>
-																{(id) => {
-																	const dependency = stories().find((item) => item.id === id);
-																	return (
-																		<li class={s.dependencyRow}>
-																			<span>
-																				{dependency?.title ?? id} ·{" "}
-																				{dependency ? statusLabel(dependency.status) : t("stories.unknown", "Unknown")}
-																				{dependency?.abandoned ? ` · ${t("stories.abandoned", "abandoned")}` : ""}
-																			</span>
-																			<Show
-																				when={
-																					!story().archived &&
-																					!storyPlan()?.archived &&
-																					story().status === "backlog" &&
-																					dependency?.status === "wont_fix"
-																				}
-																			>
-																				<Button
-																					type="button"
-																					disabled={busy()}
-																					aria-label={t("stories.removeNamedDependency", "Remove {title}", {
-																						title: dependency?.title ?? id,
-																					})}
-																					onClick={() => removeDependency(id)}
-																				>
-																					{t("stories.remove", "Remove")}
-																				</Button>
-																			</Show>
-																		</li>
-																	);
-																}}
-															</For>
-														</ul>
-													</Show>
-													<Show
-														when={
-															!story().archived &&
-															!storyPlan()?.archived &&
-															(story().status === "ready" || story().status === "backlog")
-														}
-													>
-														<p id={dependencyHintId} hidden>
-															{dependencyReason()}
-														</p>
-														<div class={s.inline}>
-															<Select
-																aria-label={t("stories.addDependency", "Add dependency")}
-																value={dependencyId()}
-																onChange={(event) => setDependencyId(event.currentTarget.value)}
-															>
-																<option value="">{t("stories.selectStory", "Select story")}</option>
-																<For
-																	each={stories().filter(
-																		(candidate) =>
-																			candidate.planId === story().planId &&
-																			candidate.id !== story().id &&
-																			!story().dependencies.includes(candidate.id),
-																	)}
-																>
-																	{(candidate) => <option value={candidate.id}>{candidate.title}</option>}
-																</For>
-															</Select>
-															<Button
-																type="button"
-																disabled={!!dependencyReason()}
-																title={dependencyReason()}
-																aria-describedby={dependencyHintId}
-																onClick={addDependency}
-															>
-																{t("stories.addDependency", "Add dependency")}
-															</Button>
-														</div>
-													</Show>
-												</section>
-												<section>
-													<h4>{t("stories.fileScope", "File scope")}</h4>
-													<Show
-														when={story().fileScope.length}
-														fallback={<p class={s.muted}>{t("stories.unspecified", "Unspecified")}</p>}
-													>
-														<ul>
-															<For each={story().fileScope}>{(path) => <li class={s.path}>{path}</li>}</For>
-														</ul>
-													</Show>
-												</section>
-												<div class={s.actions}>
-													<Show when={!story().archived && !storyPlan()?.archived}>
-														<Show when={story().status === "ready"}>
-															<Button
-																variant="primary"
-																type="button"
-																disabled={busy()}
-																onClick={() => transition("start_manual")}
-															>
-																{t("stories.startWork", "Start work")}
-															</Button>
-														</Show>
-														<Show when={story().status === "in_progress"}>
-															<Button
-																variant="primary"
-																type="button"
-																disabled={busy()}
-																onClick={() => transition("submit_review")}
-															>
-																{t("stories.submitReview", "Submit for review")}
-															</Button>
-														</Show>
-														<Show when={story().status === "review"}>
-															<Button
-																variant="primary"
-																type="button"
-																disabled={busy()}
-																onClick={() => transition("approve")}
-															>
-																{t("stories.approve", "Approve")}
-															</Button>
-															<Button type="button" disabled={busy()} onClick={() => transition("reject_review")}>
-																{t("stories.requestChanges", "Request changes")}
-															</Button>
-														</Show>
-														<Show when={["in_progress", "review"].includes(story().status)}>
-															<Button type="button" disabled={busy()} onClick={() => transition("submit_qa")}>
-																{t("stories.submitQa", "Submit for QA")}
-															</Button>
-														</Show>
-														<Show when={story().status === "qa"}>
-															<Button
-																variant="primary"
-																type="button"
-																disabled={busy()}
-																onClick={() => transition("approve")}
-															>
-																{t("stories.qaPassed", "QA passed")}
-															</Button>
-															<Button type="button" disabled={busy()} onClick={() => transition("reject_qa")}>
-																{t("stories.qaFailed", "QA failed")}
-															</Button>
-														</Show>
-														<Show when={["ready", "in_progress", "review", "qa"].includes(story().status)}>
-															<Button type="button" disabled={busy()} onClick={() => transition("block")}>
-																{t("stories.block", "Block")}
-															</Button>
-														</Show>
-														<Show when={story().status === "blocked"}>
-															<Button
-																variant="primary"
-																type="button"
-																disabled={busy()}
-																onClick={() => transition("unblock")}
-															>
-																{t("stories.unblock", "Unblock")}
-															</Button>
-														</Show>
-														<Show when={story().status !== "done" && story().status !== "wont_fix"}>
-															<Button
-																variant="danger"
-																type="button"
-																disabled={busy()}
-																onClick={() => transition("wont_fix")}
-															>
-																{t("stories.status.wontFix", "Won't fix")}
-															</Button>
-														</Show>
-													</Show>
-													<Button
-														type="button"
-														disabled={busy() || !!story().claimSession}
-														onClick={() =>
-															void mutate({
-																action: story().archived ? "unarchive_story" : "archive_story",
-																story_id: story().id,
-																expected_revision: story().revision,
-															})
-														}
-													>
-														{story().archived
-															? t("stories.archive.restoreStory", "Restore story")
-															: t("stories.archive.archiveStory", "Archive story")}
-													</Button>
-												</div>
-											</Show>
-											{/* Notes load independently; never suspend the host's whole-dialog lazy boundary. */}
-											<Suspense
-												fallback={
-													<p class={s.muted} role="status">
-														{t("stories.notes.loading", "Loading notes…")}
-													</p>
-												}
-											>
-												<Show when={`${props.project}:${story().id}`} keyed>
-													{(_storyKey) => (
-														<StoryNotes
-															project={props.project}
-															storyId={story().id}
-															revision={story().revision}
-															busy={busy()}
-														/>
-													)}
-												</Show>
-											</Suspense>
-										</>
-									)}
-								</Show>
-							</section>
-						</div>
-					</Show>
 				</Show>
 			</div>
 		</div>

@@ -1,6 +1,6 @@
 //! Host-origin identity is never part of a model-deserialized request.
 use super::super::request::{Error, Failure};
-use std::{net::SocketAddr, time::Duration};
+use std::time::Duration;
 
 #[derive(Clone, PartialEq, Eq)]
 pub(super) struct CallerKey {
@@ -8,12 +8,17 @@ pub(super) struct CallerKey {
     pub origin: &'static str,
 }
 /// Constructed by the server transport, never deserialized from a model payload.
+///
+/// An authenticated remote caller has the same settings authority as loopback
+/// (L07): it may read, propose and confirm. Approval still needs the enabled
+/// capability, a real human answer and a proposal bound to this caller,
+/// fingerprint and expiry.
 #[derive(Clone)]
 pub struct Caller {
     pub(super) key: CallerKey,
-    allowed: bool,
-    read_allowed: bool,
     enabled: bool,
+    /// Set only by the Tauri settings command; no request field can claim it.
+    pub(super) owner_ui: bool,
 }
 impl Caller {
     pub fn native() -> Self {
@@ -22,41 +27,45 @@ impl Caller {
                 connection: "native".into(),
                 origin: "ipc",
             },
-            allowed: true,
-            read_allowed: true,
             enabled: true,
+            owner_ui: false,
         }
     }
-    pub fn http(connection: String, authenticated_or_local: bool) -> Self {
+    /// The owner's own settings window, reached only through the native IPC command.
+    pub fn owner_ui() -> Self {
+        Self {
+            owner_ui: true,
+            ..Self::native()
+        }
+    }
+    pub fn http(connection: String) -> Self {
         let enabled = !connection.is_empty();
         Self {
             key: CallerKey {
                 connection,
                 origin: "http",
             },
-            allowed: authenticated_or_local,
-            read_allowed: authenticated_or_local,
             enabled,
+            owner_ui: false,
         }
     }
-    pub fn mcp(addr: SocketAddr, connection: String, settings_enabled: bool) -> Self {
+    /// Reaching the MCP handler already proves loopback or authentication:
+    /// the TCP router always runs `basic_auth_middleware`, and the Unix socket
+    /// and named pipe routers serve only local clients.
+    pub fn mcp(connection: String, settings_enabled: bool) -> Self {
         let enabled = settings_enabled && !connection.is_empty();
         Self {
             key: CallerKey {
                 connection,
                 origin: "mcp",
             },
-            allowed: addr.ip().is_loopback(),
-            read_allowed: true,
             enabled,
+            owner_ui: false,
         }
     }
-    pub fn check(&self, mutation: bool) -> Result<(), Failure> {
+    pub fn check(&self) -> Result<(), Failure> {
         if !self.enabled {
             return Err(Error::new("settings", "unavailable"));
-        }
-        if !self.read_allowed || (mutation && !self.allowed) {
-            return Err(Error::new("settings", "forbidden_origin"));
         }
         Ok(())
     }

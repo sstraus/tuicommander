@@ -212,6 +212,37 @@ describe("remote repository synchronization", () => {
 		expect(refresh).toHaveBeenCalledExactlyOnceWith(REMOTE);
 	});
 
+	it("registers the watcher on a replacement daemon that connects while an earlier registration is in flight", async () => {
+		let release: (() => void) | undefined;
+		const ok = {
+			ok: true,
+			status: 200,
+			headers: new Headers({ "content-type": "application/json" }),
+			text: async () => "{}",
+		};
+		fetch.mockImplementation((input: string) => {
+			if (!release && String(input).includes("/watchers/repo"))
+				return new Promise((resolve) => {
+					release = () => resolve(ok);
+				});
+			return Promise.resolve(ok);
+		});
+		connect();
+		await settle();
+		expect(release).toBeDefined();
+		// The daemon restarts while the first registration still waits for an answer.
+		emit("remote-connection-status", { id: "host", status: "disconnected" });
+		emit("remote-connection-status", { id: "host", status: "connected", base_url: BASE, token: "new-token" });
+		emit("remote-connection-status", { id: "host", status: "connected", base_url: BASE, token: "new-token" });
+		await settle();
+		release?.();
+		await settle();
+		await vi.advanceTimersByTimeAsync(500);
+		expect(
+			urls().filter((url) => url.startsWith(`${BASE}/watchers/repo?`) && url.includes("token=new-token")),
+		).toHaveLength(1);
+	});
+
 	it("ignores a status forwarded from another remote machine", async () => {
 		emit("remote-connection-status", {
 			id: "host",

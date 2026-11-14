@@ -379,6 +379,103 @@ fn ls_still_times_out_against_a_server_that_never_replies() {
     assert!(elapsed < Duration::from_millis(4500), "{elapsed:?}");
 }
 
+/// Catches: `tuic mcp init` calling a tool named `init` (Unknown tool) or printing less
+/// than the server's initialize instructions, so a dropped-MCP agent never sees the rules.
+#[test]
+fn mcp_init_prints_the_initialize_instructions_for_the_caller_session() {
+    let (path, listener) = socket();
+    let server = std::thread::spawn(move || {
+        let mut requests = Vec::new();
+        for index in 0..2 {
+            let (mut stream, _) = listener.accept().unwrap();
+            requests.push(read_request(&mut stream));
+            let body = if index == 0 {
+                serde_json::json!({"jsonrpc":"2.0","result":{"instructions":"# TUICommander\nRule one.\n"}}).to_string()
+            } else {
+                String::new()
+            };
+            respond(&mut stream, &body, index == 0).unwrap();
+        }
+        requests
+    });
+    let output = Command::new(env!("CARGO_BIN_EXE_tuic"))
+        .args(["mcp", "init"])
+        .env("TUIC_SOCKET", &path)
+        .env("TUIC_SESSION", "peer-1")
+        .output()
+        .unwrap();
+    let requests = server.join().unwrap();
+    std::fs::remove_file(path).unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "# TUICommander\nRule one.\n"
+    );
+    assert_eq!(requests[0].1["method"], "initialize");
+    assert!(
+        requests[0]
+            .0
+            .iter()
+            .any(|h| h.to_lowercase().starts_with("x-tuic-session: peer-1"))
+    );
+}
+
+/// Catches: a script reporting success while the recipient was never found.
+#[test]
+fn notify_to_an_unknown_alias_exits_non_zero_naming_the_alias() {
+    let (output, _) = run_with_stub(
+        &["notify", "ghost-alias", "hi"],
+        None,
+        Some("caller"),
+        r#"{"error":"Recipient 'ghost-alias' is not registered"}"#,
+        true,
+    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("ghost-alias"));
+}
+
+/// Catches: a message stored but surfaced to nobody counted as delivered.
+#[test]
+fn notify_buffered_only_exits_non_zero() {
+    let (output, _) = run_with_stub(
+        &["notify", "peer", "hi"],
+        None,
+        Some("caller"),
+        r#"{"message_id":"m","delivered":false,"delivery_path":"inbox_only"}"#,
+        false,
+    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Buffered for peer"));
+}
+
+/// Catches: stdin text dropped, or the literal `-` sent as the message.
+#[test]
+fn notify_reads_the_message_from_stdin() {
+    let (output, requests) = run_with_stub(
+        &["notify", "peer", "-"],
+        Some("line one\nline two\n"),
+        Some("caller"),
+        r#"{"message_id":"m","delivered":true,"delivery_path":"wake_notification_and_inbox"}"#,
+        false,
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let call = requests
+        .iter()
+        .map(|r| &r.1)
+        .find(|r| r["method"] == "tools/call")
+        .unwrap();
+    assert_eq!(call["params"]["arguments"]["to"], "peer");
+    assert_eq!(call["params"]["arguments"]["message"], "line one\nline two");
+}
+
 #[test]
 fn mcp_prints_tool_text_without_reencoding() {
     let (output, requests) = run_with_stub(
@@ -607,3 +704,5 @@ fn automations_command_preserves_shared_action_values_and_errors() {
         serde_json::json!({"action":"list"})
     );
 }
+
+include!("typed_reports.rs");

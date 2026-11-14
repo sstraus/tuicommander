@@ -464,19 +464,109 @@ pub async fn get_recent_commits(
 }
 
 /// Build the base git diff args for the given scope.
-/// A commit hash compares `<hash>..HEAD`; empty/None compares working tree.
-fn diff_base_args(scope: &Option<String>) -> Result<Vec<String>, String> {
+///
+/// - `staged`: the index against HEAD.
+/// - `head`: the working tree against HEAD (the empty tree before the first commit).
+/// - `base:<ref>`: `<ref>...HEAD`, the committed work of the branch.
+/// - `base-uncommitted:<ref>`: the working tree against the merge base of `<ref>` and HEAD.
+/// - `range:<from>..<to>`: the first parent of `from` against `to` (both hashes).
+/// - a commit hash: the commit against its first parent.
+/// - empty/None: the working tree against the index.
+fn diff_base_args(repo: &Path, scope: &Option<String>) -> Result<Vec<String>, String> {
+    let scope_str = scope.as_deref().unwrap_or("");
+    if let Some(base) = scope_str.strip_prefix("base:") {
+        let base = resolve_diff_base(repo, base)?;
+        return Ok(vec!["diff".into(), format!("{base}...HEAD")]);
+    }
+    if let Some(base) = scope_str.strip_prefix("base-uncommitted:") {
+        let base = resolve_diff_base(repo, base)?;
+        let merge_base = git_cmd(repo)
+            .args(["merge-base", &base, "HEAD"])
+            .run()
+            .map_err(|e| format!("No common ancestor with the base: {e}"))?;
+        return Ok(vec!["diff".into(), merge_base.stdout.trim().to_owned()]);
+    }
+    if let Some(range) = scope_str.strip_prefix("range:") {
+        let (from, to) = range
+            .split_once("..")
+            .ok_or_else(|| format!("Invalid commit range: '{range}'"))?;
+        validate_git_hash(from)?;
+        validate_git_hash(to)?;
+        let base = commit_parent_or_empty_tree(repo, from)?;
+        return Ok(vec!["diff".into(), base, to.into()]);
+    }
     match scope.as_deref() {
         Some("staged") => Ok(vec!["diff".into(), "--cached".into()]),
         // "head" compares the working tree against the last commit (staged +
         // unstaged), i.e. the editor gutter's "vs committed version" view.
-        Some("head") => Ok(vec!["diff".into(), "HEAD".into()]),
+        // Before the first commit there is no HEAD: compare with the empty tree.
+        Some("head") => {
+            if git_cmd(repo)
+                .args(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])
+                .run_silent()
+                .is_some()
+            {
+                Ok(vec!["diff".into(), "HEAD".into()])
+            } else {
+                Ok(vec!["diff".into(), empty_tree(repo)?])
+            }
+        }
         Some(hash) if !hash.is_empty() => {
             validate_git_hash(hash)?;
-            Ok(vec!["diff".into(), format!("{hash}^"), hash.into()])
+            let base = commit_parent_or_empty_tree(repo, hash)?;
+            Ok(vec!["diff".into(), base, hash.into()])
         }
         _ => Ok(vec!["diff".into()]),
     }
+}
+
+/// The first parent of `hash`, or the empty tree when `hash` is a root
+/// commit: git rejects `<root>^`, so a root commit has nothing else to
+/// compare with.
+fn commit_parent_or_empty_tree(repo: &Path, hash: &str) -> Result<String, String> {
+    let parent = format!("{hash}^");
+    let parent_commit = format!("{parent}^{{commit}}");
+    if git_cmd(repo)
+        .args(["rev-parse", "--verify", "--quiet", &parent_commit])
+        .run_silent()
+        .is_some()
+    {
+        return Ok(parent);
+    }
+    empty_tree(repo)
+}
+
+/// Resolve a user-chosen base ref to a commit hash. A ref that starts with
+/// `-` would reach git as an option, so it is rejected before git sees it.
+fn resolve_diff_base(repo: &Path, base: &str) -> Result<String, String> {
+    if base.is_empty()
+        || base.starts_with('-')
+        || base.chars().any(|c| c.is_whitespace() || c.is_control())
+    {
+        return Err(format!("Invalid base ref: '{base}'"));
+    }
+    git_cmd(repo)
+        .args([
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{base}^{{commit}}"),
+        ])
+        .run_silent()
+        .map(|out| out.stdout.trim().to_owned())
+        .filter(|hash| !hash.is_empty())
+        .ok_or_else(|| format!("Base ref not found: '{base}'"))
+}
+
+/// The id of the empty tree in the repository's object format.
+fn empty_tree(repo: &Path) -> Result<String, String> {
+    // hash-object uses the repository's object format, so the id is also
+    // correct in a SHA-256 repository.
+    git_cmd(repo)
+        .args(["hash-object", "-t", "tree", "--stdin"])
+        .run_with_input("")
+        .map(|out| out.stdout.trim().to_owned())
+        .map_err(|e| format!("git hash-object failed: {e}"))
 }
 
 /// Get git diff for a repository
@@ -491,7 +581,7 @@ pub fn get_diff_stats_impl(path: &str, scope: Option<&str>) -> DiffStats {
     let repo_path = PathBuf::from(path);
     let scope_owned = scope.map(|s| s.to_string());
 
-    let args = match diff_base_args(&scope_owned) {
+    let args = match diff_base_args(&repo_path, &scope_owned) {
         Ok(a) => a,
         Err(_) => {
             return DiffStats {
@@ -860,6 +950,21 @@ fn detect_default_branch(git_dir: &Path) -> Option<String> {
 /// Local branches integrated in the default branch, using the same proof
 /// classifier as MCP and lifecycle inspection. Same-tip branches stay hidden.
 pub fn get_merged_branches_impl(repo_path: &Path) -> Result<Vec<String>, String> {
+    merged_branches(repo_path, None)
+}
+
+/// The same verdicts, limited to `branches`. The sidebar needs the merged flag
+/// of its checked-out workspaces only; classifying every local branch at startup
+/// ran the content heuristics (several git processes each) over hundreds of
+/// branches nobody was looking at (#3021-3a69).
+pub fn get_merged_workspace_branches_impl(
+    repo_path: &Path,
+    branches: &[String],
+) -> Result<Vec<String>, String> {
+    merged_branches(repo_path, Some(branches))
+}
+
+fn merged_branches(repo_path: &Path, only: Option<&[String]>) -> Result<Vec<String>, String> {
     let Some(git_dir) = resolve_git_dir(repo_path) else {
         return Ok(vec![]);
     };
@@ -875,27 +980,39 @@ pub fn get_merged_branches_impl(repo_path: &Path) -> Result<Vec<String>, String>
         .map_err(|e| e.to_string())?
         .detach();
     let refs = grepo.references().map_err(|e| e.to_string())?;
-    let mut merged = Vec::new();
+    let mut candidates = Vec::new();
     for reference in refs.prefixed("refs/heads/").map_err(|e| e.to_string())? {
         let mut reference = reference.map_err(|e| e.to_string())?;
         let branch = reference.name().shorten().to_str_lossy().into_owned();
         if branch == default_branch
+            || only.is_some_and(|only| !only.contains(&branch))
             || reference.peel_to_id().map_err(|e| e.to_string())?.detach() == main_tip
         {
             continue;
         }
-        let (status, _) = crate::worktree::monitoring_branch_merge(
-            repo_path,
-            &branch,
-            &crate::worktree::monitoring_ref_key(repo_path, &branch)?,
-            false,
-            |_, _, _| false,
-        )?;
-        if status == crate::worktree::WorkspaceCommitStatus::Merged {
-            merged.push(branch);
-        }
+        candidates.push(branch);
     }
-    Ok(merged)
+    // One ref snapshot for every branch, not one refresh per branch.
+    let mut keys = crate::worktree::monitoring_ref_keys(repo_path, &candidates)?;
+    let keyed = candidates
+        .into_iter()
+        .map(|branch| {
+            let key = keys
+                .remove(&branch)
+                .ok_or_else(|| "missing monitoring ref key".to_string())?;
+            Ok((branch, key))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    // One classification for all branches: their heuristics share git processes.
+    let verdicts = crate::worktree::monitoring_branch_merges(repo_path, &keyed)?;
+    Ok(keyed
+        .into_iter()
+        .zip(verdicts)
+        .filter(|(_, ((status, _), _, _))| {
+            *status == crate::worktree::WorkspaceCommitStatus::Merged
+        })
+        .map(|((branch, _), _)| branch)
+        .collect())
 }
 
 /// Check whether a ref exists in .git/packed-refs (for repos that have been gc'd).
@@ -959,7 +1076,6 @@ pub struct BranchDetail {
     pub is_current: bool,
     pub is_remote: bool,
     pub is_main: bool,
-    pub is_merged: bool,
     pub ahead: Option<u32>,
     pub behind: Option<u32>,
     pub upstream: Option<String>,
@@ -999,9 +1115,6 @@ pub fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>, String
         ])
         .run()
         .map_err(|e| format!("git for-each-ref failed: {e}"))?;
-
-    // Collect merged branch names once so we can do O(1) lookups.
-    let merged_set = merged_branch_set(path);
 
     let mut branches: Vec<BranchDetail> = out
         .stdout
@@ -1067,14 +1180,11 @@ pub fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>, String
                 Some(author.to_string())
             };
 
-            let is_merged = merged_set.contains(&name);
-
             Some(BranchDetail {
                 is_main: is_main_branch(&name),
                 name,
                 is_current,
                 is_remote,
-                is_merged,
                 ahead,
                 behind,
                 upstream,
@@ -1090,18 +1200,6 @@ pub fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>, String
 
     apply_base_ahead_behind_and_sort(path, &mut branches);
     Ok(branches)
-}
-
-/// Set of branch names integrated into main, used for `is_merged`.
-/// Empty (with a warning) if the merge check fails. Shared by both adapters.
-pub fn merged_branch_set(path: &Path) -> std::collections::HashSet<String> {
-    match get_merged_branches_impl(path) {
-        Ok(names) => names.into_iter().collect(),
-        Err(e) => {
-            tracing::warn!(source = "git", "Failed to determine merged branches: {e}");
-            std::collections::HashSet::new()
-        }
-    }
 }
 
 /// Backend-agnostic tail for `branches_detail`: fill base ahead/behind for local
@@ -2224,6 +2322,142 @@ mod tests {
         assert_eq!((committed[0].additions, committed[0].deletions), (1, 0));
     }
 
+    // Catches diffing `<root>^..<root>`: git rejects the parent of a root
+    // commit, so the commit-scoped diff, file list, file diff and stats of the
+    // first commit in a repository came back as an error or as nothing.
+    #[test]
+    fn root_commit_scope_diffs_against_the_empty_tree_2795() {
+        let (_temp, repo) = empty_fixture_repo();
+        std::fs::write(repo.join("first.txt"), "alpha\nbeta\n").unwrap();
+        git_in(&repo, &["add", "."]);
+        git_in(&repo, &["commit", "-qm", "root"]);
+        let root = git_in(&repo, &["rev-parse", "HEAD"]).trim().to_owned();
+        let path = repo.to_string_lossy().into_owned();
+
+        let diff = get_git_diff_blocking(path.clone(), Some(root.clone())).unwrap();
+        assert!(diff.contains("+alpha") && diff.contains("+beta"), "{diff}");
+        let files = get_changed_files_blocking(path.clone(), Some(root.clone())).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "first.txt");
+        assert_eq!(files[0].status, "A");
+        assert_eq!((files[0].additions, files[0].deletions), (2, 0));
+        let stats = get_diff_stats_blocking(path.clone(), Some(root.clone())).unwrap();
+        assert_eq!((stats.additions, stats.deletions), (2, 0));
+        let file_diff =
+            get_file_diff_blocking(path, "first.txt".into(), Some(root), Some(false)).unwrap();
+        assert!(file_diff.contains("+alpha"), "{file_diff}");
+    }
+
+    /// `main` with `base.txt`; `feature` off it adds `feature.txt`; then `main`
+    /// moves on with `main-only.txt`. HEAD is `feature`.
+    fn branch_fixture_2775() -> (tempfile::TempDir, PathBuf, String) {
+        let (temp, repo) = empty_fixture_repo();
+        std::fs::write(repo.join("base.txt"), "base\n").unwrap();
+        git_in(&repo, &["add", "."]);
+        git_in(&repo, &["commit", "-qm", "base"]);
+        git_in(&repo, &["checkout", "-qb", "feature"]);
+        std::fs::write(repo.join("feature.txt"), "feature\n").unwrap();
+        git_in(&repo, &["add", "."]);
+        git_in(&repo, &["commit", "-qm", "feature work"]);
+        git_in(&repo, &["checkout", "-q", "main"]);
+        std::fs::write(repo.join("main-only.txt"), "main\n").unwrap();
+        git_in(&repo, &["add", "."]);
+        git_in(&repo, &["commit", "-qm", "main moves on"]);
+        git_in(&repo, &["checkout", "-q", "feature"]);
+        let path = repo.to_string_lossy().into_owned();
+        (temp, repo, path)
+    }
+
+    // Catches a branch-vs-base scope that falls back to the working tree, or a
+    // two-dot diff that also shows the commits that only the base has.
+    #[test]
+    fn diff_scope_base_shows_branch_work_only_2775() {
+        let (_temp, repo, path) = branch_fixture_2775();
+        std::fs::write(repo.join("base.txt"), "base\nuncommitted\n").unwrap();
+        let diff = get_git_diff_blocking(path.clone(), Some("base:main".into())).unwrap();
+        assert!(diff.contains("+feature"), "{diff}");
+        assert!(!diff.contains("main-only.txt"), "{diff}");
+        assert!(!diff.contains("+uncommitted"), "{diff}");
+        let files = get_changed_files_blocking(path, Some("base:main".into())).unwrap();
+        let names: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(names, vec!["feature.txt"]);
+    }
+
+    // Catches an Include-uncommitted scope that ignores the working tree.
+    #[test]
+    fn diff_scope_base_uncommitted_adds_worktree_2775() {
+        let (_temp, repo, path) = branch_fixture_2775();
+        std::fs::write(repo.join("base.txt"), "base\nuncommitted\n").unwrap();
+        let diff =
+            get_git_diff_blocking(path.clone(), Some("base-uncommitted:main".into())).unwrap();
+        assert!(diff.contains("+feature"), "{diff}");
+        assert!(diff.contains("+uncommitted"), "{diff}");
+        assert!(!diff.contains("main-only.txt"), "{diff}");
+        let stats = get_diff_stats_blocking(path, Some("base-uncommitted:main".into())).unwrap();
+        assert_eq!((stats.additions, stats.deletions), (2, 0));
+    }
+
+    // Catches a range that drops its oldest commit, or that diffs a merge
+    // commit against its second parent instead of its first.
+    #[test]
+    fn diff_scope_range_uses_first_parent_of_oldest_2775() {
+        let (_temp, repo, path) = branch_fixture_2775();
+        // Merge main into feature: the merge's first parent is `feature work`.
+        git_in(&repo, &["merge", "-q", "--no-edit", "main"]);
+        let merge = git_in(&repo, &["rev-parse", "HEAD"]).trim().to_owned();
+        std::fs::write(repo.join("after.txt"), "after\n").unwrap();
+        git_in(&repo, &["add", "."]);
+        git_in(&repo, &["commit", "-qm", "after merge"]);
+        let head = git_in(&repo, &["rev-parse", "HEAD"]).trim().to_owned();
+
+        let diff =
+            get_git_diff_blocking(path.clone(), Some(format!("range:{merge}..{head}"))).unwrap();
+        assert!(
+            diff.contains("main-only.txt"),
+            "merge content missing: {diff}"
+        );
+        assert!(diff.contains("after.txt"), "{diff}");
+        assert!(!diff.contains("feature.txt"), "{diff}");
+
+        let single = get_git_diff_blocking(path, Some(merge)).unwrap();
+        assert!(single.contains("main-only.txt"), "{single}");
+        assert!(!single.contains("feature.txt"), "{single}");
+    }
+
+    // Catches a base ref passed to git as an option, and range ends that are
+    // not hashes.
+    #[test]
+    fn diff_scope_rejects_option_like_base_2775() {
+        let (_temp, repo, path) = branch_fixture_2775();
+        let out = repo.join("pwned");
+        for scope in [
+            format!("base:--output={}", out.display()),
+            format!("base-uncommitted:--output={}", out.display()),
+            "base:no-such-branch".to_owned(),
+            "base:".to_owned(),
+            "range:main..feature".to_owned(),
+            "range:abcd".to_owned(),
+        ] {
+            assert!(
+                get_git_diff_blocking(path.clone(), Some(scope.clone())).is_err(),
+                "{scope}"
+            );
+        }
+        assert!(!out.exists());
+    }
+
+    // Catches an Uncommitted scope (`git diff HEAD`) that errors in a
+    // repository without commits.
+    #[test]
+    fn head_scope_without_commits_2775() {
+        let (_temp, repo) = empty_fixture_repo();
+        std::fs::write(repo.join("new.txt"), "new\n").unwrap();
+        git_in(&repo, &["add", "."]);
+        let path = repo.to_string_lossy().into_owned();
+        let diff = get_git_diff_blocking(path, Some("head".into())).unwrap();
+        assert!(diff.contains("+new"), "{diff}");
+    }
+
     // Catches splitting control-character paths or misaligning binary/deleted
     // raw records with their numstat records in the public changed-file result.
     #[cfg(unix)]
@@ -3130,20 +3364,25 @@ mod tests {
 
     #[test]
     fn diff_base_args_none_returns_plain_diff() {
-        let args = diff_base_args(&None).unwrap();
+        let args = diff_base_args(Path::new("."), &None).unwrap();
         assert_eq!(args, vec!["diff"]);
     }
 
     #[test]
     fn diff_base_args_staged_returns_cached() {
-        let args = diff_base_args(&Some("staged".into())).unwrap();
+        let args = diff_base_args(Path::new("."), &Some("staged".into())).unwrap();
         assert_eq!(args, vec!["diff", "--cached"]);
     }
 
     #[test]
     fn diff_base_args_commit_hash_returns_parent_diff() {
-        let args = diff_base_args(&Some("abc123".into())).unwrap();
-        assert_eq!(args, vec!["diff", "abc123^", "abc123"]);
+        let (_temp, repo) = empty_fixture_repo();
+        for message in ["first", "second"] {
+            git_in(&repo, &["commit", "-q", "--allow-empty", "-m", message]);
+        }
+        let hash = git_in(&repo, &["rev-parse", "HEAD"]).trim().to_owned();
+        let args = diff_base_args(&repo, &Some(hash.clone())).unwrap();
+        assert_eq!(args, vec!["diff".to_owned(), format!("{hash}^"), hash]);
     }
 
     // --- parse_porcelain_v2 unit tests ---
@@ -3524,44 +3763,79 @@ mod tests {
         assert_eq!(is_file_tracked(&path, "missing.txt"), Ok(false));
     }
 
-    /// Capture every `tracing` event emitted on this thread while `f` runs.
-    fn capture_tracing<T>(f: impl FnOnce() -> T) -> (T, String) {
-        use std::sync::{Arc, Mutex};
-
-        #[derive(Clone)]
-        struct Sink(Arc<Mutex<Vec<u8>>>);
-        impl std::io::Write for Sink {
-            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-                self.0.lock().expect("sink").extend_from_slice(buf);
-                Ok(buf.len())
-            }
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
+    /// A repo on `main` plus `count` local branches with one own commit each,
+    /// so the merge classifier has real work for every branch.
+    fn repo_with_diverged_branches(count: usize) -> (tempfile::TempDir, PathBuf) {
+        let (dir, path) = setup_test_repo_with_commit();
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .current_dir(&path)
+                .args(args)
+                .output()
+                .expect("spawn git");
+            assert!(out.status.success(), "git {args:?}: {out:?}");
+        };
+        git(&["branch", "-M", "main"]);
+        for i in 0..count {
+            let branch = format!("feat-{i}");
+            git(&["checkout", "-q", "-b", &branch, "main"]);
+            std::fs::write(path.join(format!("{branch}.txt")), &branch).expect("write");
+            git(&["add", "."]);
+            git(&["commit", "-q", "-m", &branch]);
         }
-        impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Sink {
-            type Writer = Sink;
-            fn make_writer(&'a self) -> Self::Writer {
-                self.clone()
-            }
-        }
-
-        let sink = Arc::new(Mutex::new(Vec::new()));
-        let subscriber = tracing_subscriber::fmt()
-            .with_writer(Sink(sink.clone()))
-            .with_ansi(false)
-            .with_max_level(tracing::Level::TRACE)
-            .finish();
-        let out = tracing::subscriber::with_default(subscriber, f);
-        let text = String::from_utf8(sink.lock().expect("sink").clone()).expect("utf8");
-        (out, text)
+        git(&["checkout", "-q", "main"]);
+        (dir, path)
     }
 
-    /// A failed merge check must reach the app log through `tracing`, not
-    /// stderr: `GET /logs` is where the diagnostic is looked for, and an
-    /// a bare stderr print never lands there.
+    /// Total git CLI processes spawned by one branch-list load.
+    fn branch_list_spawns(
+        count: usize,
+        load: impl Fn(&Path) -> Result<Vec<BranchDetail>, String>,
+    ) -> usize {
+        let (_dir, path) = repo_with_diverged_branches(count);
+        crate::git_cli::take_command_counts();
+        let branches = load(&path).expect("branch list");
+        assert_eq!(
+            branches.iter().filter(|b| !b.is_remote).count(),
+            count + 1,
+            "{branches:#?}"
+        );
+        crate::git_cli::take_command_counts().values().sum()
+    }
+
+    // Catches: the branch list load running the per-branch merge classifier
+    // (rev-parse, merge-base, reflog, diff, cherry, merge-tree for every local
+    // branch). On a 528-branch repository that held the Branches tab for
+    // tens of seconds before it rendered a single row (#2777-1579).
     #[test]
-    fn merged_branch_set_reports_failure_through_tracing() {
+    fn branch_list_git_spawns_do_not_grow_with_the_branch_count() {
+        use crate::git_reads::GitReads;
+        let cli = |p: &Path| crate::git_reads::CliGitReads.branches_detail(p);
+        let routed = |p: &Path| crate::git_reads::git_reads().branches_detail(p);
+        for (adapter, few, many) in [
+            (
+                "cli",
+                branch_list_spawns(1, cli),
+                branch_list_spawns(6, cli),
+            ),
+            (
+                "routed",
+                branch_list_spawns(1, routed),
+                branch_list_spawns(6, routed),
+            ),
+        ] {
+            assert_eq!(
+                few, many,
+                "{adapter}: git spawns grew from {few} (1 branch) to {many} (6 branches)"
+            );
+        }
+    }
+
+    /// A failed merge check must reach the caller as an error, never as an
+    /// empty set: the Branches tab logs it, and an empty set would silently
+    /// read as "nothing is merged".
+    #[test]
+    fn merged_branches_report_failure_to_the_caller() {
         let (_dir, path) = setup_test_repo_with_commit();
         std::process::Command::new("git")
             .current_dir(&path)
@@ -3569,25 +3843,17 @@ mod tests {
             .output()
             .expect("rename to main");
         // Point the default-branch ref at an object that does not exist. The
-        // ref file still exists, so `detect_default_branch` succeeds and
-        // `git branch --merged main` is reached and fails — the only route
-        // into the error arm of `merged_branch_set`.
+        // ref file still exists, so `detect_default_branch` succeeds and the
+        // tip lookup is reached and fails.
         std::fs::write(
             path.join(".git/refs/heads/main"),
             "0000000000000000000000000000000000000000\n",
         )
         .expect("corrupt ref");
 
-        let (merged, logs) = capture_tracing(|| merged_branch_set(&path));
-
-        assert!(merged.is_empty(), "a failed merge check yields no branches");
         assert!(
-            logs.contains("Failed to determine merged branches"),
-            "merge-check failure was not logged through tracing; captured: {logs:?}"
-        );
-        assert!(
-            logs.contains("WARN"),
-            "merge-check failure must be logged at warn level; captured: {logs:?}"
+            get_merged_branches_impl(&path).is_err(),
+            "a failed merge check must not look like an empty merged set"
         );
     }
 
@@ -5421,7 +5687,7 @@ pub fn get_git_diff_blocking(path: String, scope: Option<String>) -> Result<Stri
     {
         let repo_path = PathBuf::from(&path);
 
-        let mut args = diff_base_args(&scope)?;
+        let mut args = diff_base_args(&repo_path, &scope)?;
         args.push("--color=never".into());
 
         let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
@@ -5451,7 +5717,7 @@ pub fn get_changed_files_blocking(
 
         // --name-status suppresses --numstat. Raw status records coexist with
         // numstat; NUL delimiters preserve literal paths and rename destinations.
-        let mut args = diff_base_args(&scope)?;
+        let mut args = diff_base_args(&repo_path, &scope)?;
         args.extend(["--raw".into(), "--numstat".into(), "-z".into()]);
         let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
         let combined_out = git_cmd(&repo_path)
@@ -5622,7 +5888,7 @@ pub fn get_file_diff_blocking(
             }
         }
 
-        let mut args = diff_base_args(&scope)?;
+        let mut args = diff_base_args(&repo_path, &scope)?;
         args.push("--color=never".into());
         args.push("--".into());
         args.push(file.clone());

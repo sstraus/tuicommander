@@ -7,10 +7,14 @@
 //! are never read incorrectly, reordered, or destroyed.
 //!
 //! Invariants:
-//! - **Single read-modify-write.** Load → prune our entries → append canonical
-//!   groups → atomic write. The file is written exactly once, never on an error
-//!   path, so a malformed settings file is reported (not corrupted).
-//! - **Idempotent.** Installing twice equals installing once (prune-then-append).
+//! - **Single read-modify-write.** Load → rewrite our groups in place → prune
+//!   the rest of ours → append missing groups → atomic write. The file is
+//!   written exactly once, never on an error path, so a malformed settings file
+//!   is reported (not corrupted).
+//! - **Stable positions.** A reinstall keeps every group at its index. Codex
+//!   keys hook trust by position (`hooks.json:stop:3:0`), so moving our group
+//!   would shift a later hook onto another hook's trusted hash.
+//! - **Idempotent.** Installing twice equals installing once.
 //! - **Clean uninstall.** Pruning removes only sentineled commands and drops the
 //!   groups/events that became empty as a result, leaving the file as if TUIC was
 //!   never there.
@@ -77,9 +81,23 @@ fn write_root(path: &Path, root: &Map<String, Value>) -> Result<(), String> {
 /// A user's group that merely contained a TUIC command keeps its other hooks; a
 /// group/event that was entirely ours disappears.
 fn prune_managed(hooks: &mut Map<String, Value>) {
-    for groups in hooks.values_mut() {
+    prune_managed_except(hooks, &std::collections::HashSet::new());
+}
+
+/// [`prune_managed`], but the `(event, index)` groups in `keep` stay untouched.
+fn prune_managed_except(
+    hooks: &mut Map<String, Value>,
+    keep: &std::collections::HashSet<(String, usize)>,
+) {
+    for (event, groups) in hooks.iter_mut() {
         let Value::Array(arr) = groups else { continue };
+        let mut index = 0;
         arr.retain_mut(|group| {
+            let kept = keep.contains(&(event.clone(), index));
+            index += 1;
+            if kept {
+                return true;
+            }
             let Some(inner) = group.get_mut("hooks").and_then(Value::as_array_mut) else {
                 return true; // unrecognized shape — never touch it
             };
@@ -97,21 +115,71 @@ fn prune_managed(hooks: &mut Map<String, Value>) {
     hooks.retain(|_event, groups| groups.as_array().map(|a| !a.is_empty()).unwrap_or(true));
 }
 
-/// Append `{matcher, hooks:[{type:command, command}]}` under `event`.
-fn append_group(hooks: &mut Map<String, Value>, event: &str, matcher: &str, cmd: &str) {
-    let entry = hooks
-        .entry(event.to_string())
-        .or_insert_with(|| Value::Array(Vec::new()));
-    if let Some(arr) = entry.as_array_mut() {
-        arr.push(serde_json::json!({
-            "matcher": matcher,
-            "hooks": [ { "type": "command", "command": cmd } ],
-        }));
+/// `{matcher, hooks:[{type:command, command, statusMessage?}]}`.
+fn managed_group(matcher: &str, cmd: &str, status: Option<&str>) -> Value {
+    let mut hook = serde_json::json!({ "type": "command", "command": cmd });
+    if let Some(status) = status {
+        hook["statusMessage"] = Value::from(status);
     }
+    serde_json::json!({ "matcher": matcher, "hooks": [ hook ] })
+}
+
+/// A group that holds only TUIC commands: one we wrote, safe to rewrite in place.
+fn is_managed_group(group: &Value) -> bool {
+    group
+        .get("hooks")
+        .and_then(Value::as_array)
+        .is_some_and(|inner| {
+            !inner.is_empty()
+                && inner.iter().all(|h| {
+                    h.get("command")
+                        .and_then(Value::as_str)
+                        .is_some_and(is_tuic_managed)
+                })
+        })
+}
+
+/// Rewrite our existing groups in place, in map order per event, and return
+/// the `(event, index)` slots used plus the entries that found no slot.
+fn rewrite_in_place<'a>(
+    hooks: &mut Map<String, Value>,
+    map: &'a [HookEntry],
+    status: Option<&str>,
+) -> (
+    std::collections::HashSet<(String, usize)>,
+    Vec<&'a HookEntry>,
+) {
+    let mut used = std::collections::HashSet::new();
+    let mut unplaced = Vec::new();
+    for entry in map {
+        let (event, matcher, cmd) = entry;
+        let slot = hooks
+            .get_mut(*event)
+            .and_then(Value::as_array_mut)
+            .and_then(|arr| {
+                let index = (0..arr.len()).find(|index| {
+                    !used.contains(&(event.to_string(), *index)) && is_managed_group(&arr[*index])
+                })?;
+                arr[index] = managed_group(matcher, cmd, status);
+                Some(index)
+            });
+        match slot {
+            Some(index) => {
+                used.insert((event.to_string(), index));
+            }
+            None => unplaced.push(entry),
+        }
+    }
+    (used, unplaced)
 }
 
 /// Install the hook map into `settings`, preserving every non-TUIC entry.
-pub(crate) fn install(settings: &Path, map: &[HookEntry]) -> Result<(), String> {
+/// `status` is written as `statusMessage` on every TUIC entry (Codex's label).
+pub(crate) fn install(
+    settings: &Path,
+    map: &[HookEntry],
+    status: Option<&str>,
+) -> Result<(), String> {
     let mut root = load_root(settings)?;
     {
         let hooks = match root
@@ -126,9 +194,16 @@ pub(crate) fn install(settings: &Path, map: &[HookEntry]) -> Result<(), String> 
                 ));
             }
         };
-        prune_managed(hooks); // idempotency: drop any prior install first
-        for (event, matcher, cmd) in map {
-            append_group(hooks, event, matcher, cmd);
+        let (used, unplaced) = rewrite_in_place(hooks, map, status);
+        prune_managed_except(hooks, &used); // idempotency: drop stale entries of ours
+        for (event, matcher, cmd) in unplaced {
+            if let Some(arr) = hooks
+                .entry(event.to_string())
+                .or_insert_with(|| Value::Array(Vec::new()))
+                .as_array_mut()
+            {
+                arr.push(managed_group(matcher, cmd, status));
+            }
         }
     }
     write_root(settings, &root)
@@ -163,8 +238,13 @@ pub(crate) fn uninstall(settings: &Path) -> Result<(), String> {
     write_root(settings, &root)
 }
 
-/// Report whether the file's TUIC hooks match `map`.
-pub(crate) fn install_state(settings: &Path, map: &[HookEntry]) -> InstallState {
+/// Report whether the file's TUIC hooks match `map`. With `status` set, an
+/// entry that lacks that `statusMessage` (an older install) is `Outdated`.
+pub(crate) fn install_state(
+    settings: &Path,
+    map: &[HookEntry],
+    status: Option<&str>,
+) -> InstallState {
     let Ok(root) = load_root(settings) else {
         return InstallState::NotInstalled;
     };
@@ -172,6 +252,7 @@ pub(crate) fn install_state(settings: &Path, map: &[HookEntry]) -> InstallState 
         return InstallState::NotInstalled;
     };
     let mut present: Vec<String> = Vec::new();
+    let mut labelled = true;
     for groups in hooks.values() {
         let Some(arr) = groups.as_array() else {
             continue;
@@ -185,6 +266,9 @@ pub(crate) fn install_state(settings: &Path, map: &[HookEntry]) -> InstallState 
                     && is_tuic_managed(c)
                 {
                     present.push(c.to_string());
+                    if let Some(status) = status {
+                        labelled &= h.get("statusMessage").and_then(Value::as_str) == Some(status);
+                    }
                 }
             }
         }
@@ -195,7 +279,7 @@ pub(crate) fn install_state(settings: &Path, map: &[HookEntry]) -> InstallState 
     let mut expected: Vec<String> = map.iter().map(|(_, _, c)| c.clone()).collect();
     present.sort();
     expected.sort();
-    if present == expected {
+    if labelled && present == expected {
         InstallState::Installed
     } else {
         InstallState::Outdated
@@ -300,7 +384,7 @@ mod tests {
         let path = dir.path().join("settings.json");
         write(&path, &user_hook_file());
         let map = crate::agent_hook::claude_hook_map();
-        install(&path, &map).unwrap();
+        install(&path, &map, None).unwrap();
         let v = read(&path);
         let pre = v["hooks"]["PreToolUse"].as_array().unwrap();
         assert!(
@@ -318,9 +402,9 @@ mod tests {
         let path = dir.path().join("settings.json");
         write(&path, &user_hook_file());
         let map = crate::agent_hook::claude_hook_map();
-        install(&path, &map).unwrap();
+        install(&path, &map, None).unwrap();
         let once = read(&path);
-        install(&path, &map).unwrap();
+        install(&path, &map, None).unwrap();
         let twice = read(&path);
         assert_eq!(once, twice, "install must be idempotent");
         assert_eq!(count_tuic(&twice), map.len(), "no duplicate tuic hooks");
@@ -333,7 +417,7 @@ mod tests {
         let original = user_hook_file();
         write(&path, &original);
         let map = crate::agent_hook::claude_hook_map();
-        install(&path, &map).unwrap();
+        install(&path, &map, None).unwrap();
         assert!(count_tuic(&read(&path)) > 0);
         uninstall(&path).unwrap();
         let after = read(&path);
@@ -347,7 +431,7 @@ mod tests {
         let path = dir.path().join("nested/settings.json");
         assert!(!path.exists());
         let map = crate::agent_hook::claude_hook_map();
-        install(&path, &map).unwrap();
+        install(&path, &map, None).unwrap();
         assert!(path.exists(), "missing file must be created");
         assert_eq!(count_tuic(&read(&path)), map.len());
     }
@@ -359,7 +443,10 @@ mod tests {
         std::fs::write(&path, b"[1,2,3]").unwrap();
         let before = std::fs::read(&path).unwrap();
         let map = crate::agent_hook::claude_hook_map();
-        assert!(install(&path, &map).is_err(), "non-object root must error");
+        assert!(
+            install(&path, &map, None).is_err(),
+            "non-object root must error"
+        );
         assert_eq!(
             std::fs::read(&path).unwrap(),
             before,
@@ -374,8 +461,42 @@ mod tests {
         std::fs::write(&path, br#"{"hooks": "nope"}"#).unwrap();
         let before = std::fs::read(&path).unwrap();
         let map = crate::agent_hook::claude_hook_map();
-        assert!(install(&path, &map).is_err(), "non-object hooks must error");
+        assert!(
+            install(&path, &map, None).is_err(),
+            "non-object hooks must error"
+        );
         assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    // Catches (#2966-c31d): a reinstall that moves TUIC's group to the end of an
+    // event shifts every later hook. Codex keys trust by position
+    // (`hooks.json:stop:1:0`, recorded from codex 0.167.0 hooks/list), so the
+    // other writer's hook lands on a key whose trusted hash belongs to TUIC's
+    // command and Codex asks for review right after TUIC trusted its own hooks.
+    #[test]
+    fn reinstall_keeps_every_hook_at_its_position() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("hooks.json");
+        let old = format!("old-stop {SENTINEL}");
+        write(
+            &path,
+            &json!({ "hooks": { "Stop": [
+                { "hooks": [ { "type": "command", "command": "user-first" } ] },
+                { "matcher": "", "hooks": [ { "type": "command", "command": old } ] },
+                { "hooks": [ { "type": "command", "command": "other-writer" } ] }
+            ] } }),
+        );
+        let new = format!("new-stop {SENTINEL}");
+        install(&path, &[("Stop", "", new.clone())], Some("label")).unwrap();
+        let stop = read(&path)["hooks"]["Stop"].clone();
+        let commands: Vec<&str> = stop
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|group| group["hooks"][0]["command"].as_str().unwrap())
+            .collect();
+        assert_eq!(commands, ["user-first", new.as_str(), "other-writer"]);
+        assert_eq!(stop[1]["hooks"][0]["statusMessage"], "label");
     }
 
     #[test]
@@ -384,10 +505,10 @@ mod tests {
         let path = dir.path().join("settings.json");
         write(&path, &user_hook_file());
         let map = crate::agent_hook::claude_hook_map();
-        assert_eq!(install_state(&path, &map), InstallState::NotInstalled);
-        install(&path, &map).unwrap();
-        assert_eq!(install_state(&path, &map), InstallState::Installed);
+        assert_eq!(install_state(&path, &map, None), InstallState::NotInstalled);
+        install(&path, &map, None).unwrap();
+        assert_eq!(install_state(&path, &map, None), InstallState::Installed);
         let newer: Vec<HookEntry> = vec![("Stop", "", format!("new-cmd {SENTINEL}"))];
-        assert_eq!(install_state(&path, &newer), InstallState::Outdated);
+        assert_eq!(install_state(&path, &newer, None), InstallState::Outdated);
     }
 }

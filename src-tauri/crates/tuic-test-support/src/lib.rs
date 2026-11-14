@@ -382,6 +382,17 @@ pub fn slashed(path: &str) -> String {
     path.replace('\\', "/")
 }
 
+/// Spell a Unix fixture path (`/home/user`) as an absolute path of this host.
+/// On Windows a leading `/` is only rooted, so `Path::is_absolute` refuses it;
+/// the path moves to drive `C:` there and stays unchanged elsewhere.
+pub fn host_absolute(unix: &str) -> String {
+    if cfg!(windows) {
+        format!("C:{unix}")
+    } else {
+        unix.to_owned()
+    }
+}
+
 /// Return an existing directory outside the current user's home directory.
 pub fn dir_outside_home() -> std::path::PathBuf {
     if cfg!(windows) {

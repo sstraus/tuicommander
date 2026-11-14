@@ -1,6 +1,7 @@
 import { type Component, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
+import { providerQuotaStore } from "../../stores/providerQuota";
 import { formatQuotaWindow } from "../../utils/sessionUsageFormatting";
 import { Button } from "../ui/Button";
 import { Select } from "../ui/Select";
@@ -443,28 +444,27 @@ const UsageChart: Component<{ timeline: TimelinePoint[]; days: number }> = (prop
 // ---------------------------------------------------------------------------
 
 export const ClaudeUsageDashboard: Component<{ sessionId?: string | (() => string | undefined) }> = (props) => {
-	const [apiData, setApiData] = createSignal<UsageApiResponse | null>(null);
-	const [apiError, setApiError] = createSignal<string | null>(null);
+	const selectedSessionId = () => (typeof props.sessionId === "function" ? props.sessionId() : props.sessionId);
+	const quota = () =>
+		selectedSessionId() ? providerQuotaStore.view(selectedSessionId()!) : providerQuotaStore.forOwner("claude-code");
+	const apiData = (): UsageApiResponse | null => {
+		const detail = quota()?.snapshot?.detail;
+		return detail?.provider === "claude" ? (detail.response as UsageApiResponse) : null;
+	};
+	const apiError = () => (quota()?.state === "fresh" ? null : (quota()?.state ?? "No bound subscription"));
 	const [sessionStats, setSessionStats] = createSignal<SessionStats | null>(null);
 	const [sessionError, setSessionError] = createSignal<string | null>(null);
 	const [projects, setProjects] = createSignal<ProjectEntry[]>([]);
 	const [timeline, setTimeline] = createSignal<TimelinePoint[]>([]);
 	const [scope, setScope] = createSignal("all");
 	const [loading, setLoading] = createSignal(true);
-	let apiFetchSeq = 0;
-
-	// Fetch API usage data
 	const fetchApi = async (sessionId?: string) => {
-		const seq = ++apiFetchSeq;
-		try {
-			const data = await invoke<UsageApiResponse>("get_claude_usage_api", sessionId ? { sessionId } : undefined);
-			if (seq !== apiFetchSeq) return;
-			setApiData(data);
-			setApiError(null);
-		} catch (err) {
-			if (seq !== apiFetchSeq) return;
-			setApiData(null);
-			setApiError(String(err));
+		if (sessionId) {
+			try {
+				await providerQuotaStore.refresh(sessionId);
+			} catch (error) {
+				appLogger.warn("network", "Quota refresh failed", String(error));
+			}
 		}
 	};
 
@@ -499,10 +499,11 @@ export const ClaudeUsageDashboard: Component<{ sessionId?: string | (() => strin
 		}
 	};
 
-	const selectedSessionId = () => (typeof props.sessionId === "function" ? props.sessionId() : props.sessionId);
 	createEffect(() => {
-		setApiData(null);
-		void fetchApi(selectedSessionId());
+		void providerQuotaStore
+			.start()
+			.then(() => undefined)
+			.catch((error) => appLogger.warn("network", "Quota store unavailable", String(error)));
 	});
 
 	// Fetch the project list once on mount (not scope-dependent).
@@ -526,7 +527,6 @@ export const ClaudeUsageDashboard: Component<{ sessionId?: string | (() => strin
 	// Auto-refresh every 5 minutes
 	const timer = setInterval(
 		() => {
-			void fetchApi(selectedSessionId());
 			void refreshStatsAndTimeline(scope());
 		},
 		5 * 60 * 1000,
@@ -535,21 +535,13 @@ export const ClaudeUsageDashboard: Component<{ sessionId?: string | (() => strin
 
 	// Computed data for rate limit cards.
 	// `key` matches the `representative_claim` header value so we can flag the bottleneck bucket.
-	const rateBuckets = () => {
-		const api = apiData();
-		if (!api) return [];
-		const buckets: { key: string; label: string; bucket: RateBucket }[] = [];
-		if (api.five_hour) buckets.push({ key: "five_hour", label: "5-Hour", bucket: api.five_hour });
-		if (api.seven_day) buckets.push({ key: "seven_day", label: "7-Day", bucket: api.seven_day });
-		if (api.seven_day_oauth_apps)
-			buckets.push({ key: "seven_day_oauth_apps", label: "7-Day OAuth Apps", bucket: api.seven_day_oauth_apps });
-		if (api.seven_day_opus) buckets.push({ key: "seven_day_opus", label: "7-Day Opus", bucket: api.seven_day_opus });
-		if (api.seven_day_sonnet)
-			buckets.push({ key: "seven_day_sonnet", label: "7-Day Sonnet", bucket: api.seven_day_sonnet });
-		if (api.seven_day_cowork)
-			buckets.push({ key: "seven_day_cowork", label: "7-Day Cowork", bucket: api.seven_day_cowork });
-		return buckets;
-	};
+	const rateBuckets = () =>
+		(quota()?.snapshot?.windows ?? []).map((window, index) => ({
+			key: `${window.kind}:${window.model ?? "account"}:${index}`,
+			label: `${window.model ? `${window.model} ` : ""}${window.label}`,
+			seconds: window.window_seconds,
+			bucket: { utilization: window.used_percent, resets_at: window.resets_at },
+		}));
 
 	/** Which bucket key is the active constraint — either from header meta or derived from the highest utilization (≥ 95%). */
 	const bottleneckKey = (): string | null => {
@@ -743,7 +735,7 @@ export const ClaudeUsageDashboard: Component<{ sessionId?: string | (() => strin
 											{formatQuotaWindow({
 												provider: "Claude",
 												plan: apiData()?.plan?.subscription_type ?? null,
-												window_seconds: item.key === "five_hour" ? 18000 : 604800,
+												window_seconds: item.seconds,
 												window_name: item.label,
 												used_percent: item.bucket.utilization,
 												resets_at: item.bucket.resets_at,

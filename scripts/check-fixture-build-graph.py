@@ -43,7 +43,7 @@ def graph(command):
 
 
 # Independent oracle: the desktop CI nextest command's workspace test selection.
-expected = graph(["test", "--workspace", "--features", "dictation", "--no-run"])
+expected = graph(["test", "--workspace", "--features", "dictation,test-fixtures", "--no-run"])
 for package, feature in (("tokio", "test-util"), ("tuic-core", "test-support"), ("tuic-git", "test-support")):
     assert any(line.startswith(package + " v") and feature in line.split(" features=", 1)[1].split(",")
                for line in expected), f"test graph lost {package}/{feature}"
@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory(prefix="fixture-build-graph.", dir=os.environ["
     proxy.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$FIXTURE_BUILD_ARGV"\n')
     proxy.chmod(0o755)
     env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ["PATH"],
-               FIXTURE_BUILD_ARGV=str(argv), TUIC_FIXTURE_FEATURES="dictation",
+               FIXTURE_BUILD_ARGV=str(argv), TUIC_FIXTURE_FEATURES="dictation,test-fixtures",
                XDG_CACHE_HOME=str(work / "cache"), PSModuleAnalysisCachePath=str(work / "analysis"))
     builders = [("sh", ["sh", "scripts/build-fixture-bins.sh"])]
     if shutil.which("pwsh"):

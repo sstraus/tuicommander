@@ -1,5 +1,33 @@
 # PTY Management
 
+Claude restore and terminal launch preparation reuse the structured launch status-settings builder (`agent_hook_launch::augment_launch`). `session_resume::prepare_shell_launch_args` decodes retained Claude shell words for option detection, preserves their original shell spelling, and quotes only appended hook argv, including the generated settings path; both resume and the terminal-preparation IPC/HTTP command use this boundary. Absolute discovered executables therefore do not depend on the interactive shell function for state hooks. Explicit settings, `--bare`, administrative verbs and the native-status opt-out remain authoritative (#2858-2b1c).
+
+Codex trusted native tool receipts use `codex-tool` OSC frames scoped to the existing exact session binding and current turn. Tool activity preserves open human waits; native user-input questions use the shared parsed-question accumulator and both existing desktop and HTTP/WS event paths. Matching results and terminal lifecycle events retract native question waits. Permission ownership remains outside this adapter until the CLI exposes it (#2695-41da).
+
+Question text recovery (#2633-cbd3): `agent_question::enrich` runs in `session_state_with_shell` only while `awaiting_input` is already set for a Claude or Codex terminal. The PTY reader publishes the hook owner's open request id as `SessionState.wait_request` (never serialized). A hook question that carried text keeps it. Otherwise `chat_view::transcript_question` tails the exact transcript (Claude `<config>/sessions/<pid>.json`, Codex validated hook binding; never the newest-file heuristic) into a bounded ledger. Claude counts only `user`/`assistant` rows of its own `sessionId`, because the `api-request-blob` row replays an answered call. Codex reads `request_user_input` `function_call` and `function_call_output` rows and the `task_started`/`task_complete`/`turn_aborted` markers. Settled ids never reopen; two open calls without a request id give nothing. `ChatViews::invalidate` (binding revocation, exit) drops the ledger. The source adds no awaiting signal and no retraction path.
+
+Structured question cards (#2634-ea5b): the hook owners keep the normalized payload of the request they hold open (`agent_hook_payload::QuestionCard`): `ClaudeHooks` for `AskUserQuestion`/`ExitPlanMode`, `CodexTools` for `request_user_input`, and `pty/ego_events.rs` for ego `OSC 7770;agent-event=<base64>` `modal_open` frames (version 1, 16 KiB cap, current native session only; ego coarse `state=` frames stay the wait authority). `ChunkProcessor::publish_wait` writes `wait_request` and `wait_card` (both serde skip) on change. `agent_hook_payload::apply` in `session_state_with_shell` copies the card to the serialized `question_card` only while `awaiting_input` and `wait_request == card.request_id`; it sets `question_text` from the card when no screen dialog exists and otherwise adds `header`, `question_index`, `question_count` and missing option hints to `choice_prompt`. Native keys stay screen-derived. Retraction: PostToolUse, the decline screen (now also `User rejected Claude's plan`, which calls `ClaudeHooks::settle_question`), Claude `state=idle`, ego `modal_end`/`turn_end`/`session_end`, OSC 133 `A` (shell return) and the existing awaiting clears, which also drop `wait_card`. Retired ids never reopen. Fixtures: `fixtures/agent_hook_payload/` (native hook stdin) and `fixtures/agent_prompts/*-2634.tcap`.
+
+Tool readout (#2636-5551): each native owner keeps an `agent_tool_readout::ToolReadout` of its live calls by native id — `ClaudeHooks` (PreToolUse `tool_name`; PostToolUse/PostToolUseFailure end), `CodexTools` (bound turn only), `GrokHooks` (camelCase `toolName`; post/failure/permission_denied end), `EgoEvents` (`tool_start` `data.label`; `tool_end`). Pi and OpenCode write `OSC 7770;agent-tool=<TUIC_SESSION>:<base64 {"event":"start"|"end","id","name"}>` from the managed extension/plugin; `ChunkProcessor.agent_tools` takes it only for agent type `pi`/`opencode` and the matching owner. An end removes only its own id and retires it, so a late end or a repeated start cannot change a newer call. Coarse `state=idle|prompt` (`retire_tools`), turn/session end, interrupt and OSC 133 `A` clear all. Labels drop control characters, collapse whitespace and keep 64 characters; at most 16 live calls per owner. `ChunkProcessor::publish_tool` emits `tool-activity {name}` only on change; the accumulator sets `SessionState.current_tool`, which `PtyExit` clears and `session_state_with_shell` hides while the shell is idle. Metadata only: it never changes shell or agent state. Fixtures: `fixtures/agent_tool_readout/` (ego 0.4.3 frames).
+
+Pi event channel (#2994-a1d0): the managed Pi extension also writes `OSC 7770;pi-event=<TUIC_SESSION>:<base64 JSON {"kind":…}>`. It is a generic typed channel: each kind is one kind of pi data, and TUIC ignores a kind it does not know. `ChunkProcessor` passes it to `provider_quota::pi::receive_event` only for agent type `pi` and the matching owner; frames above 8 KiB are dropped. The first kind, `provider_response`, carries `provider` (`ctx.model.provider`), `status`, `headers` and the `agent_dir`/`home` that name the pi credential. Both sides keep only `provider_quota::pi::QUOTA_HEADERS` (an allow-list; the extension source is generated from it) with values of at most 64 characters, so no auth header can cross. The frame binds the session to `pi:<provider>:<agent dir>` and stores the windows as a passive quota. Metadata only: it never changes shell or agent state. Fixture: `fixtures/agent_prompts/pi-provider-response-2994.osc`.
+
+## Terminal protocol replies
+
+The backend answers terminal queries through the session's shared PTY writer.
+On Unix it checks live `ICANON` on the PTY master before writing: canonical
+input would echo the reply and hold it until a newline. Replies seen in that
+mode stay in a session FIFO instead of being discarded. While replies remain
+queued, the frame ticker retries them every 16 ms before its dirty-frame and
+subscriber checks, so a child that silently switches to raw mode can receive
+them in a hidden terminal. With no pending reply or other work, it parks.
+The interval is a scheduling target, not a wall-clock guarantee. New replies
+drain behind older replies under the same queue lock. Closing the session
+discards its queue. Cbreak mode remains readable even with `ECHO` set.
+
+This retry starts after query parsing. A query held by secret-prefix masking
+has not reached this queue; that separate delay is tracked in story 2681-9810.
+
 Stable `TUIC_SESSION` identities are attached at spawn. If the live association
 is missing when a bridge reconnects, MCP identity attachment repairs it from
 one uniquely matching foreground process environment. Session-list consumers
@@ -154,11 +182,17 @@ returns `400` and does not enter the session map.
 ### Session Control
 
 Session removal polls the child once and releases the PTY handles immediately.
-If the child has not terminated yet, a separate waiter owns only its child handle
-until `wait()` reaps it. This covers reader EOF arriving before process exit and
-explicit close/kill racing termination, without holding session or map locks.
-The existing post-mortem buffers still expire through the five-minute tombstone
-sweeper; explicit close removes them immediately.
+If the child has not terminated yet, a separate waiter owns its child handle
+until `wait()` reaps it, without holding session or map locks. Reader EOF does
+not settle a managed task before that wait returns: the waiter publishes the
+actual exit code (or `128 + signal`) to the task and parent exit notification.
+Only an observed zero exit completes a task; an unavailable status fails it.
+The task and parent link are registered before its reader starts.
+
+Ordinary post-mortem buffers expire through the five-minute tombstone sweeper.
+A pending exit wait or an unexpired managed task keeps its diagnostics readable
+through `session action=output`. Managed diagnostics use the existing 24-hour,
+process-local task collection window, even if the parent reads them earlier.
 
 On Linux with glibc, releasing terminal payloads also calls `malloc_trim(0)`
 after the owners and map guards are dropped. The expiry sweeper trims once per
@@ -230,6 +264,8 @@ chrome cutoff. A capped history scroll keeps the open intent's anchor stable;
 repainting its unchanged anchor does not close it as replaced prose.
 
 For a managed Claude child with workspace trust acceptance enabled, the rendered screen is also checked for its exact startup safety question, both choices, and **No, exit** selected above **Yes, I trust this folder**, as recorded in the Claude startup capture. Only then does the reader send Down followed by Enter under the PTY writer lock, once for that session. Other dialogs and user-opened terminals are never answered by this path; session cleanup removes an unused allowance.
+
+The same per-session policy (`managed_first_run`) covers every managed child: an `agent spawn` child and a workflow-launched agent use one spawn path. A managed Claude child also answers the external `CLAUDE.md` imports dialog with its default **No, disable external imports** (Enter), once. A first-run dialog that TUIC does not answer (its `Enter to confirm · Esc to cancel` footer is the last row, and it is not a known dialog with its default selection, or trust acceptance is off) sets `awaiting_input` with the dialog text. The parent receives the usual `awaiting_input` notice with that text, and a workflow run shows its awaiting-input incident. Recorded in `claude-first-run-3017.tcap` (Claude Code 2.1.322).
 
 
 **Pause behavior:** When `paused` flag is set (`AtomicBool`), the reader thread sleeps in 10 ms slices instead of reading. This prevents output flooding during background operations.
@@ -313,7 +349,7 @@ a cleaned line can carry a bare CR.
 Frame emission is decoupled from PTY reading via a per-session **frame ticker** thread (display-link style pacing):
 
 1. **Reader thread**: processes PTY data into the alacritty VT grid, sets a `grid_frame_dirty` AtomicBool flag
-2. **Ticker thread**: on its 16ms maintenance tick or a bounded input wake, checks the dirty flag → if set, serializes dirty rows via `serialize_dirty_rows()` → sends frame via `send_grid_frame()` (respects the `GridGate` backpressure)
+2. **Ticker thread**: while work is pending, on its 16ms maintenance tick or a bounded input wake, checks the dirty flag → if set, serializes dirty rows via `serialize_dirty_rows()` → sends frame via `send_grid_frame()` (respects the `GridGate` backpressure). With no dirty frame, buffered synchronized update, queued reply, watcher-line tail, or priority retry, it parks without a timer. The PTY reader and other dirty-frame producers unpark it; the first ordinary frame retains the 16ms coalescing interval.
 3. **Frontend**: coalesces paint triggers via `requestAnimationFrame` (~60fps)
 4. **Ack handler**: credits the gate; the ticker sends any dirty rows accumulated while the prior frame was in flight
 
@@ -407,7 +443,7 @@ This coalesces rapid writes (e.g. spinner CR+erase+rewrite within 16ms) into a s
 
 The ticker therefore checks the deadline **before** the non-dirty early return, via `flush_sync_timeout_if_needed()` on `VtLogBuffer`. Three details are load-bearing:
 
-- A per-session `sync_update_active` AtomicBool, published by the reader after each `process()`, keeps idle sessions from taking the vt lock every 16ms. It mirrors real parser state, so a nested BSU (which re-arms the deadline rather than closing the update) keeps it set.
+- A per-session `sync_update_active` AtomicBool, published by the reader after each `process()`, keeps the 16ms maintenance tick active until the update ends or expires. It mirrors real parser state, so a nested BSU (which re-arms the deadline rather than closing the update) keeps it set.
 - A timeout flush **bypasses** `grid_send_min_interval_ms()`. A protocol deadline is not animation; throttling it back a tick defeats the purpose.
 - Teardown calls `force_stop_sync_if_buffered()` before the final serialize — session exit is the other "no more bytes arrive" case, and without it buffered output dies with the session.
 
@@ -710,7 +746,9 @@ Goose appends its reply below the submitted `> prompt`, so the reader does not a
 
 **Agent screen adapters:** Gemini remains prompt-based (`Ready` or `Unknown`). Gemini and Codex accept composers only in the current bottom chrome zone (or the final three rows when no input box can be identified), so a historical submitted prompt or markdown quote cannot report `Ready`. Codex detects `Working`/`Ready`/`Interrupted` from its semantic status near that current composer; both `›` and the newer `»` composer glyph are accepted. Claude treats only a spinner-prefixed phase containing an ellipsis and parenthesized progress as `Working`; this outranks the empty `❯` composer that current Claude versions leave visible during long tools. Completed summaries such as `✻ Sautéed for 1m 25s` remain `Ready`. If Claude emits a premature Stop/suggest before a blocking Stop hook, a live phase marker reopens that turn and clears the stale completion suggestions. Grok similarly keeps its `❯` composer visible during a turn: a leading Braille spinner in its bottom status row is `Working`, and the stable composer becomes `Ready` only after that row disappears. These adapters repair the shell's long-lived OSC 133 busy marker even when native hooks are unavailable or disabled.
 
-**Signal precedence and confirmation:** Explicit hook busy > current Claude/Codex/Grok semantic Working marker > movement (real output / animated spinner) > silence. A ready prompt visible from the previous turn cannot cancel a newly submitted prompt until real activity has been observed; after activity, a stable ready composer can repair a missed hook idle. A current-turn completion marker prevents a stale static Codex Working row from relatching BUSY; movement of that exact semantic row can reopen a Codex internal continuation that starts without PTY input. Claude's current live phase marker can supersede a premature completion from a blocking Stop hook. A pending process probe or confirmed meaningful descendant still owns the task lifecycle. Hook-based question suppression activates only after an OSC 7770 state marker is actually received.
+**Signal precedence and confirmation:** Explicit hook busy > current Claude/Codex/Grok semantic Working marker > movement (real output / animated spinner) > silence. A ready prompt visible from the previous turn cannot cancel a newly submitted prompt until real activity has been observed; after activity, a stable ready composer can repair a missed hook idle. A current-turn completion marker prevents a stale static Codex Working row from relatching BUSY; movement of that exact semantic row can reopen a Codex internal continuation that starts without PTY input. Claude's current live phase marker can supersede a premature completion from a blocking Stop hook. That reopen is provisional when TUIC's own Stop hook was the last protocol fact (#2837-df6a): Claude keeps its spinner row (`running Stop hooks… n/7`) on screen until its last Stop hook returns, so every Claude turn end reopens. For Claude only, once the timer sees no Working row and no newer hook, submitted line or busy evidence, it restores the Protocol `hook-idle`. Codex internal continuations do not use this recovery: their semantic Working movement can reopen a completed turn, but an Unknown screen must not restore its previous completion. Confirmation then does not depend on a composer the Ready adapter can read, and status-line repaints cannot demote it to Silence rank. A tool-using continuation still reports `state=busy` from PreToolUse; a text-only one ends with another Stop hook. A pending process probe or confirmed meaningful descendant still owns the task lifecycle. Hook-based question suppression activates only after an OSC 7770 state marker is actually received.
+
+**Native v2 plugin lifecycle:** OpenCode 2.2.3 uses the managed default `{id, setup}` plugin and `context.event.subscribe()`. Only a TUIC private `--standalone` launch (native server `--stdio`) may emit to its controlling tty; a shared service stays inactive. Native session/request sets keep a form or permission wait across unrelated activity and duplicate replies. Matching answer/cancel/reject restores current execution activity. Execution settlement, session deletion and location/plugin shutdown retire the owned waits. The existing OSC 7770 consumer and state accumulator remain unchanged.
 
 **Ego native approval lifecycle:** Each empty-title OSC 7770 awaiting marker is authoritative independently of selector repaint bookkeeping. A hard-wrapped MCP approval may not yet have a parsed title when its marker arrives. Screen-text dedup must not swallow the next marker after protocol busy clears the prior wait. The full-screen approval parser joins contiguous hard title rows before `Risk:` and publishes the native controls through the shared session-state accumulator.
 
@@ -731,12 +769,23 @@ TUIC_CAPTURE_CORPUS="$HOME/Library/Application Support/com.tuic.commander/captur
 
 Captures hold real session content and are not committed; the harness measures them in place. Replay fidelity is bounded by the fixed 41×128 grid it reconstructs — a session recorded at another width wraps differently, which moves chrome detection.
 
+Ego startup readiness uses the same native-composer locator as chrome trimming.
+It accepts the legacy context/trust status and the current ten-cell context bar
+with a trust field. An empty column-zero composer must remain stable for the
+existing readiness debounce before queued initial prompts or mail can be typed;
+a draft, working status, or modal content does not grant startup readiness.
+The recorded ego 0.4.7 startup boundary is `ego-startup-2948.tcap`.
+
 **Safety consumers:** For agents with a verified screen adapter, peer-message injection and Unix auto-standby require confirmed idle (explicit Stop/OSC or stable ready screen). A silence-only idle can update the cosmetic state but cannot type into or `SIGSTOP` a potentially working agent. Agents without an adapter retain the legacy heuristic behavior until their UI is characterized.
 
 **Task lifecycle is separate from shell activity:** `shell_state=idle` means the
 PTY is quiet; it does not prove that the assigned task finished. An agent's
 `suggest: [ ... ]` marker explicitly closes the current task epoch and produces
 `agent_state=completed` plus a `state_change: completed` parent notification.
+A refused turn (OSC 7770 `state=error`) produces `agent_state=error` and a
+`state_change: error` parent notification that carries the agent's `error`
+message, never `idle`. A refused child holds no running turn: owned close may
+stop it.
 Likewise, a visible ready composer may coexist with an autonomous background
 command. While a meaningful descendant of the agent is alive, session state
 reports `background_work=true` and keeps `agent_state=working`; `shell_state`
@@ -873,7 +922,7 @@ selectors, approvals and free-text modal questions remain protected.
 
 Mobile Queue supplies `expectedDraft` to validate the live InputLineBuffer before a server-side Ctrl-U and enqueue on this same FIFO. Preflight rejections leave the draft untouched. A write failure may have cleared it already; the caller reports uncertainty and does not retry automatically. Concurrent producers are not transactionally isolated.
 
-Session Chat busy Send also uses this FIFO, not the native CLI queue. Its Pending bubbles use the backend entry id. `send_queued_agent_command_now` / `POST /sessions/:id/queue/:command_id/send-now` claims and removes that id under the same queue lock as the drain, then uses native ego Ctrl+Enter or existing Claude/Codex interrupt-and-confirmed-idle delivery. An absent id returns false without typing. Queue claim/pop is ordered through the existing per-session input transaction; that short guard ends before confirmation waits. Unsupported agents and open dialogs refuse before removal. Failed delivery reports the original text for manual recovery and never retries ambiguous input.
+Session Chat busy Send uses this FIFO, not the native CLI queue. Its Pending bubbles use the backend entry id. Chat Send now and Compose Steer call `send_queued_agent_command_now` / `POST /sessions/:id/queue/:command_id/send-now`. They transfer the selected entry out of the FIFO and reserve the next ready composer, so neither an older queued notice nor a mail wake can take it. The shared forced-steer flow sends Escape to a working Claude Code, Codex or ego, waits up to ten seconds for independently confirmed idle, then submits the full owner text with a separate Enter. It never sends Ctrl+B or plain Enter into a busy composer. This also interrupts a running Stop hook instead of waiting for its next natural tool boundary. An idle agent needs no Escape. An absent id returns false without typing. A concurrent steer is refused; raw human input remains available during the wait. Dialogs, drafts, unsupported agents and uncertain writes fail closed. An unwritten queued prompt is restored on refusal; ambiguous payload writes are never requeued. `send_now` is `interrupt` for every supported harness and absent otherwise.
 
 **User-composed commands share that gate:** the Compose panel's enqueue action
 (`enqueue_agent_command` / `POST /sessions/:id/queue`) appends to the same
@@ -1179,6 +1228,34 @@ requires an ego recovery snapshot and an empty tracked composer, holds the input
 transaction, and uses the normal agent-aware command writer to submit `/retry`
 once (no automatic retry or queue). See output-parser.md for the wire contract.
 
+### Native ego `agent-event` verbs
+
+ego 0.4.3 writes `ESC ] 7770 ; agent-event=<base64 JSON> ESC \` beside its coarse
+`state` frames (contract: ego `docs/internals/terminal-agent-events.md`). The
+single consumer is `pty/ego_events.rs` (`EgoEvents`). It runs for `agent_type ==
+"ego"` and also while `agent_type` is still unknown, because a plain shell tab
+learns it only on the 1 s silence tick. It accepts version 1 envelopes for agent
+`ego`, at most 16 KiB decoded, and ignores anything else without touching state.
+Frames before `session_start` are ignored: the contract makes it the header of
+every stream and describes no mid-stream attach.
+
+| Event | Effect on the accumulator |
+| --- | --- |
+| `session_start` / `session_end` | Settle the modal, end all tools, forget turn, children and outcome. |
+| `turn_start` | Opens the turn; forgets its children and the last outcome. |
+| `tool_start` / `tool_end` | Tool readout (`tool-activity`, see above). |
+| `child_start` / `child_activity` / `child_end` | Adds / relabels / removes a child of the current turn by `id` (duplicates ignored, at most 64). |
+| `modal_open` / `modal_end` | Names the open wait; only the matching `id` settles it; a settled id never opens again. |
+| `turn_end` | Records `data.outcome` and ends the turn, its children, tools and modal. Late frames of that turn are ignored. |
+
+`ChunkProcessor::publish_ego_turn` emits `child-activity {children}` and
+`turn-outcome {outcome}` only on change; the accumulator stores them as
+`SessionState.native_children` and `native_turn_outcome`, which `PtyExit`
+clears. They are descriptive only: busy, idle and awaiting still come from the
+coarse `state` frames, so a `modal_open` alone never raises awaiting. Replay
+evidence: six real 0.4.3 captures under
+`src/fixtures/agent_prompts/ego-native-0.4.3-*.pty`.
+
 ### ego transcript Chat view
 
 The export reader checks the child exit status before reporting an absent header.
@@ -1274,8 +1351,12 @@ Claude cache fallback retains its existing age policy and is explicitly stale.
 bytes to the grid, output ring, WS broadcast or tcap recorder. The reader uses
 the same sanitized chunk for output watchers and scoped diagnostic byte rings;
 ordinary sessions keep their pre-transform flight recorder. A zeroizing stream
-carry withholds possible split-value prefixes. Teardown removes the session's
-mask material, while retained terminal output is already sanitized. Task TTL
+carry withholds possible split-value prefixes. Terminal queries end the current token:
+a complete known value is masked, while an unresolved prefix is released before
+the query so cursor replies include preceding text. This assumes producers query
+between tokens, never inside a secret. Non-query controls (including SGR and OSC
+metadata) and plain read boundaries remain transparent to secret matching.
+Teardown removes the session's mask material, while retained terminal output is already sanitized. Task TTL
 revokes new environment injection, not an active session's masks.
 
 EOF escape-buffer residue goes through the same `ChunkProcessor` sanitizer before
@@ -1284,7 +1365,41 @@ use bounded aligned representations, including shared boundary-character bits,
 so arbitrary read splits do not lose decoding context. Retained overlap bytes
 keep their existing redaction marks while remaining available for future matches.
 
+### Pi managed extension lifecycle
+
+`agent_hook_pi` owns a first-line-marked `extensions/tuic.ts` under the Pi agent directory. Lifecycle callbacks and paired extension UI promises emit ordinary OSC 7770 state frames to the controlling terminal. A modal owner survives tool callbacks; a finally path returns to current activity, and shutdown invalidates old owners. Both desktop and HTTP/SSE render the normal session accumulator. The native `pi-extension-modals-2629.tcap` fixture records geometry, input/output directions and original chunks from Pi 0.84.2. Replay tests include adjacent immediate-failure records coalesced into one read.
+
+## Grok native hook receipts
+
+`ChunkProcessor` correlates owner-scoped `OSC 7770;grok-hook=<TUIC_SESSION>:<base64 JSON>` receipts by native session, prompt and tool request. Once native receipts are active, imported coarse Grok state hooks cannot settle or rearm a permission wait. The shared parsed events and desktop/HTTP event paths remain the transport contract. PTY and ACP routing remain separate; this decoder handles only Grok PTY output.
+
 Codex global hook trust is setup state, not a parsed terminal wait. Native
 `hooks/list` verification can report `reviewRequired` in Settings without
 emitting awaiting/busy/idle. Launch-scoped status notifications, PTY event
 accumulation and ego PTY/ACP request ownership are unchanged.
+
+
+### Native Windows hook availability
+
+Native Windows does not install or inject TUIC's external POSIX status hooks. Hook state returns `unsupported`, and hook/status setters reject changes before writing preferences or user hook files. Saved preferences and existing hooks remain intact. Settings hides these controls based on the owning backend response, including remote machines. External agents retain heuristic detection; ego keeps native PTY OSC signals and its separate ACP path.
+
+### Claude permission hook ownership
+
+Claude launch and installed hooks carry native stdin as base64 JSON: `OSC 7770;claude-hook=<TUIC_SESSION>:<hook pid>:<base64> ST`, then `OSC 7770;claude-hook=<TUIC_SESSION>:<hook pid>: ST` ends the receipt; the hook pid keeps concurrent hooks apart. Like every generated hook (Claude, Gemini, Codex and its notify script, Grok), the hook posts its frames to `POST /sessions/$TUIC_SESSION/hook` on the local socket `$TUIC_SOCKET` (#2749-bee7). The route feeds them to the session's PTY reader between two reads, so they never share the tty with the agent redraw and never reach the grid. The reader keeps at most 1 MB of base64 for each receipt and drops a `tool_input` over 16 KB. When the socket is missing, the HTTP client is missing or TUIC refuses the post, the hook falls back to the tty: frames of at most 768 base64 bytes, each a separate printf, because `sh` printf writes in 1024-byte pieces and a redraw escape cut one large frame (#2747-636f). A fallback receipt over 32 KB of base64 is not sent, because a macOS pty writer sleeps mid-write under backpressure and another writer gets in. A client timeout does not fall back, because TUIC may have processed the frames already. The reader accepts the frames only for the owning Claude terminal. `UserPromptSubmit` scopes pending tools by native session and prompt; `PermissionRequest` matches tool name/input to an unresolved `PreToolUse`, because the recorded CLI omits the request's tool id. Only `Notification(permission_prompt)` can create this wait. Broad tool success/failure clears its matching owner. Other tool activity cannot clear an open permission, question, plan or elicitation dialog.
+
+On POSIX hosts the generated `claude.json` also sets `statusLine` to `agent-hooks/claude-statusline.sh`, with only `type` and `command`, so the user's `padding` and `refreshInterval` still apply (Claude merges the object field by field; spike S5 in `quota-source-spikes.md`). The relay posts the status line stdin, with `CLAUDE_CONFIG_DIR` and `HOME` as `x-claude-config-dir` / `x-home`, to `POST /sessions/$TUIC_SESSION/claude-status-line` on the local socket. TUIC stores the `rate_limits.five_hour` / `seven_day` windows for that credential, which the `claude-code` quota owner returns from `observed()`, and answers with the user's own command: the first `statusLine.command` of `<project>/.claude/settings.local.json`, `<project>/.claude/settings.json`, `<config dir>/settings.json`. The relay runs it under `/bin/sh` with the same stdin and prints its output. A repeated identical payload keeps its first arrival time. Without a socket answer the relay prints nothing. Windows does not get the relay.
+
+The Claude permission adapter joins wrapped option labels beneath the exact permission heading and footer. The normal native choice-input path then clears accepted, refused and cancelled permissions even when the CLI emits no post-tool hook. Prompt submission, Stop, StopFailure, SessionEnd and confirmed foreground exit retain their existing retraction paths. Duplicate completed tools cannot recreate a request. Bookkeeping retains at most 64 pending and 64 retired tool ids; stored tool input is capped at 16 KiB. The lifecycle envelope is capped at 1 MiB encoded. Invalid/oversized receipts leave screen recovery available. Both desktop and HTTP/SSE clients consume the existing session-state accumulator; no transport fields change. Native ego PTY OSC and AI Chat ACP owners remain separate and unchanged.
+
+A resolved native choice hands its answer from input bookkeeping to the reader through `SilenceState`. The reader retires the permission owner before another native request, even when the accepted tool is still running; partial wizard answers keep their question owner.
+
+Silent managed PTYs receive an additive `stalled` inventory flag and one parent mail per silence episode; the same sweep nudges the worker once and never stops the PTY: the stop is an explicit parent decision. A BLOCKED hold is exempt; the notice reports running background work. See [silence policy](../user-guide/agent-teams.md#silent-managed-workers). Detached CLI job deadlines stop only their own command group/tree; see [CLI deadlines](../user-guide/cli.md#background-command-deadline).
+
+AI Chat busy, awaiting and idle state is not parsed from terminal output. It is derived in Rust from the ACP turn, open seats, tool calls and ego child frames (`src-tauri/src/acp/activity.rs`) and never enters `ParsedEvent` or the PTY session-state accumulator (#2637-c6d3).
+
+## Forced-kill exit status
+
+When a session is removed for an immediate kill, teardown records an exit-code
+fallback before the reader can publish the exit event. Unix uses `128 + SIGKILL`
+(137). Windows uses 1, the termination code passed by portable-pty to
+`TerminateProcess`. The reaped child status replaces this fallback when available.

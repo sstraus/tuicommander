@@ -127,6 +127,7 @@ describe("SettingsPanel search", () => {
 				"Failed to load native tool config, using defaults",
 				"Failed to get home directory",
 				"Failed to load config defaults; expert settings stay visible",
+				"Failed to load MCP usage",
 			]).toContain(message);
 		}
 		vi.mocked(appLogger.warn).mockRestore();
@@ -277,14 +278,14 @@ describe("SettingsPanel search", () => {
 	describe("offers only what the current client can open", () => {
 		it("offers nothing on AI Chat while the experimental feature is off", () => {
 			const { container } = open();
-			fireEvent.input(searchInput(container), { target: { value: "provider catalogue" } });
+			fireEvent.input(searchInput(container), { target: { value: "default model" } });
 			expect(resultRows(container)).toHaveLength(0);
 		});
 
 		it("offers AI Chat once the feature is on", () => {
 			vi.mocked(settingsStore.isAiChatEnabled).mockReturnValue(true);
 			const { container } = open();
-			fireEvent.input(searchInput(container), { target: { value: "provider catalogue" } });
+			fireEvent.input(searchInput(container), { target: { value: "default model" } });
 			expect(resultRows(container)).toHaveLength(1);
 		});
 

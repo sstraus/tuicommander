@@ -1,2 +1,4 @@
 /CHANGELOG.md merge=union
 /to-test.md merge=union
+/src-tauri/src/fixtures/replay_oracle/** linguist-generated
+/to-test/*.md merge=union

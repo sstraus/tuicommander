@@ -18,8 +18,10 @@ import type { AcpAvailableCommand } from "../../types/acp";
 import { pastedImageFiles } from "../../utils/pastedImage";
 import { spacedUrlPaste } from "../../utils/pastedUrl";
 import { pathBasename } from "../../utils/pathUtils";
+import { promptKeyAction } from "../../utils/promptKeybinding";
 import { getRepoTextColor } from "../../utils/repoColor";
 import { ComposeSendIcon } from "../shared/ComposeActionIcons";
+import { PromptContent } from "../shared/PromptContent";
 import { Button } from "../ui/Button";
 import { Textarea } from "../ui/Textarea";
 import s from "./AIChatPanel.module.css";
@@ -59,7 +61,14 @@ export const Composer: Component<{
 					void chat.startSession();
 				},
 			},
-			{ name: "clear", description: "Clear the composer and its attachments", run: () => aiChatDraft.clear() },
+			{
+				name: "clear",
+				description: "Clear the composer and its attachments",
+				run: () => {
+					aiChatDraft.clear();
+					setCommandNotice("Composer and attachments cleared. Conversation history and agent context are unchanged.");
+				},
+			},
 		];
 		if (live) {
 			host.push({
@@ -95,7 +104,10 @@ export const Composer: Component<{
 			host.push({
 				name: "fork",
 				description: "Fork the conversation into a new tab",
-				unavailable: busy ? "Wait for the current turn to finish before forking." : undefined,
+				unavailable:
+					busy && !chat.capabilities?.()?.forkAtMessage
+						? "This agent cannot fork a completed turn while another turn runs."
+						: undefined,
 				run: () => {
 					void chat.fork();
 				},
@@ -383,7 +395,7 @@ export const Composer: Component<{
 				});
 			return;
 		}
-		if (event.key.toLowerCase() === "s" && event.ctrlKey && !event.metaKey && !event.altKey) {
+		if (promptKeyAction(event) === "park") {
 			event.preventDefault();
 			if (event.repeat) return;
 			browserDictation.cancel();
@@ -391,7 +403,7 @@ export const Composer: Component<{
 			queueMicrotask(resize);
 			return;
 		}
-		if (event.key !== "Enter" || event.shiftKey) return;
+		if (promptKeyAction(event) !== "send") return;
 		event.preventDefault();
 		send();
 	};
@@ -454,7 +466,9 @@ export const Composer: Component<{
 								const label = queued.summary;
 								return (
 									<div class={s.queueRow}>
-										<span class={s.queueText}>{label}</span>
+										<div class={s.queueText}>
+											<PromptContent text={label} />
+										</div>
 										<Button
 											type="button"
 											shape="icon"
@@ -579,10 +593,11 @@ export const Composer: Component<{
 					</Show>
 					<div class={props.mobileAttachments ? mobileInput.composer : s.composerActions}>
 						<Textarea
+							embedded={props.mobileAttachments}
 							compact={!props.mobileAttachments}
 							ref={textarea}
 							data-control-layout="composer-editor"
-							class={props.mobileAttachments ? `${s.textarea} ${mobileInput.input}` : s.textarea}
+							class={props.mobileAttachments ? mobileInput.input : s.textarea}
 							autocorrect={props.mobileAttachments ? (keyboardCorrection.enabled() ? "on" : "off") : undefined}
 							spellcheck={props.mobileAttachments ? keyboardCorrection.enabled() : undefined}
 							autocapitalize={
@@ -688,7 +703,11 @@ export const Composer: Component<{
 				</Show>
 				<Show
 					when={props.onSessionSettings}
-					fallback={<span class={s.sessionSettingsSummary}>{sessionSummary(props.chat)}</span>}
+					fallback={
+						<span class={`${s.sessionSettingsSummary} ${props.mobileAttachments ? s.mobileSessionSummary : ""}`}>
+							{sessionSummary(props.chat)}
+						</span>
+					}
 				>
 					<Button
 						variant="ghost"

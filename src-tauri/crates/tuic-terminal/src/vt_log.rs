@@ -207,23 +207,22 @@ pub struct VtLogBuffer {
     /// Monotonically increasing count of all log lines ever pushed (not bounded
     /// by capacity). Used as stable cursor for paginated reads.
     total_pushed: usize,
-    /// Widest cols seen so far. The grid never shrinks below this —
-    /// prevents Ink re-renders from fragmenting scrollback mid-word.
-    max_cols: u16,
     /// Actual PTY cols (what the child process / Ink sees). May be smaller
     /// than grid cols when a side panel narrows the terminal. Stamped
     /// onto LogLine.cols so the frontend can detect narrow-captured lines.
     pty_cols: u16,
-    /// When true, scrollback capture is paused — a side panel just
-    /// narrowed the terminal and Ink is flooding scrollback with
-    /// narrow re-renders. Cleared when pty_cols widens again.
-    suppress_capture: bool,
     /// The next line to be pushed continues a wrapped row that was scrolled
     /// off without being logged, so its head is missing.
     next_head_lost: bool,
     /// Caller-computed secrets of the retained log, valid while `total_pushed`
     /// and the wrap flags are unchanged.
     secret_cache: Option<(usize, Vec<String>)>,
+    /// History rows that a resize moved off the viewport wait to be read
+    /// until the grid has decided whether a reprint replaces them.
+    resize_rows_pending: bool,
+    /// Logged history rows that a height grow pulled back to the top of the
+    /// screen. When they return to history they are not logged again.
+    logged_rows_on_screen: usize,
     /// Last reader-originated visible ego composer-row change.
     last_composer_paint_at: Option<std::time::Instant>,
 }
@@ -243,11 +242,11 @@ impl VtLogBuffer {
             was_alternate: false,
             scrollback_origin: 0,
             total_pushed: 0,
-            max_cols: cols,
             pty_cols: cols,
-            suppress_capture: false,
             next_head_lost: false,
             secret_cache: None,
+            resize_rows_pending: false,
+            logged_rows_on_screen: 0,
             last_composer_paint_at: None,
         }
     }
@@ -335,17 +334,18 @@ impl VtLogBuffer {
         // The grid accumulates scrollback automatically when lines scroll
         // off the top of the normal screen. We just read the delta.
         //
-        // When suppress_capture is set (side panel halved the terminal
-        // width), Ink re-renders push fragmented junk into scrollback.
-        // Skip capture but keep scrollback_origin in sync. Inline TUIs use
-        // the same keep-cursor-in-sync path so disabling mouse mode does
-        // not flush the TUI history into the log.
-        if !is_alternate {
+        // Inline TUIs skip capture but keep scrollback_origin in sync, so
+        // disabling mouse mode does not flush the TUI history into the log.
+        let deferred = self.resize_rows_pending && self.grid.resize_reprint_pending();
+        if !is_alternate && !deferred {
+            self.resize_rows_pending = false;
             let total_sb = self.grid.primary_screen_origin();
             let delta = total_sb.saturating_sub(self.scrollback_origin);
             if delta > 0 {
-                if !self.suppress_capture && !inline_tui {
+                if !inline_tui {
                     let mut new_lines = self.grid.read_scrollback_log_lines(delta);
+                    let relogged = self.take_relogged_rows(&new_lines);
+                    new_lines.drain(..relogged);
                     mark_agent_chrome(&mut new_lines);
                     let pty_cols = self.pty_cols;
                     for mut ll in new_lines {
@@ -353,7 +353,8 @@ impl VtLogBuffer {
                         self.push_log_line(ll);
                     }
                 } else {
-                    self.note_capture_gap();
+                    self.logged_rows_on_screen = 0;
+                    self.note_capture_gap(0);
                 }
             }
             // Reconciliation may rewind the origin; resynchronize even without new rows.
@@ -369,18 +370,15 @@ impl VtLogBuffer {
     /// Alt screen and reflow_history=false disable reflow entirely.
     pub fn resize(&mut self, rows: u16, cols: u16) {
         self.last_composer_paint_at = None;
-        let prev = self.pty_cols;
         self.pty_cols = cols;
-        if cols > self.max_cols {
-            self.max_cols = cols;
-        }
-        // Suppress scrollback capture when cols drops by >50% (side panel).
-        // Ignore the very first resize (total_pushed==0, xterm fit addon).
-        if cols.saturating_mul(2) < prev && self.total_pushed > 0 {
-            self.suppress_capture = true;
-        } else if cols.saturating_mul(2) >= self.max_cols {
-            self.suppress_capture = false;
-        }
+        let same_columns = usize::from(cols) == self.grid.columns();
+        let history = self.grid.primary_scrollback_count();
+        let rows_before = self.grid.screen_lines();
+        // Rows not yet read from primary history, normally none.
+        let unlogged = self
+            .grid
+            .primary_screen_origin()
+            .saturating_sub(self.scrollback_origin);
         let mode = if !self.grid.reflow_history || self.grid.is_alternate_screen() {
             ReflowMode::None
         } else {
@@ -391,8 +389,61 @@ impl VtLogBuffer {
         // alternate-screen app is active. Keep the durable-log cursor in the
         // primary coordinate space; syncing it to alt history suppresses normal
         // shell capture after exit until primary history catches up.
-        self.scrollback_origin = self.grid.primary_screen_origin();
-        self.note_capture_gap();
+        let height_only = same_columns && !self.grid.is_alternate_screen();
+        // A height grow pulls the newest history rows back onto the screen,
+        // with or without a width change in the same resize. The unlogged ones
+        // are read when they leave the screen again; the logged ones must not
+        // be logged twice. A width change alone merges or splits history rows
+        // without pulling any, so only a height grow counts.
+        if !height_only {
+            self.logged_rows_on_screen = 0;
+        }
+        let grew = usize::from(rows) > rows_before && !self.grid.is_alternate_screen();
+        let pulled = if grew {
+            history.saturating_sub(self.grid.primary_scrollback_count())
+        } else {
+            0
+        };
+        self.logged_rows_on_screen += pulled.saturating_sub(unlogged);
+        let unlogged = unlogged.saturating_sub(pulled);
+        // The origin counts the rows a resize moves off the viewport, and they
+        // are program output, so the next process() must read them
+        // (#2726-7833). process() waits while the grid may still merge a
+        // reprint of them; a merge rewinds the origin by the rows it drops, so
+        // a replaced row is read once, from the reprint.
+        let displaced = self.grid.last_resize_displaced_rows();
+        let displaced_rows = self.grid.read_scrollback_log_lines(displaced);
+        let relogged = self.take_relogged_rows(&displaced_rows);
+        let unlogged = (unlogged + displaced - relogged).min(self.grid.primary_scrollback_count());
+        self.scrollback_origin = self.grid.primary_screen_origin().saturating_sub(unlogged);
+        self.resize_rows_pending = unlogged > 0;
+        // A width change rewrites history; an alternate-screen resize skips
+        // the primary rows it displaces. A primary height change loses nothing.
+        if !height_only {
+            self.note_capture_gap(unlogged);
+        }
+    }
+
+    /// How many leading `rows`, just returned to history, are logged rows that
+    /// a height grow pulled onto the screen. Their text must still match the
+    /// log tail; a screen rewritten in place logs them again rather than lose
+    /// output.
+    fn take_relogged_rows(&mut self, rows: &[LogLine]) -> usize {
+        let pulled = std::mem::take(&mut self.logged_rows_on_screen);
+        let count = pulled.min(rows.len());
+        let Some(start) = self.log.len().checked_sub(pulled) else {
+            return 0;
+        };
+        let logged = self.log.range(start..start + count);
+        if !rows[..count]
+            .iter()
+            .zip(logged)
+            .all(|(row, line)| row.text() == line.text())
+        {
+            return 0;
+        }
+        self.logged_rows_on_screen = pulled - count;
+        count
     }
 
     /// All finalized log lines (oldest first).
@@ -786,7 +837,8 @@ impl VtLogBuffer {
     /// Rows were scrolled off (or history was rewritten by a resize) without
     /// being logged: the log tail lost its continuation and the next line will
     /// have lost its head. Flag both so readers hide them rather than leak.
-    fn note_capture_gap(&mut self) {
+    /// `unlogged` newest history rows remain to be read after the gap.
+    fn note_capture_gap(&mut self, unlogged: usize) {
         self.secret_cache = None;
         if let Some(last) = self.log.back_mut()
             && last.wrapped
@@ -794,7 +846,7 @@ impl VtLogBuffer {
             last.wrapped = false;
             last.partial = true;
         }
-        self.next_head_lost = self.grid.newest_history_row_wraps();
+        self.next_head_lost = self.grid.history_row_wraps_above(unlogged);
     }
 }
 

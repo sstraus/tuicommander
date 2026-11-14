@@ -25,6 +25,7 @@ import { ContextMenu, type ContextMenuItem, createContextMenu } from "../Context
 import { GlobeIcon } from "../GlobeIcon";
 import { MdTabContent } from "../shared/MdTabContent";
 import { Terminal } from "../Terminal";
+import { applyEdgeDrop, edgeDropTargetAt, hideEdgeDropPreview, showEdgeDropPreview } from "./paneEdgeDrop";
 import "./PaneTree.css";
 
 const CodeEditorTab = lazy(() =>
@@ -293,8 +294,11 @@ const PaneGroupView: Component<{
 								onPointerDown={(e) => {
 									if (e.button !== 0) return;
 									initMouseDrag(e, e.currentTarget as HTMLElement, {
-										onMove: () => {},
+										onMove: (x, y) => showEdgeDropPreview(edgeDropTargetAt(x, y, tab.id)),
+										onCancel: hideEdgeDropPreview,
 										onDrop: (x, y) => {
+											hideEdgeDropPreview();
+											if (applyEdgeDrop(edgeDropTargetAt(x, y, tab.id), tab)) return;
 											const targetGroup = findPaneGroupAtPoint(x, y);
 											if (targetGroup && targetGroup !== props.groupId) {
 												paneLayoutStore.moveTab(props.groupId, targetGroup, tab.id);

@@ -11,7 +11,9 @@ use crypto::{encrypt_push_record, push_key_material};
 #[cfg(test)]
 mod crypto_guards;
 
-/// Known push service host suffixes. Endpoints not matching these are rejected (SSRF prevention).
+/// Built-in push service host suffixes. Other hosts need an owner-added provider
+/// (`services.push.added_providers`), so a posted subscription cannot pick its own
+/// outbound destination (SSRF prevention).
 const ALLOWED_PUSH_HOSTS: &[&str] = &[
     ".googleapis.com", // Google FCM
     ".google.com",     // Google FCM alternate
@@ -22,6 +24,43 @@ const ALLOWED_PUSH_HOSTS: &[&str] = &[
     ".push.apple.com",
     ".web.push.apple.com",
 ];
+
+/// Normalize one owner-added provider entry: a DNS host name with at least two
+/// labels. URLs, wildcards, bare top-level domains and empty labels are refused.
+pub(crate) fn provider_host(entry: &str) -> Option<String> {
+    let host = entry.trim().to_ascii_lowercase();
+    let labels: Vec<&str> = host.split('.').collect();
+    let valid = labels.len() >= 2
+        && labels.iter().all(|label| {
+            (1..=63).contains(&label.len())
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        });
+    valid.then_some(host)
+}
+
+/// Whether a lowercase host belongs to a built-in provider or, exactly or as a
+/// subdomain, to a provider the owner added.
+fn provider_enrolled(host: &str, push: &crate::config::PushConfig) -> bool {
+    ALLOWED_PUSH_HOSTS
+        .iter()
+        .any(|suffix| host.ends_with(suffix))
+        || push
+            .added_providers
+            .iter()
+            .filter_map(|entry| provider_host(entry))
+            .any(|provider| {
+                host.strip_suffix(provider.as_str())
+                    .is_some_and(|rest| rest.is_empty() || rest.ends_with('.'))
+            })
+}
+
+fn endpoint_host(uri: &axum::http::Uri) -> Option<String> {
+    uri.host().map(str::to_lowercase)
+}
 
 /// Browser PushSubscription keys (nested under "keys" in the JSON).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -41,9 +80,12 @@ pub(crate) struct PushSubscription {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Validate that a push endpoint URL is safe to send to.
-/// Rejects non-HTTPS endpoints and hosts not in the known push service allowlist.
-pub(crate) fn validate_push_endpoint(endpoint: &str) -> Result<(), String> {
+/// Validate a browser-posted push endpoint before it is stored.
+/// Rejects non-HTTPS endpoints and hosts outside the built-in and owner-added providers.
+pub(crate) fn validate_push_endpoint(
+    endpoint: &str,
+    push: &crate::config::PushConfig,
+) -> Result<(), String> {
     let uri: axum::http::Uri = endpoint
         .parse()
         .map_err(|_| "Invalid endpoint URL".to_string())?;
@@ -52,19 +94,36 @@ pub(crate) fn validate_push_endpoint(endpoint: &str) -> Result<(), String> {
         return Err("Push endpoint must use HTTPS".to_string());
     }
 
-    let host = uri.host().ok_or("Push endpoint has no host")?;
-    let host_lower = host.to_lowercase();
-
-    if !ALLOWED_PUSH_HOSTS
-        .iter()
-        .any(|suffix| host_lower.ends_with(suffix))
-    {
+    let host = endpoint_host(&uri).ok_or("Push endpoint has no host")?;
+    if !provider_enrolled(&host, push) {
         return Err(format!(
-            "Push endpoint host '{host}' is not a known push service"
+            "Push endpoint host '{host}' is not a known or owner-added push service"
         ));
     }
 
     Ok(())
+}
+
+/// Whether a saved subscription still targets an enrolled provider. Checked before
+/// every send, so removing an owner-added provider stops delivery to it.
+fn subscription_enrolled(sub: &PushSubscription, push: &crate::config::PushConfig) -> bool {
+    let host = sub
+        .endpoint
+        .parse::<axum::http::Uri>()
+        .ok()
+        .as_ref()
+        .and_then(endpoint_host);
+    let enrolled = host
+        .as_deref()
+        .is_some_and(|host| provider_enrolled(host, push));
+    if !enrolled {
+        tracing::warn!(
+            source = "push",
+            host = host.as_deref().unwrap_or(""),
+            "Skipping push to a provider that is no longer enrolled"
+        );
+    }
+    enrolled
 }
 
 /// In-memory subscription store backed by a JSON file.
@@ -278,6 +337,7 @@ pub(crate) async fn send_push_batch(
     // Send to all subscriptions concurrently
     let futures: Vec<_> = subs
         .iter()
+        .filter(|sub| subscription_enrolled(sub, &config.services.push))
         .filter_map(|sub| {
             build_push_request(
                 sub,
@@ -612,23 +672,66 @@ mod tests {
 
     #[test]
     fn validate_push_endpoint_accepts_known_services() {
-        assert!(validate_push_endpoint("https://fcm.googleapis.com/fcm/send/abc").is_ok());
         assert!(
-            validate_push_endpoint("https://updates.push.services.mozilla.com/wpush/v2/abc")
-                .is_ok()
+            validate_push_endpoint(
+                "https://fcm.googleapis.com/fcm/send/abc",
+                &crate::config::PushConfig::default()
+            )
+            .is_ok()
         );
         assert!(
-            validate_push_endpoint("https://wns2-par02p.notify.windows.com/w/?token=abc").is_ok()
+            validate_push_endpoint(
+                "https://updates.push.services.mozilla.com/wpush/v2/abc",
+                &crate::config::PushConfig::default()
+            )
+            .is_ok()
         );
-        assert!(validate_push_endpoint("https://web.push.apple.com/abc").is_ok());
+        assert!(
+            validate_push_endpoint(
+                "https://wns2-par02p.notify.windows.com/w/?token=abc",
+                &crate::config::PushConfig::default()
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_push_endpoint(
+                "https://web.push.apple.com/abc",
+                &crate::config::PushConfig::default()
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn validate_push_endpoint_rejects_unknown_hosts() {
-        assert!(validate_push_endpoint("https://evil.com/steal").is_err());
-        assert!(validate_push_endpoint("https://169.254.169.254/metadata").is_err());
-        assert!(validate_push_endpoint("http://fcm.googleapis.com/fcm/send/abc").is_err()); // http not https
-        assert!(validate_push_endpoint("https://10.0.0.1/internal").is_err());
+        assert!(
+            validate_push_endpoint(
+                "https://evil.com/steal",
+                &crate::config::PushConfig::default()
+            )
+            .is_err()
+        );
+        assert!(
+            validate_push_endpoint(
+                "https://169.254.169.254/metadata",
+                &crate::config::PushConfig::default()
+            )
+            .is_err()
+        );
+        assert!(
+            validate_push_endpoint(
+                "http://fcm.googleapis.com/fcm/send/abc",
+                &crate::config::PushConfig::default()
+            )
+            .is_err()
+        ); // http not https
+        assert!(
+            validate_push_endpoint(
+                "https://10.0.0.1/internal",
+                &crate::config::PushConfig::default()
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -690,6 +793,7 @@ mod tests {
         config.services.push.enabled = true;
         config.services.push.vapid_private_key = private;
         config.services.push.vapid_public_key = public;
+        config.services.push.added_providers = vec!["127.0.0.1".into()];
         let result = send_push_batch(
             vec![sub],
             &config,
@@ -701,6 +805,68 @@ mod tests {
         .await;
         assert_eq!(result.stale_endpoints, vec![endpoint]);
         assert_eq!(result.sent, 0);
+        server.abort();
+    }
+
+    // Catches: removing an owner-added provider leaving its saved subscriptions reachable.
+    #[tokio::test]
+    async fn removed_push_provider_stops_delivery() {
+        use axum::http::StatusCode;
+        use axum::routing::post;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let hits = std::sync::Arc::new(AtomicUsize::new(0));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/push", listener.local_addr().unwrap());
+        let counter = hits.clone();
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                axum::Router::new().route(
+                    "/push",
+                    post(move || {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        async { StatusCode::CREATED }
+                    }),
+                ),
+            )
+            .await
+            .unwrap();
+        });
+        let client_key = p256::SecretKey::random(&mut rand_core::OsRng);
+        let sub = PushSubscription {
+            endpoint,
+            keys: PushSubscriptionKeys {
+                p256dh: Base64UrlUnpadded::encode_string(
+                    client_key.public_key().to_encoded_point(false).as_bytes(),
+                ),
+                auth: Base64UrlUnpadded::encode_string(&[7u8; 16]),
+            },
+            created_at: chrono::Utc::now(),
+        };
+        let (private, public) = generate_vapid_keys().unwrap();
+        let mut config = crate::config::AppConfig::default();
+        config.services.push.enabled = true;
+        config.services.push.vapid_private_key = private;
+        config.services.push.vapid_public_key = public;
+        config.services.push.added_providers = vec!["127.0.0.1".into()];
+        let client = reqwest::Client::new();
+        let enrolled =
+            send_push_batch(vec![sub.clone()], &config, &client, "T", "B", "/mobile").await;
+        assert_eq!((enrolled.sent, hits.load(Ordering::SeqCst)), (1, 1));
+
+        config.services.push.added_providers.clear();
+        let removed = send_push_batch(vec![sub], &config, &client, "T", "B", "/mobile").await;
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            1,
+            "a removed provider was contacted"
+        );
+        assert_eq!(removed.sent, 0);
+        assert!(
+            removed.stale_endpoints.is_empty(),
+            "removal must not delete the subscription"
+        );
         server.abort();
     }
 

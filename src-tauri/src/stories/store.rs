@@ -5,13 +5,14 @@ use super::model::{
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 use uuid::Uuid;
 
 mod amendments;
 mod archive;
+mod external_ledger;
 mod ingest;
 mod notes;
 #[cfg(test)]
@@ -20,6 +21,9 @@ mod plan_update_tests;
 mod qa_tests;
 mod records;
 mod transitions;
+mod workflow_proposals;
+pub(crate) use external_ledger::{ExternalExecution, ExternalTransition};
+pub(crate) use transitions::{apply_command, only_manual_pending};
 
 pub(super) use ingest::IngestVersion;
 use records::*;
@@ -31,7 +35,6 @@ const SCHEMA_VERSION: i64 = 6;
 #[derive(Debug)]
 pub struct StoryStore {
     connection: Mutex<Connection>,
-    db_path: PathBuf,
 }
 
 impl StoryStore {
@@ -59,7 +62,8 @@ impl StoryStore {
         let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e| format!("open story store read-only: {e}"))?;
         conn.query_row(
-            "SELECT EXISTS(SELECT 1 FROM stories WHERE claim_session=?1)",
+            "SELECT EXISTS(SELECT 1 FROM stories WHERE claim_session=?1)
+               OR EXISTS(SELECT 1 FROM external_story_execution WHERE claim_session=?1)",
             [session],
             |row| row.get(0),
         )
@@ -73,7 +77,6 @@ impl StoryStore {
         }
         Ok(Self {
             connection: Mutex::new(Self::open_connection(path)?),
-            db_path: path.to_path_buf(),
         })
     }
 
@@ -89,6 +92,7 @@ impl StoryStore {
             .map_err(|e| format!("set story store timeout: {e}"))?;
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(|e| format!("enable story store WAL: {e}"))?;
+        crate::sqlite_once::hold_open(path);
         conn.pragma_update(None, "foreign_keys", "ON")
             .map_err(|e| format!("enable story store foreign keys: {e}"))?;
         let version: i64 = conn
@@ -126,6 +130,13 @@ impl StoryStore {
                 input_sha256 TEXT NOT NULL,
                 PRIMARY KEY(run_id, proposal_key)
             );
+            CREATE TABLE IF NOT EXISTS workflow_plan_proposals (
+                run_id TEXT NOT NULL,
+                proposal_key TEXT NOT NULL,
+                plan_id TEXT NOT NULL REFERENCES plans(id),
+                payload TEXT NOT NULL,
+                PRIMARY KEY(run_id, proposal_key)
+            );
             CREATE TABLE IF NOT EXISTS archive_history (
                 entity_id TEXT NOT NULL,
                 revision INTEGER NOT NULL,
@@ -143,6 +154,8 @@ impl StoryStore {
             ",
         )
         .map_err(|e| format!("prepare story schema: {e}"))?;
+        conn.execute_batch(external_ledger::SCHEMA)
+            .map_err(|e| format!("prepare external story ledger: {e}"))?;
         if version < SCHEMA_VERSION {
             // SQLite cannot alter a CHECK constraint. Keep stored documents byte-identical.
             conn.pragma_update(None, "foreign_keys", "OFF")
@@ -212,20 +225,7 @@ impl StoryStore {
     }
 
     pub fn create_plan(&self, input: NewPlan) -> Result<Plan, String> {
-        validate_text("project", &input.project, 4096)?;
-        validate_text("plan title", &input.title, 200)?;
-        validate_text("plan source", &input.source, 4096)?;
-        if !crate::fs::is_absolute_on_any_platform(&input.project) {
-            return Err("project must be an absolute path".into());
-        }
-        let plan = Plan {
-            revision: 1,
-            archived: false,
-            id: Uuid::now_v7().to_string(),
-            project: input.project.trim().into(),
-            title: input.title.trim().into(),
-            source: input.source.trim().into(),
-        };
+        let plan = build_plan(input)?;
         self.connect()?
             .execute(
                 "INSERT INTO plans(id,project,title,source) VALUES (?1,?2,?3,?4)",
@@ -299,23 +299,6 @@ impl StoryStore {
         let revision = expected_revision
             .checked_add(1)
             .ok_or("plan revision exhausted")?;
-        // Pre-read only decides whether a run guard is needed. The locked revision check below
-        // rejects any plan change between this read and the metadata transaction.
-        let _source_guard = if let Some(source) = &patch.source {
-            if source.trim() != self.get_plan(id)?.source {
-                let path = self
-                    .db_path
-                    .parent()
-                    .ok_or("story store has no parent directory")?
-                    .join("workflow_runs.sqlite3");
-                Some(crate::workflows::guard_plan_source_update_in(&path, id)?)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
         let mut conn = self.connect()?;
         let tx = immediate(&mut conn)?;
         let mut plan = tx
@@ -391,10 +374,21 @@ impl StoryStore {
         proposal_key: &str,
         input: NewStory,
     ) -> Result<Story, String> {
+        self.create_story_with_problem_once(run_id, proposal_key, input, None)
+    }
+
+    pub fn create_story_with_problem_once(
+        &self,
+        run_id: &str,
+        proposal_key: &str,
+        input: NewStory,
+        problem: Option<String>,
+    ) -> Result<Story, String> {
+        validate_problem(problem.as_deref())?;
         validate_text("workflow run id", run_id, 128)?;
         validate_text("story proposal key", proposal_key, 128)?;
         validate_new_story(&input)?;
-        let hash = proposal_hash(&input)?;
+        let hash = proposal_problem_hash(&input, problem.as_deref())?;
         let mut conn = self.connect()?;
         let tx = immediate(&mut conn)?;
         if let Some((story_id, prior_hash)) = tx
@@ -422,7 +416,8 @@ impl StoryStore {
             return Err("story proposal plan not found".into());
         }
         require_active_plan(&tx, &input.plan_id)?;
-        let story = build_story(input);
+        let mut story = build_story(input);
+        story.problem = problem;
         insert_story(&tx, &story)?;
         tx.execute(
             "INSERT INTO workflow_story_proposals(run_id,proposal_key,story_id,input_sha256) VALUES (?1,?2,?3,?4)",
@@ -441,9 +436,19 @@ impl StoryStore {
         proposal_key: &str,
         input: &NewStory,
     ) -> Result<Option<Story>, String> {
+        self.existing_story_with_problem_for_proposal(run_id, proposal_key, input, None)
+    }
+
+    pub fn existing_story_with_problem_for_proposal(
+        &self,
+        run_id: &str,
+        proposal_key: &str,
+        input: &NewStory,
+        problem: Option<&str>,
+    ) -> Result<Option<Story>, String> {
         validate_text("workflow run id", run_id, 128)?;
         validate_text("story proposal key", proposal_key, 128)?;
-        let hash = proposal_hash(input)?;
+        let hash = proposal_problem_hash(input, problem)?;
         let conn = self.connect()?;
         let prior: Option<(String, String)> = conn
             .query_row(
@@ -481,85 +486,11 @@ impl StoryStore {
         archived: bool,
     ) -> Result<PlanView, String> {
         let all_stories = self.list_stories(plan_id)?;
-        let stories: Vec<_> = all_stories
-            .iter()
-            .filter(|story| !story.archived)
-            .cloned()
-            .collect();
-        let by_id: HashMap<&str, &Story> = all_stories
-            .iter()
-            .map(|story| (story.id.as_str(), story))
-            .collect();
-        let wont_fix_count = stories
-            .iter()
-            .filter(|story| story.status == StoryStatus::WontFix)
-            .count();
-        let run_db = self
-            .db_path
-            .parent()
-            .ok_or("story store has no parent directory")?
-            .join("workflow_runs.sqlite3");
-        let requires_receipts = crate::workflows::plan_has_workflow_run_in(&run_db, plan_id)?;
-        let mut complete = !stories.is_empty();
-        for story in &stories {
-            let accepted = if requires_receipts {
-                story.status == StoryStatus::Done
-                    && crate::workflows::story_integrated_at_revision_in(
-                        &run_db,
-                        &story.id,
-                        story.revision,
-                    )?
-            } else {
-                matches!(story.status, StoryStatus::Done | StoryStatus::WontFix)
-            };
-            complete &= accepted;
-        }
-        let state = if stories.is_empty() {
-            PlanState::Draft
-        } else if complete {
-            PlanState::Done
-        } else {
-            PlanState::Active
-        };
-        let reads: Vec<StoryRead> = all_stories
-            .iter()
-            .filter(|story| story.archived == archived)
-            .map(|story| {
-                let mut stack = vec![story.id.as_str()];
-                let mut visited = HashSet::new();
-                let mut abandoned = false;
-                while let Some(id) = stack.pop() {
-                    if !visited.insert(id) {
-                        continue;
-                    }
-                    if let Some(found) = by_id.get(id) {
-                        if found.status == StoryStatus::WontFix {
-                            abandoned = true;
-                            break;
-                        }
-                        stack.extend(found.dependencies.iter().map(String::as_str));
-                    }
-                }
-                StoryRead {
-                    story: story.clone(),
-                    abandoned,
-                }
-            })
-            .collect();
-        let (visible_story_ids, columns) = super::filters::project(
-            &reads,
-            &super::StoryFilter {
-                archived,
-                ..Default::default()
-            },
-        );
-        Ok(PlanView {
-            visible_story_ids,
-            columns,
-            stories: reads,
-            state,
-            wont_fix_count,
-            all_cancelled: !stories.is_empty() && wont_fix_count == stories.len(),
+        assemble_plan_view(&all_stories, archived, |story| {
+            Ok(matches!(
+                story.status,
+                StoryStatus::Done | StoryStatus::WontFix
+            ))
         })
     }
 
@@ -576,9 +507,7 @@ impl StoryStore {
     ) -> Result<Story, String> {
         validate_text("session", session, 200)?;
         let preflight_plan = self.require_unarchived_story(story_id)?.plan_id;
-        let project = self.get_plan(&preflight_plan)?.project;
         let preflight = DependencyPreflight::prepare(self, &preflight_plan)?;
-        let _reservation_guard = crate::workflows::guard_manual_story_start(&project, story_id)?;
         let mut conn = self.connect()?;
         let tx = immediate(&mut conn)?;
         preflight.validate(&tx)?;
@@ -586,7 +515,7 @@ impl StoryStore {
         check_revision(&story, expected_revision)?;
         require_active_story(&tx, &story)?;
         if story.status != StoryStatus::Ready {
-            let unmet = unmet_dependencies(&tx, &story, &preflight)?;
+            let unmet = unmet_dependencies(&tx, &story)?;
             return Err(if unmet.is_empty() {
                 format!(
                     "story is not ready (status: {}); only a ready story can be claimed",
@@ -600,7 +529,7 @@ impl StoryStore {
                 )
             });
         }
-        if !dependencies_integrated(&tx, &story, &preflight)? {
+        if !dependencies_integrated(&tx, &story)? {
             return Err("story dependency lacks a current integration receipt".into());
         }
         story.status = if transitions::only_manual_pending(&story) {
@@ -635,9 +564,18 @@ impl StoryStore {
             }
             save_story(&tx, &mut story, revision)?;
         }
+        // DEFERRED (2026-11-07) — an external story keeps its adapter status
+        // `in_progress`: this path has no project, so it cannot reach the adapter.
+        // It shows in progress without a claim until someone moves it.
+        let external = tx
+            .execute(
+                "UPDATE external_story_execution SET claim_session=NULL WHERE claim_session=?1",
+                [session],
+            )
+            .map_err(|e| format!("release external claims: {e}"))?;
         tx.commit()
             .map_err(|e| format!("commit claim release: {e}"))?;
-        Ok(ids.len())
+        Ok(ids.len() + external)
     }
 }
 
@@ -666,10 +604,36 @@ pub(super) fn validate_problem(problem: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
+fn proposal_problem_hash(input: &NewStory, problem: Option<&str>) -> Result<String, String> {
+    match problem {
+        None => proposal_hash(input),
+        Some(problem) => Ok(hex::encode(Sha256::digest(
+            serde_json::to_vec(&(input, problem)).map_err(|e| e.to_string())?,
+        ))),
+    }
+}
+
 fn proposal_hash(input: &NewStory) -> Result<String, String> {
     Ok(hex::encode(Sha256::digest(
         serde_json::to_vec(input).map_err(|error| format!("encode story proposal: {error}"))?,
     )))
+}
+
+fn build_plan(input: NewPlan) -> Result<Plan, String> {
+    validate_text("project", &input.project, 4096)?;
+    validate_text("plan title", &input.title, 200)?;
+    validate_text("plan source", &input.source, 4096)?;
+    if !crate::fs::is_absolute_on_any_platform(&input.project) {
+        return Err("project must be an absolute path".into());
+    }
+    Ok(Plan {
+        revision: 1,
+        archived: false,
+        id: Uuid::now_v7().to_string(),
+        project: input.project.trim().into(),
+        title: input.title.trim().into(),
+        source: input.source.trim().into(),
+    })
 }
 
 fn build_story(input: NewStory) -> Story {
@@ -709,9 +673,106 @@ fn insert_story(conn: &Connection, story: &Story) -> Result<(), String> {
     Ok(())
 }
 
+/// Plan completion, abandonment and board columns from every story of one plan.
+/// `accepted` decides whether one active story counts as finished. Every backend
+/// builds its views here, so completion means the same thing whatever holds the content.
+pub(crate) fn assemble_plan_view(
+    all_stories: &[Story],
+    archived: bool,
+    mut accepted: impl FnMut(&Story) -> Result<bool, String>,
+) -> Result<PlanView, String> {
+    let stories: Vec<&Story> = all_stories.iter().filter(|story| !story.archived).collect();
+    let by_id: HashMap<&str, &Story> = all_stories
+        .iter()
+        .map(|story| (story.id.as_str(), story))
+        .collect();
+    let wont_fix_count = stories
+        .iter()
+        .filter(|story| story.status == StoryStatus::WontFix)
+        .count();
+    let mut complete = !stories.is_empty();
+    for story in &stories {
+        complete &= accepted(story)?;
+    }
+    let state = if stories.is_empty() {
+        PlanState::Draft
+    } else if complete {
+        PlanState::Done
+    } else {
+        PlanState::Active
+    };
+    let reads: Vec<StoryRead> = all_stories
+        .iter()
+        .filter(|story| story.archived == archived)
+        .map(|story| {
+            let mut stack = vec![story.id.as_str()];
+            let mut visited = HashSet::new();
+            let mut abandoned = false;
+            while let Some(id) = stack.pop() {
+                if !visited.insert(id) {
+                    continue;
+                }
+                if let Some(found) = by_id.get(id) {
+                    if found.status == StoryStatus::WontFix {
+                        abandoned = true;
+                        break;
+                    }
+                    stack.extend(found.dependencies.iter().map(String::as_str));
+                }
+            }
+            StoryRead {
+                story: story.clone(),
+                abandoned,
+                completed_outside: false,
+            }
+        })
+        .collect();
+    let (visible_story_ids, columns) = super::filters::project(
+        &reads,
+        &super::StoryFilter {
+            archived,
+            ..Default::default()
+        },
+    );
+    Ok(PlanView {
+        visible_story_ids,
+        columns,
+        stories: reads,
+        state,
+        wont_fix_count,
+        all_cancelled: !stories.is_empty() && wont_fix_count == stories.len(),
+    })
+}
+
 #[cfg(test)]
 mod connection_tests {
     use super::*;
+
+    #[test]
+    fn missing_wiz_story_names_its_markdown_store() {
+        // Catches: treating a Wiz id as a missing native story without a recovery path.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let store = StoryStore::open_at(&dir.path().join("stories.sqlite3")).expect("store");
+        for id in ["3001-277e", "1-ABCD", "12345-0000"] {
+            let error = store.get_story(id).expect_err("missing story");
+            assert!(
+                error.contains("Wiz stories live in stories/*.md"),
+                "{error}"
+            );
+        }
+        for id in [
+            "",
+            "3001-xyz1",
+            "3001-277ee",
+            "a-277e",
+            "019a72bb-58ad-7000-8000-000000000000",
+        ] {
+            assert_eq!(
+                store.get_story(id).unwrap_err(),
+                format!("story not found: {id}")
+            );
+        }
+    }
 
     #[test]
     fn story_store_reuses_its_sqlite_connection() {

@@ -7,7 +7,7 @@ Five GitHub Actions workflows compile Rust:
 | [`ci.yml`](https://github.com/sstraus/tuicommander/blob/main/.github/workflows/ci.yml) | pull request, push to `main` | clippy + `cargo nextest` + doctests on Linux, `tuic-remote` without the desktop feature, macOS and Windows builds on push |
 | [`release.yml`](https://github.com/sstraus/tuicommander/blob/main/.github/workflows/release.yml) | version tag | the signed artifacts users install |
 | [`remote-daemon.yml`](https://github.com/sstraus/tuicommander/blob/main/.github/workflows/remote-daemon.yml) | called by `release.yml` and `nightly.yml` | `tuic-remote` and `tuic-bridge` for Linux x64/ARM64, Windows x64 and macOS ARM64, uploaded to the `v*` release or to the rolling `nightly` release |
-| [`nightly.yml`](https://github.com/sstraus/tuicommander/blob/main/.github/workflows/nightly.yml) | push to `main` | the rolling `nightly` release |
+| [`nightly.yml`](https://github.com/sstraus/tuicommander/blob/main/.github/workflows/nightly.yml) | push to `nightly`, manual dispatch | the rolling `nightly` release |
 | [`audit.yml`](https://github.com/sstraus/tuicommander/blob/main/.github/workflows/audit.yml) | Monday 09:00 UTC | nothing — a prebuilt `cargo-audit` runs the advisory scan; accepted advisories live in `src-tauri/.cargo/audit.toml` |
 
 ## Frontend test shards
@@ -102,7 +102,10 @@ shell command against all 16 pairs of success, failure, cancellation and skip.
 
 ## Nightly release ordering
 
-The cleanup job moves the `nightly` tag, deletes the old release and recreates an
+The nightly workflow checks out the public `nightly` snapshot, pins every build
+and notes job to that commit, and passes it to the reusable daemon workflow.
+`make nightly` publishes that snapshot through the shared squash tool; development
+`main` stays private. The cleanup job moves the `nightly` tag, deletes the old release and recreates an
 empty prerelease before the desktop and daemon matrices start. Successful daemon
 builds can publish even if every desktop build fails. `tauri-action` reuses the
 release with that tag and alone writes `latest.json`; daemon uploads contain only
@@ -207,6 +210,10 @@ CI runs `cargo clippy --workspace --exclude bm25 --all-targets -- -D warnings`.
 It includes test and bench code. The vendored `bm25` patch is excluded from
 Clippy, but remains in workspace tests.
 
+## Windows library compile check
+
+The Windows CI leg runs `cargo check --locked --manifest-path src-tauri/Cargo.toml --lib --target x86_64-pc-windows-msvc` before Clippy and tests. This check rejects Windows-only source errors, such as unguarded Unix signal constants, without linking a desktop application or test binary.
+
 ## Windows CMake debug flags
 
 CI, release and nightly set `CMAKE_C_FLAGS` and `CMAKE_CXX_FLAGS` to `-Z7`
@@ -216,6 +223,24 @@ in environment variables into a Windows path before launching native Cargo.
 That path reaches the CMake compiler probe as a source filename and fails the
 `whisper-rs-sys` build. The Tests step uses Git Bash through
 `scripts/with-test-tmp.sh`, so these flags must be safe in both shell paths.
+
+## Portable whisper.cpp CPU baseline
+
+Release and nightly set `GGML_NATIVE=OFF` on every desktop leg.
+`whisper-rs-sys` passes every `GGML_*` environment variable to CMake. With
+the ggml default (native on), the x64 builds used the CPU of the GitHub runner
+and emitted AVX-512, and dictation crashed on AVX2-only CPUs (issue #151).
+With native off, x64 gets SSE4.2, AVX, AVX2, FMA, F16C and BMI2, and no AVX-512.
+On macOS only `-march=armv8.4-a` from `CMAKE_C_FLAGS` applies, and every M1
+supports it. A native build there takes the features of the runner chip.
+
+`whisper-rs-sys` does not declare `GGML_*` with `rerun-if-env-changed`, so
+cargo reuses a restored ggml build that was configured with other flags. The
+"Drop cached whisper-rs-sys build" step removes its build-script output and
+fingerprints before each build. After the build, the x64 legs run
+`scripts/check-ggml-x86-baseline.sh`, which fails when a ggml static library
+contains `zmm` registers or when `ggml-cpu` has no `ymm` code (an empty
+disassembly).
 
 ## Headless workspace scope
 
@@ -258,8 +283,11 @@ Dev includes debug information that the test profile disables. This second
 profile and feature graph prevent reuse of many artifacts from the test build.
 
 Local lib-only fixture setup uses `cargo build --profile test
---no-default-features`. Desktop CI sets `TUIC_FIXTURE_FEATURES=dictation`, which
-selects `cargo test --workspace --no-run --features dictation` instead. This
+--no-default-features --features test-fixtures`. Desktop CI runs nextest with
+`--features dictation,test-fixtures` and sets
+`TUIC_FIXTURE_FEATURES=dictation,test-fixtures`, which selects
+`cargo test --workspace --no-run --features dictation,test-fixtures` instead.
+The setup script passes that value unchanged. This
 matches nextest's workspace test selection, including dev-dependency feature
 unification. A binary-only build with `--profile test` does not activate dev
 dependencies: under resolver 2 it omits features such as `tokio/test-util` and

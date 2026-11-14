@@ -14,7 +14,9 @@ command = "powershell -NoProfile -File scripts/nextest-test-tmp.ps1"
 # current_exe: stdio client, registry respawn, state push, custom ACP chat,
 # unattended ACP prompt, daemon ACP launch, and workflow ACP lifecycle tests.
 # Integration tests reach the same bins through
-# CARGO_BIN_EXE_*, which cargo itself builds. Every setup entry below is
+# CARGO_BIN_EXE_* paths. The main integration binary also needs setup when
+# test-fixtures was not explicitly enabled in the outer Cargo invocation.
+# Every setup entry below is
 # filtered to those consumers, so a run that selects none of them skips the
 # ~5 min build (#1308-50c9). A new lib unit test that spawns a fixture bin must
 # be added to the filter; scripts/check-nextest-fixture-scope.sh guards it.
@@ -48,12 +50,12 @@ setup = "repo-test-temp-windows"
 
 [[profile.default.scripts]]
 platform = { host = "cfg(unix)" }
-filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/) | test(=acp::oneshot::tests::unattended_prompt_does_not_inherit_ai_chat_master_instructions) | test(/^mcp_http::launch_transaction::acp_tests::/) | test(/^workflows::run::runtime_tests::acp_close::/) | test(=workflows::run::runtime_tests::semantics::wf02_critic::wf04_acp_fork_fix_stops_processes_before_one_repair))'
+filter = 'binary_id(=tuicommander::main) | (binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/) | test(=acp_message_actions::tests::conversational_reactions_persist_remove_and_refuse_offline_without_mutation) | test(=acp::oneshot::tests::unattended_prompt_does_not_inherit_ai_chat_master_instructions) | test(/^workflows::run::neutral_model_adapter_tests::/) | test(/^workflows::run::native_role_context_tests::/) | test(/^workflows::run::runtime::parity_schedule_tests::/)))'
 setup = "fixture-bins-unix"
 
 [[profile.default.scripts]]
 platform = { host = "cfg(windows)" }
-filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/) | test(=acp::oneshot::tests::unattended_prompt_does_not_inherit_ai_chat_master_instructions) | test(/^mcp_http::launch_transaction::acp_tests::/) | test(/^workflows::run::runtime_tests::acp_close::/) | test(=workflows::run::runtime_tests::semantics::wf02_critic::wf04_acp_fork_fix_stops_processes_before_one_repair))'
+filter = 'binary_id(=tuicommander::main) | (binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/) | test(=acp_message_actions::tests::conversational_reactions_persist_remove_and_refuse_offline_without_mutation) | test(=acp::oneshot::tests::unattended_prompt_does_not_inherit_ai_chat_master_instructions) | test(/^workflows::run::neutral_model_adapter_tests::/) | test(/^workflows::run::native_role_context_tests::/) | test(/^workflows::run::runtime::parity_schedule_tests::/)))'
 setup = "fixture-bins-windows"
 
 # The git_reads parity/shootout tests each spawn several `git` subprocesses in
@@ -93,12 +95,12 @@ setup = "repo-test-temp-windows"
 
 [[profile.ci.scripts]]
 platform = { host = "cfg(unix)" }
-filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/) | test(=acp::oneshot::tests::unattended_prompt_does_not_inherit_ai_chat_master_instructions) | test(/^mcp_http::launch_transaction::acp_tests::/) | test(/^workflows::run::runtime_tests::acp_close::/) | test(=workflows::run::runtime_tests::semantics::wf02_critic::wf04_acp_fork_fix_stops_processes_before_one_repair))'
+filter = 'binary_id(=tuicommander::main) | (binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/) | test(=acp_message_actions::tests::conversational_reactions_persist_remove_and_refuse_offline_without_mutation) | test(=acp::oneshot::tests::unattended_prompt_does_not_inherit_ai_chat_master_instructions) | test(/^workflows::run::neutral_model_adapter_tests::/) | test(/^workflows::run::native_role_context_tests::/) | test(/^workflows::run::runtime::parity_schedule_tests::/)))'
 setup = "fixture-bins-unix"
 
 [[profile.ci.scripts]]
 platform = { host = "cfg(windows)" }
-filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/) | test(=acp::oneshot::tests::unattended_prompt_does_not_inherit_ai_chat_master_instructions) | test(/^mcp_http::launch_transaction::acp_tests::/) | test(/^workflows::run::runtime_tests::acp_close::/) | test(=workflows::run::runtime_tests::semantics::wf02_critic::wf04_acp_fork_fix_stops_processes_before_one_repair))'
+filter = 'binary_id(=tuicommander::main) | (binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/) | test(=acp_message_actions::tests::conversational_reactions_persist_remove_and_refuse_offline_without_mutation) | test(=acp::oneshot::tests::unattended_prompt_does_not_inherit_ai_chat_master_instructions) | test(/^workflows::run::neutral_model_adapter_tests::/) | test(/^workflows::run::native_role_context_tests::/) | test(/^workflows::run::runtime::parity_schedule_tests::/)))'
 setup = "fixture-bins-windows"
 
 [profile.ci.junit]
@@ -124,3 +126,15 @@ setup = "relay-bin-unix"
 platform = { host = "cfg(windows)" }
 filter = 'binary_id(=tuicommander) & (test(=remote_runtime::relay_tests::desktop_attaches_through_the_relay_and_runs_a_command) | test(=remote_runtime::relay_tests::relay_loss_and_daemon_restart_recover_without_duplicate_sessions))'
 setup = "relay-bin-windows"
+
+# The composed plan exercises coordinator, two actual story deliveries and FIX
+# re-entry. rb20261112T214201Z-90082 reached its final reviewer at118.86s,
+# still progressing; the routine120s cutoff killed the final verdict/return.
+# This is only the outer hang guard, not an assertion about execution speed.
+[[profile.default.overrides]]
+filter = 'test(=workflows::run::migration_graph_execution_tests::composed_plan_execution_delivers_and_reenters_its_fix_owner)'
+slow-timeout = { period = "30s", terminate-after = 12 }
+
+[[profile.ci.overrides]]
+filter = 'test(=workflows::run::migration_graph_execution_tests::composed_plan_execution_delivers_and_reenters_its_fix_owner)'
+slow-timeout = { period = "30s", terminate-after = 12 }

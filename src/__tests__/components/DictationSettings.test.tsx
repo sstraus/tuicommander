@@ -25,7 +25,7 @@ const mockStore = vi.hoisted(() => ({
 		modelSizeMb: 1620,
 		recording: false,
 		processing: false,
-		downloading: false,
+		downloadingModel: null as string | null,
 		downloadPercent: 0,
 		corrections: {},
 		devices: [] as { name: string; is_default: boolean }[],
@@ -203,7 +203,7 @@ describe("DictationSettings – Model Selector", () => {
 		];
 		mockStore.state.selectedModel = "large-v3-turbo";
 		mockStore.state.selectedDevice = null;
-		mockStore.state.downloading = false;
+		mockStore.state.downloadingModel = null;
 		mockStore.state.downloadPercent = 0;
 		mockStore.state.devices = [];
 	});
@@ -313,15 +313,16 @@ describe("DictationSettings – Model Selector", () => {
 		expect(badge1!.textContent).toContain("Downloaded");
 	});
 
-	it("shows progress bar when downloading", () => {
-		mockStore.state.downloading = true;
+	// Catches: progress follows the selected model, not the model that downloads.
+	it("shows progress on the row of a downloading model that is not selected", () => {
+		mockStore.state.downloadingModel = "small";
 		mockStore.state.downloadPercent = 42;
-		// Mark which model is being downloaded by setting selectedModel to the downloading one
-		mockStore.state.selectedModel = "small";
+		mockStore.state.selectedModel = "large-v3-turbo";
 
 		const { container } = render(() => <DictationSettings />);
-		const progressBar = container.querySelector(".progressFill");
-		expect(progressBar).not.toBeNull();
+		const rows = container.querySelectorAll("[data-whisper-model]");
+		expect(rows[0].querySelector(".progressFill")).not.toBeNull();
+		expect(rows[1].querySelector(".progressFill")).toBeNull();
 	});
 });
 

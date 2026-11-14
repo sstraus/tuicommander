@@ -1,7 +1,9 @@
+#[cfg(test)]
+use super::StoryStore;
 use super::{
     CRITERIA_INCOMPLETE, NewPlan, NewStory, PLAN_DOCUMENT_NOT_FOUND, Plan, PlanSource, PlanState,
     PlanView, Story, StoryCommand, StoryListFilter, StoryListPage, StoryPatch, StoryStatus,
-    StoryStore, StorySummary, StoryTransition,
+    StorySummary, StoryTransition,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -10,6 +12,17 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum StoryAction {
+    /// Read selection and provenance even if the connector cannot initialize.
+    BackendStatus,
+    /// Human-only project selection. No repository file names executable code.
+    SetBackend {
+        backend: String,
+    },
+    /// Explicit human approval of the installed, resolved Wiz installation.
+    ApproveConnector {
+        installation: String,
+        expected_identity: String,
+    },
     /// Add an Idea in the envelope project. Source defaults to the bound session.
     AddIdea {
         text: String,
@@ -172,6 +185,7 @@ pub enum StoryAction {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
 pub enum StoryReply {
+    BackendStatus(serde_json::Value),
     Idea(serde_json::Value),
     Ideas(Vec<serde_json::Value>),
     Plan(Plan),
@@ -216,6 +230,19 @@ pub fn story_action(
     story_action_with_source(project, action, actor_session, false)
 }
 
+pub(crate) fn human_backend_write<T>(
+    actor_session: Option<&str>,
+    unauthenticated_http: bool,
+    write: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    if actor_session.is_some() || unauthenticated_http {
+        return Err(
+            "Backend selection and approval require an authenticated human UI action".into(),
+        );
+    }
+    write()
+}
+
 fn story_action_with_source(
     project: &str,
     action: StoryAction,
@@ -228,7 +255,60 @@ fn story_action_with_source(
     let project = crate::progress::resolve_owning_project(Some(project))?
         .to_string_lossy()
         .to_string();
-    let store = StoryStore::open()?;
+    match &action {
+        StoryAction::BackendStatus => {
+            return Ok(StoryReply::BackendStatus(
+                serde_json::to_value(crate::story_adapter::binding::status(std::path::Path::new(
+                    &project,
+                )))
+                .map_err(|e| e.to_string())?,
+            ));
+        }
+        StoryAction::SetBackend { backend } => {
+            human_backend_write(actor_session, unauthenticated_http, || {
+                crate::story_adapter::binding::set_override(std::path::Path::new(&project), backend)
+            })?;
+            return Ok(StoryReply::BackendStatus(
+                serde_json::to_value(crate::story_adapter::binding::status(std::path::Path::new(
+                    &project,
+                )))
+                .map_err(|e| e.to_string())?,
+            ));
+        }
+        StoryAction::ApproveConnector {
+            installation,
+            expected_identity,
+        } => {
+            human_backend_write(actor_session, unauthenticated_http, || {
+                crate::story_adapter::selection::approve(
+                    std::path::Path::new(&project),
+                    std::path::Path::new(installation),
+                    expected_identity,
+                )
+            })?;
+            return Ok(StoryReply::BackendStatus(
+                serde_json::to_value(crate::story_adapter::binding::status(std::path::Path::new(
+                    &project,
+                )))
+                .map_err(|e| e.to_string())?,
+            ));
+        }
+        _ => {}
+    }
+    // Resolve once so content and execution overlay cannot use different generations.
+    let external = crate::story_adapter::binding::external_for(std::path::Path::new(&project))?
+        .map(|backend| {
+            crate::story_adapter::ExternalStories::new(backend, std::path::PathBuf::from(&project))
+        });
+    let native;
+    let store: &dyn super::StoryBackend = match external.as_ref() {
+        Some(backend) => backend,
+        None => {
+            native = super::story_backend()?;
+            native.as_ref()
+        }
+    };
+    let ledger = super::execution_ledger;
     let plan_in_project = |plan_id: &str| -> Result<Plan, String> {
         let plan = store.get_plan(plan_id)?;
         // Stored plans can predate canonical owner spelling (notably the verbatim prefix on Windows).
@@ -245,6 +325,11 @@ fn story_action_with_source(
         Ok(story)
     };
     match action {
+        StoryAction::BackendStatus
+        | StoryAction::SetBackend { .. }
+        | StoryAction::ApproveConnector { .. } => {
+            unreachable!("handled before backend access")
+        }
         StoryAction::AddIdea { text, source } => Ok(StoryReply::Idea(crate::config::add_idea(
             &project,
             &text,
@@ -465,19 +550,20 @@ fn story_action_with_source(
             expected_revision,
         } => {
             story_in_project(&story_id)?;
-            Ok(StoryReply::AvailableTransitions(
-                store.available_transitions(
-                    &story_id,
-                    expected_revision,
-                    archive_actor(actor_session, unauthenticated_http),
-                )?,
-            ))
+            let actor = archive_actor(actor_session, unauthenticated_http);
+            Ok(StoryReply::AvailableTransitions(match &external {
+                Some(external) => {
+                    external.available_transitions(&story_id, expected_revision, actor)?
+                }
+                None => ledger()?.available_transitions(&story_id, expected_revision, actor)?,
+            }))
         }
         StoryAction::TransitionHistory { story_id } => {
             story_in_project(&story_id)?;
-            Ok(StoryReply::Transitions(
-                store.transition_history(&story_id)?,
-            ))
+            Ok(StoryReply::Transitions(match &external {
+                Some(external) => external.transition_history(&story_id)?,
+                None => ledger()?.transition_history(&story_id)?,
+            }))
         }
         StoryAction::AddDependency {
             story_id,
@@ -512,11 +598,10 @@ fn story_action_with_source(
         } => {
             story_in_project(&story_id)?;
             let session = actor_session.ok_or("claim requires a live session")?;
-            Ok(StoryReply::Story(store.claim(
-                &story_id,
-                session,
-                expected_revision,
-            )?))
+            Ok(StoryReply::Story(match &external {
+                Some(external) => external.claim(&story_id, session, expected_revision)?,
+                None => ledger()?.claim(&story_id, session, expected_revision)?,
+            }))
         }
         StoryAction::Transition {
             story_id,
@@ -524,10 +609,22 @@ fn story_action_with_source(
             command,
         } => {
             story_in_project(&story_id)?;
-            let changed = if unauthenticated_http && actor_session.is_none() {
-                store.transition_from_local_api(&story_id, expected_revision, command)?
+            let changed = if let Some(external) = &external {
+                external.transition(
+                    &story_id,
+                    expected_revision,
+                    command,
+                    archive_actor(actor_session, unauthenticated_http),
+                )?
+            } else if unauthenticated_http && actor_session.is_none() {
+                ledger()?.transition_from_local_api(&story_id, expected_revision, command)?
             } else {
-                store.transition_for_actor(&story_id, expected_revision, command, actor_session)?
+                ledger()?.transition_for_actor(
+                    &story_id,
+                    expected_revision,
+                    command,
+                    actor_session,
+                )?
             };
             Ok(StoryReply::Story(changed))
         }
@@ -542,6 +639,27 @@ pub fn story_action_for_session(
     session_id: Option<&str>,
 ) -> Result<StoryReply, String> {
     story_action_for_session_with_source(state, project, action, session_id, false)
+}
+
+/// ACP peers carry managed actor provenance without acquiring a manual PTY claim.
+pub(crate) fn story_action_for_acp_peer(
+    state: &crate::AppState,
+    peer_id: &str,
+    action: StoryAction,
+) -> Result<StoryReply, String> {
+    let project = state.acp.peer_root(peer_id).ok_or("ACP peer is not live")?;
+    if matches!(action, StoryAction::Claim { .. }) {
+        return Err("manual story claim requires a live PTY session".into());
+    }
+    let changes_ideas = matches!(
+        action,
+        StoryAction::AddIdea { .. } | StoryAction::UpdateIdea { .. }
+    );
+    let reply = story_action_with_source(&project.to_string_lossy(), action, Some(peer_id), false)?;
+    if changes_ideas {
+        state.notify_ideas_changed();
+    }
+    Ok(reply)
 }
 
 pub(crate) fn story_action_for_http_authenticated(
@@ -577,7 +695,21 @@ fn story_action_for_session_with_source(
         action,
         StoryAction::AddIdea { .. } | StoryAction::UpdateIdea { .. }
     );
+    let changes_attention = matches!(
+        action,
+        StoryAction::CreateStory { .. }
+            | StoryAction::UpdateStory { .. }
+            | StoryAction::ArchiveStory { .. }
+            | StoryAction::UnarchiveStory { .. }
+            | StoryAction::ArchivePlan { .. }
+            | StoryAction::UnarchivePlan { .. }
+            | StoryAction::Claim { .. }
+            | StoryAction::Transition { .. }
+    );
     let reply = story_action_with_source(project, action, session_id, unauthenticated_http)?;
+    if changes_attention {
+        crate::boss_attention::changed(state);
+    }
     if changes_ideas {
         state.notify_ideas_changed();
     }
@@ -596,6 +728,28 @@ fn archive_actor(session: Option<&str>, unauthenticated_http: bool) -> super::St
 
 #[cfg(test)]
 mod tests {
+    /// Catches: a local HTTP/MCP caller approving executable code without UI authentication.
+    #[test]
+    fn connector_approval_rejects_nonhuman_transport_before_install_discovery() {
+        let repo = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        for (session, anonymous) in [
+            (None, true),
+            (Some("managed"), false),
+            (Some("managed"), true),
+        ] {
+            let error = super::story_action_with_source(
+                repo.path().to_str().unwrap(),
+                super::StoryAction::ApproveConnector {
+                    installation: "/untrusted".into(),
+                    expected_identity: "displayed-version:digest".into(),
+                },
+                session,
+                anonymous,
+            )
+            .unwrap_err();
+            assert!(error.contains("authenticated human UI"), "{error}");
+        }
+    }
     use super::super::StoryOrigin;
     use super::*;
 

@@ -98,23 +98,23 @@ async fn circleci_owner_errors_and_unavailable_are_redacted() {
     );
 }
 
-// Catches: a typed CircleCI owner action bypassing the common machine/origin policy.
+// Catches: a typed CircleCI owner action bypassing the common machine/capability policy.
 #[tokio::test]
-async fn circleci_foreign_target_and_remote_origin_cannot_write() {
+async fn circleci_foreign_target_and_disabled_capability_cannot_write() {
     let (_dir, _guard, state) = super::accounts_tests::isolated();
     crate::credentials::reset_test_faults();
     crate::circleci::circleci_delete_token().await.unwrap();
     let mut request = perform(json!({"action":"set_token","token":"circleci-forbidden-canary"}));
     request["target"] = json!({"kind":"instance"});
     assert_eq!(execute(&state, request).await["error"]["code"], "not_found");
-    let remote = Caller::mcp("192.0.2.1:1234".parse().unwrap(), "fixture".into(), true);
+    let disabled = Caller::mcp("fixture".into(), false);
     let result = api::execute(
         &state,
         perform(json!({"action":"set_token","token":"circleci-forbidden-canary"})),
-        remote,
+        disabled,
     )
     .await;
-    assert_eq!(result["error"]["code"], "forbidden_origin");
+    assert_eq!(result["error"]["code"], "unavailable");
     assert!(
         crate::credentials::get(crate::credentials::Credential::CircleCiToken)
             .unwrap()

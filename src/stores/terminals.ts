@@ -42,7 +42,7 @@ export interface ProviderRecovery {
 	attempt: number;
 }
 
-export type AgentLifecycleState = "starting" | "working" | "awaiting_input" | "idle" | "completed" | null;
+export type AgentLifecycleState = "starting" | "working" | "awaiting_input" | "idle" | "completed" | "error" | null;
 
 const VALID_SHELL_STATES = new Set<string>(["busy", "idle", "exited"]);
 
@@ -84,13 +84,15 @@ export interface TerminalData {
 	awaitingInputConfident: boolean; // High-confidence detection — don't clear on idle→busy
 	activity: boolean;
 	unseen: boolean; // Terminal completed work while user wasn't viewing it
-	progress: number | null; // OSC 9;4 progress (0-100), null when inactive
+	progress: number | "indeterminate" | null; // OSC 9;4 progress (0-100), "indeterminate" for state 3, null when inactive
 	shellState: ShellState;
 	/** Monotonic local event revision; prevents a stale session snapshot from overwriting PTY state. */
 	shellStateRevision: number;
 	agentState: AgentLifecycleState;
 	providerRecovery?: ProviderRecovery | null;
 	backgroundWork: boolean;
+	/** Backend silence rule (SessionState.stalled): the agent claims to work but nothing moved for the stall threshold. */
+	stalled?: boolean;
 	abandonedSinceMs?: number | null;
 	queuedCommands: number; // Compose-panel commands waiting for the agent's next idle window
 	completionNotified: boolean; // Current busy cycle already produced its completion notification
@@ -108,14 +110,17 @@ export interface TerminalData {
 	lastActivityAt: number | null; // Backend timestamp of last semantic session activity
 	idleSince: number | null; // Timestamp when shellState transitioned to idle
 	lastPrompt: string | null; // Last relevant user prompt (>= 10 words), set by Rust
+	lastError?: string | null; // Agent or API error text (Rust last_error), shown in the tab tooltip
 	ptyDescription: string | null; // Orchestrator-supplied description of assigned PTY work
 	agentIntent: string | null; // LLM-declared intent via intent: token
 	currentTask: string | null; // Current agent task from status-line parsing (e.g. "Reading files")
+	currentTool: string | null; // Newest live native tool name, set by Rust from verified hook metadata
 	activeSubTasks: number; // Count of running sub-agents/background tasks from ›› status line
 	isRemote: boolean; // Runs on a configured remote connection, not merely created through HTTP/MCP
 	isExternallyCreated: boolean; // Created via HTTP/MCP; owns cleanup, tab decoration and completion policy
 	exactAgentSessionId?: string | null; // Live backend hook evidence, never restored from persistence
 	agentSessionId: string | null; // Discovered agent session ID for exact resume (claude, gemini, codex, grok)
+	restoredIdentity?: boolean; // Saved terminal identity; not a newly minted root.
 	tuicSession: string | null; // Stable tab UUID — injected as TUIC_SESSION env var, persists across restarts
 	suggestedActions: string[] | null; // Follow-up suggestions from suggest: token
 	suggestDismissed: boolean; // true after user dismissed/selected/typed — resets on shell-state:idle
@@ -164,6 +169,7 @@ type TerminalCreateData = Omit<
 	| "ptyDescription"
 	| "agentIntent"
 	| "currentTask"
+	| "currentTool"
 	| "activeSubTasks"
 	| "isRemote"
 	| "isExternallyCreated"
@@ -216,6 +222,8 @@ export interface TerminalRef {
 	closeSearch: () => void;
 	toggleCompose: () => void;
 	openComposeWithText: (text: string) => void;
+	/** Insert text at the Compose caret (keeping the draft), opening Compose first when it is closed. */
+	quoteIntoCompose: (text: string) => void;
 	/** Search the terminal buffer for a query string (case-insensitive) */
 	searchBuffer: (query: string) => TerminalMatch[] | Promise<TerminalMatch[]>;
 	/** Scroll to an absolute buffer line index (centered in viewport) */
@@ -248,6 +256,11 @@ interface TerminalsStoreState {
 	history: string[];
 	/** Position of the terminal currently shown within `history` (0 = most recent; >0 after stepping back). */
 	historyCursor: number;
+	/**
+	 * A model-driven open moved the view to another repository: the cursor entry is no
+	 * longer on screen, so Back returns to it first. Any terminal activation clears it.
+	 */
+	awayFromCursor: boolean;
 	counter: number;
 	/** Tabs currently detached to floating windows: tabId → window label */
 	detachedWindows: Record<string, string>;
@@ -269,6 +282,7 @@ function createTerminalsStore() {
 		lastActiveId: null,
 		history: [],
 		historyCursor: 0,
+		awayFromCursor: false,
 		counter: 0,
 		detachedWindows: {},
 		debouncedBusy: {},
@@ -505,6 +519,7 @@ function createTerminalsStore() {
 				ptyDescription: null,
 				agentIntent: null,
 				currentTask: null,
+				currentTool: null,
 				activeSubTasks: 0,
 				isRemote: false,
 				isExternallyCreated: false,
@@ -564,6 +579,7 @@ function createTerminalsStore() {
 				ptyDescription: null,
 				agentIntent: null,
 				currentTask: null,
+				currentTool: null,
 				activeSubTasks: 0,
 				isRemote: false,
 				isExternallyCreated: false,
@@ -649,6 +665,7 @@ function createTerminalsStore() {
 					setState("terminals", id, "activity", false);
 					setState("terminals", id, "unseen", false);
 					setState("lastActiveId", id);
+					setState("awayFromCursor", false);
 					// Walking the history lands on the entry under the cursor: keep order.
 					// Any other activation drops the forward part and moves to the front.
 					if (state.history[state.historyCursor] !== id) {
@@ -711,6 +728,7 @@ function createTerminalsStore() {
 						// after it can no longer appear in the next session-list snapshot.
 						setState("terminals", id, "agentState", null);
 						setState("terminals", id, "backgroundWork", false);
+						setState("terminals", id, "stalled", false);
 						// The backend drops the queue with the session; a lingering count
 						// would offer to clear commands that no longer exist.
 						setState("terminals", id, "queuedCommands", 0);
@@ -997,7 +1015,16 @@ function createTerminalsStore() {
 
 		/** Terminal one step back / forward in the history, or null at the ends. */
 		getHistoryTarget(direction: "back" | "forward"): string | null {
+			if (direction === "back" && state.awayFromCursor) return state.history[state.historyCursor] ?? null;
 			return state.history[state.historyCursor + (direction === "back" ? 1 : -1)] ?? null;
+		},
+
+		/**
+		 * Record that a model-driven open (ui tab, file or markdown open) moved the view to
+		 * another repository, so Back returns to the terminal that was on screen.
+		 */
+		noteModelNavigation(): void {
+			if (state.history[state.historyCursor]) setState("awayFromCursor", true);
 		},
 
 		/**
@@ -1005,6 +1032,10 @@ function createTerminalsStore() {
 		 * The caller then activates it; setActive recognises it as the cursor entry and keeps order.
 		 */
 		stepHistory(direction: "back" | "forward"): string | null {
+			if (direction === "back" && state.awayFromCursor) {
+				setState("awayFromCursor", false);
+				return state.history[state.historyCursor] ?? null;
+			}
 			const step = direction === "back" ? 1 : -1;
 			const id = state.history[state.historyCursor + step] ?? null;
 			if (id) setState("historyCursor", state.historyCursor + step);

@@ -36,6 +36,34 @@ it("keeps suggestions, whitespace validation and submitted values through shared
 	fireEvent.submit(view.container.querySelector("form")!);
 	expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ goal: "Review", scope: "Current branch" });
 });
+// Catches: the initial focus frame outlives the dialog, so a pending timer survives test teardown.
+it("cancels the initial focus frame when the dialog unmounts first", async () => {
+	const requestFrame = window.requestAnimationFrame.bind(window);
+	let ranAfterUnmount = false;
+	let unmounted = false;
+	const spy = vi.spyOn(window, "requestAnimationFrame").mockImplementationOnce((callback) =>
+		requestFrame((time) => {
+			ranAfterUnmount = unmounted;
+			callback(time);
+		}),
+	);
+	const view = render(() => (
+		<VariableInputDialog variables={["goal"]} promptName="Prompt" onSubmit={() => {}} onCancel={() => {}} />
+	));
+	spy.mockRestore();
+	view.unmount();
+	unmounted = true;
+	await nextAnimationFrame();
+	expect(ranAfterUnmount).toBe(false);
+});
+// Catches: the first-field ref never binds through the shared Input, so opening the dialog leaves focus on body.
+it("focuses the first input when the dialog opens", async () => {
+	const view = render(() => (
+		<VariableInputDialog variables={["goal", "scope"]} promptName="Prompt" onSubmit={() => {}} onCancel={() => {}} />
+	));
+	await nextAnimationFrame();
+	expect(document.activeElement).toBe(view.getByRole("textbox", { name: "{goal}" }));
+});
 // Catches: the migrated Cancel button submits the form or Escape loses its owner.
 it("keeps Cancel and Escape separate from submission", () => {
 	const onCancel = vi.fn(),

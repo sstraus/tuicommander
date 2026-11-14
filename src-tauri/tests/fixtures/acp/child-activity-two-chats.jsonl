@@ -1,0 +1,24 @@
+// Two chats on one ego connection. Chat A runs a tool and a foreground child,
+// with the frames recorded from native ego 0.4.1 (0-based messages 17, 18, 20, 22, 23
+// and 27 of ego-child-activity-native-0.4.1.jsonl, session id replaced). Chat B
+// runs a turn of its own meanwhile. The initialize result is ego-initialize.json
+// plus the childActivity entry ego 0.4.1 advertises.
+{"step":"expect","method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"_meta":{"ego":{"childActivity":{"version":1}}}}},"capture":"init"}
+{"step":"respond","to":"init","result":{"protocolVersion":1,"agentInfo":{"name":"ego","version":"fixture"},"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":false},"mcpCapabilities":{"http":true,"sse":false,"acp":true},"sessionCapabilities":{"list":{},"delete":{},"fork":{},"resume":{},"close":{}},"auth":{},"_meta":{"ego":{"compact":{"version":1,"method":"_ego/compact"},"hold":{"version":1,"pause":"_ego/pause","resume":"_ego/resume"},"childActivity":{"version":1,"update":"session_info_update","field":"_meta.ego.childActivity"}}}}}}
+{"step":"expect","method":"session/new","capture":"new_a"}
+{"step":"respond","to":"new_a","result":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa","configOptions":[]}}
+{"step":"expect","method":"session/new","capture":"new_b"}
+{"step":"respond","to":"new_b","result":{"sessionId":"01932d5e-0000-7000-8000-0000000000bb","configOptions":[]}}
+{"step":"expect","method":"session/prompt","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa"},"capture":"prompt_a"}
+{"step":"notify","method":"session/update","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa","update":{"sessionUpdate":"tool_call","toolCallId":"01a19689-1bf0-7072-9288-09a374ab2a64","title":"task","rawInput":{"name":"capture child","prompt":"Return a short readiness answer."},"_meta":{"ego":{"salience":"activity"}}}}}
+{"step":"notify","method":"session/update","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa","update":{"sessionUpdate":"tool_call_update","toolCallId":"01a19689-1bf0-7072-9288-09a374ab2a64","status":"in_progress","_meta":{"ego":{"salience":"activity"}}}}}
+{"step":"notify","method":"session/update","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa","update":{"sessionUpdate":"session_info_update","_meta":{"ego":{"childActivity":{"version":1,"kind":"lifecycle","turnId":"01a19689-1baf-7077-af31-86a014d6656d","itemId":"01a19689-1bf0-7072-9288-09a374ab2a64","child":{"kind":"foreground","turn":"01a19689-1bf0-7072-9288-09a9378835d2"},"phase":{"phase":"started"}}}}}}}
+{"step":"expect","method":"session/prompt","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000bb"},"capture":"prompt_b"}
+{"step":"respond","to":"prompt_b","result":{"stopReason":"end_turn"}}
+{"step":"notify","method":"session/update","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa","update":{"sessionUpdate":"session_info_update","_meta":{"ego":{"childActivity":{"version":1,"kind":"lifecycle","turnId":"01a19689-1baf-7077-af31-86a014d6656d","itemId":"01a19689-1bf0-7072-9288-09a374ab2a64","child":{"kind":"foreground","turn":"01a19689-1bf0-7072-9288-09a9378835d2"},"phase":{"phase":"settled","outcome":"completed"}}}}}}}
+{"step":"notify","method":"session/update","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa","update":{"sessionUpdate":"tool_call_update","toolCallId":"01a19689-1bf0-7072-9288-09a374ab2a64","status":"completed","content":[{"type":"content","content":{"type":"text","text":"Recorded ACP completion."}}],"_meta":{"ego":{"salience":"activity"}}}}}
+{"step":"notify","method":"session/update","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa","update":{"sessionUpdate":"session_info_update","_meta":{"ego":{"childActivity":{"version":1,"kind":"clear","turnId":"01a19689-1baf-7077-af31-86a014d6656d","scope":"foreground"}}}}}}
+{"step":"respond","to":"prompt_a","result":{"stopReason":"end_turn"}}
+{"step":"expect","method":"session/prompt","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa"},"capture":"prompt_a2"}
+{"step":"respond","to":"prompt_a2","result":{"stopReason":"end_turn"}}
+{"step":"await_stdin_eof"}

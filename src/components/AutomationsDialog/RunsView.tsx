@@ -141,7 +141,14 @@ export function RunsView(props: {
 								type="button"
 								onClick={() => {
 									if (focusAutomationRun(run, props.connectionId)) props.onNavigate();
-									else setSelected(run);
+									else {
+										// The list row only holds an output excerpt: show it now, then the whole record.
+										setSelected(run);
+										void props.store
+											.run(run.id)
+											.then((whole) => setSelected((current) => (current?.id === run.id ? whole : current)))
+											.catch(() => undefined);
+									}
 								}}
 							>
 								{t("automations.viewRun", "View run")}

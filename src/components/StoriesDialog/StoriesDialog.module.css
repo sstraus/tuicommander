@@ -32,6 +32,7 @@ button.item[data-control-layout="row"]:hover { background: var(--bg-highlight); 
 button.item[data-control-layout="row"][aria-current="true"] { background: var(--bg-highlight); border-left: 2px solid var(--accent); padding-left: 10px; }
 button.item[data-control-layout="row"] small { color: var(--fg-muted); font-size: var(--font-xs); text-transform: capitalize; }
 .form { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border); }
+.startForm { min-height: 0; max-height: 60%; overflow-y: auto; overflow-wrap: anywhere; flex-shrink: 0; }
 .sourceHeader {
   composes: toolbar from "../ui/FormControls.module.css"; display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--fg-secondary); font-size: var(--font-xs); }
 .form button small { display: block; margin-top: 3px; color: var(--fg-muted); font: var(--font-xs) var(--font-mono); overflow-wrap: anywhere; }
@@ -71,6 +72,14 @@ button.item[data-control-layout="row"] small { color: var(--fg-muted); font-size
 .dependencyRow { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 @media (max-width: 760px) { .content { grid-template-columns: minmax(135px, 34%) minmax(0, 1fr); } .detail { grid-column: 1 / -1; min-height: 260px; border-top: 1px solid var(--border); } .storyColumn { border-right: 0; } .runContent { grid-template-columns: minmax(145px, 38%) minmax(0, 1fr); } .runDetail { padding: 14px; } .timeline li { grid-template-columns: 32px minmax(0, 1fr); } .timeline time { grid-column: 2; } }
 
+.waiting { flex-shrink: 0; padding: 8px 16px; border-bottom: 1px solid var(--border); }
+.waiting h3 { margin: 0 0 4px; }
+.waiting p { margin: 4px 0; overflow-wrap: anywhere; }
+.waitingActions { display: flex; gap: 8px; padding: 4px 0; }
+.waitingList { max-height: 84px; overflow-y: auto; }
+.waiting button.item[data-control-layout="row"] { flex-direction: row; align-items: baseline; gap: 8px; min-height: 28px; padding: 4px 12px; white-space: nowrap; }
+.waiting button.item[data-control-layout="row"] > span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.waiting button.item[data-control-layout="row"] small { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-transform: none; }
 .incidents { margin: 20px 0; padding-top: 16px; border-top: 1px solid var(--border); }
 .incidents h4 { margin: 0; font-size: var(--font-sm); }
 .incident { margin-top: 12px; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border); border-left: 3px solid var(--attention); border-radius: var(--radius-sm); }
@@ -143,9 +152,17 @@ button.boardCard[data-control-layout="card"] small { color: var(--fg-muted); fon
 .planState { margin: 0 0 12px; color: var(--fg-secondary); font-size: var(--font-sm); }
 
 .storyListRow { composes: toolbar from "../ui/FormControls.module.css"; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-bottom: 1px solid var(--border); }
-.storyListRow > button.item[data-control-layout="row"] { flex: 1 1 120px; width: auto; border-bottom: 0; }
+.storyListRow > button.item[data-control-layout="row"] { flex: 1 1 100%; width: auto; border-bottom: 0; }
 .phaseSelector { display: flex; align-items: center; gap: 8px; color: var(--fg-secondary); font-size: var(--font-xs); }
-.storyListRow > .phaseSelector { margin: 0 12px 8px; }
+.storyListRow > .phaseSelector { flex: 0 0 100%; box-sizing: border-box; margin: 0; padding: 0 12px 8px; }
+/* Status tone reuses the board column palette. Text stays --fg-primary (AA on every theme); the tone is border plus a light tint. */
+.phaseSelector select { border-color: var(--phase-tone, var(--border)); background: color-mix(in srgb, var(--phase-tone, transparent) 14%, var(--bg-tertiary)); }
+.phaseSelector[data-status="ready"] { --phase-tone: var(--accent); }
+.phaseSelector[data-status="in_progress"], .phaseSelector[data-status="review"] { --phase-tone: var(--warning); }
+.phaseSelector[data-status="qa"] { --phase-tone: var(--attention); }
+.phaseSelector[data-status="blocked"] { --phase-tone: var(--error); }
+.phaseSelector[data-status="done"] { --phase-tone: var(--success); }
+.phaseSelector[data-status="wont_fix"] select { border-style: dashed; color: var(--fg-muted); }
 .storyHeaderActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 8px; }
 .detailHeader:has(.storyHeaderActions) { flex-wrap: wrap; justify-content: flex-start; }
 .detailHeader:has(.storyHeaderActions) > div:first-child { flex-basis: 100%; }

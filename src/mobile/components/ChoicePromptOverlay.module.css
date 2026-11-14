@@ -12,6 +12,21 @@
   z-index: 50;
 }
 
+.context {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px 0;
+  color: var(--fg-secondary);
+  font-size: var(--font-xs);
+  overflow-wrap: anywhere;
+}
+
+.position {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
 .title {
   padding: 12px 16px 8px;
   color: var(--fg-primary);

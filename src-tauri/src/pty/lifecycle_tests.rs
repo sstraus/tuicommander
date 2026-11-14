@@ -812,6 +812,35 @@ fn test_hook_busy_cannot_be_overridden_before_turn_activity() {
     assert!(!silence.idle_confirmed());
 }
 
+/// Claude writes no Stop hook when Esc cancels its turn, so the protocol-ranked
+/// busy of the cancelled turn is never closed. An Esc TUIC itself wrote is the
+/// evidence that the turn ended: a stable Ready screen must then release it,
+/// or a steer waits for idle until its deadline and restores the prompt (#2913-8d0a).
+#[test]
+fn stable_ready_screen_closes_a_hook_busy_turn_after_our_interrupt() {
+    let mut silence = SilenceState::new();
+    silence.note_user_submission(true);
+    silence.note_explicit_state(SHELL_BUSY, true);
+    silence.note_real_activity();
+    silence.note_interrupt_requested();
+    silence.screen_ready_pending_since = Some(std::time::Instant::now() - AGENT_READY_CONFIRM);
+    assert!(silence.note_ready_screen());
+    assert!(!silence.explicit_busy());
+    assert!(silence.idle_confirmed());
+}
+
+/// Same cancellation before the turn produced any output: the submission-only
+/// guard (`user-submit` without activity) must not outlive our own Esc either.
+#[test]
+fn stable_ready_screen_closes_an_unconsumed_submission_after_our_interrupt() {
+    let mut silence = SilenceState::new();
+    silence.note_user_submission(true);
+    silence.note_interrupt_requested();
+    silence.screen_ready_pending_since = Some(std::time::Instant::now() - AGENT_READY_CONFIRM);
+    assert!(silence.note_ready_screen());
+    assert!(silence.idle_confirmed());
+}
+
 #[test]
 fn test_fresh_hook_busy_blocks_ready_after_prior_recovery() {
     let mut silence = SilenceState::new();
@@ -1851,9 +1880,16 @@ fn tombstone_transient_cleanup_removes_swarm_maps() {
 
     tombstone_transient_cleanup(sid, &state);
 
+    // Kept for the reader thread's exited event; removed by mark_session_exited
+    // or the tombstone reap (#2788-4bd6).
+    assert!(
+        state.session_maps.session_parent.contains_key(sid),
+        "session_parent must survive until the exited event is published"
+    );
+    remove_post_mortem_session_state(sid, &state);
     assert!(
         !state.session_maps.session_parent.contains_key(sid),
-        "session_parent must be removed"
+        "the tombstone reap must remove session_parent"
     );
     assert!(
         !state.session_maps.shell_state_since_ms.contains_key(sid),
@@ -3057,6 +3093,24 @@ fn a_tombstone_drops_live_process_state_and_keeps_the_post_mortem_maps() {
     assert!(state.session_maps.session_visibility.contains_key(sid));
 }
 
+// Catches: the transcript question tail of a closed session staying in
+// `ChatViews` for the life of the process (one entry per closed Claude/Codex session).
+#[test]
+fn a_closed_session_drops_its_transcript_question_tail() {
+    let state = crate::state::tests_support::make_test_app_state();
+    let sid = "question-tail-closed";
+    state.chat_views.seed_question_tail(sid);
+    state.chat_views.seed_question_tail("other-session");
+
+    tombstone_transient_cleanup(sid, &state);
+
+    assert!(!state.chat_views.has_question_tail(sid));
+    assert!(
+        state.chat_views.has_question_tail("other-session"),
+        "another session keeps its tail"
+    );
+}
+
 #[test]
 fn reaping_a_tombstone_leaves_no_session_state_behind() {
     // The normal exit path is tombstone → sweeper, and cleanup_session is never
@@ -3233,21 +3287,24 @@ fn session_exit_records_task_error_or_result_from_the_exit_code() {
         }
         mark_session_exited(sid, &state);
         let rec = state.tasks.get(&task).expect("task");
-        if code.is_some_and(|c| c != 0) {
+        assert_eq!(
+            rec.result,
+            Some(serde_json::json!({ "session_id": sid, "exit_code": code })),
+            "{sid}"
+        );
+        if code == Some(0) {
+            assert_eq!(rec.status, TaskStatus::Completed, "{sid}");
+            assert_eq!(rec.error, None);
+        } else {
             assert_eq!(rec.status, TaskStatus::Failed, "{sid}");
             assert_eq!(
                 rec.error.as_deref(),
-                Some("agent session exited with code 3")
+                Some(if code.is_some() {
+                    "agent session exited with code 3"
+                } else {
+                    "agent session exited without an available process status"
+                })
             );
-            assert_eq!(rec.result, None);
-        } else {
-            assert_eq!(rec.status, TaskStatus::Completed, "{sid}");
-            assert_eq!(
-                rec.result,
-                Some(serde_json::json!({ "session_id": sid, "exit_code": code })),
-                "{sid}"
-            );
-            assert_eq!(rec.error, None);
         }
     }
 }

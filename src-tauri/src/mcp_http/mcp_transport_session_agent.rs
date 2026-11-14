@@ -2,6 +2,7 @@ use crate::pty::{resolve_shell, spawn_reader_thread};
 use crate::{AppState, MAX_CONCURRENT_SESSIONS, PtySession};
 use parking_lot::Mutex;
 use portable_pty::{CommandBuilder, PtySize};
+#[cfg(test)]
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -281,6 +282,15 @@ fn session_wait_response(
             .get(session_id)
             .map(|entry| serde_json::Value::from(*entry.value())),
     );
+    insert_optional_value(
+        object,
+        "exit_reason",
+        state
+            .session_maps
+            .exit_reasons
+            .get(session_id)
+            .map(|entry| serde_json::Value::from(entry.value().clone())),
+    );
     response
 }
 
@@ -532,6 +542,7 @@ fn begin_session_submit(
             BeginSubmission::Response(response)
         }
         crate::pty::AgentSubmissionWrite::Failed(detail) => {
+            state.agent_reports.input_failed(state, &session_id);
             BeginSubmission::Response(serde_json::json!({
                 "status": "write_failed",
                 "submission_id": submission_id,
@@ -546,6 +557,7 @@ fn begin_session_submit(
             }))
         }
         crate::pty::AgentSubmissionWrite::Uncertain(detail) => {
+            state.agent_reports.input_failed(state, &session_id);
             BeginSubmission::Response(serde_json::json!({
                 "status": "write_uncertain",
                 "submission_id": submission_id,
@@ -614,6 +626,17 @@ pub(super) async fn handle_session_submit(
     };
     // The coordinator answers a BLOCKED child through the terminal.
     state.blocked_children.remove(&started.session_id);
+    state.reported_children.remove(&started.session_id);
+    if state
+        .session_maps
+        .session_parent
+        .contains_key(&started.session_id)
+    {
+        state.child_obligations.insert(
+            started.session_id.clone(),
+            crate::agent_health::Obligation::open(&started.submission_id),
+        );
+    }
     apply_pty_description(state, &started.session_id, pty_description);
 
     let deadline =
@@ -697,6 +720,23 @@ pub(super) async fn handle_session_submit(
         ))
         .await;
     }
+}
+
+/// A read is literal only when the caller asks for it AND the owner granted it
+/// for this session through the desktop control (#2643-6b38). The argument
+/// alone never disables pattern redaction.
+fn literal_read(state: &AppState, session_id: &str, args: &serde_json::Value) -> bool {
+    args["literal"] == true && state.secrets.literal_reads_granted(session_id)
+}
+
+/// Literal text keeps only the registered and session-scoped secret masking.
+fn mask_literal(state: &AppState, session_id: &str, text: &str) -> String {
+    String::from_utf8_lossy(
+        &state
+            .secrets
+            .mask_session_preserving_offsets(session_id, text.as_bytes()),
+    )
+    .into_owned()
 }
 
 /// Secrets the terminal knows whole, so that a read showing only a fragment of
@@ -822,7 +862,13 @@ pub(super) fn handle_session(
             Err(error) => return error,
         };
         if let Some(budget) = budget {
-            let operation = format!("output:{}:{}", args["connection_id"], args["session_id"]);
+            // A literal snapshot must not be continued once the owner revokes it.
+            let literal = require_session_id(state, args, "output")
+                .is_ok_and(|id| literal_read(state, &id, args));
+            let operation = format!(
+                "output:{}:{}:{literal}",
+                args["connection_id"], args["session_id"]
+            );
             return state
                 .mcp
                 .response_pages
@@ -1069,6 +1115,15 @@ fn handle_session_unpaged(
                     {
                         session["last_activity_ms"] = serde_json::json!(snapshot.last_activity_ms);
                     }
+                    state
+                        .agent_reports
+                        .view(
+                            state,
+                            &id,
+                            tuic_by_pty.get(&id).map(String::as_str),
+                            session_state.as_ref(),
+                        )
+                        .extend(&mut session);
                     Some(session)
                 })
                 .collect();
@@ -1267,6 +1322,7 @@ fn handle_session_unpaged(
             };
             let session_id = resolved.as_str();
             let limit = (args["limit"].as_u64().unwrap_or(50) as usize).max(1);
+            let literal = literal_read(state, session_id, args);
 
             // Resolve the session's lifecycle state.
             //
@@ -1334,12 +1390,18 @@ fn handle_session_unpaged(
                     // Redaction applies to all three reads below — delta, absolute
                     // and raw ring. `format=raw` keeps ANSI; it is not an opt-out
                     // of redaction, and `data_length` reports what was returned.
-                    let known = terminal_secrets(&mut buf);
-                    let data = crate::redaction::redact_wrapped_rows(
-                        log_lines.iter().map(|ll| (ll.text(), ll.wrapped)),
-                        &known,
-                    );
-                    let mut response = serde_json::json!({"data": data, "data_length": data.len(), "cursor": new_cursor, "scrollback_lines": scrollback_lines, "oldest_offset": oldest, "exited": exited});
+                    let rows = log_lines.iter().map(|ll| (ll.text(), ll.wrapped));
+                    let data = if literal {
+                        mask_literal(
+                            state,
+                            session_id,
+                            &crate::redaction::join_wrapped_rows(rows),
+                        )
+                    } else {
+                        let known = terminal_secrets(&mut buf);
+                        crate::redaction::redact_wrapped_rows(rows, &known)
+                    };
+                    let mut response = serde_json::json!({"data": data, "data_length": data.len(), "cursor": new_cursor, "scrollback_lines": scrollback_lines, "oldest_offset": oldest, "exited": exited, "literal": literal});
                     add_output_page_metadata(
                         &mut response,
                         args,
@@ -1383,9 +1445,17 @@ fn handle_session_unpaged(
                     }
                     all_lines.extend(screen.into_iter().filter(|(row, _)| !row.is_empty()));
                 }
-                let known = terminal_secrets(&mut buf);
-                let data = crate::redaction::redact_wrapped_rows(all_lines, &known);
-                let mut response = serde_json::json!({"data": data, "data_length": data.len(), "cursor": total, "total_written": total, "scrollback_lines": scrollback_lines, "oldest_offset": oldest, "exited": exited});
+                let data = if literal {
+                    mask_literal(
+                        state,
+                        session_id,
+                        &crate::redaction::join_wrapped_rows(all_lines),
+                    )
+                } else {
+                    let known = terminal_secrets(&mut buf);
+                    crate::redaction::redact_wrapped_rows(all_lines, &known)
+                };
+                let mut response = serde_json::json!({"data": data, "data_length": data.len(), "cursor": total, "total_written": total, "scrollback_lines": scrollback_lines, "oldest_offset": oldest, "exited": exited, "literal": literal});
                 add_output_page_metadata(
                     &mut response,
                     args,
@@ -1441,15 +1511,24 @@ fn handle_session_unpaged(
             while end < all_bytes.len() && all_bytes[end] & 0xc0 == 0x80 {
                 end += 1;
             }
-            let data = redact_raw_output(
-                state,
-                session_id,
-                &all_bytes,
-                start..end,
-                ring_secrets,
-                requested.is_some(),
-            );
-            let mut response = serde_json::json!({"data": data, "data_length": data.len(), "cursor": oldest + end as u64, "total_written": total_written, "exited": exited});
+            let data = if literal {
+                // Mask registered values over the whole ring before slicing, so a
+                // page boundary cannot split one into an unmasked fragment.
+                let masked = state
+                    .secrets
+                    .mask_session_preserving_offsets(session_id, &all_bytes);
+                String::from_utf8_lossy(&masked[start..end]).into_owned()
+            } else {
+                redact_raw_output(
+                    state,
+                    session_id,
+                    &all_bytes,
+                    start..end,
+                    ring_secrets,
+                    requested.is_some(),
+                )
+            };
+            let mut response = serde_json::json!({"data": data, "data_length": data.len(), "cursor": oldest + end as u64, "total_written": total_written, "exited": exited, "literal": literal});
             add_output_page_metadata(
                 &mut response,
                 args,
@@ -1686,6 +1765,14 @@ fn handle_session_unpaged(
                     let standby = state.session_maps.standby_sessions.contains_key(session_id);
                     #[cfg(not(unix))]
                     let standby = false;
+                    let peer = state.peer_agents.iter().find_map(|p| {
+                        (state.live_pty_for_peer(p.key()).as_deref() == Some(session_id))
+                            .then(|| p.key().clone())
+                    });
+                    let report_view =
+                        state
+                            .agent_reports
+                            .view(state, session_id, peer.as_deref(), Some(&ss));
                     let mut response = serde_json::json!({
                         "session_id": session_id,
                         "background_work": ss.background_work,
@@ -1729,6 +1816,7 @@ fn handle_session_unpaged(
                         "busy_duration_ms",
                         (is_busy && elapsed > 0).then(|| serde_json::json!(elapsed)),
                     );
+                    report_view.extend(&mut response);
                     response
                 }
                 None => serde_json::json!({"error": format!("Session '{}' not found", session_id)}),
@@ -1778,17 +1866,22 @@ pub(crate) fn close_idle_managed_session(state: &Arc<AppState>, session_id: &str
 
 /// Build the full prompt for a spawned agent.
 /// Prepends multi-agent context when the caller is a registered peer so the child
-/// knows its identity and how to communicate back. Returns the original prompt
-/// unchanged when called outside a multi-agent context (`parent_tuic` is `None`).
+/// knows its identity and how to communicate back, then the parent repository's
+/// child contract when it has one. Returns the original prompt unchanged when
+/// called outside a multi-agent context (`parent_tuic` is `None`).
 pub(super) fn build_spawn_prompt(
     prompt: &str,
     parent_tuic: Option<&str>,
     session_id: &str,
     peer_name: &str,
+    contract: Option<&str>,
 ) -> String {
     let Some(parent) = parent_tuic else {
         return prompt.to_string();
     };
+    let contract = contract
+        .map(|text| format!("## Child Contract\n\n{}\n\n", text.trim_end()))
+        .unwrap_or_default();
     format!(
         "## TUICommander Multi-Agent Context\n\
          You are operating as a managed peer. There is no separate swarm action; use the agent and session primitives.\n\
@@ -1800,10 +1893,72 @@ pub(super) fn build_spawn_prompt(
          `agent action=register tuic_session=\"{session_id}\" name=\"{peer_name}\"`\n\n\
          You can communicate with your parent at any time, and must report task\n\
          completion or a real blocker with:\n\
-         `agent action=send to=\"{parent}\" message=\"<done summary>\"`\n\n\
+         `agent action=send to=\"{parent}\" message=\"<done summary>\"`\n\
+         Always use the TUICommander `agent` tool for this. The client's built-in SendMessage and\n\
+         ListAgents reach only that client's own subagents; they answer \"No agent named ... is reachable\"\n\
+         and the report is lost. Check that the reply has `delivered` true or a `message_id`.\n\n\
+         A script you start can call you back with its data when it ends: its last step\n\
+         `{callback}`\n\
+         puts that data in your inbox as mail (the recipient may be any peer id, name or terminal alias).\n\n\
+         {contract}\
          ## Your Task\n\n\
-         {prompt}"
+         {prompt}",
+        callback = script_callback_command(session_id, cfg!(unix)),
     )
+}
+
+/// Repository file that holds the contract a parent gives every managed child.
+pub(super) const CHILD_CONTRACT_FILE: &str = ".tuic-child-contract.md";
+
+/// The parent's child contract with its `{{token}}` values filled, or `None` when
+/// the parent's working directory has no contract file. The host that launches
+/// the child does not matter: an ego, Codex or Claude parent in the same
+/// repository gives the same contract, however short its own brief is.
+fn child_contract(
+    state: &AppState,
+    parent: &str,
+    managed_parent_cwd: Option<&str>,
+    values: &[(&str, Option<&str>)],
+) -> Result<Option<String>, String> {
+    let parent_cwd = state
+        .session_maps
+        .sessions
+        .get(parent)
+        .and_then(|session| session.lock().cwd.clone())
+        .or_else(|| managed_parent_cwd.map(str::to_string))
+        .or_else(|| {
+            state
+                .acp
+                .peer_root(parent)
+                .map(|root| root.to_string_lossy().into_owned())
+        });
+    let Some(parent_cwd) = parent_cwd else {
+        return Ok(None);
+    };
+    let Some(template) = crate::repo_template::read(&parent_cwd, CHILD_CONTRACT_FILE)? else {
+        return Ok(None);
+    };
+    Ok(Some(crate::repo_template::substitute(&template, |token| {
+        values
+            .iter()
+            .find(|(name, _)| *name == token)
+            .map(|(_, value)| value.unwrap_or_default().to_string())
+    })))
+}
+
+/// The command a script runs to mail its result to `recipient`. Unix reaches the
+/// inbound webhook over `$TUIC_SOCKET`; `--fail-with-body` makes a refused
+/// request (unknown recipient, oversized body) exit non-zero. Windows has no
+/// such socket and its TCP listener runs only with remote access, so it uses the
+/// `tuic` CLI over the named pipe, the same send path.
+pub(super) fn script_callback_command(recipient: &str, unix: bool) -> String {
+    if unix {
+        format!(
+            "curl -sS --fail-with-body --unix-socket \"$TUIC_SOCKET\" --data-binary @<result file> http://localhost/agent/webhook/{recipient}"
+        )
+    } else {
+        format!("tuic agent send {recipient} \"<result text>\"")
+    }
 }
 
 pub(super) fn resolve_effective_spawn_cwd(
@@ -1911,23 +2066,30 @@ pub(super) fn handle_agent(
     args: &serde_json::Value,
     mcp_session_id: Option<&str>,
 ) -> serde_json::Value {
-    handle_agent_with_parent_cwd(state, addr, args, mcp_session_id, None)
+    handle_agent_with_parent_cwd(state, addr.into(), args, mcp_session_id, None)
 }
 
 pub(super) fn handle_agent_with_parent_cwd(
     state: &Arc<AppState>,
-    addr: SocketAddr,
+    caller: super::guards::CallerAuthority,
     args: &serde_json::Value,
     mcp_session_id: Option<&str>,
     managed_parent_cwd: Option<&str>,
 ) -> serde_json::Value {
-    spawn_with_identity(state, addr, args, mcp_session_id, managed_parent_cwd, None)
+    spawn_with_identity(
+        state,
+        caller,
+        args,
+        mcp_session_id,
+        managed_parent_cwd,
+        None,
+    )
 }
 
 /// Only the launch journal may reserve a PTY identity before side effects.
 pub(super) fn spawn_with_identity(
     state: &Arc<AppState>,
-    addr: SocketAddr,
+    caller: super::guards::CallerAuthority,
     args: &serde_json::Value,
     mcp_session_id: Option<&str>,
     managed_parent_cwd: Option<&str>,
@@ -1939,9 +2101,9 @@ pub(super) fn spawn_with_identity(
     };
     match action {
         "spawn" => {
-            // Agent spawning is restricted to localhost — matches the HTTP route guard in agent_routes.rs
-            if !addr.ip().is_loopback() {
-                return serde_json::json!({"error": "Agent spawning is restricted to localhost connections"});
+            // Owner authority, like the HTTP route guard in agent_routes.rs.
+            if !caller.is_owner() {
+                return serde_json::json!({"error": "Agent spawning is restricted to localhost or authenticated connections"});
             }
             let keep_open = match args.get("keep_open") {
                 None => false,
@@ -2050,9 +2212,20 @@ pub(super) fn spawn_with_identity(
                         .and_then(|sid| state.mcp.to_session.get(sid).map(|e| e.value().clone()))
                 });
 
-            // Effective prompt: context prepended for managed-peer spawns, unchanged otherwise.
-            let effective_prompt =
-                build_spawn_prompt(&prompt, caller_tuic.as_deref(), &session_id, &peer_name);
+            // Resolved before any side effect: it decides whether this spawn makes a
+            // child, and so which capability set the child gets.
+            let spawn_parent = caller_tuic
+                .clone()
+                .or_else(|| mcp_session_id.map(pending_parent_id));
+            let capabilities = match super::capability_gate::spawn_set(
+                state,
+                args,
+                spawn_parent.is_some(),
+                caller_tuic.as_deref(),
+            ) {
+                Ok(capabilities) => capabilities,
+                Err(refusal) => return refusal,
+            };
 
             // Effective cwd: an explicit `cwd` arg wins; otherwise inherit the SPAWNING
             // agent's working dir (its PTY session's cwd). Without this the child runs in
@@ -2067,6 +2240,35 @@ pub(super) fn spawn_with_identity(
                 managed_parent_cwd,
                 caller_tuic.as_deref(),
                 mcp_session_id,
+            );
+
+            // Effective prompt: context and the parent repository's child contract
+            // prepended for managed-peer spawns, unchanged otherwise.
+            let contract = match caller_tuic.as_deref().map(|parent| {
+                child_contract(
+                    state,
+                    parent,
+                    managed_parent_cwd,
+                    &[
+                        ("name", Some(peer_name.as_str())),
+                        ("session_id", Some(session_id.as_str())),
+                        ("parent", Some(parent)),
+                        ("cwd", effective_cwd.as_deref()),
+                        ("agent_type", effective_agent_type.as_deref()),
+                        ("model", effective_model),
+                    ],
+                )
+            }) {
+                Some(Err(error)) => return serde_json::json!({"error": error}),
+                Some(Ok(contract)) => contract,
+                None => None,
+            };
+            let effective_prompt = build_spawn_prompt(
+                &prompt,
+                caller_tuic.as_deref(),
+                &session_id,
+                &peer_name,
+                contract.as_deref(),
             );
 
             let attachment_dir = match crate::attachments::prepare_session_directory(
@@ -2092,7 +2294,10 @@ pub(super) fn spawn_with_identity(
                 }
             }
             for (k, v) in &caller_env {
-                if k == "TUIC_SESSION" || k == "TUIC_PARENT" {
+                if k == "TUIC_SESSION"
+                    || k == "TUIC_PARENT"
+                    || k == crate::agent_capabilities::ENV_VAR
+                {
                     continue;
                 }
                 cmd.env(k, v);
@@ -2116,6 +2321,21 @@ pub(super) fn spawn_with_identity(
                 cmd.env_remove("TUIC_PARENT");
             }
             crate::pty::bind_pty_identity(state, &mut cmd, &session_id, None);
+            // The pre-push hook reads the fixed set here; land/push/tag have no
+            // MCP surface for TUIC to refuse.
+            match &capabilities {
+                Some(set) => {
+                    cmd.env(crate::agent_capabilities::ENV_VAR, set.env_value());
+                    // A repository without the hook is covered by the git shim;
+                    // a spawn that cannot install it must not run uncovered.
+                    if let Err(error) =
+                        crate::agent_capabilities::apply_git_shim(&mut cmd, &state.data_dir)
+                    {
+                        return serde_json::json!({"error": format!("Cannot enforce push capabilities: {error}")});
+                    }
+                }
+                None => cmd.env_remove(crate::agent_capabilities::ENV_VAR),
+            }
             crate::pty::apply_agent_screen_env(&mut cmd, &screen_env);
 
             // Initial prompt withheld from argv for prefill-only TUIs (codex):
@@ -2311,6 +2531,33 @@ pub(super) fn spawn_with_identity(
                     ),
                 );
             }
+            if effective_agent_type.as_deref() == Some("ego") {
+                let inherited: Vec<&str> = crate::agent_mcp::BRIDGE_ENV_VARS
+                    .into_iter()
+                    .filter(|name| cmd.get_env(name).is_some())
+                    .collect();
+                let server_file = match crate::agent_mcp::write_ego_bridge_server(
+                    &attachment_dir,
+                    &inherited,
+                ) {
+                    Ok(file) => file,
+                    Err(error) => {
+                        return serde_json::json!({"error": format!("Cannot write the ego MCP server file: {error}")});
+                    }
+                };
+                if server_file.is_none() {
+                    tracing::warn!(
+                        session_id = %session_id,
+                        "no tuic-bridge binary: the ego child gets no TUICommander MCP server"
+                    );
+                }
+                launch_args = crate::agent_hook_launch::managed_ego_args(
+                    &binary_path,
+                    launch_args,
+                    skip_trust_dialog,
+                    server_file.as_deref(),
+                );
+            }
             let launch_receipt = crate::prompt_receipt::PromptReceipt::capture(
                 &effective_prompt,
                 "TUIC managed spawn / build_spawn_prompt",
@@ -2336,6 +2583,22 @@ pub(super) fn spawn_with_identity(
                     Err(error) => return serde_json::json!({"error": error}),
                 },
             };
+            if capabilities.is_none()
+                && let Err(error) =
+                    crate::agent_capabilities::save_root(&state.data_dir, &session_id)
+            {
+                return serde_json::json!({"error": format!("Cannot persist root capabilities: {error}"), "effect":"not_started"});
+            }
+            if let Some(set) = &capabilities {
+                if let Err(error) =
+                    crate::agent_capabilities::save(&state.data_dir, &session_id, set)
+                {
+                    return serde_json::json!({"error": format!("Cannot persist capabilities: {error}"), "effect":"not_started"});
+                }
+                state
+                    .agent_capabilities
+                    .insert(session_id.clone(), set.clone());
+            }
             // The argv assembly above can bail out with an error response, so it
             // cannot live inside the retry closure; the built command is cloned
             // per attempt instead (`spawn_command` consumes it).
@@ -2415,11 +2678,8 @@ pub(super) fn spawn_with_identity(
                         initial_prompt,
                     ));
             }
-            // Resolved before the session-created broadcast so the event names the
-            // parent; the parent map entry below uses the same value.
-            let spawn_parent = caller_tuic
-                .clone()
-                .or_else(|| mcp_session_id.map(pending_parent_id));
+            // `spawn_parent`, resolved above, also names the parent in the
+            // session-created broadcast and the parent map entry below.
             // What the UI is told. A placeholder matches no tab, and nothing
             // corrects the tab once `register` resolves it; the session row does,
             // on the next reload.
@@ -2479,10 +2739,15 @@ pub(super) fn spawn_with_identity(
                 }
             }
             state.set_pty_description(&session_id, pty_description);
-            if skip_trust_dialog && effective_agent_type.as_deref() == Some("claude") {
-                state.managed_trust_dialogs.insert(session_id.clone());
-            }
-            spawn_reader_thread(reader, paused, session_id.clone(), state.clone(), None);
+            // Workflow launches reach this spawn too: one first-run policy.
+            state.managed_first_run.insert(
+                session_id.clone(),
+                crate::state::ManagedFirstRun {
+                    answer_trust: skip_trust_dialog
+                        && effective_agent_type.as_deref() == Some("claude"),
+                    ..Default::default()
+                },
+            );
 
             // Every managed child is a peer immediately, independent of whether
             // its initial prompt runs or its own MCP bridge has connected yet.
@@ -2497,6 +2762,11 @@ pub(super) fn spawn_with_identity(
                 },
             );
             state.agent_inbox.entry(session_id.clone()).or_default();
+            if let Some(capabilities) = capabilities {
+                state
+                    .agent_capabilities
+                    .insert(session_id.clone(), capabilities);
+            }
 
             // Bidirectional communication additionally needs an identified
             // parent. The child receives TUIC_PARENT + the spawn preamble; the
@@ -2546,6 +2816,9 @@ pub(super) fn spawn_with_identity(
                 Some(&session_id),
             );
 
+            // Register the task and parent before EOF can settle a fast child.
+            spawn_reader_thread(reader, paused, session_id.clone(), state.clone(), None);
+
             spawn_response(
                 &session_id,
                 &task_id,
@@ -2566,7 +2839,7 @@ pub(super) fn spawn_with_identity(
 /// 300s ceiling on `agent wait`, so it must never wait on anything itself.
 pub(super) fn handle_task(
     state: &Arc<AppState>,
-    addr: SocketAddr,
+    caller: super::guards::CallerAuthority,
     args: &serde_json::Value,
     mcp_session_id: Option<&str>,
 ) -> serde_json::Value {
@@ -2600,11 +2873,10 @@ pub(super) fn handle_task(
     };
 
     if action == "cancel" {
-        // Same loopback restriction as `agent spawn`: cancelling mutates another
-        // agent's orchestration state, so a remote MCP client must not reach it.
-        if !addr.ip().is_loopback() {
+        // Same owner authority as `agent spawn`; ownership was checked above.
+        if !caller.is_owner() {
             return serde_json::json!({
-                "error": "Task cancellation is restricted to localhost connections"
+                "error": "Task cancellation is restricted to localhost or authenticated connections"
             });
         }
         return match state.tasks.cancel(&rec.task_id) {
@@ -2658,12 +2930,12 @@ pub(super) fn handle_agent_unified(
     args: &serde_json::Value,
     mcp_session_id: Option<&str>,
 ) -> serde_json::Value {
-    handle_agent_unified_with_parent_cwd(state, addr, args, mcp_session_id, None)
+    handle_agent_unified_with_parent_cwd(state, addr.into(), args, mcp_session_id, None)
 }
 
 pub(super) fn handle_agent_unified_with_parent_cwd(
     state: &Arc<AppState>,
-    addr: SocketAddr,
+    caller: super::guards::CallerAuthority,
     args: &serde_json::Value,
     mcp_session_id: Option<&str>,
     managed_parent_cwd: Option<&str>,
@@ -2680,21 +2952,18 @@ pub(super) fn handle_agent_unified_with_parent_cwd(
             } else {
                 "cancel"
             });
-            handle_task(state, addr, &task_args, mcp_session_id)
+            handle_task(state, caller, &task_args, mcp_session_id)
         }
         "spawn" => {
-            handle_agent_with_parent_cwd(state, addr, args, mcp_session_id, managed_parent_cwd)
+            handle_agent_with_parent_cwd(state, caller, args, mcp_session_id, managed_parent_cwd)
         }
         "register" | "list_peers" | "send" | "inbox" => {
-            // Inter-agent messaging is same-machine coordination only, so it carries
-            // the same loopback restriction as `spawn`. Without this, a non-loopback
-            // MCP client — whether Basic-Auth'd remotely or admitted via lan_auth_bypass —
-            // could register a peer identity, enumerate peers, or inject a message that
-            // lands verbatim in another agent's context. Loopback (incl. the local
-            // Unix socket, injected as 127.0.0.1 upstream) is the trust boundary here.
-            if !addr.ip().is_loopback() {
+            // Inter-agent messaging needs owner authority: a loopback caller or
+            // one with verified credentials (Boss decision L03, 2026-11-01). Peer
+            // identity still comes from the caller's own MCP binding.
+            if !caller.is_owner() {
                 return serde_json::json!({
-                    "error": "Inter-agent messaging is restricted to localhost connections"
+                    "error": "Inter-agent messaging is restricted to localhost or authenticated connections"
                 });
             }
             handle_messaging(state, args, mcp_session_id)

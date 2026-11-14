@@ -7,6 +7,8 @@ use std::process::Stdio;
 pub(crate) enum TargetKind {
     Url,
     Path,
+    /// A network path or custom-scheme link the owner clicked and confirmed.
+    Handler,
 }
 
 fn open_path(path: &str) -> Result<(), String> {
@@ -26,6 +28,40 @@ fn open_url(url: &str) -> Result<(), String> {
     }
     url::Url::parse(url).map_err(|error| error.to_string())?;
     launch(url)
+}
+
+/// Schemes that name WebView or local content, never an OS handler document;
+/// `file:` has its own path route. The frontend `isHandlerLink` refuses the same set.
+const NON_HANDLER_SCHEMES: [&str; 6] = ["javascript", "vbscript", "data", "blob", "about", "file"];
+
+/// What the system launcher receives for an owner-confirmed handler link: a UNC
+/// path (as `smb://` outside Windows, where the launcher has no UNC form) or a
+/// URL with a custom scheme. Drive paths (one-letter schemes) are refused.
+fn handler_target(target: &str) -> Result<String, String> {
+    if target.chars().any(char::is_control) {
+        return Err("Link contains control characters".into());
+    }
+    let bytes = target.as_bytes();
+    if bytes.len() > 2 && matches!(bytes[0], b'/' | b'\\') && matches!(bytes[1], b'/' | b'\\') {
+        let rest = &target[2..];
+        let host = rest.split(['/', '\\']).next().unwrap_or_default();
+        if host.is_empty() || host == "." || host == "?" {
+            return Err("Not a network location".into());
+        }
+        if cfg!(windows) {
+            return Ok(format!(r"\\{}", rest.replace('/', r"\")));
+        }
+        // The parsed form percent-encodes whitespace before the launcher sees it.
+        return url::Url::parse(&format!("smb://{}", rest.replace('\\', "/")))
+            .map(String::from)
+            .map_err(|error| error.to_string());
+    }
+    let url = url::Url::parse(target).map_err(|error| error.to_string())?;
+    if url.scheme().len() < 2 || NON_HANDLER_SCHEMES.contains(&url.scheme()) {
+        return Err("Link is not allowed for the system handler".into());
+    }
+    // The parsed form: whitespace is percent-encoded before any launcher sees it.
+    Ok(url.into())
 }
 
 fn launch(target: &str) -> Result<(), String> {
@@ -68,6 +104,70 @@ pub(crate) async fn open_default_app(target: String, kind: TargetKind) -> Result
     match kind {
         TargetKind::Url => open_url(&target),
         TargetKind::Path => open_path(&target),
+        TargetKind::Handler => launch(&handler_target(&target)?),
+    }
+}
+
+#[cfg(test)]
+mod handler_tests {
+    use super::*;
+
+    // Catches: the confirmed route refusing a network or editor link, or
+    // handing a WebView-internal scheme or drive path to the OS launcher.
+    #[test]
+    fn handler_target_accepts_network_and_custom_links_only() {
+        assert_eq!(
+            handler_target("editor://open?file=/a.rs").unwrap(),
+            "editor://open?file=/a.rs"
+        );
+        assert_eq!(
+            handler_target("smb://nas/share/doc.pdf").unwrap(),
+            "smb://nas/share/doc.pdf"
+        );
+        let unc = handler_target(r"\\nas\share\doc.md").unwrap();
+        let slashed = handler_target("//nas/share/doc.md").unwrap();
+        if cfg!(windows) {
+            assert_eq!(unc, r"\\nas\share\doc.md");
+            assert_eq!(slashed, r"\\nas\share\doc.md");
+        } else {
+            assert_eq!(unc, "smb://nas/share/doc.md");
+            assert_eq!(slashed, "smb://nas/share/doc.md");
+        }
+        for refused in [
+            "javascript:alert(1)",
+            "data:text/html,x",
+            "file:///etc/passwd",
+            "about:blank",
+            r"C:\x",
+            "not a link",
+            "",
+            r"\\",
+            r"\\.\pipe\x",
+            r"\\?\GLOBALROOT\x",
+            "editor://x\n--flag",
+        ] {
+            assert!(handler_target(refused).is_err(), "{refused}");
+        }
+    }
+
+    // Catches: a UNC path with a space (a decoded Markdown link to a NAS file such
+    // as `a%20b.md`) reaching the launcher as an invalid smb:// URL, so the
+    // document silently does not open while the custom-scheme route encodes it.
+    #[cfg(not(windows))]
+    #[test]
+    fn handler_target_percent_encodes_whitespace_in_unc_paths() {
+        assert_eq!(
+            handler_target(r"\\nas\share\a b.md").unwrap(),
+            "smb://nas/share/a%20b.md"
+        );
+    }
+
+    // Catches: the unconfirmed URL route widening along with the handler route.
+    #[test]
+    fn url_route_still_refuses_handler_links() {
+        for link in ["editor://x", "smb://nas/share", r"\\nas\share"] {
+            assert!(open_url(link).is_err(), "{link}");
+        }
     }
 }
 
