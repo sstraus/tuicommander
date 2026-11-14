@@ -298,17 +298,21 @@ describe("initApp", () => {
 		const agentStop = vi.fn();
 		const agents = await import("../../stores/agentConfigs");
 		const agentStart = vi.spyOn(agents, "startAgentSettingsSync").mockReturnValue(agentStop);
+		const remoteStop = vi.fn();
+		const remoteRepos = await import("../../services/remoteRepositorySync");
+		const remoteStart = vi.spyOn(remoteRepos, "startRemoteRepositorySync").mockReturnValue(remoteStop);
 		const deps = createMockDeps();
 		const voiceStop = vi.fn();
 		vi.mocked(deps.stores.startDictationSettingsSync).mockReturnValue(voiceStop);
 		await initApp(deps);
-		for (const start of [...starts, agentStart]) expect(start).toHaveBeenCalledTimes(1);
-		for (const stop of [...stops, agentStop, voiceStop]) expect(stop).not.toHaveBeenCalled();
+		for (const start of [...starts, agentStart, remoteStart]) expect(start).toHaveBeenCalledTimes(1);
+		expect(remoteStart).toHaveBeenCalledWith(deps.refreshAllBranchStats);
+		for (const stop of [...stops, agentStop, voiceStop, remoteStop]) expect(stop).not.toHaveBeenCalled();
 		await initApp(deps);
-		for (const start of [...starts, agentStart]) expect(start).toHaveBeenCalledTimes(2);
-		for (const stop of [...stops, agentStop, voiceStop]) expect(stop).toHaveBeenCalledTimes(1);
+		for (const start of [...starts, agentStart, remoteStart]) expect(start).toHaveBeenCalledTimes(2);
+		for (const stop of [...stops, agentStop, voiceStop, remoteStop]) expect(stop).toHaveBeenCalledTimes(1);
 		window.dispatchEvent(new Event("beforeunload"));
-		for (const stop of [...stops, agentStop, voiceStop]) expect(stop).toHaveBeenCalledTimes(2);
+		for (const stop of [...stops, agentStop, voiceStop, remoteStop]) expect(stop).toHaveBeenCalledTimes(2);
 		activityStore.flushSave();
 		await vi.advanceTimersByTimeAsync(0);
 		const expectedFixtureErrors = [
@@ -2384,6 +2388,21 @@ describe("initApp", () => {
 		// After debounce period (500ms), should fire
 		await vi.advanceTimersByTimeAsync(500);
 		expect(deps.refreshAllBranchStats).toHaveBeenCalledTimes(2);
+	});
+
+	it("raw mirrored repository events do not run the local refresh handler", async () => {
+		let changed: ((event: { payload: unknown }) => void) | undefined;
+		vi.mocked(listen).mockImplementation(((event: string, handler: (event: { payload: unknown }) => void) => {
+			if (event === "repo-changed") changed = handler;
+			return Promise.resolve(vi.fn());
+		}) as unknown as typeof listen);
+		const deps = createMockDeps();
+		await initApp(deps);
+		vi.mocked(deps.refreshAllBranchStats).mockClear();
+		expect(changed).toBeDefined();
+		changed?.({ payload: { repo_path: "/repo", kind: "git-state", __tuic_origin: { connection: "remote" } } });
+		await vi.advanceTimersByTimeAsync(500);
+		expect(deps.refreshAllBranchStats).not.toHaveBeenCalled();
 	});
 
 	it("repo-changed scopes the refresh to the repo that changed (no full fan-out)", async () => {

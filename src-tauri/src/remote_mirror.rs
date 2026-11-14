@@ -162,8 +162,11 @@ pub(crate) const ORIGIN_MARKER: &str = "__tuic_origin";
 /// Everything else still reaches the local bus, where
 /// `state.rs` ignores `RemoteMirrored`, and `/events`, where a client that
 /// asked for the mirror wants it.
+/// Repository changes additionally produce `remote-repo-changed`, whose consumer
+/// verifies the owning connection before refreshing through that connection.
 #[cfg_attr(all(not(feature = "desktop"), not(test)), allow(dead_code))]
-const WINDOW_MIRRORABLE_EVENTS: [&str; 16] = [
+const WINDOW_MIRRORABLE_EVENTS: [&str; 17] = [
+    "remote-repo-changed",
     "session-state-changed",
     "settings-changed",
     "session-closed",
@@ -186,6 +189,24 @@ const WINDOW_MIRRORABLE_EVENTS: [&str; 16] = [
 #[cfg_attr(all(not(feature = "desktop"), not(test)), allow(dead_code))]
 fn window_may_hear(event: &str) -> bool {
     WINDOW_MIRRORABLE_EVENTS.contains(&event)
+}
+
+/// Repository lifecycle frames are hints to reread the owning daemon. Their
+/// original names must not invoke the desktop's local worktree mutations.
+fn repository_change(event: &str, payload: &serde_json::Value) -> Option<serde_json::Value> {
+    let kind = match event {
+        "repo-changed" => payload.get("kind")?.as_str()?,
+        "worktree-created" | "worktree-removed" => "git-state",
+        _ => return None,
+    };
+    if !matches!(kind, "git-state" | "working-tree") {
+        return None;
+    }
+    let path = payload.get("repo_path")?.as_str()?;
+    if path.is_empty() {
+        return None;
+    }
+    Some(serde_json::json!({"repo_path": path, "kind": kind}))
 }
 
 /// One decoded SSE frame.
@@ -306,6 +327,9 @@ fn apply_frame(state: &Arc<AppState>, connection_id: &str, frame: &Frame) -> boo
     if matches!(
         frame.event.as_str(),
         "settings-changed"
+            | "repo-changed"
+            | "worktree-created"
+            | "worktree-removed"
             | "mcp-toast"
             | "mcp-confirm"
             | "mcp-confirm-resolved"
@@ -335,7 +359,11 @@ fn apply_frame(state: &Arc<AppState>, connection_id: &str, frame: &Frame) -> boo
         "session-created" | "session-closed" | "pty-exit" => true,
         _ => false,
     };
+    let repository_change = repository_change(&frame.event, &payload);
     republish(state, connection_id, &frame.event, payload);
+    if let Some(change) = repository_change {
+        republish(state, connection_id, "remote-repo-changed", change);
+    }
     reseed
 }
 
@@ -864,6 +892,7 @@ mod tests {
     #[test]
     fn only_safe_mirrored_events_reach_the_desktop_window() {
         for event in [
+            "remote-repo-changed",
             "session-state-changed",
             "session-closed",
             "progress-recorded",
@@ -893,6 +922,85 @@ mod tests {
                 "{event} mutates local state and must not arrive from a remote daemon"
             );
         }
+    }
+
+    #[test]
+    fn repository_frames_publish_owner_stamped_refresh_hints() {
+        let state = Arc::new(make_test_app_state());
+        state
+            .remote
+            .force_connected_for_test("host", "http://daemon:9876", None);
+        let mut rx = state.event_bus.subscribe();
+        for event in ["repo-changed", "worktree-created", "worktree-removed"] {
+            let frame = Frame {
+                event: event.into(),
+                data: r#"{"repo_path":"/remote/repo","kind":"git-state","workspace_id":"feature"}"#
+                    .into(),
+            };
+            apply_frame(&state, "host", &frame);
+            // Raw events remain available to SSE consumers. Only the new,
+            // owner-aware refresh notification may reach the desktop window.
+            let AppEvent::RemoteMirrored {
+                event: original, ..
+            } = rx.try_recv().unwrap()
+            else {
+                panic!("missing original event");
+            };
+            assert_eq!(original, event);
+            let hint = rx.try_recv().unwrap();
+            let AppEvent::RemoteMirrored {
+                connection_id,
+                event,
+                payload,
+            } = &hint
+            else {
+                panic!("missing repository hint");
+            };
+            assert_eq!(connection_id, "host");
+            assert_eq!(event, "remote-repo-changed");
+            assert!(window_may_hear(event));
+            assert_eq!(
+                payload,
+                &serde_json::json!({
+                    "repo_path": "/remote/repo", "kind": "git-state",
+                    "__tuic_origin": {"connection": "host"}
+                })
+            );
+            assert!(rx.try_recv().is_err());
+        }
+    }
+
+    #[test]
+    fn invalid_and_disconnected_repository_hints_are_not_delivered() {
+        for payload in [
+            serde_json::json!({}),
+            serde_json::json!({"repo_path": 7}),
+            serde_json::json!({"repo_path": ""}),
+        ] {
+            assert!(repository_change("worktree-created", &payload).is_none());
+        }
+        let state = Arc::new(make_test_app_state());
+        let mut rx = state.event_bus.subscribe();
+        for event in ["repo-changed", "worktree-created", "worktree-removed"] {
+            apply_frame(
+                &state,
+                "disconnected",
+                &Frame {
+                    event: event.into(),
+                    data: r#"{"repo_path":"/remote/repo","kind":"git-state"}"#.into(),
+                },
+            );
+            assert!(rx.try_recv().is_err());
+        }
+        assert_eq!(
+            repository_change(
+                "repo-changed",
+                &serde_json::json!({
+                    "repo_path": "/remote/repo", "kind": "working-tree"
+                })
+            ),
+            Some(serde_json::json!({"repo_path": "/remote/repo", "kind": "working-tree"}))
+        );
     }
 
     // Catches: confirmations lose their locally trusted host label or a buffered

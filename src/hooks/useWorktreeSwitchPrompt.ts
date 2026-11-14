@@ -14,6 +14,7 @@ interface WorktreeSwitchDeps {
 }
 
 interface WorktreeCreatedPayload {
+	__tuic_origin?: unknown;
 	creator_session?: string | null;
 	spawn_session?: boolean;
 	repo_path: string;
@@ -26,6 +27,7 @@ interface WorktreeCreatedPayload {
 }
 
 interface WorktreeRemovedPayload {
+	__tuic_origin?: unknown;
 	repo_path: string;
 	/** Which workspace died. Not a branch: two workspaces may share one, so a
 	 *  branch cannot name the row to drop (#726-5ac7). */
@@ -171,6 +173,7 @@ export function useWorktreeSwitchPrompt(deps: WorktreeSwitchDeps): void {
 	let unlistenDeclared: (() => void) | null = null;
 
 	listen<WorktreeCreatedPayload>("worktree-created", (event) => {
+		if (event.payload.__tuic_origin !== undefined) return;
 		const { repo_path, workspace_id, branch, worktree_path } = event.payload;
 		const switchToWorktree = () => {
 			switchToCreatedWorktree(deps, repo_path, workspace_id, branch, worktree_path).catch((err) =>
@@ -199,6 +202,7 @@ export function useWorktreeSwitchPrompt(deps: WorktreeSwitchDeps): void {
 		.catch((err) => appLogger.error("app", "Failed to register worktree-created listener", err));
 
 	listen<WorktreeCreatedPayload>("session-worktree-declared", (event) => {
+		if (event.payload.__tuic_origin !== undefined) return;
 		applyWorktreePlacement(event.payload, true);
 	})
 		.then((fn) => {
@@ -207,6 +211,7 @@ export function useWorktreeSwitchPrompt(deps: WorktreeSwitchDeps): void {
 		.catch((err) => appLogger.error("app", "Failed to register session-worktree-declared listener", err));
 
 	listen<WorktreeRemovedPayload>("worktree-removed", (event) => {
+		if (event.payload.__tuic_origin !== undefined) return;
 		const { repo_path, workspace_id, branch } = event.payload;
 		// Remove live and persisted offers: their action captured the removed checkout.
 		for (const item of [...activityStore.state.items]) {

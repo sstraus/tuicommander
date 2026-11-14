@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Refresh remote repository worktrees after creation or removal on the owning daemon, and restore watchers after reconnection (#150).
+
 - Match native hook configuration paths with host path semantics so equivalent Windows separators do not require a new trust review (#2625-c4b5).
 
 - Hide workflow Start controls when the host routing policy is not imported, and explain that routing controls arrive in a later version (#2673-69fd).

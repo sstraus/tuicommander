@@ -184,6 +184,30 @@ describe("useWorktreeSwitchPrompt — worktree-created", () => {
 		return handleBranchSelect;
 	}
 
+	it.each(["worktree-created", "session-worktree-declared", "worktree-removed"])(
+		"ignores a mirrored %s with the same path as a local repository",
+		async (event) => {
+			await testInScopeAsync(async () => {
+				await emitCreated();
+				const before = JSON.stringify(repositoriesStore.get(REPO)?.workspaces);
+				const offers = activityStore.state.items.map((item) => item.id);
+				handlers.get(event)?.({
+					payload: {
+						repo_path: REPO,
+						workspace_id: BRANCH,
+						branch: BRANCH,
+						worktree_path: "/remote/new",
+						kind: "worktree",
+						__tuic_origin: { connection: "remote" },
+					},
+				});
+				await Promise.resolve();
+				expect(JSON.stringify(repositoriesStore.get(REPO)?.workspaces)).toBe(before);
+				expect(activityStore.state.items.map((item) => item.id)).toEqual(offers);
+			});
+		},
+	);
+
 	// Catches: a recycled checkout remains actionable through its old creation offer.
 	it("removed_worktree_retires_only_its_creation_offer", async () => {
 		await testInScopeAsync(async () => {
