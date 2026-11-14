@@ -131,7 +131,7 @@ function createEditorTabsStore() {
 			filePath: string,
 			initialLine: number | undefined,
 			pinned: boolean,
-			opts: { background: boolean; externalEditable: boolean },
+			opts: { background: boolean; externalEditable: boolean; initialCol?: number },
 		): string {
 			const existing = Object.values(base.state.tabs).find((tab) => tab.mcpUiId === mcpUiId);
 			const id = existing?.id ?? base._nextId("edit");
@@ -145,6 +145,7 @@ function createEditorTabsStore() {
 				isDirty: false,
 				branchKey: branchKeyFor(repoPath),
 				initialLine,
+				initialCol: opts.initialCol,
 				externalEditable: opts.externalEditable,
 				pinned,
 				pinAcrossRepos: true,

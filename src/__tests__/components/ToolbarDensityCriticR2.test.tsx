@@ -24,8 +24,8 @@ afterEach(() => {
 	uiStore._testCancelPendingSave();
 });
 
-describe("Toolbar density marker after removing the auto outline (critic 1351)", () => {
-	it("still tells auto from manual: only manual modes carry the active class, and data-mode tracks the letter — catches auto and manual rendering identically", () => {
+describe("Toolbar density marker mode marker (critic 1351)", () => {
+	it("tells rich from compact and harness: only nondefault modes carry the active class, and data-mode tracks the letter — catches default and filtered modes rendering identically", () => {
 		const { container } = render(() => <Toolbar />);
 		const toggle = container.querySelector("[data-testid='sidebar-density-toggle']") as HTMLElement;
 		const label = () => container.querySelector("[data-testid='sidebar-density-label']")?.textContent;
@@ -35,11 +35,11 @@ describe("Toolbar density marker after removing the auto outline (critic 1351)",
 			fireEvent.click(toggle);
 		}
 		expect(uiStore.state.sidebarDensityMode).toBe(seen[0][0]);
-		expect(seen.map(([m, l]) => `${m}:${l}`).sort()).toEqual(["auto:A", "compact:C", "rich:R"]);
+		expect(seen.map(([m, l]) => `${m}:${l}`).sort()).toEqual(["compact:C", "harness:H", "rich:R"]);
 		expect(Object.fromEntries(seen.map(([m, , active]) => [m, active]))).toEqual({
-			auto: false,
+			harness: true,
 			compact: true,
-			rich: true,
+			rich: false,
 		});
 	});
 });
@@ -69,7 +69,7 @@ describe("Toolbar active filter colors", () => {
 				const density = container.querySelector("[data-testid='sidebar-density-toggle']") as HTMLButtonElement;
 				for (let i = 0; i < 3; i++) {
 					expect(getComputedStyle(density).backgroundColor).toBe(
-						uiStore.state.sidebarDensityMode === "auto" ? "transparent" : "#007acc",
+						uiStore.state.sidebarDensityMode === "rich" ? "transparent" : "#007acc",
 					);
 					fireEvent.click(density);
 				}

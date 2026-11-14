@@ -103,6 +103,9 @@ fn remember_forwarded(
     hasher.update((message.from_tuic_session.len() as u64).to_le_bytes());
     hasher.update(message.from_tuic_session.as_bytes());
     hasher.update(message.content.as_bytes());
+    if let Some(report) = &message.report {
+        hasher.update(serde_json::to_vec(report).map_err(|e| e.to_string())?);
+    }
     let fingerprint: [u8; 32] = hasher.finalize().into();
     let ring = history.recipients.entry(recipient.to_string()).or_default();
     if let Some((_, previous)) = ring.iter().find(|(id, _)| id == &message.id) {
@@ -504,7 +507,7 @@ fn process(
             // it may not wait/read/register as a peer on another host.
             match arguments["action"].as_str() {
                 Some("send") => route_send(&state, sender, arguments, message_id).await,
-                Some("list_peers") => directory(&state, arguments).await,
+                Some("list_peers") => directory(&state, arguments, None).await,
                 _ => json!({"error": "Daemon-to-hub calls permit send/list_peers only"}),
             }
         } else {
@@ -636,7 +639,9 @@ fn qualify_rows(value: &mut Value, host: &str) {
     }
 }
 
-async fn directory(state: &Arc<AppState>, mut args: Value) -> Value {
+/// `sid` is the local caller's MCP session, so its own row is marked
+/// `is_caller`; a daemon asking the hub has no local identity and passes None.
+async fn directory(state: &Arc<AppState>, mut args: Value, sid: Option<&str>) -> Value {
     // Prefer the same exact/local identity resolver used by native send. Slash
     // is a valid display-name character, not proof of a remote qualifier.
     if args["connection_id"]
@@ -669,7 +674,7 @@ async fn directory(state: &Arc<AppState>, mut args: Value) -> Value {
         args["connection_id"] = json!(host);
         args["to"] = json!(recipient);
     }
-    let mut local = super::mcp_transport::local_peer_call(state, &args, None).await;
+    let mut local = super::mcp_transport::local_peer_call(state, &args, sid).await;
     qualify_rows(&mut local, "local");
     let mut peers = local["peers"].as_array().cloned().unwrap_or_default();
     let local_error = local.get("error").is_some() && local["error"] != "Recipient not found";
@@ -839,6 +844,8 @@ pub(super) async fn dispatch(
     let action = args["action"].as_str()?;
     if action == "list_peers" {
         return Some(if let Some((_, link)) = hub {
+            // DEFERRED (2026-11-14) — the hub answers without the daemon caller's
+            // identity, so no row is marked is_caller on a hub-linked daemon.
             link.call(None, args.clone()).await
         } else if let Some(host) = own_host {
             if args["connection_id"]
@@ -854,7 +861,7 @@ pub(super) async fn dispatch(
             qualify_rows(&mut rows, &host);
             rows
         } else {
-            directory(state, args.clone()).await
+            directory(state, args.clone(), sid).await
         });
     }
     if action != "send" {
@@ -883,24 +890,44 @@ pub(super) async fn dispatch(
             name: peer.name.clone(),
         })
     });
+    let report = match crate::agent_report::parse(args) {
+        Ok(report) => report,
+        Err(error) => return Some(json!({"error":error})),
+    };
+    let prepared = sender.as_ref().and_then(|sender| {
+        report.map(|r| {
+            (
+                sender.id.clone(),
+                crate::agent_stage::Reports::prepare(state, &sender.id, r),
+            )
+        })
+    });
     let mut args = args.clone();
     args["to"] = json!(qualified);
-    if let Some(own_host) = own_host {
+    let result = if let Some(own_host) = own_host {
         if let Some(target) = qualified.strip_prefix(&format!("{own_host}/")) {
             args["to"] = json!(target);
             return Some(super::mcp_transport::local_peer_call(state, &args, sid).await);
         }
-        Some(if let Some((_, link)) = hub {
+        if let Some((_, link)) = hub {
             link.call(sender, args).await
         } else {
             error(
                 &own_host,
                 "mail hub is disconnected; intra-host mail remains available",
             )
-        })
+        }
     } else {
-        Some(route_send(state, sender, args, None).await)
+        route_send(state, sender, args, None).await
+    };
+    if result.get("error").is_none()
+        && let Some(id) = result["message_id"].as_str()
+        && let Some((peer, prepared)) = prepared
+    {
+        state.agent_reports.commit(&peer, id, prepared);
+        crate::boss_attention::changed(state);
     }
+    Some(result)
 }
 
 fn cleanup_shadows(state: &AppState, host: Option<&str>) {
@@ -1037,7 +1064,10 @@ fn start_notices(state: &Arc<AppState>) {
                     id: message.from_tuic_session.clone(),
                     name: message.from_name.clone(),
                 };
-                let args = json!({"action":"send", "to":recipient, "message":message.content});
+                let mut args = json!({"action":"send", "to":recipient, "message":message.content});
+                if let Some(report) = &message.report {
+                    args["report"] = json!(report);
+                }
                 let hub = state.remote_mail.hub.lock().clone();
                 let result = if let Some((_, link)) = hub {
                     link.call_with_id(Some(sender), args, Some(message.id.clone()))
@@ -1181,7 +1211,7 @@ mod tests {
             std::task::Poll::Pending
         ));
         assert!(other.has_active_agent_waiter(&other_id));
-        let sent = dispatch(&mint,&json!({"action":"send","to":format!("other/{other_id}"),"message":"across both spokes"}),Some(&mint_sid)).await.unwrap();
+        let sent = dispatch(&mint,&json!({"action":"send","to":format!("other/{other_id}"),"message":"across both spokes","report":{"state":"ready"}}),Some(&mint_sid)).await.unwrap();
         assert_eq!(
             sent["delivered"], true,
             "owner must deliver through its real waiter: {sent}"
@@ -1189,6 +1219,7 @@ mod tests {
         assert_eq!(sent["delivery_path"], "waiter_and_inbox");
         let received = remote_wait.await;
         assert_eq!(received["messages"][0]["content"], "across both spokes");
+        assert_eq!(received["messages"][0]["report"], json!({"state":"ready"}));
         assert_eq!(
             received["messages"][0]["from_tuic_session"],
             format!("mint/{mint_id}")
@@ -1278,6 +1309,7 @@ mod tests {
             from_name: from.into(),
             content: "one lifecycle notice".into(),
             timestamp: 0,
+            report: None,
             delivered_via_channel: false,
         }
     }
@@ -1848,6 +1880,7 @@ mod tests {
                 from_name: from.to_string(),
                 content: content.to_string(),
                 timestamp: 0,
+                report: None,
                 delivered_via_channel: false,
             }
         }
@@ -2006,6 +2039,7 @@ mod tests {
                 from_name: from.to_string(),
                 content: "one lifecycle notice".to_string(),
                 timestamp: 0,
+                report: None,
                 delivered_via_channel: false,
             }
         }
@@ -2251,6 +2285,36 @@ mod tests {
             );
         }
     }
+    // Catches: the caller indistinguishable from its peers in list_peers, either
+    // because no row is marked or because the desktop directory drops the caller.
+    #[tokio::test]
+    async fn list_peers_marks_exactly_the_calling_session() {
+        let state = test_state();
+        let (caller_sid, caller) = peer(&state, "caller").await;
+        let (_, other) = peer(&state, "other").await;
+        for compact in [false, true] {
+            let listed = dispatch(
+                &state,
+                &json!({"action":"list_peers","compact":compact}),
+                Some(&caller_sid),
+            )
+            .await
+            .expect("list_peers is dispatched");
+            let rows = listed["peers"].as_array().expect("peers array");
+            let marked: Vec<_> = rows
+                .iter()
+                .filter(|row| row["is_caller"] == true)
+                .map(|row| row["tuic_session"].clone())
+                .collect();
+            assert_eq!(marked, vec![json!(caller)], "compact={compact}: {listed}");
+            let peer_row = rows
+                .iter()
+                .find(|row| row["tuic_session"] == other.as_str())
+                .expect("other peer listed");
+            assert_eq!(peer_row["is_caller"], false, "compact={compact}: {listed}");
+        }
+    }
+
     // Catches: a registered display name containing slash is misrouted as a connection address.
     #[tokio::test]
     async fn scoped_directory_preserves_registered_slash_display_name() {
@@ -2259,6 +2323,7 @@ mod tests {
         let listed = directory(
             &state,
             json!({"action":"list_peers","to":"feature/worker","compact":true}),
+            None,
         )
         .await;
         assert!(listed.get("connection_errors").is_none(), "{listed}");

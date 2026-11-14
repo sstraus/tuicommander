@@ -506,6 +506,11 @@ impl WatcherLineBatcher {
         }
     }
 
+    /// True while a tail waits for `flush_due`.
+    pub fn has_pending(&self) -> bool {
+        !self.pending.is_empty()
+    }
+
     /// Buffer a line. Returns the batch to emit now — when the throttle window
     /// has elapsed, on the very first line, or when the batch reached its cap.
     pub fn push(&mut self, line: WatcherLine, now: Instant) -> Option<Vec<WatcherLine>> {

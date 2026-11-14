@@ -422,7 +422,8 @@ pub(crate) fn bridge_search_paths() -> Vec<PathBuf> {
 /// Separate from [`get_mcp_bridge_info`], which reports installed copies:
 /// a config file written for an agent may name `tuic-bridge` and still
 /// work, since the agent resolves it against its own `PATH` at launch. ego is
-/// not such an agent any more — it reaches `tuicommander` over ACP.
+/// not such an agent: AI Chat reaches `tuicommander` over ACP, and an MCP-spawned
+/// ego child gets this path in an invocation-scoped server file.
 pub(crate) fn locate_bridge_binary() -> Option<PathBuf> {
     // Primary: sidecar bundled alongside the main executable
     if let Ok(exe) = std::env::current_exe()
@@ -461,6 +462,18 @@ fn locate_installed_bridge(source: Option<&std::path::Path>) -> Option<PathBuf> 
         })
         .max_by_key(|(modified, _)| *modified)
         .map(|(_, path)| path)
+}
+
+/// Every published bridge copy, valid or not: the startup exec-probe must reach
+/// a copy the kernel kills, whatever its bytes look like.
+pub(crate) fn installed_bridge_paths() -> Vec<PathBuf> {
+    std::fs::read_dir(crate::config::config_dir().join("mcp-bridge"))
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|entry| bridge_path_in(&entry.path()))
+        .filter(|path| usable_executable(path))
+        .collect()
 }
 
 fn installed_revision_is_valid(path: &std::path::Path) -> bool {
@@ -541,6 +554,7 @@ fn install_bridge_binary(source: &std::path::Path) -> Result<PathBuf, String> {
         .ok_or_else(|| "Bridge installation directory unavailable".to_string())?;
     let matches = || usable_executable(&target) && std::fs::read(&target).is_ok_and(|b| b == bytes);
     if matches() {
+        crate::exec_probe::heal(&target, crate::exec_probe::BRIDGE_ARGS);
         return Ok(target);
     }
     std::fs::create_dir_all(dir).map_err(|e| format!("Failed to create bridge directory: {e}"))?;
@@ -563,6 +577,7 @@ fn install_bridge_binary(source: &std::path::Path) -> Result<PathBuf, String> {
     {
         return Err(format!("Failed to publish bridge: {}", error.error));
     }
+    crate::exec_probe::heal(&target, crate::exec_probe::BRIDGE_ARGS);
     Ok(target)
 }
 
@@ -950,6 +965,43 @@ fn write_toml_file(path: &std::path::Path, value: &toml::Value) -> Result<(), St
     write_text_file(path, &output)
 }
 
+/// The variables the bridge reads to find its TUIC instance and its caller.
+pub(crate) const BRIDGE_ENV_VARS: [&str; 4] = [
+    "TUIC_SESSION",
+    "TUIC_SOCKET",
+    "TUIC_APP_INSTANCE",
+    "TUIC_CONFIG_DIR",
+];
+
+/// File name of the bridge server that a managed ego child gets with `--mcp @FILE`.
+pub(crate) const EGO_BRIDGE_SERVER_FILE: &str = "ego-tuic-mcp.json";
+
+/// Write the bridge as one ego invocation-scoped stdio server in `dir`, or
+/// return `None` when no bridge binary is on this machine.
+///
+/// ego refuses an invocation server whose name is also configured, so the
+/// entry is `tuicommander`, not a name an owner is likely to have configured.
+/// ego also refuses the server when an inherited variable is unset, so the
+/// caller passes only the variables the child environment holds.
+pub(crate) fn write_ego_bridge_server(
+    dir: &std::path::Path,
+    inherited: &[&str],
+) -> Result<Option<PathBuf>, String> {
+    let Some(bridge) = locate_bridge_binary() else {
+        return Ok(None);
+    };
+    let server = serde_json::json!({
+        "transport": "stdio",
+        "name": TUIC_MCP_KEY,
+        "command": bridge.to_string_lossy(),
+        "args": [],
+        "inherit_env": inherited,
+    });
+    let path = dir.join(EGO_BRIDGE_SERVER_FILE);
+    crate::config::persist_atomic(&path, server.to_string().as_bytes())?;
+    Ok(Some(path))
+}
+
 /// Ensure a TOML config (`[mcp_servers.<name>]`) has the correct bridge entry.
 /// Returns true if the config was written (installed or updated).
 ///
@@ -973,32 +1025,27 @@ fn ensure_toml_mcp_entry(
     let existing_command = existing_entry
         .and_then(|entry| entry.get("command"))
         .and_then(toml::Value::as_str);
-    let missing_forwarded_vars: Vec<_> = [
-        "TUIC_SESSION",
-        "TUIC_SOCKET",
-        "TUIC_APP_INSTANCE",
-        "TUIC_CONFIG_DIR",
-    ]
-    .into_iter()
-    .filter(|name| {
-        forward_session
-            && !existing_entry
-                .and_then(|entry| entry.get("env_vars"))
-                .and_then(toml::Value::as_array)
-                .is_some_and(|env_vars| {
-                    env_vars.iter().any(|value| {
-                        value.as_str() == Some(*name)
-                            || value.as_table().is_some_and(|entry| {
-                                entry.get("name").and_then(toml::Value::as_str) == Some(*name)
-                                    && entry
-                                        .get("source")
-                                        .and_then(toml::Value::as_str)
-                                        .is_none_or(|source| source == "local")
-                            })
+    let missing_forwarded_vars: Vec<_> = BRIDGE_ENV_VARS
+        .into_iter()
+        .filter(|name| {
+            forward_session
+                && !existing_entry
+                    .and_then(|entry| entry.get("env_vars"))
+                    .and_then(toml::Value::as_array)
+                    .is_some_and(|env_vars| {
+                        env_vars.iter().any(|value| {
+                            value.as_str() == Some(*name)
+                                || value.as_table().is_some_and(|entry| {
+                                    entry.get("name").and_then(toml::Value::as_str) == Some(*name)
+                                        && entry
+                                            .get("source")
+                                            .and_then(toml::Value::as_str)
+                                            .is_none_or(|source| source == "local")
+                                })
+                        })
                     })
-                })
-    })
-    .collect();
+        })
+        .collect();
 
     let session_ok = missing_forwarded_vars.is_empty();
     match existing_command {
@@ -3296,6 +3343,30 @@ mod tests {
         assert!(!installed.starts_with(dir.path()));
         std::fs::remove_dir_all(dir.path().join("target")).unwrap();
         bridge_fixture::assert_runs(installed);
+    }
+
+    /// Catches: an installed bridge that exits 137 on exec is left in place and
+    /// every new session loses the MCP (#2902-dcc7).
+    #[cfg(unix)]
+    #[test]
+    fn bridge_probe_republishes_on_sigkill() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let _config = with_temp_config_dir();
+        let dir = TempDir::new().unwrap();
+        let source = bridge_path_in(dir.path());
+        // A script that kills itself stands for a binary the kernel kills on exec.
+        std::fs::write(&source, "#!/bin/sh\nkill -9 $$\n").unwrap();
+        std::fs::set_permissions(&source, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let installed = install_bridge_binary(&source).unwrap();
+        let inode = installed.metadata().unwrap().ino();
+        assert_eq!(install_bridge_binary(&source).unwrap(), installed);
+        let after = installed.metadata().unwrap();
+        assert_ne!(after.ino(), inode, "a killed bridge must be republished");
+        assert_eq!(
+            std::fs::read(&installed).unwrap(),
+            std::fs::read(&source).unwrap()
+        );
+        assert_eq!(after.permissions().mode() & 0o777, 0o700);
     }
 
     /// Catches: overwriting or deleting an old installed executable on upgrade,

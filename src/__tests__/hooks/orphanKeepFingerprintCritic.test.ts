@@ -1,7 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRepositoryRefreshCoordinator } from "../../hooks/git/createRepositoryRefreshCoordinator";
+import { activityStore } from "../../stores/activityStore";
+import { appLogger } from "../../stores/appLogger";
 import { repoSettingsStore } from "../../stores/repoSettings";
 import { repositoriesStore } from "../../stores/repositories";
+
+beforeAll(async () => {
+	await activityStore.hydrate();
+});
 
 interface Row {
 	path: string;
@@ -72,6 +78,22 @@ describe("orphan Keep memory by path + fingerprint (critic-1367, story 1367-7d6e
 	afterEach(() => {
 		repositoriesStore._testCancelPendingSave();
 		vi.useRealTimers();
+	});
+
+	// Catches: a failed confirmed removal silently reopening the same dialog.
+	it("shows the git failure and does not reprompt for the same checkout", async () => {
+		const warning = vi.spyOn(appLogger, "warn").mockImplementation(() => {});
+		rows = [dirty("/wt/a", "fp-1")];
+		confirmOrphanCleanup.mockResolvedValue(true);
+		removeOrphanWorktree.mockRejectedValue(new Error("git says untracked files"));
+		await refresh("/repo");
+		vi.setSystemTime(Date.now() + 5_000);
+		await refresh("/repo");
+		expect(setStatusInfo).toHaveBeenCalledWith(expect.stringContaining("git says untracked files"));
+		expect(confirmOrphanCleanup).toHaveBeenCalledTimes(1);
+		expect(removeOrphanWorktree).toHaveBeenCalledWith("/repo", "/wt/a", false, [], "fp-1");
+		expect(warning).toHaveBeenCalledWith("git", expect.stringContaining("/wt/a"), expect.any(Error));
+		warning.mockRestore();
 	});
 
 	// Catches: the Keep being forgotten between refreshes (or keyed on something that
@@ -189,7 +211,7 @@ describe("orphan Keep memory by path + fingerprint (critic-1367, story 1367-7d6e
 		rows = [dirty("/wt/a", "fp-1")];
 		confirmOrphanCleanup.mockResolvedValue(true);
 		await refresh("/repo");
-		expect(removeOrphanWorktree).toHaveBeenCalledWith("/repo", "/wt/a", false, []);
+		expect(removeOrphanWorktree).toHaveBeenCalledWith("/repo", "/wt/a", false, [], "fp-1");
 		expect(clearOrphanCleanup).toHaveBeenLastCalledWith("/repo", false);
 
 		rows = [dirty("/wt/b", "fp-b")];

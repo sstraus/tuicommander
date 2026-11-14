@@ -13,6 +13,7 @@ async fn inbox(runtime: &Runtime, sid: &str) -> Value {
     .await
 }
 
+#[cfg(unix)]
 async fn assert_no_agent_reply(runtime: &mut Runtime, server: &FakeServer) {
     let value = inbound::text_update(7, 1111111, "after exit");
     let parsed = crate::telegram::mail::Update::parse(

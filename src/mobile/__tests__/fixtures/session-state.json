@@ -1,0 +1,25 @@
+[
+  {
+    "session_id": "test-picker-session",
+    "cwd": "/test/workspace",
+    "worktree_path": null,
+    "worktree_branch": null,
+    "display_name_is_custom": false,
+    "display_name_from_spawn": false,
+    "is_remote": true,
+    "alias": "test-picker",
+    "tuic_session": "test-picker-session",
+    "state": {
+      "awaiting_input": true,
+      "question_text": "Choose a test option",
+      "question_confident": true,
+      "rate_limited": false,
+      "shell_state": "busy",
+      "agent_state": "awaiting_input",
+      "last_activity_ms": 1000,
+      "agent_type": "claude",
+      "current_task": "Test task",
+      "last_prompt": "Select a synthetic test option."
+    }
+  }
+]

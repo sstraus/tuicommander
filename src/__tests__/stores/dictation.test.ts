@@ -177,7 +177,7 @@ describe("dictationStore", () => {
 				expect(store.state.recording).toBe(false);
 				expect(store.state.processing).toBe(false);
 				expect(store.state.loading).toBe(false);
-				expect(store.state.downloading).toBe(false);
+				expect(store.state.downloadingModel).toBeNull();
 				expect(store.state.downloadPercent).toBe(0);
 			});
 		});
@@ -231,6 +231,20 @@ describe("dictationStore", () => {
 				expect(store.state.spokenReplies).toBe(true);
 			});
 		});
+	});
+
+	it("does not retry or log a missing dictation command", async () => {
+		mockInvoke.mockRejectedValue("Command get_dictation_config not found");
+		const { appLogger } = await import("../../stores/appLogger");
+		const error = vi.spyOn(appLogger, "error");
+		await store.refreshConfig();
+		await store.refreshConfig();
+		const stop = store.startRemoteSync();
+		await Promise.resolve();
+		stop();
+		expect(mockInvoke).toHaveBeenCalledTimes(1);
+		expect(error).not.toHaveBeenCalled();
+		error.mockRestore();
 	});
 
 	describe("refreshConfig()", () => {
@@ -417,7 +431,7 @@ describe("dictationStore", () => {
 			await testInScopeAsync(async () => {
 				await store.downloadModel("small");
 				expect(mockInvoke).toHaveBeenCalledWith("download_whisper_model", { modelName: "small" });
-				expect(store.state.downloading).toBe(false);
+				expect(store.state.downloadingModel).toBeNull();
 			});
 		});
 
@@ -439,7 +453,8 @@ describe("dictationStore", () => {
 			});
 		});
 
-		it("sets downloading state during download", async () => {
+		// Catches: the download is recorded without its model, so the UI shows progress on the selected row.
+		it("records which model downloads while it downloads", async () => {
 			let resolveDownload: (v: string) => void;
 			const downloadPromise = new Promise<string>((r) => {
 				resolveDownload = r;
@@ -448,8 +463,9 @@ describe("dictationStore", () => {
 
 			await testInScopeAsync(async () => {
 				const downloadTask = store.downloadModel("small");
-				// downloading should be true while in progress
-				expect(store.state.downloading).toBe(true);
+				// The non-selected model is the one in progress.
+				expect(store.state.selectedModel).toBe("large-v3-turbo");
+				expect(store.state.downloadingModel).toBe("small");
 				expect(store.state.downloadPercent).toBe(0);
 
 				// Resolve the download
@@ -464,7 +480,7 @@ describe("dictationStore", () => {
 				resolveDownload!("Downloaded");
 				await downloadTask;
 
-				expect(store.state.downloading).toBe(false);
+				expect(store.state.downloadingModel).toBeNull();
 			});
 		});
 	});
@@ -980,7 +996,7 @@ describe("dictationStore", () => {
 
 			await testInScopeAsync(async () => {
 				await store.downloadModel("small");
-				expect(store.state.downloading).toBe(false);
+				expect(store.state.downloadingModel).toBeNull();
 				consoleSpy.mockRestore();
 			});
 		});

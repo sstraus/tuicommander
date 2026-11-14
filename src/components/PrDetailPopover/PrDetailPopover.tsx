@@ -299,7 +299,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 	onMount(() => {
 		document.addEventListener("keydown", handleKeyDown);
 		if (!props.anchor) {
-			requestAnimationFrame(evaluateAnchor);
+			anchorFrame = requestAnimationFrame(evaluateAnchor);
 			// CI check details and the AI-review section load/expand async after
 			// mount, growing the popover; a one-shot mount measurement misses that
 			// growth and lets the bottom-anchored top slide above the viewport.
@@ -311,11 +311,13 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 
 	onCleanup(() => {
 		document.removeEventListener("keydown", handleKeyDown);
+		if (anchorFrame !== undefined) cancelAnimationFrame(anchorFrame);
 		resizeObs?.disconnect();
 	});
 
 	let popoverEl: HTMLDivElement | undefined;
 	let resizeObs: ResizeObserver | undefined;
+	let anchorFrame: number | undefined;
 	const [flippedTop, setFlippedTop] = createSignal(false);
 
 	const shouldAnchorTop = () => props.anchor === "top" || (!props.anchor && flippedTop());

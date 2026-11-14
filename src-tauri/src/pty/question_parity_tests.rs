@@ -3,6 +3,15 @@
 fn replay_native_question(
     fixture: &str,
     agent: &str,
+    observe: impl FnMut(&tuic_terminal::pty_capture::CaptureRecord, &crate::state::SessionState),
+) {
+    replay_native_question_with_hooks(fixture, agent, false, observe);
+}
+
+fn replay_native_question_with_hooks(
+    fixture: &str,
+    agent: &str,
+    native_hooks: bool,
     mut observe: impl FnMut(&tuic_terminal::pty_capture::CaptureRecord, &crate::state::SessionState),
 ) {
     let capture = crate::pty_capture::decode_capture(&agent_prompt_fixture(fixture)).unwrap();
@@ -24,7 +33,20 @@ fn replay_native_question(
         .unwrap()
         .agent_type = Some(agent.into());
     let mut rx = state.event_bus.subscribe();
-    let mut processor = ChunkProcessor::new(None, None);
+    let mut processor = ChunkProcessor::new(None, native_hooks.then(|| "grok-test-owner".into()));
+    if native_hooks {
+        let receipts = if fixture == "grok-hook-ask-2624.tcap" {
+            recorded_grok_hooks("ask")
+        } else {
+            recorded_grok_hooks("deny")[..3].to_vec()
+        };
+        for event in &receipts {
+            feed_grok_hook(&state, &mut processor, sid, event);
+        }
+        while let Ok(event) = rx.try_recv() {
+            crate::state::tests_support::apply_replay_event(&state, &event);
+        }
+    }
     let mut utf8 = Utf8ReadBuffer::new();
     let mut escapes = EscapeAwareBuffer::new();
     for record in capture.records {
@@ -327,7 +349,9 @@ async fn late_captured_repaint_cannot_rearm_question_after_agent_exit() {
             .unwrap()
             .lock()
             .screen_rows();
-        if saw_question && rearm_awaiting_for_open_dialog(&screen, false, false, false).is_some() {
+        if saw_question
+            && rearm_awaiting_for_open_dialog(&screen, false, false, false, None).is_some()
+        {
             open_dialog = true;
             break;
         }
@@ -376,7 +400,7 @@ async fn late_captured_repaint_cannot_rearm_question_after_agent_exit() {
         .lock()
         .screen_rows();
     assert!(
-        rearm_awaiting_for_open_dialog(&screen, false, false, false).is_some(),
+        rearm_awaiting_for_open_dialog(&screen, false, false, false, None).is_some(),
         "retained dialog: {screen:?}"
     );
 

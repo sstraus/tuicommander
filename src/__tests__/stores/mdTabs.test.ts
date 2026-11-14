@@ -385,6 +385,26 @@ describe("mdTabsStore", () => {
 				expect(urlTab.html).toBe("");
 			});
 		});
+		// catches: a focused model tab in another repo leaves Back pointing one step
+		// past the terminal Boss was working in; a same-repo open must add nothing
+		it("records a back step only when a focused open changes the repository", async () => {
+			const terminals = (await import("../../stores/terminals")).terminalsStore;
+			const { makeTerminal } = await import("../helpers/store");
+			testInScope(() => {
+				repositoriesStore.add({ path: "/Gits/alpha", displayName: "alpha" });
+				repositoriesStore.add({ path: "/Gits/beta", displayName: "beta" });
+				repositoriesStore.setActive("/Gits/alpha");
+				const older = terminals.add(makeTerminal({ name: "older" }));
+				terminals.setActive(older);
+				const working = terminals.add(makeTerminal({ name: "working" }));
+				terminals.setActive(working);
+				store.openUiTab("same", "Same", "<p>a</p>", false, undefined, true, "/Gits/alpha");
+				expect(terminals.getHistoryTarget("back")).toBe(older);
+				store.openUiTab("report", "Report", "<p>b</p>", false, undefined, true, "/Gits/beta");
+				expect(repositoriesStore.state.activeRepoPath).toBe("/Gits/beta");
+				expect(terminals.getHistoryTarget("back")).toBe(working);
+			});
+		});
 		it("creates a new plugin-panel tab with the given id", () => {
 			testInScope(() => {
 				const tabId = store.openUiTab("wiz-coverage", "Coverage Report", "<h1>Report</h1>", true);

@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::agent_question::{Row, questions_text};
 use crate::redaction::redact_secrets;
 
 /// Characters kept of one prompt or reply.
@@ -89,9 +90,27 @@ pub(crate) struct ClaudeAdapter {
     /// Message id of the previous update when it was agent text, so a second
     /// text block of the same message is separated from the first.
     last_agent_text_of: Option<String>,
+    /// Prompt and reply text is not cut. Only `full_text` sets it, to read one
+    /// message back from the transcript the stream already parses.
+    uncapped: bool,
 }
 
 impl ClaudeAdapter {
+    pub(super) fn uncapped() -> Self {
+        Self {
+            uncapped: true,
+            ..Self::default()
+        }
+    }
+
+    fn text_cap(&self) -> usize {
+        if self.uncapped {
+            usize::MAX
+        } else {
+            MAX_TEXT_CHARS
+        }
+    }
+
     pub(crate) fn absorb(&mut self, line: &str) -> Vec<Value> {
         let line = line.trim();
         if line.is_empty() {
@@ -132,7 +151,7 @@ impl ClaudeAdapter {
                     _ => None,
                 })
                 .filter(|text| !text.trim().is_empty())
-                .map(|text| prompt_update(&row, &text))
+                .map(|text| prompt_update(&row, &text, self.text_cap()))
                 .into_iter()
                 .collect()
         } else if kind == "user" {
@@ -156,12 +175,14 @@ impl ClaudeAdapter {
                 if row.get("isCompactSummary").and_then(Value::as_bool) == Some(true) {
                     return vec![notice("Conversation compacted")];
                 }
-                human_prompt(row, text).into_iter().collect()
+                human_prompt(row, text, self.text_cap())
+                    .into_iter()
+                    .collect()
             }
             Value::Array(blocks) => {
                 let mut out: Vec<Value> =
                     blocks.iter().filter_map(|b| self.tool_result(b)).collect();
-                out.extend(human_prompt(row, &blocks_text(blocks)));
+                out.extend(human_prompt(row, &blocks_text(blocks), self.text_cap()));
                 out
             }
             _ => Vec::new(),
@@ -219,7 +240,7 @@ impl ClaudeAdapter {
                     if raw.trim().is_empty() {
                         continue;
                     }
-                    let mut text = clean(raw, MAX_TEXT_CHARS);
+                    let mut text = clean(raw, self.text_cap());
                     if self.last_agent_text_of.is_some() && self.last_agent_text_of == message_id {
                         text.insert_str(0, "\n\n");
                     }
@@ -286,8 +307,55 @@ impl ClaudeAdapter {
     }
 }
 
+/// What one Claude row means for the question ledger (`agent_question`). Only
+/// `user` and `assistant` rows of `session` count: Claude's `api-request-blob`
+/// row replays an answered call after its result, and a sidechain is a subagent.
+pub(crate) fn question_rows(line: &str, session: &str) -> Vec<Row> {
+    let Ok(row) = serde_json::from_str::<Value>(line.trim()) else {
+        return Vec::new();
+    };
+    let kind = row.get("type").and_then(Value::as_str);
+    if !matches!(kind, Some("user" | "assistant"))
+        || row.get("sessionId").and_then(Value::as_str) != Some(session)
+        || row.get("isSidechain").and_then(Value::as_bool) == Some(true)
+    {
+        return Vec::new();
+    }
+    let content = row.pointer("/message/content");
+    let mut rows = Vec::new();
+    for block in content.and_then(Value::as_array).into_iter().flatten() {
+        let id = |key: &str| block.get(key).and_then(Value::as_str).map(str::to_owned);
+        match (kind, block.get("type").and_then(Value::as_str)) {
+            (Some("assistant"), Some("tool_use"))
+                if block.get("name").and_then(Value::as_str) == Some("AskUserQuestion") =>
+            {
+                let text =
+                    questions_text(block.pointer("/input/questions").unwrap_or(&Value::Null));
+                if let Some(id) = id("id")
+                    && !text.is_empty()
+                {
+                    rows.push(Row::Open { id, text });
+                }
+            }
+            (Some("user"), Some("tool_result")) => rows.extend(id("tool_use_id").map(Row::Settled)),
+            _ => {}
+        }
+    }
+    if kind == Some("user") {
+        let text = match content {
+            Some(Value::String(text)) => text.clone(),
+            Some(Value::Array(blocks)) => blocks_text(blocks),
+            _ => String::new(),
+        };
+        if human_prompt(&row, &text, MAX_TEXT_CHARS).is_some() {
+            rows.push(Row::TurnEnded);
+        }
+    }
+    rows
+}
+
 /// A prompt the user typed, as a user entry. `None` for harness text.
-fn human_prompt(row: &Value, text: &str) -> Option<Value> {
+fn human_prompt(row: &Value, text: &str, cap: usize) -> Option<Value> {
     let origin = row.pointer("/origin/kind").and_then(Value::as_str);
     // Recorded older CLI rows have promptId but no origin. Harness echoes
     // also have promptId: exclude their markers, meta rows and tool results.
@@ -319,14 +387,14 @@ fn human_prompt(row: &Value, text: &str) -> Option<Value> {
     if !human || text.trim().is_empty() {
         return None;
     }
-    Some(prompt_update(row, text))
+    Some(prompt_update(row, text, cap))
 }
 
-fn prompt_update(row: &Value, text: &str) -> Value {
+fn prompt_update(row: &Value, text: &str, cap: usize) -> Value {
     json!({
         "sessionUpdate": "user_message_chunk",
         "messageId": row.get("uuid").and_then(Value::as_str),
-        "content": { "type": "text", "text": clean(text, MAX_TEXT_CHARS) },
+        "content": { "type": "text", "text": clean(text, cap) },
     })
 }
 
@@ -365,7 +433,20 @@ pub(super) fn clean(text: &str, max: usize) -> String {
     if redacted.chars().count() <= max {
         return redacted;
     }
-    redacted.chars().take(max - 1).chain(['…']).collect()
+    // Never cut silently: a long cap names the full length so the reader knows
+    // the text is incomplete (#2915). A short cap (titles) keeps the bare ellipsis.
+    let marker = format!("… [truncated, {} chars total]", redacted.chars().count());
+    let keep = if max >= 1_000 {
+        max - marker.chars().count()
+    } else {
+        max - 1
+    };
+    let tail = if max >= 1_000 {
+        marker
+    } else {
+        "…".to_string()
+    };
+    redacted.chars().take(keep).chain(tail.chars()).collect()
 }
 
 fn tool_result_text(content: Option<&Value>) -> String {

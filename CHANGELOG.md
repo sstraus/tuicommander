@@ -6,18 +6,335 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixes
+
+- Linux releases transcribe dictation on the GPU through Vulkan when a Vulkan driver is present, and on the CPU otherwise. The packages now require or carry the Vulkan loader.
+- Windows releases transcribe dictation on the GPU through Vulkan when a Vulkan driver is present, and on the CPU otherwise. The installer adds the Vulkan loader when Windows has none.
+- Dictation reports the backend it really uses (`cpu` or `gpu`), and CPU-only builds decode on 4 threads instead of 1.
 ### Fixed
 
 - Refresh remote repository worktrees after creation or removal on the owning daemon, and restore watchers after reconnection (#150).
 
-- Match native hook configuration paths with host path semantics so equivalent Windows separators do not require a new trust review (#2625-c4b5).
+## [2.1.0] - 2026-11-14
 
-- Hide workflow Start controls when the host routing policy is not imported, and explain that routing controls arrive in a later version (#2673-69fd).
+### Breaking changes
 
-- Show a neutral API key usage label for Claude sessions authenticated with an API key instead of a stale OAuth token error, including browser/PWA and remote-owned desktop sessions over HTTP (#2672-78a1).
-- Draw one border-hugging focus band on shared selects and bordered buttons, and remove the empty trailing divider in the Edit Prompt dialog (#2670-08c7).
+- Preserve supported external story title/priority edits and single criterion additions through additive field capabilities, without falsely enabling a full editor. Restricted saves never split into multiple writes; native and legacy aggregate behavior is unchanged.
 
-- Keep mobile sessions usable when the host returns non-array queued prompt data; treat it as an empty list without changing request error handling (#2639-173b).
+- Automatically select Wiz stories through a globally approved installed connector, retain explicit overrides, and show backend identity, availability and automatic/explicit provenance in Plans and Stories (#3030-c22e).
+- Compose inactive seeded plan and issue delivery from pinned native operations,
+  with bounded batch/FIX execution, preserved issue material and source-bound
+  publication refusal/uncertainty status. Live trigger cutover remains separate.
+
+- Retain exact typed workflow operator waits and independent native closure/release consent without granting publication from readiness.
+
+- Add durable reviewer admission budgets and source-bound correction policy composition with separate accounting and explicit operator exhaustion.
+
+- Native GitHub publication now tolerates host-wide Git URL rewrites while retaining its exact approved HTTPS destination.
+
+- Continue interrupted mediated model work with a new prompt containing reconciled tool results, retaining original write ownership and session fences (#006-6885).
+
+- Add a read-only workflow template migration preview with explicit policy mappings, exact legacy source pins and preservation blockers. Executable conversion and Designer integration remain pending (#017-70f7).
+
+- Add internal bounded correction subflow construction and typed CI/finding assessment seams; durable loop admission preserves the budget across worker/head changes and restart. Provider and authoring integration remain staged (#016-358f).
+- Add scoped mediated workflow roles with source-bound reports, and exact existing-story child operations with native completion receipts.
+- Add exact-head native GitHub review verdicts, independent review evidence binding, source-generation fences and separately approved MarkReady publication (#024-c9ee).
+- Add source-bound native issue reads and approved comment/additive-label effects with retained admission and generation checks.
+- Add scheduled neutral text workflows with literal model input and local exact approval, using durable trigger receipts and directory-only caller scope.
+
+- pi sessions show their subscription quota. The managed pi extension forwards the quota headers of each provider response (never auth headers) on a new generic event channel; idle sessions read the Claude and Codex usage endpoints with the pi login. Reinstall the pi extension in Settings (#2994-a1d0).
+- Claude sessions update their 5-hour and weekly quota from the Claude status line, without a usage request; the user status line stays unchanged (#2992-0150).
+- Share cached provider quota across the status bar, mobile session details and Claude/Codex dashboards. Switching sessions no longer starts a provider quota read (#2991-e0b0).
+- Share Claude and Codex quota reads between the registry, dashboard and session views. Preserve provider detail across passive window updates and keep Codex token statistics separate. Keep retry times, missing-login hints and expired-token warnings in the usage ticker.
+
+- Tab progress bar: an indeterminate OSC 9;4 report (state 3) shows a full-width animated bar instead of no bar, and a paused report (state 4) shows its value (#3009-2019).
+- MCP `search_tools` ranks a tool first when the query names it exactly, for example `agent` (#2982-69d7).
+- Dictation settings show download progress on the row of the model that downloads (#2970-7756).
+- Mobile terminal history paging no longer skips lines that the live tail evicted (#2979-737a).
+- Mobile Ideas sends an idea with the agent type of the session, so long ideas use the agent input adapter (#2978-fc58).
+- Mobile AI Chat shows the provider-retry status of a failing turn (#2977-dfaf).
+- GitHub work items: the create form lists the repository assignees (#2974-e0a8).
+- GitLab: cancel an in-flight request when the caller aborts it (#2975-9178).
+- Let an interrupted Codex turn return idle so urgent mail and later submissions can reach it (#2961-8724).
+- Remove the unsupported `tuic diff` command, which never opened a two-file comparison (#2940-793a).
+
+- Add plugin file-size and bounded binary range reads for paged previews.
+- Add an opt-in whole-backend jemalloc heap profiler with controlled captures and allocator/native memory provenance.
+- Render bounded correction criteria, limits and pinned child contracts in the Designer, and show consumed corrections from retained loop iteration (#014-5d73, #016-358f).
+- Keep saved workflow drafts available when the native catalog is unavailable, and show its error until a successful refresh (#014-5d73).
+- Add a parallel catalog authoring view for neutral workflow drafts: schema forms, typed mappings, saved labels/presets, pinned metanode drafts, separate preview/inspection actions and trigger payload mapping with overlap acknowledgement. Production transport integration remains pending (#014-5d73).
+- Native workflow review retains exact committed-candidate findings and reviewer provenance; named checks retain nonzero receipts, and empty diffs cannot approve a commit.
+
+- Compose configured script, HTTP, model, Jira, GitLab and Telegram workflow adapters through the installed native provider. Preserve exact connector pins and current caller authority, and allow pure preview without a run binding. Public starts now bind authenticated backend callers before dispatch.
+- Add internal bounded correction subflow construction and typed CI/finding assessment seams; durable loop admission preserves the budget across worker/head changes and restart. Native review/check assessment refuses old candidates, and the existing neutral action exposes selected scope, pinned criteria and budget. Designer rendering remains pending (#016-358f).
+
+- Add internal typed native workflow operations with current authority checks, exact approvals and evidence receipts. Commit now requires a passing persisted review of the same staged artifact. Add account/repository-bound native GitHub branch and PR publication actions with separate approvals and provider read-back. Public caller binding remains pending.
+- Internal workflow scripts validate bounded versioned results and exact activation/attempt identity, keep stderr separate and retain uncertainty after mutation loss or cancellation. Host installation and Designer integration remain staged.
+- Add internal Jira Cloud workflow catalog activities with typed account/issue references, metadata validation, bounded search and original-effect reconciliation; live adapter acceptance remains unverified (#011-2a30).
+- Prevent enabling GitHub workflow triggers from running the existing open-resource backlog; retain owner-authorized replay.
+
+- Add source-neutral workflow trigger bindings and GitHub polling admission with typed mappings, owner-authorized replay and durable generation coalescing (#010-978f).
+
+- Add the internal typed workflow HTTP adapter and pinned connector contracts, with separate network/write grants, bounded pagination and original-effect reconciliation (#009-e32f).
+- Add staged neutral workflow catalog, draft, validation, preview and run transports shared by desktop, HTTP and MCP; native execution requires backend provider installation (#015-608c).
+
+- Make an explicit CLI `--instance` override inherited `TUIC_SOCKET`, report conflicting targets, and preserve the selected socket in background runners (#2958-e0cf).
+
+- Restore the ego status badge with its short model name and context from a single-session v5 report. Provider quotas use the existing Claude or Codex usage ticker; the tooltip identifies the full model (#2950-abfb).
+
+- Make the new-tab agent menu easier to scan with agent icons, larger rows, separate config labels and a default check.
+
+- Internal reusable workflow operations now require host-registered target-specific handlers. Project catalogs verify saved versions and refuse host descriptor collisions.
+
+- Internal workflow contracts persist versioned reusable script/subflow operations and validate descriptor-level IO, outcomes and target pins. Execution and authoring integration remain pending.
+- Recognize ego's current empty startup composer so spawned children receive their queued initial brief without manual input, including when mail is pending (#2948-fc2a).
+
+- Automations: remove the initial-selection checkbox and always open the first definition by default.
+
+- Automations: choose a timezone from a searchable dropdown, including saved aliases and the host-local default.
+
+- The sidebar layout switch cycles R (rich), C (compact), H (live harness branches with rich rows). H replaces Auto and the separate H filter button; older Auto preferences open in rich mode (#2942-122e).
+- Automation session output now uses rendered terminal text and retained scrollback instead of raw spinner repaints (#2947-b80f).
+
+- The macOS Dock icon has a rounded body and transparent margins in development and bundled builds. Windows and Linux icons keep their existing appearance (#2943-b69b).
+
+- Agent activity follows delivered native busy/idle signals without competing screen, timer or descendant overrides; suggestions no longer turn a busy native agent green (#2930-c02d).
+- Terminal tabs repaint their retained viewport on return instead of staying blank until a fresh backend frame arrives (#2938-6549).
+- Workflow Designer node entries now share one palette row layout, with labels clear of drag handles and scrollbars. Run command and Decision remain click-only (#2944-e573).
+
+- Workflow Designer links now have target arrows, orthogonal node-clear routes, attached outcome labels and visible return loops. Automatic layout follows flow layers instead of array order (#2941-b596).
+
+- Workflow Designer outcome labels no longer hide behind nodes on a narrow canvas. Labels remain clear of nodes and other labels while saved node positions stay unchanged (#2935-1656).
+- Open a plain shell tab in the current repository or worktree from the Open in menu (#2937-e1c9).
+
+- Agent launch menus no longer pin the generic agent label as a custom tab name. Later intent and terminal titles can name the tab; explicit user and MCP renames remain protected (#2936-6b25).
+
+- Smart prompts detect the base branch from `origin/HEAD` before local `main`, `master`, or `develop`, so a remote-only base no longer leaves `{base_branch}` unresolved. An explicit repository base setting still takes priority (#2932-f821).
+
+- The tab-bar `+` opens the agent launch menu, ranked by persisted branch usage with repository fallback. Alt/Option-click and Cmd/Ctrl+T open a plain terminal.
+
+- The `agent` tool now has three roles. An agent (a bound caller not registered as orchestrator) keeps spawn and its task actions; launch and subscribe/ack/unsubscribe are refused with `code: role_denied` naming the role, and stay with the orchestrator (registered with `orchestrator=true`) (#2805-4ee2).
+
+## [2.0.1] - 2026-11-07
+
+- Automatic archive records, for each inspected worktree, the exact tip, base, proof source and time apart from a cleanup decision (merged, uncertain, unmerged or safety-blocked). It binds the archive to the inspected checkout state and retries a failed archive once after a fresh inspection (#2865-ddd6).
+- Workflow commands can declare a `maintenance` resource for the named operation `cache_gc`. Such a node is refused unless it names that published operation, has no `secretRefs` and runs locally. It never overlaps a running `build` command, and builds wait while it runs, so cache GC cannot delete what a live build reads (#2527-ce1e).
+- Release workflow: the release-ready notice (release, remaining work, proof state) and the publication consent question reach Boss in the AI Chat of the release project. AI Chat records his answer as the authorization for the exact artifact and action. The reply says whether a chat received the message (#2774-49f6).
+- The All Changes view (the "All files" diff mode) now shows the whole branch, not only uncommitted work. A scope selector offers Uncommitted, Branch vs base and Commit / range. On a feature branch it opens on Branch vs base: the stored base of the branch, else the local default branch, changeable for the session only. An Include uncommitted switch, off by default, adds the working tree. Commit / range shows one commit, or a Shift-click range, against the first parent. Uncommitted shows each file once, also when it is partly staged. The diff routes accept the new `base:`, `base-uncommitted:` and `range:` scopes (#2775-ddee).
+- Local workflow commands start from an empty environment: only `HOME`, locale, temp-folder variables, `USER`, `LOGNAME`, `SSH_AUTH_SOCK`, TLS CA settings (`SSL_CERT_*`, `NODE_EXTRA_CA_CERTS`, `NODE_USE_SYSTEM_CA`), `PATH` and the command's declared `secretRefs` reach the program, so tokens in the TUIC daemon environment no longer leak to a `RunCommand` or Tool node. The build-slot wrapper keeps its `BUILD_SLOT_*` and `RB_*` controls (#2844-a60c).
+- Managed children get their parent repository's rules: a `.tuic-child-contract.md` in the orchestrating agent's working directory is inserted into every child prompt, whichever agent launches the child. An ego MCP child gets `--trust-workspace` (per the `skip_trust_dialog` setting) and the TUICommander MCP server through `--mcp @FILE`, unless the caller selects its own (#2881-4e8c).
+- Automations can opt in to `close_on_finish` to close only their own run tab after confirmed completion. The default stays off; failed, unknown and input-blocked runs stay open. Worktrees and sibling tabs are not removed (#2873-4635).
+- Pending prompts, session Chat and AI Chat messages show path-based image attachments as framed previews above the text: one image, a side-by-side pair or a grid. Both queue lists use the same renderer, and unavailable images show a placeholder (#2871-e10c).
+
+- Click the status bar Agents ticker to open the Activity Dashboard. The label and counts support click, Enter and Space; the cycle badge still advances tickers (#2874-8a31).
+- An accepted issue can hand off to a pinned story definition: the new `issue_handoff` node creates one story and starts the story run with the issue attached. Story definitions can hold issue comments, push and draft pull-request creation, which run only for that issue. A lost push or create reply is checked by lookup and never sent again, and push and pull-request creation stay refused for every repository until one is named (#2823-cf79).
+- Automations: an operator can move one repository from the legacy PR-review subscription to its staged, migrated `pr_review` workflow binding (`pr_review_cutover`) and back (`pr_review_rollback`) through the existing automations IPC/HTTP action. The cutover refuses unresolved legacy reviews, never lets both consumers run, and a rollback never reviews an already reviewed head again. Nothing changes until an operator runs it (#2824-58c0).
+- Automations: a legacy PR review whose publication is unknown no longer blocks the PR-review cutover forever. The operator settles it with `pr_review_reconcile`, giving the review URL found on GitHub or accepting the uncertainty; the head is never reviewed again (#2828-0207).
+- AI Chat message menus now send conversational reactions and comments tied to the exact source message. Accepted reactions remain visible and can be removed; offline failures leave marks unchanged. Desktop error messages preserve the offline reason and the **Do not resend** warning when an accepted action's mark cannot be saved. Menus stay inside the viewport, including at the left edge (#2872-6aff).
+- Claude commands launched through `env` or a script by name now receive the same launch-scoped status hooks as plain commands. Init prompts, explicit settings and administrative-command exclusions remain unchanged (#2878-fee0).
+
+- Agent launch shims remove repeated native screen flags after shell alias expansion. Codex, Grok and OpenCode aliases no longer duplicate a screen flag added by terminal launch preparation (#2877-5cec).
+
+- Worktree warming now records SHA-256 copy receipts for payload files that are not ignored in the destination. Fresh cleanup checks accept only unchanged copies whose source still matches. Modified, missing, symlinked, new and unproven files keep cleanup blocked; legacy worktrees expose an uncertain inventory without automatic file changes (#2875-7ecc).
+- Activity Dashboard no longer shows an Unknown health warning only because an agent has no current live stage. Failed, Stalled, Input stalled and Blocked warnings remain (#2876-3c58).
+- Fix steering that queued text behind active work: Chat Send now, Compose Steer and urgent mail now interrupt Claude Code, Codex and ego before delivery, including while Stop hooks run.
+
+- Session Chat answer bars now sit outside bullets and numbering, including nested and partially marked lists. Adjacent answer blocks share a continuous outer rail. Mixed lists keep unmarked items as context without changing answer ownership (#2868-afd6).
+- Automatic worktree archive now inspects PR-only merged checkouts after the lifecycle refresh instead of filtering them out with the local merged-branch list. Fresh proof, exact checkout identity and backend no-force safety checks remain required (#2864-74ab).
+- Status bar usage widgets now share one right-aligned group with plugin tickers, Offline, PR/CI and panel controls. The cwd stays left; narrow layouts truncate labels and rotate overflow tickers (#2863-2f00).
+
+- The Compose queue now offers labelled Steer and Cancel controls beside each prompt. Steer uses the existing Send now behavior for supported agents; Clear all remains available (#2862-c636).
+- Worktree creation receipts and inventory include the durable creator's TUIC session identity, including AI Chat peers without a terminal. Recycled checkouts receive the new creator; legacy and unbound worktrees report `null` (#2847-10a9).
+- Agent launch and MCP fallback guidance now asks for a new line before each additional `💬 ` answer marker, rather than leaving it visible in the middle of prose (#2861-0410).
+
+- Tailscale commands always receive explicit CLI mode, including PATH aliases to the macOS app executable. Detection, peer lookup and certificate requests no longer depend on an inherited `TAILSCALE_BE_CLI` setting (#2860-81f8).
+
+- Restored Claude terminals now receive the same launch-scoped state hooks as fresh launches, also when discovery saved an absolute executable path. Explicit settings and the native-status opt-out remain unchanged (#2858-2b1c).
+- Attended AI Chat sessions now receive host guidance to use rendered Mermaid blocks instead of ASCII diagrams when a diagram is useful. The user master prompt, its 8192-byte limit and unattended task instructions remain unchanged (#2856-cddc).
+
+- AI Chat clear actions now confirm their scope: `/clear` clears the composer and attachments, while Cmd/Ctrl+K clears the local transcript view. Neither deletes saved history or resets agent context (#2855-7d52).
+
+- AI Chat can fork an earlier successful completed turn while its parent keeps running. The menu and `/fork` select the last verified completion; per-reply Fork uses its selected turn. Partial output, failed turns and cancellation never become automatic cutoffs (#2851-f5c1).
+
+- AI Chat keeps keyboard input after a click in its transcript or controls, instead of redirecting typed characters to the adjacent terminal. Text selection and intentional control focus remain available (#2850-4578).
+- Mobile AI Chat: the title, conversation picker and new-conversation action share one header row. The new-conversation action uses a labelled plus icon to leave more room for the transcript (#2857-5875).
+
+- Mobile AI Chat: the editor no longer draws a second focus border or inherits the standalone field's tall minimum; microphone and Send stay aligned, and the model summary can wrap (#2853-4bcb).
+- Mobile AI Chat: the Conversation picker keeps the active conversation when the optional saved-conversation list is empty or arrives late, without duplicate options (#2854-7217).
+
+- Workflows gain an `issue` kind and an editable `issue_triage` built-in: triage an admitted issue, then post the rejection comment and label, a question or the accepted label through host-owned effects that never repeat an unknown write. A disabled `issue_label_poll` trigger binding carries the label policy. Unattended push or pull-request creation is refused for every repository until one is named. The legacy issue intake stays the only consumer until the cutover (#2821-93ee).
+- Remote editor: saving a file over 2 MB no longer fails with 413. `/fs/write` and `/fs/write-external` accept a body up to twice the editor's 250 MiB large-file cap (JSON escaping can double the text); every other route, including `/fs/write-if-unchanged`, keeps the 2 MB limit (#2820-59bc).
+- MCP lists `workflow` only when the repository has its own workflow definition (not only the built-in templates) or an active run, and `automations` only when an automation exists, so other sessions no longer load those schemas by mistake. A peer registered as orchestrator sees both. The catalogue sends `notifications/tools/list_changed` when this changes; Claude Code needs an MCP reconnect to see the new list (#2807-f698).
+- The code editor in a browser or on the phone can open a text file above the 10 MB remote read limit: **Load in pages** reads it in bounded 1 MiB pages up to the 250 MB editor limit. The load stops when the file changes on disk or the tab moves to another file. Whole-file reads keep their limits; authentication and path checks are unchanged (#2660-35a3).
+- Plugin `execCli` accepts `options.timeoutMs` (default 30 s, maximum 1 hour) for long indexing or build commands, and bounds each plugin to 4 concurrent commands instead of 60 calls per minute. Output limits and stopping the process on timeout or cancellation stay (#2653-070a).
+- AI Chat state comes from ego over ACP: each chat shows working while a turn, tool or ego child runs, waiting while a permission or question is open, and idle otherwise. A child in one chat never marks another chat busy. An answered question cannot come back after a reconnect, and a chat whose ego exits stops waiting. The same state reaches desktop, browser and phone (#2637-c6d3).
+- Authenticated remote MCP clients, such as phone automation, can now propose and confirm settings changes and use `ui confirm`, like loopback clients. Each proposal still needs a human answer and stays bound to its connection, exact edit and expiry (#2656-3310).
+- Plugin `exec:cli`: a declared program now resolves through the backend PATH, so tools in `/usr/bin`, app bundles and version-manager folders run. The manifest must still declare the bare program name (#2645-608a).
+- Workflow `start_graph` accepts `secrets`, a run-scoped environment binding (for example a short-lived repository token) that reaches only that run's agent children and is held in daemon memory only. Run end, cancellation and daemon restart drop it; a run that lost its binding pauses instead of launching without it (#2698-6dd7).
+
+- Waiting on you and the activity bell also list Fabbrica help requests and approvals, read through the Fabbrica control MCP upstream named `fabbrica`. Entries open the Fabbrica console; an unreachable Fabbrica shows an unknown state instead of an empty list, and a missing consent shows Connect Fabbrica (#2714-5d71).
+- Lower idle CPU with many agents and repositories. Project ownership is resolved from a cached map that is rebuilt when `repositories.json` changes (at most every 30 s otherwise), and repositories of a remote connection are skipped. The merged-branch check keeps a result per branch until its refs move and resolves the default branch once per repository. The process table is read every 5 s, not every second, while only background work needs it. The automation, workflow run and progress stores prepare their schema once per process.
+- Web Push: the owner can add a push service host in **Settings → All Settings** (`services.push.added_providers`), so a new browser push provider no longer needs a code change. A host matches exactly or as a subdomain; HTTPS stays required, a subscription cannot add its own provider, an MCP `settings` request needs the owner's confirmation, and removing a host stops delivery to its saved subscriptions (#2668-aa16).
+- `secret action=request` now works on a headless host: Web Push sends the one-time phone link to the owner, and the call returns after the owner submits the value through it (Remote Access address and HTTPS policy unchanged). Exact-argv consent for `secret run` uses the same path. Without Remote Access, an address or a phone with push notifications on, it fails with setup guidance and opens no form. The value never passes through the agent, and account-vault entry stays native-only (#2662-78e9).
+- **BREAKING:** stories, plans and Ideas move from `workflow action=story` to a separate native `story` MCP tool, without an alias. Call `story action=<action>` with the former `input` fields at the top level; `workflow action=story` is refused before any effect. A session that only works on stories no longer loads the whole workflow language schema. The `story` capability switch in Settings gates the tool; a saved `workflow.story` denial carries over. A saved denial of the whole `workflow` domain no longer covers stories: deny `story` too if that was the intent (#2804-6bd7).
+- Managed child agents receive a smaller `agent` tool: register, list_peers, send, inbox, wait and help (7,968 bytes instead of 16,336). Spawn, launch, task and subscription actions are refused for them with `code: role_denied` and an instruction to report BLOCKED to the parent. A child granted the `children` capability keeps the full tool (#2805-4ee2).
+- Session Chat **Send now** to a working Codex session now delivers the prompt. Before, the interrupt let a pending mail notice take the turn, and the prompt was dropped. A refused Send now keeps the prompt queued on every harness (#2773-3f33).
+- Drag to split: drag a tab onto the left, right, top or bottom edge of the terminal area or of a pane to split it in half, with the tab on that side. A highlight shows where the tab goes; the pane center still moves the tab into that pane, and a pane left empty by the move closes.
+- Plugin `exec:cli` failures return stderr up to 5 MiB instead of the first 256 bytes, mask registered secret values, and end with a truncation mark when stderr is cut (#2649-f608).
+- A remote MCP client that signs in with the URL token, session cookie or Basic Auth can now create, write, resize, submit, suspend and close sessions, spawn and launch agents, cancel its own tasks, launch workflow agents and use agent mail, as a local client can. The HTTP launch and mail subscription routes follow the same rule. Clients without verified credentials stay out, and task, launch and mail ownership is unchanged (#2652-3887).
+- Agents can receive external events and script results as mail: `POST /agent/webhook/{to}` files the request body (up to 64 KB) in the inbox of the agent that `{to}` names, by id, name or alias, and wakes it with the usual inbox notice. Unknown recipients and oversized bodies are refused. Managed agents' launch instructions tell them how a script can call them back this way (#2798-dc61).
+- Plugin installation from a URL now also accepts plain `http://` from `localhost` and loopback addresses (`127.0.0.0/8`, `::1`) after the usual confirmation. Internet downloads stay HTTPS-only, redirects are checked hop by hop (a remote page cannot redirect to a local service), and ZIP validation is unchanged (#2667-6f19).
+- The status bar agent badge, the mobile session card and the session details sheet show the tool the agent is running now, for Claude, Codex, Grok, ego terminals, Pi and OpenCode. Only the tool name shows, never its arguments, and the end of one tool does not hide another that still runs. Reinstall the Pi extension and the OpenCode plugin in Settings to get their readout (#2636-5551).
+- Plugin HTTP: the owner can list development services, LAN included, in `plugin_http_destinations`; `net:http` plugins reach them without an account or a manifest change. Only `http`/`https`, every redirect hop is checked, and account credentials stay bound to the account host (#2659-b083).
+- A Claude or Codex question card that opens before its transcript row lands now fills within about 250 ms of the row, by a `session-state-changed` push, instead of waiting for the 30 s poll. The backend re-reads such a wait for 10 s.
+- Git panel Branches tab: the list shows at once again on repositories with hundreds of branches. Merged badges and the Delete merged count arrive when the merge check is done, and in browser mode too (#2777-1579).
+- Browser and remote mode: the diff, diff stats and changed files requests now keep their `scope`, so a staged diff or a commit's file list no longer shows the unstaged changes (#2794-ea89).
+- Agent spawn takes a fixed capability set (`land`, `push`, `tag`, `children`, `progress`); a child gets none by default. TUIC refuses spawns, launches and progress outside the set with `capability_denied` and mails the parent once per capability, and the pre-push hook refuses pushes and tag pushes outside `TUIC_CAPABILITIES`. Mail cannot widen the set (#2713-3a3a).
+- Remote access: an authenticated phone or browser reads absolute files outside registered repositories through `/fs/read-external` and `/fs/read-editor-external`, like the desktop. Authentication, the Host/Origin check and path validation stay; absolute-path writes keep the repository boundary (#2650-bc7c).
+- Remote access: an authenticated phone or browser reads absolute files outside registered repositories through `/fs/read-external` and `/fs/read-editor-external`, like the desktop, and the mobile Files screen opens terminal-linked files there. Authentication, the Host/Origin check and path validation stay; absolute-path writes keep the repository boundary (#2650-bc7c).
+- Plugin `execCli` commands now run in any existing absolute folder, also outside the home folder (for example a checkout on an external drive). Relative paths, missing folders and files are still refused before the command starts (#2646-0c02).
+- Plugin `execCli` commands now run in any existing absolute folder, also outside the home folder (for example a checkout on an external drive). Relative paths, missing folders and files are still refused and the command never starts (#2646-0c02).
+- Git: the diff of the first (root) commit of a repository now shows its files, compared with an empty tree. Before, git rejected the missing parent and the Changes view stayed empty (#2795-ac7b).
+- Relay tunnel: a running `tuic-remote` now loads a pairing stored after startup and stops accepting a desktop whose pairing was deleted or replaced, without a restart. Anonymous relay registration is kept and its bounds are documented (#2700-c56d).
+- Workflow Agent steps launch with one workflow agent profile that you choose in Settings > Agents, instead of guessing among per-agent defaults; the run asks for a choice only when none exists. The profile notice also names Gemini `-y` and `--approval-mode yolo` as bypassed permissions (#2740-3aef).
+- Wheel scrolling of a terminal stays fast when the machine is loaded: each smooth-scroll frame reuses the pixels already on screen and draws only the newly exposed rows, also when scrolling back into history (#2778-6cec).
+- Settings changes now ask for confirmation only when an agent adds authority (enabling or widening a listener, loosening authentication, new executables or tunnel forwards). Narrowing, disabling, lowering a timeout, no-op edits and edits in your own Settings window apply directly (#2657-5983).
+- Chat messages: the always-present Copy button is replaced by a quiet **⋯** menu with Copy message, Show raw Markdown and Quote reply (AI Chat); the shared dropdown gains keyboard navigation and menu roles (#2539-6c53).
+- Network (UNC) and custom-scheme links (`editor://`, `smb://`) in Markdown and OSC 8 terminal hyperlinks open with the system handler after an owner click and a confirmation that shows the exact target. Nothing opens without a click, the network host is never probed before it, and handler failures show an error toast (#2664-7051).
+- Repository files and Markdown images follow your symbolic links consistently, also to another volume: reads, edits, creates and deletes through a linked directory or file work, and mobile Markdown previews show linked images. Requested paths stay relative to the repository; absolute, drive, network and above-root `..` paths are refused. The Tasks start-work template still refuses a link out of the repository (#2651-ec2e).
+
+- Plugins with `fs:read`, `fs:list` or `fs:watch` now read, list and watch any path the user can access, including external volumes and HOME symlinks to them. OS access errors and the per-file and batch size limits stay; writes and renames stay within HOME (#2644-699b).
+- Git API (`run_git_command`, `POST /repo/run-git`): authenticated callers can pass normal Git options after an allowlisted subcommand, such as `log --oneline` or `push --force-with-lease`. Global options before the subcommand and generic `branch` deletion stay refused; branch and worktree deletion keep their dedicated safety (#2665-dd07).
+- Token-authenticated remote callers, such as the owner's phone, can now use `POST /debug/invoke_js`, `POST /debug/reload_webview` and the MCP `debug` actions `invoke_js` and `frame_workload_dump` to inspect and recover a blocked desktop window. Unauthenticated and foreign-site requests stay refused, an open private secret form still blocks inspection, and desktop open-tab publication stays local (#2658-7301).
+- Codex `/hooks` now lists TUIC hook entries as "TUICommander session" instead of "Unnamed hook"; reinstalling the hooks upgrades existing installs without duplicates (#2622-6809).
+
+- Plugin panels: `tuic.open` and `tuic.edit` open an absolute path outside every registered repository as an external file; relative paths still resolve against the asking panel's repository (#2666-17b6).
+
+- MCP pre-dispatch validation of a tagged action union names the failing field of the matched action (for example `/input/graph/nodes/0` or a missing `expected_revision`) instead of only reporting that no `oneOf` branch matched (#2752-f2b0).
+- Plugins with the `credentials:read` capability no longer trigger a first-use consent dialog or write a consent file into plugin data; the manifest capability and the account host binding remain the checks (#2648-212c).
+- Remote sign-in lockout now shows how long to wait and that the QR code in Settings → Remote Access signs in at once. The per-address attempt limit is unchanged (#2663-9519).
+- Remote access: an authenticated phone or browser reads absolute files outside registered repositories through `/fs/read-external` and `/fs/read-editor-external`, like the desktop, and the mobile Files screen opens terminal-linked files there. Authentication, the Host/Origin check and path validation stay; absolute-path writes keep the repository boundary (#2650-bc7c).
+
+- Plugin `execCli` commands now run in any existing absolute folder, also outside the home folder (for example a checkout on an external drive). Relative paths, missing folders and files are still refused and the command never starts (#2646-0c02).
+- Design Mode: one sidebar click, **Allow agents on this host**, now enables capture, page errors, navigation and eval for the armed session on that host, also on localhost. No separate eval grant or remove-and-regrant cycle. Large screenshots are downscaled instead of refused, eval scripts can be up to 256 KiB and eval results are paged with `result_offset`. The reviewed-tab limit and Chrome's permissions stay (#2654-27cc).
+
+- MCP `settings` tool: one visible switch. The host-only Settings opt-in alone exposes the tool; a saved `settings` capability denial migrates to that switch turned off. Settings stays off by default, and diagnostics keeps its own switch (#2655-a6d5).
+- An open private secret form now blocks only inspection and capture: toasts, confirmations, read-only `debug agent_detection`/`sessions`, and HTTP upstream MCP servers on public hosts keep working. Screenshots, HTML tabs, design mode, debug JavaScript and logs, and upstreams that can run on this machine stay blocked, also through `call_tool` (#2661-e740).
+- Terminal reads can now return secret-shaped text literally for a session when the owner chooses **Allow Literal Terminal Reads** in its tab context menu and the reader passes `literal=true` to `session action=output`. Model arguments alone never disable masking; registered and scoped secrets stay masked, and default reads and stored data stay redacted (#2643-6b38).
+- Name a Claude or Codex question wait from the unresolved question call in its exact transcript when the hook or screen gave no text; answered, cancelled or replayed calls never reopen (#2633-cbd3).
+- Remote sign-in lockout now shows how long to wait and that the QR code in Settings → Remote Access signs in at once. `POST /auth/login` 429 answers add `retry_after_secs`. The per-address attempt limit is unchanged (#2663-9519).
+- Remote sign-in lockout now shows how long to wait and that the QR code in Settings → Remote Access signs in at once. The per-address attempt limit is unchanged (#2663-9519).
+- An open private secret form now blocks only inspection and capture: toasts, confirmations, read-only `debug agent_detection`/`sessions`, and HTTP upstream MCP servers on public hosts keep working. Screenshots, HTML tabs, design mode, debug JavaScript and logs, and upstreams that can run on this machine stay blocked, also through `call_tool` (#2661-e740).
+- Terminal reads can now return secret-shaped text literally for a session when the owner chooses **Allow Literal Terminal Reads** in its tab context menu and the reader passes `literal=true` to `session action=output`. Model arguments alone never disable masking; registered and scoped secrets stay masked, and default reads and stored data stay redacted (#2643-6b38).
+- Remote access: an authenticated phone or browser reads absolute files outside registered repositories through `/fs/read-external` and `/fs/read-editor-external`, like the desktop. Authentication, the Host/Origin check and path validation stay; absolute-path writes keep the repository boundary (#2650-bc7c).
+- Remote access: an authenticated phone or browser reads absolute files outside registered repositories through `/fs/read-external` and `/fs/read-editor-external`, like the desktop, and the mobile Files screen opens terminal-linked files there. Authentication, the Host/Origin check and path validation stay; absolute-path writes keep the repository boundary (#2650-bc7c).
+- Plugin `execCli` commands now run in any existing absolute folder, also outside the home folder (for example a checkout on an external drive). Relative paths, missing folders and files are still refused before the command starts (#2646-0c02).
+- Plugin `execCli` commands now run in any existing absolute folder, also outside the home folder (for example a checkout on an external drive). Relative paths, missing folders and files are still refused and the command never starts (#2646-0c02).
+
+- MCP `settings` tool: one visible switch. The host-only Settings opt-in alone exposes the tool; a saved `settings` capability denial migrates to that switch turned off. Settings stays off by default, and diagnostics keeps its own switch (#2655-a6d5).
+- Mobile session view: leave exactly 1 px between the terminal key bar and the input area (#2741-e7e9).
+- A capped agent's `git push` is refused outside its capabilities in any repository, not only where the TUIC pre-push hook is installed (#2756-cde6), also from a login shell such as the Claude Code Bash tool (#2789-f417).
+- Agent spawn takes a fixed capability set (`land`, `push`, `tag`, `children`, `progress`); a child gets none by default. TUIC refuses spawns, launches and progress outside the set with `capability_denied` and mails the parent once per capability, and the pre-push hook refuses pushes and tag pushes outside `TUIC_CAPABILITIES`. Mail cannot widen the set (#2713-3a3a).
+
+- Terminal reads can now return secret-shaped text literally for a session when the owner chooses **Allow Literal Terminal Reads** in its tab context menu and the reader passes `literal=true` to `session action=output`. Model arguments alone never disable masking; registered and scoped secrets stay masked, and default reads and stored data stay redacted (#2643-6b38).
+- Show the structured payload of a native Claude, Codex or ego question as `question_card`, with the current question header and position on the desktop and mobile choice overlay. Escape on a Claude plan approval now settles the wait, and a late payload of a settled question cannot reopen it (#2634-ea5b).
+- Name a Claude or Codex question wait from the unresolved question call in its exact transcript when the hook or screen gave no text; answered, cancelled or replayed calls never reopen (#2633-cbd3).
+- `secret action=run`: exact-argv consent now decides. Ordinary options such as `git -c`, `-e` and `-p`, and `env`/`printenv`, reach the consent form instead of a refusal. Structural argv checks, `.bat`/`.cmd` refusal, direct spawn and output masking stay (#2642-203b).
+
+- Use the selected default run profile for legacy workflow Agent steps also when it skips permissions, and show the profile and its effective permission mode in a repository notice before the launch (#2647-1384).
+- Mobile session chat view no longer shows the separate queued-prompts panel: queued prompts appear inline with Send now and Cancel. The panel stays in the CLI view (#2742-79fb).
+
+- Mobile session view: leave exactly 1 px between the terminal key bar and the input area (#2741-e7e9).
+- Prompt composers now share draft parking on Cmd+S/Ctrl+S. Compose gains the
+  existing AI Chat park/swap behavior; Ctrl+Enter sends consistently and
+  Shift+Enter inserts a newline.
+- Refuse completed workflow author reports without a new commit and check declared required artifacts before advancing.
+
+- Claude hooks no longer print base64 text over the Claude Code screen when a tool call has a large input (#2747-636f).
+- Claude, Codex, Gemini and Grok hooks send their state to TUIC through its local socket instead of the agent terminal, so hook data can no longer print over the agent screen and large Claude tool results and prompts keep their state updates (#2749-bee7).
+- The ACP stream WebSocket no longer queues frames without limit for a client that stops reading: a slow reader resumes from the journal without losing frames (#2750-eae1), and one that falls behind the journal receives the `stream_gap` frame. New `GET /acp/connections/{id}/events` reads one bounded page (events and bytes) with a `next` cursor (#2689-c3c0).
+- Track Claude native permission attention and matching retraction, including no-post-tool answers, while preserving question and elicitation dialogs and ignoring ordinary idle notices (#2627-110e).
+
+- Restore Codex tool activity from exact-session native hooks and carry native user-input questions through the shared question state without dismissing human approval dialogs (#2626-f570).
+- The legacy workflow engine is removed: role/kind graph runs and definitions, kind trigger bindings, host routing policy, the migration converter, the run history UI, and the automation engines for PR review, issue intake and triage. On the first start, TUICommander backs up each affected store next to itself (`*.legacy-workflows.bak`) and then removes the legacy tables, rows and `automations.json` sections. Prompt schedules and neutral workflows are unchanged.
+- Stories, plans and Ideas move from `workflow action=story` to a separate `story` MCP tool, without an alias. Call `story action=<action>` with the former `input` fields at the top level; `workflow action=story` is refused.
+- The `agent` MCP tool now has caller roles. A bound agent keeps spawn and its task actions. Launch and subscribe/ack/unsubscribe stay with the orchestrator (registered with `orchestrator=true`); other callers get `code: role_denied` with the role name. Managed child agents receive a smaller tool: register, list_peers, send, inbox, wait and help.
+- Agent spawn takes a fixed capability set (`land`, `push`, `tag`, `children`, `progress`). A child gets none by default. TUICommander refuses spawns, launches, progress reports and `git push` outside the set with `capability_denied` and tells the parent once per capability.
+- The unsupported `tuic diff` command is removed. It never opened a two-file comparison.
+
+### Added
+
+- The All Changes view covers the whole branch, not only uncommitted work. A scope selector offers Uncommitted, Branch vs base and Commit / range; on a feature branch it opens on Branch vs base.
+- Drag to split: drag a tab onto the left, right, top or bottom edge of the terminal area or of a pane to split it, with a highlight that shows where the tab goes.
+- AI Chat: fork an earlier completed turn while the conversation keeps running; react to and comment on a message; a message menu with Copy message, Show raw Markdown and Quote reply; framed previews of image attachments. Each chat shows working, waiting or idle state from ego, also on mobile.
+- The status bar agent badge, the mobile session card and the session details show which tool the agent is running now, for Claude, Codex, Grok, ego, Pi and OpenCode. Click the Agents ticker to open the Activity Dashboard.
+- The Compose queue has Steer and Cancel controls beside each prompt. Cmd/Ctrl+S parks a draft in every prompt composer.
+- Neutral workflows: a catalog authoring view with schema forms, typed mappings, saved labels and presets, and trigger payload mapping. Saved drafts stay available when the catalog is unavailable.
+- Neutral workflows: scheduled text workflows with literal model input and local approval; source-neutral trigger bindings with GitHub polling. Enabling a GitHub trigger does not run the existing backlog of open items.
+- Neutral workflows: script, HTTP, model, Jira, GitLab and Telegram adapters, and GitHub actions for branches, pull requests, review verdicts, issue comments and labels. Each write action needs its own approval.
+- Workflow Designer: links have target arrows, routes that go around nodes, attached outcome labels and visible return loops. Automatic layout follows the flow layers. Correction loops show their criteria and limits. Published workflows can be saved as repository JSON and loaded as drafts.
+- Plans and Stories select an approved external story connector automatically, keep explicit choices, and show which backend is in use and why. Supported external title, priority and criterion edits are kept.
+- Plans and Stories list manual checks and unanswered workflow questions under Waiting on you; the activity bell notifies each item once and clears it when resolved.
+- Agents can receive external events and script results as mail: `POST /agent/webhook/{to}` files the request body (up to 64 KB) in the inbox of the named agent and wakes it.
+- Remote access: an authenticated phone or browser can manage sessions, agents, tasks and agent mail like a local client, read files outside registered repositories, and propose settings changes that still need a human answer.
+- The code editor in a browser or on the phone opens text files above the 10 MB remote read limit in pages, up to 250 MB, and saves files larger than 2 MB.
+- Claude sessions update the 5-hour and weekly quota from the Claude status line, without a usage request. The status bar, mobile session details and the Claude/Codex dashboards share one cached quota read.
+- The tab-bar `+` opens the agent launch menu, ranked by how often each agent is used on the branch. Alt/Option-click and Cmd/Ctrl+T open a plain terminal. The menu shows agent icons, larger rows and a default check.
+- Open a plain shell tab in the current repository or worktree from the Open in menu.
+- The sidebar layout switch cycles R (rich), C (compact) and H (live harness branches with rich rows).
+- Automations: choose a timezone from a searchable dropdown, and opt in to `close_on_finish` to close the run tab after confirmed completion. The first definition opens by default.
+- Native Claude, Codex and ego question cards show the current question header and position on desktop and mobile.
+- An opt-in managed status extension for Pi reports modal waits and background tools.
+- Terminal tabs have an **Allow Literal Terminal Reads** option for agents that must read secret-shaped text.
+- Design Mode: one sidebar click, **Allow agents on this host**, enables capture, page errors, navigation and eval for the armed session.
+- Network (UNC) and custom-scheme links in Markdown and terminal hyperlinks open with the system handler after a click and a confirmation that shows the exact target.
+- Plugins: `execCli` accepts a timeout of up to 1 hour, runs in any absolute folder, resolves programs through the backend PATH and returns longer stderr with secrets masked. `fs:read`, `fs:list` and `fs:watch` reach any path the user can access. The owner can list development services in `plugin_http_destinations`. Plugins can read file sizes and bounded binary ranges for paged previews.
+- Web Push: the owner can add a push service host in Settings. `secret action=request` works on a headless host through a one-time phone link.
+- Tab progress bar: an indeterminate OSC 9;4 report shows an animated full-width bar, and a paused report shows its value.
+- `tuic-remote --no-automations` starts the daemon without the automation scheduler or event intake.
+- An opt-in backend heap profiler for memory diagnosis.
+- Mobile AI Chat shows the provider-retry status of a failing turn.
+- GitHub work items: the create form lists the repository assignees.
+
+### Changed
+
+- Settings changes ask for confirmation only when an agent adds authority, such as enabling a listener, loosening authentication or adding executables. Narrowing changes and edits in your own Settings do not ask.
+- Markdown review sends name the saved edits by line range, so the agent reads only those sections.
+- MCP lists `workflow` only when the repository has its own workflow or an active run, and `automations` only when an automation exists.
+- A silent managed worker gets one nudge, and its parent gets one `stalled` notice, instead of an automatic stop.
+
+### Fixed
+
+- Send now, Compose Steer and urgent mail interrupt Claude Code, Codex and ego at once instead of queuing behind active work. Send now to a working Codex session no longer drops the prompt.
+- Claude, Codex, Gemini and Grok hooks report through a local socket, so hook data no longer prints over the agent screen.
+- Agent activity follows the native busy and idle signals of the agent. Suggestions no longer turn a busy agent green.
+- Lower idle CPU with many agents and repositories. Wheel scrolling stays fast on a loaded machine, and the Branches tab shows hundreds of branches at once.
+- The MCP bridge no longer answers `server/discover` and `ping` with "method not found" while TUICommander is unreachable. It waits briefly for the app, then returns a transient "unavailable" error, so clients keep TUICommander as a server.
+- An interrupted Codex turn returns to idle, so urgent mail and later prompts can reach it.
+- ego: a user stop also cancels automatic background completion wakes; spawned ego children receive their initial brief without manual input; the status badge shows the short model name and context again.
+- A question card that opens before its transcript row fills within about 250 ms instead of waiting for the 30 s poll.
+- Terminal tabs repaint their viewport when you return to them, instead of staying blank until new output arrives.
+- Terminal queries are answered promptly, and replies seen before raw mode starts are delivered later.
+- Claude usage shows a retry time when throttled, keeps working when the usage endpoint answers 429, and shows an API key label for API-key sessions.
+- Native Windows no longer gets POSIX agent status hooks. OpenCode uses its native v2 plugin. Grok sessions settle after cancellation or an API failure.
+- Browser and remote mode keep the diff scope, so a staged diff or a commit's file list no longer shows unstaged changes. The diff of a repository's first commit shows its files.
+- A running `tuic-remote` loads a relay pairing stored after startup and stops accepting a deleted or replaced pairing, without a restart.
+- Remote sign-in lockout shows how long to wait and that the QR code in Settings signs in at once.
+- Tailscale commands always run in CLI mode.
+- Update failures keep their full cause, and macOS updates check the free space before extraction.
+- Codex `/hooks` lists TUICommander hook entries by name.
+- Agent launch menus no longer pin the generic agent label as a custom tab name. User and MCP renames stay protected.
+- Smart prompts detect the base branch from `origin/HEAD` first, so a remote-only base no longer leaves `{base_branch}` unresolved.
+- Automation session output shows rendered terminal text instead of raw spinner repaints.
+- An explicit CLI `--instance` overrides an inherited `TUIC_SOCKET` and conflicting targets are reported.
+- MCP `search_tools` ranks a tool first when the query names it exactly.
+- Dictation settings show download progress on the row of the model that downloads.
+- Mobile: terminal history paging no longer skips lines, long ideas use the agent input adapter, the terminal no longer shakes on overscroll with the keyboard open, and the AI Chat header and editor are tidier.
+- GitLab requests are cancelled when the caller aborts them.
+- GitHub publication from workflows works with host-wide Git URL rewrites.
+- Workflow Designer outcome labels no longer hide behind nodes, and palette rows share one layout.
+- Sidebar row starts stay visible after resizing or focusing branch actions.
+- The macOS Dock icon has a rounded body and transparent margins.
 
 ## [2.0.0] - 2026-11-01
 
@@ -4211,3 +4528,6 @@ Earlier contributions not credited before:
 
 
 - Wake suspended sessions through one Rust path for tab open, submit and peer mail; concurrent wakes reuse one PTY and keep its TUIC identity (#1807-4f1f).
+
+- Added the catalog-backed neutral template migration preview with exact component pins and per-node missing replacements; incomplete full templates remain blocked.
+- Add owned native story creation with durable per-review proposal caps and responsibility receipts (#021-6e1b).

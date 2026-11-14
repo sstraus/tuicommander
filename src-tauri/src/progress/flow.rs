@@ -1,9 +1,10 @@
 //! Progress Flow — the journal drawn as a delegation sequence.
 //!
 //! One column per participant: every terminal that wrote to or was named by
-//! the project's journal, and the Claude in-process subagents of each live
-//! terminal. The arrows are the content: a `delegated` entry is a hand-off from
-//! a parent to the child it spawned, a `message` entry is a peer-to-peer
+//! the project's journal, the Claude in-process subagents of each live
+//! terminal, and the native children (Codex, ego) it reports live. The arrows
+//! are the content: a `delegated` entry is a hand-off from a parent to the
+//! child it spawned, a `message` entry is a peer-to-peer
 //! `agent action=send`, a child's `done` or `blocked` is its return to the
 //! parent, and a subagent's spawn and final report are the same two arrows
 //! read from its transcript. Time is order, not an axis.
@@ -438,6 +439,27 @@ fn parents_first(participants: Vec<FlowParticipant>) -> Vec<FlowParticipant> {
         .collect()
 }
 
+/// Running rows for the native children a terminal reports. The roster keeps
+/// labels in start order without ids, so a row is keyed by its position.
+fn native_lanes(children: &[String]) -> Vec<SubagentFlow> {
+    children
+        .iter()
+        .enumerate()
+        .map(|(index, label)| SubagentFlow {
+            agent_id: format!("native-{index}"),
+            parent_agent_id: None,
+            title: label.clone(),
+            agent_type: None,
+            running: true,
+            started_at_ms: None,
+            ended_at_ms: None,
+            tool_calls: 0,
+            prompt: String::new(),
+            report: String::new(),
+        })
+        .collect()
+}
+
 /// The flow for one project, as the dialog asks for it.
 pub fn progress_flow(
     state: &crate::state::AppState,
@@ -488,6 +510,16 @@ pub fn progress_flow(
                 }),
             },
         );
+        // Native children (Codex hooks, ego frames) are live rows only: the
+        // roster drops a child on its stop or when the lead's turn is cleared,
+        // so a child is never drawn running from memory (#2635-8052).
+        let native = snapshot
+            .as_ref()
+            .map(|s| native_lanes(&s.native_children))
+            .unwrap_or_default();
+        if !native.is_empty() {
+            subagents.entry(id.clone()).or_default().extend(native);
+        }
         // DEFERRED (2026-09-23) — subagents are read only for open terminals:
         // resolving a Claude transcript needs the agent's pid. Keeping them
         // after close needs the session uuid journaled at discovery time.
@@ -498,7 +530,7 @@ pub fn progress_flow(
                 &source.parent_transcript,
             );
             if !lanes.is_empty() {
-                subagents.insert(id.clone(), lanes);
+                subagents.entry(id.clone()).or_default().extend(lanes);
             }
         }
     }
@@ -1037,5 +1069,62 @@ mod tests {
         let cut = read();
         assert!(cut.truncated);
         assert_eq!(cut.events.len(), LIST_LIMIT, "only the newest are drawn");
+    }
+
+    /// Catches: a native child that a Codex or ego terminal reports live never
+    /// appears in Flow, or a child whose stop went missing stays drawn as
+    /// running after the roster dropped it (#2635-8052).
+    #[cfg(unix)]
+    #[test]
+    fn native_children_draw_running_rows_only_while_live() {
+        let config = tempfile::tempdir().unwrap();
+        let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+        let repo = tempfile::tempdir().unwrap();
+        let hint = repo.path().to_string_lossy().to_string();
+        let project = super::super::service::project_of(&hint).unwrap();
+        let store = super::super::store::ProgressStore::open().unwrap();
+        rusqlite::Connection::open(store.database_path())
+            .unwrap()
+            .execute(
+                "INSERT INTO entries (project, created_at_ms, kind, text, pty_id)
+                 VALUES (?1, 1, 'intent', 'spawn a child', 'lead')",
+                rusqlite::params![project],
+            )
+            .unwrap();
+        let state = crate::state::tests_support::make_test_app_state();
+        crate::test_support::insert_recording_session(&state, "lead");
+        state
+            .session_maps
+            .session_states
+            .entry("lead".into())
+            .or_default()
+            .native_children = vec!["default".into()];
+        let read = || progress_flow(&state, &hint, ProgressFlowInput::default()).unwrap();
+
+        let live = read();
+        let child = live
+            .participants
+            .iter()
+            .find(|p| p.kind == ParticipantKind::Subagent)
+            .expect("the live native child has a row");
+        assert_eq!(child.state, FlowState::Running);
+        assert_eq!(child.parent.as_deref(), Some("lead"));
+        assert_eq!(child.pty_id, "lead");
+        assert_eq!(child.title, "default");
+
+        state
+            .session_maps
+            .session_states
+            .get_mut("lead")
+            .unwrap()
+            .native_children
+            .clear();
+        assert!(
+            read()
+                .participants
+                .iter()
+                .all(|p| p.kind != ParticipantKind::Subagent),
+            "a dropped child must not stay drawn"
+        );
     }
 }

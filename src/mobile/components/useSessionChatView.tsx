@@ -16,8 +16,11 @@ export function useSessionChatView(props: {
 	awaitingInput?: () => boolean;
 	activityRevision?: () => string | number | null | undefined;
 	subscribeWake: ChatViewWake;
+	/** Host composer: quote reply and response feedback are drafted into it, never sent. */
+	onQuote?: (text: string) => void;
 }) {
 	const [atBottom, setAtBottom] = createSignal(true);
+	const [newTextBelow, setNewTextBelow] = createSignal(false);
 	let jump: (() => void) | undefined;
 	const [mode, setMode] = createSignal<"cli" | "chat">(modes.get(props.sessionId()) ?? "cli");
 	createEffect(() => setMode(modes.get(props.sessionId()) ?? "cli"));
@@ -72,11 +75,13 @@ export function useSessionChatView(props: {
 							terminalAgent={props.agentType() as AgentType}
 							mobile
 							onAtBottomChange={setAtBottom}
+							onNewTextBelowChange={setNewTextBelow}
 							onRegisterScrollToBottom={(fn) => {
 								jump = fn;
 								setAtBottom(true);
 							}}
 							subscribeWake={props.subscribeWake}
+							onQuote={props.onQuote}
 							onUnavailable={() => select("cli")}
 						/>
 					</div>
@@ -84,5 +89,7 @@ export function useSessionChatView(props: {
 			</Show>
 		</>
 	);
-	return { active, available, openChat, Toggle, View, atBottom, scrollToBottom: () => jump?.() };
+	/** One jump control at a time: the transcript's own "New text below" badge wins. */
+	const showJump = () => !atBottom() && !newTextBelow();
+	return { active, available, openChat, Toggle, View, atBottom, showJump, scrollToBottom: () => jump?.() };
 }

@@ -15,6 +15,7 @@
 {"record":9,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":10,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":11,"event":{"type":"shell-state","state":"idle","agent_type":"ego"}}
+{"record":11,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":11,"event":{"type":"progress","state":2,"value":0,"_turn_epoch":0}}
 {"record":11,"event":{"type":"api-error","pattern_name":"ego-provider-failure","matched_text":"the response stream failed: HTTP response body failed (127.0.0.1), so the model never reported why the generation stopped; review the output, then send a new prompt to continue","error_kind":"server","_turn_epoch":0}}
 {"record":11,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
@@ -30,6 +31,7 @@
 {"record":23,"event":{"type":"shell-state","state":"busy","agent_type":"ego"}}
 {"record":23,"event":{"type":"shell-state","state":"idle","agent_type":"ego"}}
 {"record":23,"event":{"type":"intent","text":"SUBMIT_AFTER_FAILURE_2317","title":"εgo","_turn_epoch":0}}
+{"record":23,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":23,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":23,"event":{"type":"progress","state":2,"value":0,"_turn_epoch":0}}
 {"record":23,"event":{"type":"api-error","pattern_name":"ego-provider-failure","matched_text":"the response stream failed: HTTP response body failed (127.0.0.1), so the model never reported why the generation stopped; review the output, then send a new prompt to continue","error_kind":"server","_turn_epoch":0}}
@@ -50,6 +52,7 @@
 {"record":37,"event":{"type":"shell-state","state":"busy","agent_type":"ego"}}
 {"record":37,"event":{"type":"shell-state","state":"idle","agent_type":"ego"}}
 {"record":37,"event":{"type":"intent","text":"[TUIC] message available — read it with: agent action=inbox","title":"εgo","_turn_epoch":0}}
+{"record":37,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":37,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":37,"event":{"type":"progress","state":2,"value":0,"_turn_epoch":0}}
 {"record":37,"event":{"type":"api-error","pattern_name":"ego-provider-failure","matched_text":"the response stream failed: HTTP response body failed (127.0.0.1), so the model never reported why the generation stopped; review the output, then send a new prompt to continue","error_kind":"server","_turn_epoch":0}}

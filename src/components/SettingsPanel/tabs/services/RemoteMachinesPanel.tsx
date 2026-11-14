@@ -102,6 +102,19 @@ export function withStatus(statuses: SshHostStatus[], status: SshHostStatus): Ss
 	return [...statuses.filter((st) => !(st.target === status.target && st.port === status.port)), status];
 }
 
+const DISCOVERED_HOSTS_COLLAPSED = 5;
+
+/** Hosts to render: a filter matches the resolved target (no cap); otherwise the first rows until expanded. */
+export function visibleDiscoveredHosts(
+	hosts: DiscoveredSshHost[],
+	filter: string,
+	expanded: boolean,
+): DiscoveredSshHost[] {
+	const needle = filter.trim().toLowerCase();
+	if (needle) return hosts.filter((h) => h.target.toLowerCase().includes(needle));
+	return expanded ? hosts : hosts.slice(0, DISCOVERED_HOSTS_COLLAPSED);
+}
+
 /** Add-form state prefilled from a discovered host. */
 export function formFromDiscoveredHost(host: DiscoveredSshHost) {
 	return {
@@ -124,6 +137,8 @@ export const RemoteMachinesPanel: Component = () => {
 	const [sshHosts, setSshHosts] = createSignal<SshHostStatus[]>([]);
 	const [probingHosts, setProbingHosts] = createSignal(false);
 	const [discovered, setDiscovered] = createSignal<DiscoveredSshHosts>({ hosts: [], hashed_count: 0 });
+	const [hostFilter, setHostFilter] = createSignal("");
+	const [hostsExpanded, setHostsExpanded] = createSignal(false);
 	const [agentInfo, setAgentInfo] = createSignal<SshAgentInfo | null>(null);
 	const [serviceBusyId, setServiceBusyId] = createSignal<string | null>(null);
 	const [updateErrors, setUpdateErrors] = createSignal<Record<string, string>>({});
@@ -722,8 +737,8 @@ export const RemoteMachinesPanel: Component = () => {
 						{discovered().hashed_count} known_hosts entries are hashed and cannot be listed.
 					</p>
 				</Show>
-				<div style={{ "max-height": "220px", "overflow-y": "auto", "margin-top": "6px" }}>
-					<For each={discovered().hosts}>
+				<div style={{ "margin-top": "6px" }}>
+					<For each={visibleDiscoveredHosts(discovered().hosts, hostFilter(), hostsExpanded())}>
 						{(host) => {
 							const auth = () => discoveredHostAuth(host, sshHosts());
 							return (
@@ -763,6 +778,25 @@ export const RemoteMachinesPanel: Component = () => {
 						}}
 					</For>
 				</div>
+				<Show when={discovered().hosts.length > DISCOVERED_HOSTS_COLLAPSED}>
+					<div style={{ display: "flex", gap: "8px", "align-items": "center", "margin-top": "6px" }}>
+						<Input
+							data-non-setting="Filter the discovered host list"
+							type="text"
+							placeholder="Filter hosts"
+							value={hostFilter()}
+							onInput={(e) => setHostFilter(e.currentTarget.value)}
+						/>
+						<Button
+							data-non-setting="Expand or collapse the discovered host list"
+							type="button"
+							class={s.textBtn}
+							onClick={() => setHostsExpanded(!hostsExpanded())}
+						>
+							{hostsExpanded() ? "Show fewer" : `Show all (${discovered().hosts.length})`}
+						</Button>
+					</div>
+				</Show>
 			</div>
 
 			{/* Add form */}

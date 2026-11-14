@@ -16,6 +16,7 @@ import { settingsStore } from "../stores/settings";
 import { storiesUi } from "../stores/storiesUi";
 import { terminalsStore } from "../stores/terminals";
 import { tunnelPanelStore } from "../stores/tunnelPanel";
+import { workflowsUi } from "../stores/workflowsUi";
 import { isTauri } from "../transport";
 import { comboToDisplay } from "../utils/hotkey";
 import { isHandsFreeArmed, toggleHandsFreeConversation } from "./handsFreeConversation";
@@ -138,9 +139,17 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
 			id: "plans-stories",
 			label: "Plans and Stories",
 			category: "Navigation",
-			keywords: "plan story workflow designer runs",
+			keywords: "plan story backlog delivery",
 			keybinding: "",
 			execute: () => storiesUi.open(repositoriesStore.state.activeRepoPath),
+		},
+		{
+			id: "workflows",
+			label: "Workflows",
+			category: "Navigation",
+			keywords: "workflow designer definitions runs approvals",
+			keybinding: "",
+			execute: () => workflowsUi.open(repositoriesStore.state.activeRepoPath),
 		},
 	];
 

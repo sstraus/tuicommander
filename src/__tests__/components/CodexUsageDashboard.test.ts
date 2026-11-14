@@ -1,6 +1,5 @@
 import { render } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
 import {
 	barHeightPercent,
 	CodexUsageDashboard,
@@ -10,6 +9,8 @@ import {
 	labelWindows,
 } from "../../components/CodexUsageDashboard/CodexUsageDashboard";
 import type { CodexUsageApiResponse } from "../../features/codexUsage";
+import { appLogger } from "../../stores/appLogger";
+import { providerQuotaStore } from "../../stores/providerQuota";
 import { mockInvoke } from "../mocks/tauri";
 
 const win = (usedPercent: number, seconds: number | null) => ({
@@ -162,7 +163,26 @@ describe("CodexUsageDashboard refresh", () => {
 
 	const respondOk = () =>
 		mockInvoke.mockImplementation((command: string) =>
-			Promise.resolve(command === "get_codex_usage_api" ? emptyApi : emptyStats),
+			Promise.resolve(
+				command === "get_provider_quotas"
+					? [
+							{
+								key: { owner: "codex-cli", provider: "openai-codex", credential: "/codex" },
+								session_ids: ["codex"],
+								state: "fresh",
+								snapshot: {
+									windows: [],
+									detail: { provider: "codex", observed_at_ms: 1, response: emptyApi },
+									plan: "pro",
+									credits: null,
+									account: null,
+									observed_at_ms: 1,
+									source: "active",
+								},
+							},
+						]
+					: emptyStats,
+			),
 		);
 
 	beforeEach(() => {
@@ -172,17 +192,20 @@ describe("CodexUsageDashboard refresh", () => {
 	});
 
 	afterEach(() => {
+		providerQuotaStore.stop();
 		vi.useRealTimers();
 	});
 
-	it("refetches both endpoints on the interval instead of freezing at mount", async () => {
+	it("refreshes local stats but never polls provider quotas on the interval", async () => {
 		render(() => CodexUsageDashboard({}));
 		await vi.advanceTimersByTimeAsync(0);
-		expect(callsFor("get_codex_usage_api")).toBe(1);
+		expect(callsFor("get_codex_usage_api")).toBe(0);
+		expect(callsFor("get_provider_quotas")).toBe(1);
 
 		await vi.advanceTimersByTimeAsync(REFRESH_MS);
 
-		expect(callsFor("get_codex_usage_api")).toBe(2);
+		expect(callsFor("get_codex_usage_api")).toBe(0);
+		expect(callsFor("get_provider_quotas")).toBe(1);
 		expect(callsFor("get_codex_usage_stats")).toBe(2);
 	});
 
@@ -193,21 +216,25 @@ describe("CodexUsageDashboard refresh", () => {
 
 		await vi.advanceTimersByTimeAsync(3 * REFRESH_MS);
 
-		expect(callsFor("get_codex_usage_api")).toBe(1);
+		expect(callsFor("get_codex_usage_api")).toBe(0);
+		expect(callsFor("get_provider_quotas")).toBe(1);
 	});
 
 	it("clears a stale error once a later refresh succeeds", async () => {
+		const warning = vi.spyOn(appLogger, "warn").mockImplementation(() => {});
 		mockInvoke.mockImplementation((command: string) =>
-			command === "get_codex_usage_api" ? Promise.reject(new Error("codex offline")) : Promise.resolve(emptyStats),
+			command === "get_codex_usage_stats" ? Promise.reject(new Error("codex offline")) : Promise.resolve([]),
 		);
 
 		const { container } = render(() => CodexUsageDashboard({}));
 		await vi.advanceTimersByTimeAsync(0);
 		expect(container.textContent).toContain("codex offline");
+		expect(warning).toHaveBeenCalledWith("network", "Codex stats fetch failed", "Error: codex offline");
 
 		respondOk();
 		await vi.advanceTimersByTimeAsync(REFRESH_MS);
 
 		expect(container.textContent).not.toContain("codex offline");
+		warning.mockRestore();
 	});
 });

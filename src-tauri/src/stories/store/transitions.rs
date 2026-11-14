@@ -5,7 +5,7 @@ fn is_manual(criterion: &str) -> bool {
     criterion.trim_start().starts_with("[MANUAL]")
 }
 
-pub(super) fn only_manual_pending(story: &Story) -> bool {
+pub(crate) fn only_manual_pending(story: &Story) -> bool {
     story.checked.iter().any(|checked| !checked)
         && story
             .criteria
@@ -32,19 +32,20 @@ fn wrong_status(story: &Story, required: &str) -> String {
     )
 }
 
-/// Shared evaluator for preview and commit. It changes only the supplied snapshot.
-fn apply_command(
-    conn: &Connection,
+/// Shared evaluator for preview and commit, for native and external stories. It
+/// changes only the supplied snapshot; `dependencies_met` answers whether every
+/// dependency is done with a current integration receipt.
+pub(crate) fn apply_command(
     story: &mut Story,
     command: StoryCommand,
-    preflight: &DependencyPreflight,
+    dependencies_met: &mut dyn FnMut(&Story) -> Result<bool, String>,
 ) -> Result<(), String> {
     match command {
         StoryCommand::StartManual => {
             if story.status != StoryStatus::Ready {
                 return Err(wrong_status(story, "ready"));
             }
-            if !dependencies_integrated(conn, story, preflight)? {
+            if !dependencies_met(story)? {
                 return Err("story dependency lacks a current integration receipt".into());
             }
             story.status = StoryStatus::InProgress;
@@ -153,11 +154,18 @@ fn apply_command(
             if story.status != StoryStatus::Blocked {
                 return Err(wrong_status(story, "blocked"));
             }
-            story.status = if dependencies_integrated(conn, story, preflight)? {
+            story.status = if dependencies_met(story)? {
                 StoryStatus::Ready
             } else {
                 StoryStatus::Backlog
             };
+        }
+        StoryCommand::Reopen => {
+            if story.status != StoryStatus::Done {
+                return Err(wrong_status(story, "done"));
+            }
+            story.status = StoryStatus::InProgress;
+            story.claim_session = None;
         }
         StoryCommand::WontFix => {
             if story.status == StoryStatus::Done {
@@ -199,20 +207,15 @@ fn apply_command(
 }
 
 impl StoryStore {
-    fn check_transition_actor(
+    pub(crate) fn check_transition_actor(
         &self,
-        story_id: &str,
         command: &StoryCommand,
         actor: &StoryTransitionActor,
     ) -> Result<(), String> {
-        let run_path = self.db_path.with_file_name("workflow_runs.sqlite3");
-        if *command == StoryCommand::Approve
-            && run_path.exists()
-            && let StoryTransitionActor::ManagedSession { session_id } = actor
-            && crate::workflows::RunStore::open_at(&run_path)?
-                .is_story_implementer(story_id, session_id)?
+        if *command == StoryCommand::Reopen
+            && !matches!(actor, StoryTransitionActor::Workflow { .. })
         {
-            return Err("a story cannot be approved by its workflow implementer".into());
+            return Err("only the owning workflow can reopen a story".into());
         }
         Ok(())
     }
@@ -226,13 +229,9 @@ impl StoryStore {
     ) -> Result<super::super::AvailableTransitions, String> {
         let plan = self.require_unarchived_story(story_id)?.plan_id;
         let preflight = DependencyPreflight::prepare(self, &plan)?;
-        let project = self.get_plan(&plan)?.project;
         let can_approve = self
-            .check_transition_actor(story_id, &StoryCommand::Approve, &actor)
+            .check_transition_actor(&StoryCommand::Approve, &actor)
             .is_ok();
-        // Keep an accepted reservation guard alive through the snapshot read.
-        let start_guard = crate::workflows::guard_manual_story_start(&project, story_id);
-        let can_start = start_guard.is_ok();
         let mut conn = self.connect()?;
         let tx = conn
             .transaction()
@@ -253,13 +252,14 @@ impl StoryStore {
             StoryCommand::Unblock,
             StoryCommand::WontFix,
         ] {
-            if (command == StoryCommand::StartManual && !can_start)
-                || (command == StoryCommand::Approve && !can_approve)
-            {
+            if command == StoryCommand::Approve && !can_approve {
                 continue;
             }
             let mut candidate = story.clone();
-            if apply_command(&tx, &mut candidate, command.clone(), &preflight).is_ok()
+            if apply_command(&mut candidate, command.clone(), &mut |story| {
+                dependencies_integrated(&tx, story)
+            })
+            .is_ok()
                 && candidate.status != story.status
                 && !moves
                     .iter()
@@ -275,19 +275,6 @@ impl StoryStore {
             revision: story.revision,
             moves,
         })
-    }
-
-    /// Rebuild dependent readiness from durable integration receipts. Safe to
-    /// repeat after a crash between the run event and the story projection.
-    pub fn reconcile_integrated_dependencies(&self, plan_id: &str) -> Result<(), String> {
-        let preflight_plan = plan_id.to_owned();
-        let preflight = DependencyPreflight::prepare(self, &preflight_plan)?;
-        let mut conn = self.connect()?;
-        let tx = immediate(&mut conn)?;
-        preflight.validate(&tx)?;
-        reconcile_ready(&tx, plan_id, &preflight)?;
-        tx.commit()
-            .map_err(|error| format!("commit dependency release: {error}"))
     }
 
     pub fn transition_history(&self, story_id: &str) -> Result<Vec<StoryTransition>, String> {
@@ -363,7 +350,7 @@ impl StoryStore {
             }
         }
         story.dependencies.push(dependency_id.into());
-        if !dependencies_integrated(&tx, &story, &preflight)? {
+        if !dependencies_integrated(&tx, &story)? {
             // A ready story with an unfinished or unintegrated dependency is no longer claimable.
             story.status = StoryStatus::Backlog;
         }
@@ -410,7 +397,7 @@ impl StoryStore {
             ));
         }
         story.dependencies.retain(|id| id != dependency_id);
-        if dependencies_integrated(&tx, &story, &preflight)? {
+        if dependencies_integrated(&tx, &story)? {
             story.status = StoryStatus::Ready;
         }
         save_story(&tx, &mut story, expected_revision)?;
@@ -441,7 +428,7 @@ impl StoryStore {
                 session_id: session_id.into(),
             }
         });
-        self.transition_as(story_id, expected_revision, command, actor, false)
+        self.transition_as(story_id, expected_revision, command, actor)
     }
 
     pub(crate) fn transition_from_local_api(
@@ -455,25 +442,23 @@ impl StoryStore {
             expected_revision,
             command,
             StoryTransitionActor::LocalApi,
-            false,
         )
     }
 
-    /// Only the owning workflow may begin its reserved story without a manual claim.
-    pub(crate) fn begin_workflow_story(
+    /// A batch critic FIX reopens the owning Done story; see `StoryCommand::Reopen`.
+    pub(crate) fn reopen_for_workflow(
         &self,
         story_id: &str,
         revision: i64,
-        session: &str,
+        run_id: &str,
     ) -> Result<Story, String> {
         self.transition_as(
             story_id,
             revision,
-            StoryCommand::StartManual,
-            StoryTransitionActor::ManagedSession {
-                session_id: session.into(),
+            StoryCommand::Reopen,
+            StoryTransitionActor::Workflow {
+                run_id: run_id.into(),
             },
-            true,
         )
     }
 
@@ -483,25 +468,19 @@ impl StoryStore {
         expected_revision: i64,
         command: StoryCommand,
         actor: StoryTransitionActor,
-        workflow_start: bool,
     ) -> Result<Story, String> {
-        self.check_transition_actor(story_id, &command, &actor)?;
+        self.check_transition_actor(&command, &actor)?;
         let preflight_plan = self.require_unarchived_story(story_id)?.plan_id;
         let preflight = DependencyPreflight::prepare(self, &preflight_plan)?;
-        let _reservation_guard = if !workflow_start && matches!(command, StoryCommand::StartManual)
-        {
-            let project = self.get_plan(&preflight_plan)?.project;
-            crate::workflows::guard_manual_story_start(&project, story_id)?
-        } else {
-            None
-        };
         let mut conn = self.connect()?;
         let tx = immediate(&mut conn)?;
         preflight.validate(&tx)?;
         let mut story = read_story(&tx, story_id)?;
         check_revision(&story, expected_revision)?;
         require_active_story(&tx, &story)?;
-        apply_command(&tx, &mut story, command.clone(), &preflight)?;
+        apply_command(&mut story, command.clone(), &mut |story| {
+            dependencies_integrated(&tx, story)
+        })?;
         save_story(&tx, &mut story, expected_revision)?;
         tx.execute(
             "INSERT INTO story_transitions(story_id,revision,command_json,actor_json) VALUES (?1,?2,?3,?4)",
@@ -513,7 +492,7 @@ impl StoryStore {
             ],
         ).map_err(|e| format!("record story transition: {e}"))?;
         if story.status == StoryStatus::Done {
-            reconcile_ready(&tx, &story.plan_id, &preflight)?;
+            reconcile_ready(&tx, &story.plan_id)?;
         }
         tx.commit()
             .map_err(|e| format!("commit story transition: {e}"))?;
@@ -546,6 +525,67 @@ mod tests {
             })
             .expect("story");
         (store, story)
+    }
+
+    /// Catches: a person or agent reopening finished work, the workflow reopening an
+    /// unfinished story, or a preview offering Reopen.
+    #[test]
+    fn only_the_owning_workflow_reopens_a_done_story() {
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).expect("dir");
+        let _guard = crate::config::set_config_dir_override(dir.path().into());
+        let (store, story) = store_with_story(dir.path(), 1);
+        assert!(
+            store
+                .reopen_for_workflow(&story.id, story.revision, "run")
+                .is_err(),
+            "ready is not done"
+        );
+        let mut done = story;
+        for command in [
+            StoryCommand::StartManual,
+            StoryCommand::CheckCriterion(0),
+            StoryCommand::SubmitReview,
+            StoryCommand::Approve,
+        ] {
+            done = store
+                .transition(&done.id, done.revision, command)
+                .expect("move");
+        }
+        assert_eq!(done.status, StoryStatus::Done);
+        assert!(
+            store
+                .transition(&done.id, done.revision, StoryCommand::Reopen)
+                .is_err()
+        );
+        assert!(
+            store
+                .transition_for_actor(&done.id, done.revision, StoryCommand::Reopen, Some("s"))
+                .is_err()
+        );
+        let preview = store
+            .available_transitions(&done.id, done.revision, StoryTransitionActor::Human)
+            .expect("preview");
+        assert!(
+            preview
+                .moves
+                .iter()
+                .all(|m| m.command != StoryCommand::Reopen)
+        );
+        let reopened = store
+            .reopen_for_workflow(&done.id, done.revision, "run-1")
+            .expect("reopen");
+        assert_eq!(reopened.status, StoryStatus::InProgress);
+        assert_eq!(
+            store
+                .transition_history(&done.id)
+                .unwrap()
+                .last()
+                .unwrap()
+                .actor,
+            StoryTransitionActor::Workflow {
+                run_id: "run-1".into()
+            }
+        );
     }
 
     /// Catches: a phase preview writes a revision/history or offers an illegal target.

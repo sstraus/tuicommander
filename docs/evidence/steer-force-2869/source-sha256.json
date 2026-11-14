@@ -1,0 +1,20 @@
+{
+  "src-tauri/src/fixtures/agent_prompts/claude-stop-hook-steer-forced-2869.md": "f992fb1dbddf3be00b0f55d0e10dd925da513bf178fa6156b76ffd5677f86b2b",
+  "src-tauri/src/fixtures/agent_prompts/claude-stop-hook-steer-forced-2869.tcap": "d6df3a0eec30f4f15f00efac66b7b5dc98c47bc9525d267b6f65f25ac1d83b07",
+  "src-tauri/src/fixtures/agent_prompts/claude-stop-hook-steer-old-2869.md": "0c8374450fbaddf523f18994e5a3a761b6d90f394c39ad10d62f408ff344e600",
+  "src-tauri/src/fixtures/agent_prompts/claude-stop-hook-steer-old-2869.tcap": "768d79c38da101715665b6ddf6f96ddde23c7f07dba33fe803e359693071930a",
+  "src-tauri/src/mcp_http/caller_role.rs": "983dd51826616e882973d135b41721bbe100f3c3838072ca4474fa7540fc434f",
+  "src-tauri/src/mcp_http/mcp_transport_catalogue.rs": "42311bafbf5bfe4468bc3ee30a076b2b8d249bdcd69c29ad125d5fbf0ef7aa41",
+  "src-tauri/src/mcp_http/mcp_transport_catalogue_tests.rs": "da9220040af9c787ce7d0d9eb14b8aec3b7a6bb63aba2e066e5fd59e97e1ddb6",
+  "src-tauri/src/mcp_http/mcp_transport_peer.rs": "f13f7cbe8b1d5c508b467696d65d63dc48712ecd48452f810ed69e77f9c1a54e",
+  "src-tauri/src/mcp_http/mcp_transport_peer_tests.rs": "e409c39fa44b7d6375c741487f9bd88e31d79f15ba1360eec517a5a26836047c",
+  "src-tauri/src/pty/injection.rs": "fd6cc7bcafbbb37440d9825af014b556d87d9d4a9871df291e7117fcb674429c",
+  "src-tauri/src/pty/injection_tests.rs": "c6a3e8200a33005d196e6501e0f9642c93aca046faff72d66efcd33f8e965c72",
+  "src-tauri/src/state.rs": "1e039aa2d2ace523ff647f3d53f58693c65126bfde9f04ae5784a5c8d69c8cb6",
+  "src/__tests__/components/ComposePanel.test.tsx": "6892c3e617d7c512de9546add88834ac49c569495e586c37b456c949c23821c6",
+  "src/__tests__/components/Terminal/chatPendingSteer.test.tsx": "e56d454c98de39ce47f2885dda5a76c13676eff6bcaf2299484e5c166e89da35",
+  "src/components/AIChatPanel/Transcript.tsx": "1802ec5ddbd47e9311d4109ab90b0dc56f83a7dc584d368c4a53e604d2caf23e",
+  "src/components/ComposePanel/ComposePanel.tsx": "f8f0913d9ca2df492efc2964472ef6edd98306114eeb09781d02163da400832f",
+  "src/hooks/usePty.ts": "6c461273ede6f28c2837bfa7a2cbd2c37e1fdbb0dadd638b6caf7d76e4b4ddd5",
+  "src/mobile/__fixtures__/sessionChatAppearance.tsx": "28481da1faf1dac5adba1fa6025b9ead4073cf7e285b2b72a985de288a373865"
+}

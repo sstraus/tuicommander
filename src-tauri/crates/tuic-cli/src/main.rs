@@ -7,7 +7,9 @@
 //! When invoked as `tmux` (via symlink), enters tmux-compatibility mode
 //! and translates tmux commands to TUIC equivalents.
 
+mod agent_state;
 mod bg;
+mod bg_process;
 mod ipc;
 mod mcp;
 
@@ -22,7 +24,7 @@ use std::path::{Path, PathBuf};
     about = "TUICommander CLI — editor, multiplexer, orchestrator"
 )]
 struct Cli {
-    /// Select an isolated application instance (overrides TUIC_APP_INSTANCE)
+    /// Select an isolated application instance (overrides TUIC_APP_INSTANCE and TUIC_SOCKET)
     #[arg(long, global = true)]
     instance: Option<String>,
 
@@ -62,6 +64,16 @@ enum Command {
         /// JSON object, or - to read it from stdin (defaults to {})
         arguments: Option<String>,
     },
+    /// Send a message to an agent's inbox from any shell script.
+    ///
+    /// The agent is woken when idle and notified when working. Exit code 0
+    /// only when the message reached the agent; anything else is non-zero.
+    Notify {
+        /// Recipient: alias, registered name or tuic_session UUID
+        target: String,
+        /// Message text, or - to read it from stdin
+        text: String,
+    },
     /// Open a file or directory in TUICommander
     Open {
         /// Path to open (file or directory)
@@ -72,13 +84,6 @@ enum Command {
         /// Open at specific line number
         #[arg(short = 'g', long = "goto")]
         goto: Option<String>,
-    },
-    /// Show a diff between two files
-    Diff {
-        /// First file
-        file_a: String,
-        /// Second file
-        file_b: String,
     },
     /// List sessions
     #[command(alias = "list-sessions")]
@@ -209,6 +214,13 @@ enum AgentAction {
         target: String,
         /// Message text
         message: String,
+        #[arg(long, value_parser = ["ready", "waiting", "blocked", "failed", "dropped", "progress"])]
+        report_state: Option<String>,
+        #[arg(long, requires = "report_state", value_parser = ["boss", "review", "dependency"])]
+        wait_for: Option<String>,
+        /// Structured question JSON (waiting on boss only)
+        #[arg(long, requires = "report_state")]
+        question_json: Option<String>,
         #[arg(long)]
         json: bool,
     },
@@ -365,6 +377,13 @@ fn main() {
         })
         .unwrap_or_default();
 
+    // Agent hooks: handled before argument and instance parsing, which exit
+    // non-zero on errors; a hook must never fail its agent (#2632-97ef).
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("agent-state") {
+        std::process::exit(agent_state::run(&args[1..]));
+    }
+
     if argv0 == "tmux" {
         select_instance(None);
         return tmux_compat();
@@ -372,6 +391,10 @@ fn main() {
 
     let cli = Cli::parse();
     select_instance(cli.instance.as_deref());
+    #[cfg(unix)]
+    if cli.instance.is_some() {
+        ipc::select_instance_socket();
+    }
 
     let result = match cli.command {
         Some(cmd) => dispatch(cmd),
@@ -419,7 +442,6 @@ fn dispatch(cmd: Command) -> Result<(), String> {
         Command::Automations { arguments } => cmd_mcp("automations", arguments.as_deref()),
         Command::Workflow { arguments } => cmd_mcp("workflow", arguments.as_deref()),
         Command::Mcp { tool, arguments } => cmd_mcp(&tool, arguments.as_deref()),
-        Command::Diff { file_a, file_b } => cmd_diff(&file_a, &file_b),
         Command::Ls { json } => cmd_ls(json),
         Command::New { name, repo } => cmd_new(name.as_deref(), repo.as_deref()).map(|_| ()),
         Command::Run {
@@ -428,6 +450,7 @@ fn dispatch(cmd: Command) -> Result<(), String> {
             repo,
         } => cmd_run(&command, name.as_deref(), repo.as_deref()),
         Command::Send { target, keys } => cmd_send(&target, &keys),
+        Command::Notify { target, text } => cmd_notify(&target, &text),
         Command::Capture {
             target,
             format,
@@ -456,6 +479,16 @@ fn dispatch(cmd: Command) -> Result<(), String> {
 // ---------------------------------------------------------------------------
 
 fn cmd_mcp(tool: &str, arguments: Option<&str>) -> Result<(), String> {
+    if tool == "init" {
+        // Not a tool: the initialize handshake's instructions, the same text an
+        // MCP client receives. Printed unchanged for an agent whose MCP dropped.
+        let client = mcp::McpClient::connect()?;
+        let text = client
+            .instructions()
+            .ok_or("TUICommander returned no instructions")?;
+        print!("{text}");
+        return Ok(());
+    }
     let mut stdin_text = String::new();
     let text = if arguments == Some("-") {
         std::io::stdin()
@@ -475,6 +508,32 @@ fn cmd_mcp(tool: &str, arguments: Option<&str>) -> Result<(), String> {
     let result = mcp::McpClient::connect_for_orchestration()?.call_text(tool, parsed)?;
     println!("{result}");
     Ok(())
+}
+
+fn cmd_notify(target: &str, text: &str) -> Result<(), String> {
+    let mut stdin_text = String::new();
+    let message = if text == "-" {
+        std::io::stdin()
+            .read_to_string(&mut stdin_text)
+            .map_err(|e| format!("Cannot read the message from stdin: {e}"))?;
+        stdin_text.trim_end_matches('\n')
+    } else {
+        text
+    };
+    if message.trim().is_empty() {
+        return Err("The message is empty".into());
+    }
+    ipc::ensure_running().map_err(|e| e.to_string())?;
+    let client = mcp::McpClient::connect_for_orchestration()?;
+    let report = mcp::agent_send_report(&client, target, message, None)?;
+    let line = mcp::delivery_line(target, &report);
+    if report["delivered"].as_bool() == Some(true) {
+        println!("{line}");
+        Ok(())
+    } else {
+        // Stored in the inbox but nothing surfaces it: a script must not read that as delivered.
+        Err(line)
+    }
 }
 
 fn mcp_usage_error(message: &str) -> ! {
@@ -566,23 +625,16 @@ fn cmd_open(path: Option<String>, _wait: bool, goto: Option<String>) -> Result<(
                 url.push_str(&format!("&col={c}"));
             }
         }
-        open_deep_link(&url).map_err(|e| e.to_string())?;
+        mcp::McpClient::connect()?.call(
+            "ui",
+            serde_json::json!({"action": "tab", "id": format!("cli-edit-{actual_path}"),
+                "title": Path::new(actual_path).file_name().unwrap_or_default().to_string_lossy(),
+                "url": url, "focus": true}),
+        )?;
     }
 
     // TODO: --wait support via polling session state
     Ok(())
-}
-
-fn cmd_diff(file_a: &str, file_b: &str) -> Result<(), String> {
-    ipc::ensure_running().map_err(|e| e.to_string())?;
-    let a = resolve_path(file_a);
-    let b = resolve_path(file_b);
-    open_deep_link(&format!(
-        "tuic://diff?a={}&b={}",
-        urlencod(&a),
-        urlencod(&b)
-    ))
-    .map_err(|e| e.to_string())
 }
 
 /// Truncate to `max` chars with a trailing ellipsis so it fits a fixed column.
@@ -857,6 +909,9 @@ fn cmd_agent(action: AgentAction) -> Result<(), String> {
         AgentAction::Send {
             target,
             message,
+            report_state,
+            wait_for,
+            question_json,
             json,
         } => {
             // Peer routing only — deliberately NOT a session action. That
@@ -865,7 +920,20 @@ fn cmd_agent(action: AgentAction) -> Result<(), String> {
             // tool delivered the same UUID fine. PTY text injection stays
             // available, and explicit, as `tuic send` / `tuic send-keys`.
             let client = mcp::McpClient::connect_for_orchestration()?;
-            let report = mcp::agent_send(&client, &target, &message)?;
+            let metadata = report_state
+                .map(|state| {
+                    let mut report = serde_json::json!({"state":state});
+                    if let Some(wait) = wait_for {
+                        report["wait_for"] = serde_json::json!(wait);
+                    }
+                    if let Some(question) = question_json {
+                        report["question"] = serde_json::from_str(&question)
+                            .map_err(|e| format!("Invalid question JSON: {e}"))?;
+                    }
+                    Ok::<_, String>(report)
+                })
+                .transpose()?;
+            let report = mcp::agent_send_report(&client, &target, &message, metadata.as_ref())?;
             if json {
                 println!("{report}");
             } else {
@@ -1733,7 +1801,20 @@ mod tests {
         is_disposable_root, resolve_path, session_status, short_id, short_repo, strip_verbatim,
         translate_keys, truncate, without_flag,
     };
-    use clap::Parser;
+    use clap::{CommandFactory, Parser};
+
+    // Catches: the unsupported diff command remains advertised or dispatched.
+    #[test]
+    fn help_and_parser_do_not_offer_diff() {
+        let help = Cli::command().render_long_help().to_string();
+        assert!(
+            !help
+                .lines()
+                .any(|line| line.trim_start().starts_with("diff "))
+        );
+        let parsed = Cli::try_parse_from(["tuic", "diff", "a", "b"]).expect("file paths");
+        assert!(parsed.command.is_none());
+    }
 
     #[test]
     fn agent_spawn_payload_preserves_every_mcp_spawn_field() {
@@ -1775,7 +1856,10 @@ mod tests {
     // Catches: workflow CLI arguments parsed as story JSON or sent to automations.
     #[test]
     fn workflow_cli_accepts_the_grouped_action_envelope() {
-        for arguments in [r#"{"action":"story","input":{"action":"list_plans"}}"#, "-"] {
+        for arguments in [
+            r#"{"action":"run","input":{"action":"get","run_id":"run-id"}}"#,
+            "-",
+        ] {
             let cli =
                 Cli::try_parse_from(["tuic", "workflow", arguments]).expect("workflow command");
             assert!(

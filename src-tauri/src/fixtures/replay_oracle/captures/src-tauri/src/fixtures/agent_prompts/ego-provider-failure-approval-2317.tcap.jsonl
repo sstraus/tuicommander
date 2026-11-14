@@ -20,6 +20,7 @@
 {"record":12,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Allow run sh -c 'printf APPROVAL_2317'?","confident":true,"last_question":"","choice_sig":"Allow run sh -c 'printf APPROVAL_2317'?|y,a,n,e,d","fullscreen":false}}
 {"record":13,"event":{"type":"protocol-question-cleared"}}
 {"record":13,"event":{"type":"shell-state","state":"idle","agent_type":"ego"}}
+{"record":13,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":13,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":"","choice_sig":"Allow run sh -c 'printf APPROVAL_2317'?|y,a,n,e,d","fullscreen":false}}
 {"record":14,"event":{"type":"choice-cleared","_turn_epoch":0}}
 {"record":14,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":"","choice_sig":null,"fullscreen":false}}

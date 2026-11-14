@@ -20,7 +20,12 @@ export interface ChatAppearance {
 	}[];
 	unmarkedBorder: string;
 	paragraphRuleLeft: number;
-	answerLists: { listBorder: number; ruleLeft: number; items: { border: number; left: number }[] }[];
+	answerLists: {
+		listBorder: number;
+		railBorder: number;
+		ruleLeft: number;
+		items: { border: number; left: number; answer: boolean }[];
+	}[];
 }
 
 /** Uses the approved named-tab wrapper: no Chrome dump-dom dependency or shared-app access. */

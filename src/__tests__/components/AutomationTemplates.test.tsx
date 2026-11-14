@@ -1,10 +1,14 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
-import { beforeEach, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { AutomationsDialog } from "../../components/AutomationsDialog/AutomationsDialog";
+import { activityStore } from "../../stores/activityStore";
 import { repositoriesStore } from "../../stores/repositories";
 import { definition, fakeAdapter } from "../automationsFixtures";
+
+// The application hydrates this owner before mounting the dialog.
+beforeAll(() => activityStore.hydrate());
 
 beforeEach(() => {
 	// Seeding schedules a debounced save; drop it so no timer outlives the test.
@@ -59,8 +63,9 @@ it("applies a backend draft only after repository and config selection, then sav
 	fireEvent.change(screen.getByLabelText("Run config"), { target: { value: "my-config" } });
 	fireEvent.click(screen.getByRole("button", { name: "Apply template" }));
 	await waitFor(() => expect(screen.getByLabelText("Prompt")).toHaveValue("Backend literal prompt"));
-	expect(requests).toEqual([["daily_review", "/chosen", "my-config", ""]]);
-	expect(screen.getByLabelText("Timezone")).toHaveValue("Europe/Madrid");
+	// New drafts resolve the backend-local zone through preview before applying templates.
+	expect(requests).toEqual([["daily_review", "/chosen", "my-config", "Europe/Madrid"]]);
+	expect(screen.getByRole("button", { name: "Timezone" })).toHaveTextContent("Europe/Madrid");
 	expect(saves).toHaveLength(0);
 	expect(runNow).not.toHaveBeenCalled();
 	expect(screen.queryByRole("button", { name: "Run now" })).toBeNull();

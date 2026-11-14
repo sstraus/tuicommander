@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { toastsStore } from "../../stores/toasts";
+import { setToastBellMirrorResolver, toastsStore } from "../../stores/toasts";
 import { rpc } from "../../transport";
 import { MobileToastContainer } from "../components/MobileToastContainer";
 import { FilesScreen } from "../screens/FilesScreen";
@@ -20,6 +20,7 @@ const agent = (id: string, root = "/repo"): SessionInfo => ({
 	state: { agent_type: "ego", awaiting_input: false, rate_limited: false, last_activity_ms: 0 },
 });
 beforeEach(() => {
+	setToastBellMirrorResolver(() => false);
 	disk = "# Review\n\n- [ ] Confirm release\n\nShip on Friday.\n";
 	enqueue = async () => ({ typed: true, queued: 0 });
 	vi.mocked(rpc).mockReset();
@@ -33,6 +34,10 @@ beforeEach(() => {
 			disk = String(args.content);
 			return true;
 		}
+		if (command === "markdown_review_changed_lines") {
+			// Fixed backend response for this fixture: only the task on line 3 changes.
+			return args?.baseline != null && args.expected === disk ? "3" : null;
+		}
 		if (command === "enqueue_agent_command") return enqueue();
 		throw new Error(`Unexpected command ${command}`);
 	});
@@ -41,6 +46,7 @@ afterEach(() => {
 	cleanup();
 	for (const toast of [...toastsStore.toasts]) toastsStore.remove(toast.id);
 	vi.useRealTimers();
+	setToastBellMirrorResolver(() => true);
 });
 async function open(openerTuicSession?: string) {
 	const view = render(() => (
@@ -87,7 +93,7 @@ it("sends persisted checkbox and tweak edits with the absolute path and comment 
 			"enqueue_agent_command",
 			{
 				sessionId: "origin",
-				text: "Open /repo/review.md, re-read the whole file: apply the 1 embedded tweak review comment, treat every other change since your last write (checkbox toggles, edited text) as the user's answer, remove each resolved tweak marker, and leave unrelated files unchanged.",
+				text: "Open /repo/review.md, read changed lines 3 with their enclosing sections: apply the 1 embedded tweak review comment, treat checkbox toggles and edited text there as the user's answers, remove each resolved tweak marker, and leave unrelated files unchanged.",
 			},
 		],
 	]);
@@ -108,7 +114,7 @@ it("sends checkbox-only changes to a picked peer and reports the busy queue outc
 	expect(sends()).toHaveLength(1);
 	expect(sends()[0][1]).toEqual({
 		sessionId: "other",
-		text: "Open /repo/review.md, re-read the whole file: treat every other change since your last write (checkbox toggles, edited text) as the user's answer, and leave unrelated files unchanged.",
+		text: "Open /repo/review.md, read changed lines 3 with their enclosing sections: treat checkbox toggles and edited text there as the user's answers, and leave unrelated files unchanged.",
 	});
 });
 
@@ -185,4 +191,34 @@ it("removes successful queue feedback after the toast lifetime instead of leavin
 	expect(view.queryByText(message)).toBeNull();
 	expect(view.queryByText("Sent to agent")).toBeNull();
 	expect(view.getByText("Ship on Friday.")).toBeTruthy();
+});
+
+// Catches: a checkbox toggle with no tweak marker is omitted from selective reading.
+it("send_prompt_lists_changed_ranges", async () => {
+	const view = await open();
+	await fireEvent.click(view.getByRole("checkbox"));
+	await waitFor(() => expect(disk).toContain("- [x] Confirm release"));
+	await fireEvent.click(await waitFor(() => view.getByRole("button", { name: "Send changes to agent" })));
+	await waitFor(() => expect(sends()).toHaveLength(1));
+	expect(sends()[0][1]?.text).toContain("read changed lines 3 with their enclosing sections");
+	expect(sends()[0][1]?.text).not.toContain("re-read the whole file");
+	await waitFor(() => expect(view.queryByRole("button", { name: "Send changes to agent" })).toBeNull());
+});
+
+// Catches: adding selective reading also applies a stale baseline after an external write.
+it("send_prompt_falls_back_without_baseline", async () => {
+	const view = await open();
+	await fireEvent.click(view.getByRole("checkbox"));
+	await fireEvent.click(await waitFor(() => view.getByRole("button", { name: "Send changes to agent" })));
+	await waitFor(() => expect(sends()).toHaveLength(1));
+	expect(sends()[0][1]?.text).toContain("read changed lines 3");
+	await waitFor(() => expect(view.queryByRole("button", { name: "Send changes to agent" })).toBeNull());
+	await fireEvent.click(view.getByRole("checkbox"));
+	await waitFor(() => expect(disk).toContain("- [~] Confirm release"));
+	disk = "# External edit\n\n" + disk;
+	await fireEvent.click(await waitFor(() => view.getByRole("button", { name: "Send changes to agent" })));
+	await waitFor(() => expect(sends()).toHaveLength(2));
+	expect(sends()[1][1]?.text).toContain("re-read the whole file");
+	expect(sends()[1][1]?.text).not.toContain("read changed lines");
+	await waitFor(() => expect(view.queryByRole("button", { name: "Send changes to agent" })).toBeNull());
 });

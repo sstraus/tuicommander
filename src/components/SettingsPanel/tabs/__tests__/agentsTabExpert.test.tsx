@@ -121,6 +121,9 @@ const hasOverrideControl = (container: HTMLElement, label: string) =>
 describe("AgentsTab expert controls", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		remoteRpc.mockImplementation((cmd: string) =>
+			Promise.resolve(cmd === "get_agent_hook_state" ? "notInstalled" : undefined),
+		);
 		settingsState.progressTracking = true;
 		uiStore.setSettingsExpertMode(false);
 		mockInvoke.mockImplementation((cmd: string, payload?: { config: AgentsConfig }) => {
@@ -203,6 +206,39 @@ describe("AgentsTab expert controls", () => {
 		expect(remoteRpc).not.toHaveBeenCalledWith("set_agent_hook_instrumentation", expect.anything(), expect.anything());
 		remoteRpc.mockReset();
 	});
+
+	// Catches: a client shows hook actions using its own OS instead of the owning host response.
+	it.each([undefined, "windows-owner"])(
+		"hides unsupported owning-machine hooks for %s without changing saved preferences",
+		async (connectionId) => {
+			remoteRpc.mockImplementation((cmd: string) => {
+				if (cmd === "get_agent_hook_state") return Promise.resolve("unsupported");
+				if (cmd === "load_agents_config")
+					return Promise.resolve({ agents: { codex: { run_configs: [], hook_instrumentation: true } } });
+				if (cmd === "get_config_defaults") return Promise.resolve(DEFAULTS);
+				return Promise.resolve(undefined);
+			});
+			await setup({ codex: { run_configs: [], hook_instrumentation: true } });
+			uiStore.setSettingsExpertMode(true);
+			const view = render(() => <AgentsTab connectionId={connectionId} />);
+			const header = [...view.container.querySelectorAll<HTMLElement>("[role='button']")].find((el) =>
+				el.textContent?.includes(AGENTS.codex.name),
+			)!;
+			fireEvent.click(header);
+			await waitFor(() =>
+				expect(remoteRpc).toHaveBeenCalledWith("get_agent_hook_state", { agentType: "codex" }, connectionId),
+			);
+			expect(view.queryByText("Native status signals")).toBeNull();
+			expect(view.queryByRole("checkbox", { name: /^Install hooks globally/ })).toBeNull();
+			expect(view.queryByText("Hooks installed")).toBeNull();
+			expect(agentConfigsStore.getHookInstrumentation("codex")).toBe(true);
+			expect(
+				remoteRpc.mock.calls.some(
+					([cmd]) => cmd === "set_agent_hook_instrumentation" || cmd === "set_agent_native_status_signals",
+				),
+			).toBe(false);
+		},
+	);
 
 	it("labels only amp, cursor and droid as limited support", async () => {
 		await setup();
@@ -383,6 +419,40 @@ describe("AgentsTab expert controls", () => {
 					}),
 				}),
 			),
+		);
+	});
+
+	// Catches: the trust row gated to claude/codex, so ego users cannot see the
+	// setting that the backend honors with --trust-workspace (#2983-c437).
+	it("shows managed trust acceptance for ego", async () => {
+		await setup();
+		uiStore.setSettingsExpertMode(true);
+		const { container } = renderExpanded("ego");
+		await waitFor(() => expect(has(container, "Accept workspace trust for managed spawns")).toBe(true));
+	});
+
+	// Catches: a Claude Code 2.1.319/2.1.321 flag missing from the editor (category outside
+	// CATEGORY_ORDER, or not in the catalogue), or PLUGIN_DIR_WATCH written as a toggle
+	// value other than the documented "0".
+	it("lists the Claude Code 2.1.319 and 2.1.321 env flags and stores PLUGIN_DIR_WATCH=0", async () => {
+		await setup();
+		uiStore.setSettingsExpertMode(true);
+		const view = renderExpanded("claude");
+		fireEvent.click(await view.findByText("Environment Flags"));
+		for (const key of [
+			"CLAUDE_CODE_DISABLE_MCP_TASKS",
+			"CLAUDE_CODE_DISABLE_MCP_TASK_BACKGROUND",
+			"CLAUDE_CODE_DISABLE_FEATURE_FLAGS",
+			"CLAUDE_CODE_LOOP_KEEPALIVE",
+			"CLAUDE_CODE_AUTO_MODE_SERVER",
+			"CLAUDE_CODE_PLUGIN_DIR_WATCH",
+		]) {
+			expect(view.getAllByText(key), key).toHaveLength(1);
+		}
+		const row = view.getByText("CLAUDE_CODE_PLUGIN_DIR_WATCH").parentElement!;
+		fireEvent.change(row.querySelector("select")!, { target: { value: "0" } });
+		await waitFor(() =>
+			expect(agentConfigsStore.getEnvFlags("claude")).toMatchObject({ CLAUDE_CODE_PLUGIN_DIR_WATCH: "0" }),
 		);
 	});
 

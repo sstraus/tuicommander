@@ -245,6 +245,9 @@ button[data-control-layout="row"].markdownEntry { display: flex; width: 100%; mi
 /* Anchor composer sheets above both input and keys, regardless of keybar height. */
 .controls {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   flex-shrink: 0;
 }
 

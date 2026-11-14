@@ -4,9 +4,9 @@ use super::plugin_http_fetch_impl;
 use crate::accounts::{AuthKind, NewAccount};
 use std::sync::{Arc, Mutex};
 
-type Seen = Arc<Mutex<Vec<(String, Option<String>)>>>;
+pub(super) type Seen = Arc<Mutex<Vec<(String, Option<String>)>>>;
 
-fn isolated_config() -> (tempfile::TempDir, impl Drop) {
+pub(super) fn isolated_config() -> (tempfile::TempDir, impl Drop) {
     let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
     let guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
     (dir, guard)
@@ -15,7 +15,7 @@ fn isolated_config() -> (tempfile::TempDir, impl Drop) {
 /// Records every request with its Authorization header. `/identity` answers the
 /// account verification, `/echo` reflects the header back in the body and in a
 /// response header, `/redirect` answers 302 to `redirect_to`.
-async fn server(prefix: &str, redirect_to: Option<String>) -> (String, Seen) {
+pub(super) async fn server(prefix: &str, redirect_to: Option<String>) -> (String, Seen) {
     let seen: Seen = Arc::default();
     let record = seen.clone();
     let app = axum::Router::new().fallback(
@@ -53,7 +53,12 @@ async fn server(prefix: &str, redirect_to: Option<String>) -> (String, Seen) {
     (base, seen)
 }
 
-fn write_manifest(dir: &std::path::Path, id: &str, providers: serde_json::Value, urls: &[String]) {
+pub(super) fn write_manifest(
+    dir: &std::path::Path,
+    id: &str,
+    providers: serde_json::Value,
+    urls: &[String],
+) {
     let plugin_dir = dir.join("plugins").join(id);
     std::fs::create_dir_all(&plugin_dir).unwrap();
     let manifest = serde_json::json!({
@@ -77,7 +82,7 @@ fn descriptor(id: &str) -> serde_json::Value {
 
 /// Load the plugin through the production registration path, which registers
 /// its declared descriptors.
-fn load(state: &crate::AppState, id: &str) {
+pub(super) fn load(state: &crate::AppState, id: &str) {
     crate::plugins::register_loaded_plugin_impl(state, id.into(), vec!["net:http".into()]).unwrap();
 }
 
@@ -118,7 +123,7 @@ async fn fetch(
 
 // Catches: token leak to a redirect target on another host.
 #[tokio::test]
-async fn account_header_dropped_on_cross_host_redirect() {
+async fn plugin_account_secret_never_follows_foreign_host() {
     let (dir, _guard) = isolated_config();
     let (target, target_seen) = server("", None).await;
     // Same port family, different host string: `localhost` is not `127.0.0.1`.
@@ -390,4 +395,55 @@ fn manifest_provider_entries_are_validated() {
     .unwrap();
     let err = crate::plugins::read_single_manifest("a3c-nohttp").unwrap_err();
     assert!(err.contains("lacks net:http"), "{err}");
+}
+
+// Catches: an untrusted redirect to an owner-configured destination on another
+// host receives the injected service credential, or an owner destination
+// widening where an account request may start.
+#[tokio::test]
+async fn plugin_service_secret_cannot_follow_foreign_host() {
+    let (dir, _guard) = isolated_config();
+    let (target, target_seen) = server("", None).await;
+    // `localhost` is not `127.0.0.1`: the hop changes host and port.
+    let target = target.replace("127.0.0.1", "localhost");
+    let (base, seen) = server("/svc", Some(format!("{target}/capture"))).await;
+    // The manifest admits an unrelated URL: only the owner configuration admits the target.
+    write_manifest(
+        dir.path(),
+        "a3c-owner",
+        descriptor("a3c-owner"),
+        &[super::destination_tests::UNRELATED.into()],
+    );
+    let state = Arc::new(crate::state::tests_support::make_test_app_state());
+    load(&state, "a3c-owner");
+    super::destination_tests::set_owner_destinations(&state, &[format!("{target}/*")]);
+    let id = account("a3c-owner", &base, AuthKind::Bearer, "a3c-owner-token").await;
+
+    let response = fetch(&state, "a3c-owner", format!("{base}/redirect"), None, &id)
+        .await
+        .unwrap();
+    assert_eq!(response.status, 200);
+    assert_eq!(
+        seen.lock().unwrap().last().unwrap(),
+        &(
+            "/svc/redirect".to_string(),
+            Some("Bearer a3c-owner-token".into())
+        ),
+        "the service host must receive the injected credential"
+    );
+    assert_eq!(
+        *target_seen.lock().unwrap(),
+        vec![("/capture".to_string(), None)],
+        "the owner destination on another host must not receive Authorization"
+    );
+
+    let err = fetch(&state, "a3c-owner", format!("{target}/direct"), None, &id)
+        .await
+        .unwrap_err();
+    assert!(err.contains("outside the account host"), "{err}");
+    assert_eq!(
+        target_seen.lock().unwrap().len(),
+        1,
+        "a refused URL reached the target"
+    );
 }

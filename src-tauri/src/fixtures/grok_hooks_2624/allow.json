@@ -1,0 +1,40 @@
+[
+  {
+    "hookEventName": "user_prompt_submit",
+    "sessionId": "recorded-id-1",
+    "promptId": "recorded-id-2",
+    "hook_event_name": "UserPromptSubmit"
+  },
+  {
+    "hookEventName": "session_start",
+    "sessionId": "recorded-id-1",
+    "hook_event_name": "SessionStart"
+  },
+  {
+    "hookEventName": "pre_tool_use",
+    "sessionId": "recorded-id-1",
+    "toolName": "run_terminal_command",
+    "toolUseId": "recorded-id-3",
+    "hook_event_name": "PreToolUse"
+  },
+  {
+    "hookEventName": "notification",
+    "sessionId": "recorded-id-1",
+    "notificationType": "permission_prompt",
+    "hook_event_name": "Notification"
+  },
+  {
+    "hookEventName": "post_tool_use",
+    "sessionId": "recorded-id-1",
+    "toolName": "run_terminal_command",
+    "toolUseId": "recorded-id-3",
+    "hook_event_name": "PostToolUse"
+  },
+  {
+    "hookEventName": "stop",
+    "sessionId": "recorded-id-1",
+    "promptId": "recorded-id-2",
+    "reason": "end_turn",
+    "hook_event_name": "Stop"
+  }
+]

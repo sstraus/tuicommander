@@ -261,6 +261,6 @@ fn edit_diff_uses_the_bounded_text_budget_not_the_raw_input_budget() {
     let (updates, _) = run(&call.to_string());
     let content = updates[0]["content"][0]["newText"].as_str().unwrap();
     assert_eq!(content.chars().count(), MAX_TEXT_CHARS);
-    assert!(content.ends_with('…'));
+    assert!(content.ends_with(&format!("[truncated, {} chars total]", MAX_TEXT_CHARS + 10)));
     assert_eq!(updates[0]["content"][0]["oldText"], "");
 }

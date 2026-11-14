@@ -1,3 +1,4 @@
+import "../fixtures/dialogActivityHydration";
 import { cleanup, fireEvent, render } from "@solidjs/testing-library";
 import { afterEach, expect, it, vi } from "vitest";
 import { StoriesDialog } from "../../components/StoriesDialog/StoriesDialog";
@@ -8,7 +9,11 @@ vi.mock("../../invoke", () => ({ invoke: vi.fn().mockResolvedValue({ type: "plan
 vi.mock("../../stores/modalStack", () => ({ registerModal: vi.fn() }));
 vi.mock("../../stores/appLogger", () => ({ appLogger: { warn: vi.fn(), error: vi.fn() } }));
 vi.mock("../../panelRouter", () => ({ detachPanel: vi.fn(), reattachPanel: vi.fn(), closePanel: vi.fn() }));
-vi.mock("../../transport", () => ({ isTauri: () => true, HttpRpcError: class extends Error {} }));
+vi.mock("../../transport", () => ({
+	isTauri: () => true,
+	HttpRpcError: class extends Error {},
+	subscribeEvents: vi.fn(async () => () => {}),
+}));
 
 afterEach(() => {
 	cleanup();

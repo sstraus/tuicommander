@@ -18,7 +18,6 @@ export function branchListsEqual(a: readonly BranchDetail[], b: readonly BranchD
 			x.is_current !== y.is_current ||
 			x.is_remote !== y.is_remote ||
 			x.is_main !== y.is_main ||
-			x.is_merged !== y.is_merged ||
 			x.ahead !== y.ahead ||
 			x.behind !== y.behind ||
 			x.upstream !== y.upstream ||

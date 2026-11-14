@@ -1,0 +1,80 @@
+[
+  {
+    "session_id": "e2b38cf6-7cc8-425a-ac2d-a7e30c49282f",
+    "hook_event_name": "SessionStart",
+    "source": "startup",
+    "model": "claude-sonnet-5-5"
+  },
+  {
+    "session_id": "e2b38cf6-7cc8-425a-ac2d-a7e30c49282f",
+    "prompt_id": "1883f0ac-fda4-4d4e-903b-e9438cc12997",
+    "permission_mode": "default",
+    "hook_event_name": "UserPromptSubmit",
+    "prompt": "Run Bash: touch permission-proof.txt. Ask for approval if needed."
+  },
+  {
+    "session_id": "e2b38cf6-7cc8-425a-ac2d-a7e30c49282f",
+    "prompt_id": "1883f0ac-fda4-4d4e-903b-e9438cc12997",
+    "permission_mode": "default",
+    "effort": {
+      "level": "low"
+    },
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "touch permission-proof.txt",
+      "description": "Create an empty file"
+    },
+    "tool_use_id": "toolu_01UZKPn4SZ72jhPu3ctW9j4b"
+  },
+  {
+    "session_id": "e2b38cf6-7cc8-425a-ac2d-a7e30c49282f",
+    "prompt_id": "1883f0ac-fda4-4d4e-903b-e9438cc12997",
+    "permission_mode": "default",
+    "effort": {
+      "level": "low"
+    },
+    "hook_event_name": "PermissionRequest",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "touch permission-proof.txt",
+      "description": "Create an empty file"
+    }
+  },
+  {
+    "session_id": "e2b38cf6-7cc8-425a-ac2d-a7e30c49282f",
+    "prompt_id": "1883f0ac-fda4-4d4e-903b-e9438cc12997",
+    "permission_mode": "default",
+    "effort": {
+      "level": "low"
+    },
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "touch permission-proof.txt",
+      "description": "Create an empty file"
+    },
+    "tool_response": {
+      "stdout": "",
+      "stderr": "",
+      "interrupted": false,
+      "isImage": false,
+      "noOutputExpected": true
+    },
+    "tool_use_id": "toolu_01UZKPn4SZ72jhPu3ctW9j4b",
+    "duration_ms": 641
+  },
+  {
+    "session_id": "e2b38cf6-7cc8-425a-ac2d-a7e30c49282f",
+    "prompt_id": "1883f0ac-fda4-4d4e-903b-e9438cc12997",
+    "permission_mode": "default",
+    "effort": {
+      "level": "low"
+    },
+    "hook_event_name": "Stop",
+    "stop_hook_active": false,
+    "last_assistant_message": "DONE",
+    "background_tasks": [],
+    "session_crons": []
+  }
+]

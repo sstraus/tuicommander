@@ -7,11 +7,7 @@ async fn startup_uses_only_published_schema() {
     let described = api::execute(
         &state,
         json!({"action":"describe", "store":"github_accounts"}),
-        Caller::mcp(
-            "127.0.0.1:1234".parse().unwrap(),
-            "startup-fixture".into(),
-            true,
-        ),
+        Caller::mcp("startup-fixture".into(), true),
     )
     .await;
     assert_eq!(described["inventoryComplete"], true, "{described}");
@@ -21,7 +17,7 @@ async fn startup_uses_only_published_schema() {
     let read = api::execute(
         &state,
         json!({"action":"get", "store":provenance["store"], "target":{"kind":"machine"}, "paths":[provenance["path"]]}),
-        Caller::mcp("127.0.0.1:1234".parse().unwrap(), "startup-fixture".into(), true),
+        Caller::mcp("startup-fixture".into(), true),
     ).await;
     assert!(
         read["values"]["/auth/source"]["effective"].is_string(),
@@ -97,7 +93,7 @@ fn typed_owner_envelopes_decode_and_reject_unknown_fields() {
     }
 }
 
-// Catches: local credential writes being reached through a foreign target or remote MCP origin.
+// Catches: local credential writes being reached through a foreign target or a disabled MCP capability.
 #[tokio::test]
 async fn connection_credential_dispatch_rejects_foreign_target_before_write() {
     let (_dir, _guard, state) = super::accounts_tests::isolated();
@@ -107,9 +103,9 @@ async fn connection_credential_dispatch_rejects_foreign_target_before_write() {
     request["target"] = json!({"kind":"repository","id":"remote-target"});
     let result = api::execute(&state, request, Caller::native()).await;
     assert_eq!(result["error"]["code"], "not_found", "{result}");
-    let remote = Caller::mcp("192.0.2.1:1234".parse().unwrap(), "fixture".into(), true);
-    let result = api::execute(&state, action(&connection.id, "set_password"), remote).await;
-    assert_eq!(result["error"]["code"], "forbidden_origin", "{result}");
+    let disabled = Caller::mcp("fixture".into(), false);
+    let result = api::execute(&state, action(&connection.id, "set_password"), disabled).await;
+    assert_eq!(result["error"]["code"], "unavailable", "{result}");
     assert!(!crate::remote_connection::connection_password_exists(&connection.id).unwrap());
     assert_eq!(
         state.remote.snapshot(),
@@ -303,9 +299,9 @@ async fn settings_prompt_crud_survives_config_removal() {
     let create = json!({"action":"patch","target":{"kind":"instance"},"store":"prompts",
         "expectedRevision":initial["revision"],"operations":[{"op":"create","path":"/prompts","id":"fixture",
         "value":{"id":"fixture","label":"One","text":"First","pinned":false}}]});
-    let remote = Caller::mcp("192.0.2.1:1234".parse().unwrap(), "remote".into(), true);
-    let refused = api::execute(&state, create.clone(), remote).await;
-    assert_eq!(refused["error"]["code"], "forbidden_origin");
+    let disabled = Caller::mcp("remote".into(), false);
+    let refused = api::execute(&state, create.clone(), disabled).await;
+    assert_eq!(refused["error"]["code"], "unavailable");
     let created = api::execute(&state, create, Caller::native()).await;
     assert_eq!(created["persisted"], true, "{created}");
     let edit = json!({"action":"patch","target":{"kind":"instance"},"store":"prompts",
@@ -339,7 +335,7 @@ async fn mcp_write_publishes_value_free_settings_change() {
     let result = api::execute(&state, json!({"action":"patch","target":{"kind":"instance"},"store":"prompts",
         "expectedRevision":initial["revision"],"operations":[{"op":"create","path":"/prompts","id":"refresh-fixture",
         "value":{"id":"refresh-fixture","label":"Private label canary","text":"Private text canary","pinned":false}}]}),
-        Caller::mcp("127.0.0.1:1234".parse().unwrap(), "refresh-fixture".into(), true)).await;
+        Caller::mcp("refresh-fixture".into(), true)).await;
     assert_eq!(result["persisted"], true, "{result}");
     let event = events
         .try_recv()

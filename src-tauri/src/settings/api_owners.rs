@@ -63,7 +63,7 @@ impl Settings {
         owner: OwnerAction,
         caller: &Caller,
     ) -> Result<Value, Failure> {
-        caller.check(true)?;
+        caller.check()?;
         match owner {
             OwnerAction::GithubAccounts { operation } => self.github.perform(operation).await,
             OwnerAction::Connections { operation } => {

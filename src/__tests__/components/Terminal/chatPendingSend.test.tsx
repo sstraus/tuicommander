@@ -1,14 +1,16 @@
 import { EditorView } from "@codemirror/view";
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 
-const pending = vi.hoisted(() => ({ send: vi.fn(), queue: vi.fn() }));
+const pending = vi.hoisted(() => ({ send: vi.fn(), queue: vi.fn(), list: vi.fn(), remove: vi.fn() }));
 
 vi.mock("../../../hooks/usePty", () => ({
 	usePty: () => ({
 		createSession: vi.fn().mockResolvedValue("sess-toggle"),
 		sendCommand: pending.send,
 		enqueueCommand: pending.queue,
+		listQueuedCommands: pending.list,
+		removeQueuedCommand: pending.remove,
 		resize: vi.fn(),
 		close: vi.fn(),
 		getKittyFlags: vi.fn().mockResolvedValue(0),
@@ -49,6 +51,7 @@ vi.mock("../../../invoke", () => ({
 }));
 
 import { Terminal } from "../../../components/Terminal/Terminal";
+import { invoke } from "../../../invoke";
 import { appLogger } from "../../../stores/appLogger";
 import { terminalsStore } from "../../../stores/terminals";
 
@@ -58,6 +61,11 @@ beforeEach(() => {
 	for (const id of terminalsStore.getIds()) terminalsStore.remove(id);
 	vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
 	vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(600);
+});
+
+beforeAll(async () => {
+	const { activityStore } = await import("../../../stores/activityStore");
+	await activityStore.hydrate();
 });
 
 afterEach(async () => {
@@ -89,4 +97,31 @@ it("busy_chat_send_retains_one_prompt_without_native_submission", async () => {
 	await waitFor(() => expect(pending.queue).toHaveBeenCalledOnce());
 	expect(pending.queue.mock.calls[0].slice(0, 2)).toEqual(["live-session", "Review now"]);
 	expect(pending.send).not.toHaveBeenCalled();
+});
+
+// Catches: Compose Steer being wired to a direct PTY send rather than the shared queue-id command.
+it("compose_steer_uses_the_existing_backend_command_and_refreshes_count", async () => {
+	pending.list.mockResolvedValue([{ id: 91, text: "queued owner text", kind: "user_command", send_now: "interrupt" }]);
+	const id = terminalsStore.add({
+		sessionId: "queue-owner",
+		cwd: "/repo",
+		repoPath: "/repo",
+		name: "codex",
+		fontSize: 13,
+		awaitingInput: null,
+	});
+	terminalsStore.update(id, { agentType: "codex", agentSessionId: "uuid", shellState: "busy", queuedCommands: 1 });
+	const view = render(() => <Terminal id={id} cwd="/repo" alwaysVisible />);
+	fireEvent.click(await view.findByRole("button", { name: /Compose/ }));
+	await waitFor(() => expect(view.container.querySelector(".cm-editor")).not.toBeNull());
+	fireEvent.click(view.getByText("1 queued"));
+	const steer = await view.findByRole("button", { name: "Steer: queued owner text" });
+	pending.list.mockResolvedValue([]);
+	fireEvent.click(steer);
+	await waitFor(() =>
+		expect(invoke).toHaveBeenCalledWith("send_queued_agent_command_now", { sessionId: "queue-owner", commandId: 91 }),
+	);
+	await waitFor(() => expect(terminalsStore.get(id)?.queuedCommands).toBe(0));
+	expect(pending.send).not.toHaveBeenCalled();
+	expect(pending.queue).not.toHaveBeenCalled();
 });

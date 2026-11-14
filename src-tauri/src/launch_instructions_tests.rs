@@ -66,6 +66,30 @@ fn claude_composition() {
     assert!(text_of(dir, "claude").contains("intent: <desc> (<title>)"));
 }
 
+/// Catches: generated agent guidance letting a second answer sentence put 💬
+/// after prose on the same line, where the answer renderer leaves it visible.
+#[test]
+fn effective_launch_instructions_require_new_line_for_answer_marker() {
+    let (dir, _guard) = config_dir();
+    for agent in AGENTS {
+        let text = text_of(dir.path(), agent);
+        let text = if agent == "codex" {
+            let table: toml::Table = toml::from_str(&text).unwrap();
+            table["developer_instructions"].as_str().unwrap().to_owned()
+        } else {
+            text
+        };
+        assert!(
+            text.contains("Start a new line before each additional `💬 ` marker"),
+            "{agent}: the delivered guidance must forbid inline answer markers"
+        );
+        assert!(
+            text.contains("A list item may place `💬 ` after its list prefix"),
+            "{agent}: list-item markers remain valid"
+        );
+    }
+}
+
 /// Catches: raw markdown passed to -c and parsed as TOML, or codex exec output
 /// polluted by markers.
 #[test]

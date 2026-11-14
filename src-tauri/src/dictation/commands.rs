@@ -1358,6 +1358,12 @@ pub(crate) fn speak(
     // between refuse the reply rather than race it.
     let current = armed.speaker.generation();
     let wanted = turn.unwrap_or(current);
+    armed
+        .speaker
+        .gate_playback(Arc::new(continuous::PlaybackGate::new(
+            Arc::clone(&dictation.hands_free),
+            armed_at,
+        )));
     let id = armed
         .speaker
         .say(wanted, text, &armed.voice)
@@ -3144,6 +3150,7 @@ pub fn open_microphone_settings() {
 
 #[cfg(test)]
 mod tests {
+    include!("playback_gate_tests.rs");
     use super::*;
     use crate::dictation::continuous::Phase;
 

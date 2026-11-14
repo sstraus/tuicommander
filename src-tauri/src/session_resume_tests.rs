@@ -4,7 +4,7 @@ use super::*;
 #[test]
 fn resume_verifies_the_launch_profile_and_preserves_quoted_environment() {
     let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-    let _config = crate::config::set_config_dir_override(root.path().join("config"));
+    let _config = crate::config::set_config_dir_override(root.path().join("config with spaces"));
     let profile = root.path().join("profile with spaces");
     let id = "550e8400-e29b-41d4-a716-446655440aaa";
     let cwd = root.path().to_str().unwrap();
@@ -28,8 +28,9 @@ fn resume_verifies_the_launch_profile_and_preserves_quoted_environment() {
     assert_eq!(
         command,
         format!(
-            "claude --resume {} --model opus",
-            crate::prompt::shell_quote(id)
+            "claude --resume {} --model opus{}",
+            crate::prompt::shell_quote(id),
+            expected_claude_settings(&root.path().join("config with spaces"))
         )
     );
     std::fs::remove_file(project.join(format!("{id}.jsonl"))).unwrap();
@@ -43,8 +44,11 @@ fn resume_drops_the_seed_brief_and_retains_run_arguments() {
     let _config = crate::config::set_config_dir_override(root.path().into());
     let request = ResumeRequest { agent_type: "claude".into(), launch_command: Some("c2 --model opus -- '<untrusted-content source=\"work item\">\nfix the bug\n</untrusted-content>'".into()), ..Default::default() };
     assert_eq!(
-        resolve(&request).cmd.as_deref(),
-        Some("c2 --continue --model opus")
+        resolve(&request).cmd.unwrap(),
+        format!(
+            "c2 --continue --model opus{}",
+            expected_claude_settings(root.path())
+        )
     );
 }
 
@@ -68,7 +72,10 @@ fn resume_refuses_non_resumable_agents_and_keeps_static_fallback_explicit() {
         ..Default::default()
     });
     assert!(!fallback.verified);
-    assert_eq!(fallback.cmd.as_deref(), Some("claude --continue"));
+    assert_eq!(
+        fallback.cmd.unwrap(),
+        format!("claude --continue{}", expected_claude_settings(root.path()))
+    );
 }
 
 // Catches: migration dropping supported agents' static and id-based resume flags.
@@ -137,5 +144,18 @@ fn shell_launch_round_trips_native_quoted_profile_values() {
         let (env, command) = shell_launch(&input);
         assert_eq!(env["CLAUDE_CONFIG_DIR"], profile, "{input}");
         assert_eq!(command, "claude --model opus");
+    }
+}
+
+// Independent literal contract: the appended settings path remains one shell word.
+fn expected_claude_settings(config: &std::path::Path) -> String {
+    if crate::agent_hook::hooks_supported_on_host() {
+        format!(
+            " {} {}",
+            crate::prompt::shell_quote("--settings"),
+            crate::prompt::shell_quote(&config.join("agent-hooks/claude.json").to_string_lossy())
+        )
+    } else {
+        String::new()
     }
 }

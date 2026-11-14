@@ -1,8 +1,9 @@
 //! HTTP fetch API for plugins.
 //!
 //! Plugins declaring the `net:http` capability can make outbound HTTP requests
-//! to URLs matching their declared `allowedUrls` patterns. Provides SSRF
-//! protection by blocking unsafe schemes and validating URLs against patterns.
+//! to URLs matching their declared `allowedUrls` patterns or an owner-configured
+//! destination (`plugin_http_destinations`, LAN included). Only http and https
+//! pass; account credentials stay bound to the account host.
 
 use std::collections::HashMap;
 
@@ -11,6 +12,9 @@ mod account;
 #[cfg(test)]
 #[path = "plugin_http_account_tests.rs"]
 mod account_tests;
+#[cfg(test)]
+#[path = "plugin_http_destination_tests.rs"]
+mod destination_tests;
 
 /// Plugin-scoped requests and bounded, short-lived cancellation-before-start markers.
 #[derive(Default)]
@@ -207,10 +211,14 @@ fn describe_error(e: &(dyn std::error::Error + 'static)) -> String {
 /// base, the same rule the initial URL passed.
 fn client_for(
     allowed_urls: Vec<String>,
+    owner_urls: Vec<String>,
     account_base: Option<url::Url>,
 ) -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+        // GitHub refuses REST requests without a User-Agent (403). A plugin
+        // header still overrides this default per request.
+        .user_agent(concat!("tuicommander-plugin/", env!("CARGO_PKG_VERSION")))
         .redirect(reqwest::redirect::Policy::custom(move |attempt| {
             if attempt.previous().len() > MAX_REDIRECTS {
                 return attempt.error(RedirectRejected("too many redirects".into()));
@@ -221,7 +229,7 @@ fn client_for(
             {
                 return attempt.follow();
             }
-            match validate_url(attempt.url().as_str(), &allowed_urls) {
+            match validate_destination(attempt.url().as_str(), &allowed_urls, &owner_urls) {
                 Ok(()) => attempt.follow(),
                 Err(e) => attempt.error(RedirectRejected(e)),
             }
@@ -305,6 +313,26 @@ fn validate_url(url: &str, allowed_urls: &[String]) -> Result<(), String> {
     ))
 }
 
+/// The credentialless destination rule for the first URL and every redirect
+/// hop: an owner-configured destination admits the URL without the manifest's
+/// private-host declaration (the owner chose it, LAN included); otherwise the
+/// manifest rule applies. Only http and https pass either way.
+fn validate_destination(
+    url: &str,
+    allowed_urls: &[String],
+    owner_urls: &[String],
+) -> Result<(), String> {
+    let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL: {e}"))?;
+    if matches!(parsed.scheme(), "http" | "https")
+        && owner_urls
+            .iter()
+            .any(|pattern| url_matches_pattern(parsed.as_str(), pattern))
+    {
+        return Ok(());
+    }
+    validate_url(url, allowed_urls)
+}
+
 /// Check if a URL matches a pattern.
 /// Pattern format: a URL prefix, optionally ending with `*` for wildcard suffix.
 /// Examples:
@@ -365,6 +393,8 @@ pub(crate) async fn plugin_http_fetch_impl(
     // caller-supplied parameter — otherwise a scoped plugin could widen its own
     // allowlist and bypass the SSRF guard.
     let manifest = crate::plugins::read_single_manifest(&plugin_id)?;
+    // Owner configuration, never a request field: the plugin cannot widen it.
+    let owner_urls = state.config.read().plugin_http_destinations.clone();
     // An account request is bound by the account host rule instead: the user
     // chose that site when they created the account (a LAN Jira DC included).
     let auth = match account.as_deref() {
@@ -373,7 +403,7 @@ pub(crate) async fn plugin_http_fetch_impl(
     };
     match &auth {
         Some(auth) => auth.check_url(&url)?,
-        None => validate_url(&url, &manifest.allowed_urls)?,
+        None => validate_destination(&url, &manifest.allowed_urls, &owner_urls)?,
     }
 
     let method_str = method.as_deref().unwrap_or("GET");
@@ -383,6 +413,7 @@ pub(crate) async fn plugin_http_fetch_impl(
 
     let client = client_for(
         manifest.allowed_urls.clone(),
+        owner_urls,
         auth.as_ref().map(|a| a.base()),
     )?;
     let mut request = client.request(http_method, &url);

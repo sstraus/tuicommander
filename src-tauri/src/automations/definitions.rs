@@ -11,16 +11,22 @@ pub struct DefinitionStore {
 impl DefinitionStore {
     /// Use the selected application instance's configuration directory.
     pub fn new() -> Self {
-        Self {
-            file: ConfigFile::new("automations.json"),
-        }
+        Self::migrated(ConfigFile::new("automations.json"))
     }
 
     /// Use an explicit document, including isolated test documents.
     pub fn at_path(path: PathBuf) -> Self {
-        Self {
-            file: ConfigFile::at_path(path),
+        Self::migrated(ConfigFile::at_path(path))
+    }
+
+    fn migrated(file: ConfigFile<AutomationsConfig>) -> Self {
+        if let Err(error) = file.rewrite_raw_with_backup(
+            crate::sqlite_once::LEGACY_BACKUP_SUFFIX,
+            strip_legacy_sections,
+        ) {
+            tracing::warn!(source = "automations", %error, "Legacy automation sections not removed");
         }
+        Self { file }
     }
 
     /// Read validated definitions without creating or rewriting the document.
@@ -156,5 +162,109 @@ impl DefinitionStore {
             latest.max_concurrent_runs = limit;
             Ok(((), changed))
         })
+    }
+}
+
+/// Remove the sections of the deleted legacy engines: the PR-review and issue
+/// intake subscriptions, and the definitions only they could start (the
+/// review-only definition, the triage definitions, any ego triage executor).
+/// Prompt schedules stay as they are. Returns whether the document changed.
+fn strip_legacy_sections(document: &mut serde_json::Value) -> bool {
+    let Some(root) = document.as_object_mut() else {
+        return false;
+    };
+    let mut legacy_ids = std::collections::HashSet::new();
+    let mut changed = false;
+    if let Some(reviews) = root.remove("pull_request_reviews") {
+        changed = true;
+        if reviews["repositories"]
+            .as_array()
+            .is_some_and(|r| !r.is_empty())
+            && let Some(id) = reviews["definition_id"].as_str()
+        {
+            legacy_ids.insert(id.to_owned());
+        }
+    }
+    if let Some(intake) = root.remove("event_intake") {
+        changed = true;
+        for policy in intake["triage"].as_array().into_iter().flatten() {
+            if let Some(id) = policy["definition_id"].as_str() {
+                legacy_ids.insert(id.to_owned());
+            }
+        }
+    }
+    if let Some(definitions) = root
+        .get_mut("definitions")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        let before = definitions.len();
+        definitions.retain(|definition| {
+            let id = definition["id"].as_str().unwrap_or_default();
+            let ego = definition["triage_executor"]["kind"] == "ego";
+            !ego && !legacy_ids.contains(id)
+        });
+        changed |= definitions.len() != before;
+        for definition in definitions.iter_mut() {
+            if let Some(fields) = definition.as_object_mut() {
+                changed |= fields.remove("triage_executor").is_some();
+            }
+        }
+    }
+    changed
+}
+
+#[cfg(test)]
+mod legacy_section_tests {
+    use super::*;
+
+    fn schedule(id: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": id, "name": id, "prompt": "Check", "run_config": "codex",
+            "repository": "/repo", "workspace": {"mode": "existing"},
+            "cron": "0 9 * * *", "timezone": "UTC", "enabled": true,
+            "grace_secs": 60, "overlap": "skip", "max_duration_secs": 600, "precheck": null
+        })
+    }
+
+    // Catches: the one-time removal dropping a prompt schedule, keeping a definition
+    // only a deleted engine could start (it would fire on its cron), or leaving a key
+    // the strict schema refuses, so every automation read fails after the upgrade.
+    #[test]
+    fn legacy_sections_are_backed_up_then_removed_and_prompt_schedules_stay() {
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let path = dir.path().join("automations.json");
+        let mut review = schedule("review");
+        review["triage_executor"] = serde_json::json!({"kind": "managed"});
+        let mut ego = schedule("ego");
+        ego["triage_executor"] = serde_json::json!({"kind": "ego"});
+        let original = serde_json::json!({
+            "version": 1, "max_concurrent_runs": 2,
+            "definitions": [schedule("daily"), review, schedule("triage"), ego, schedule("intake")],
+            "pull_request_reviews": {"repositories": ["o/r"], "definition_id": "review"},
+            "event_intake": {"repositories": ["o/r"], "label": "run", "definition_id": "intake",
+                "triage": [{"repository": "o/r", "definition_id": "triage", "policy_version": "1",
+                    "read_only_attested": true, "rejection_label": "no"}]}
+        });
+        std::fs::write(&path, serde_json::to_vec(&original).unwrap()).unwrap();
+
+        let config = DefinitionStore::at_path(path.clone()).load().unwrap();
+        let ids: Vec<_> = config.definitions.iter().map(|d| d.id.as_str()).collect();
+        assert_eq!(ids, ["daily", "intake"]);
+        assert_eq!(
+            config.definitions[0],
+            serde_json::from_value(schedule("daily")).unwrap()
+        );
+        let backup = dir.path().join(format!(
+            "automations.json.{}",
+            crate::sqlite_once::LEGACY_BACKUP_SUFFIX
+        ));
+        let saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&backup).unwrap()).unwrap();
+        assert_eq!(saved, original);
+
+        // A later load leaves a clean document and the first backup alone.
+        std::fs::write(&backup, b"first").unwrap();
+        DefinitionStore::at_path(path).load().unwrap();
+        assert_eq!(std::fs::read(&backup).unwrap(), b"first");
     }
 }

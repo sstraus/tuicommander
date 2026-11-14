@@ -81,13 +81,18 @@ pub(crate) fn project_for_session(
         .lock()
         .cwd
         .clone()?;
+    project_for_path(state, &cwd)
+}
+
+/// The registered project or workspace a directory belongs to; see [`project_for_session`].
+pub(crate) fn project_for_path(state: &crate::state::AppState, path: &str) -> Option<String> {
     let known: Vec<String> = state
         .repo_watchers
         .iter()
         .map(|entry| entry.key().clone())
         .collect();
-    crate::mcp_http::mcp_transport::registered_repo_for_path(&cwd, &known).or_else(|| {
-        super::ownership::registered_workspace_for_path(std::path::Path::new(&cwd))
+    crate::mcp_http::mcp_transport::registered_repo_for_path(path, &known).or_else(|| {
+        super::ownership::registered_workspace_for_path(std::path::Path::new(path))
             .map(|workspace| workspace.to_string_lossy().to_string())
     })
 }

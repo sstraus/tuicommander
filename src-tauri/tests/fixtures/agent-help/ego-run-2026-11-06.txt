@@ -1,0 +1,120 @@
+Run an agent from a prompt, headless.
+
+Usage: ego run [OPTIONS] [PROMPT]
+
+Arguments:
+  [PROMPT]  The prompt. `-` reads it from stdin
+
+Options:
+      --worktree <BRANCH>
+          Create a retained managed worktree on this explicitly approved new branch
+  -f, --file <FILE>
+          Read the instruction and its invocation configuration from an agent file
+      --var <KEY=VALUE>
+          Supply one declared agent-file template variable. Requires --file
+      --attach <IMAGE_PATH|HTTPS_IMAGE_URL>
+          Add exact image bytes as ordered context before the prompt text
+  -m, --model <MODEL>
+          provider/model slug, e.g. ollama/qwen3
+      --offline
+          No non-loopback egress from ego's own HTTP transport
+      --proxy <http://HOST[:PORT]>
+          Explicit HTTP CONNECT proxy for provider HTTPS (no ambient proxy discovery)
+      --proxy-ca <FILE>
+          Additional PEM trust anchor for provider HTTPS through --proxy only
+      --sandbox <SANDBOX>
+          Filesystem confinement: ro|workspace|adaptive|off; off = no confinement, credentials included
+      --thinking <THINKING>
+          off|minimal|low|medium|high|xhigh|max
+      --read-only-dir <DIR>
+          Grant reads of one existing canonical absolute upload directory
+      --system <SYSTEM>
+          Replace the system prompt. `@file` reads it from a file
+      --bare
+          No ambient discovery, even in a trusted workspace
+      --append-system <APPEND_SYSTEM>
+          Append to the system prompt. `@file` reads it from a file
+      --output-style <NAME>
+          Select a trusted prompt-only style: concise, explanatory, or NAME from EGO_HOME/output-styles/NAME.md
+      --instructions <INSTRUCTIONS>
+          Use this instruction file instead of discovering one
+      --tools <TOOLS>
+          Restrict the builtin tools to this comma-separated list
+      --no-tools
+          Offer no tools at all
+      --no-hooks
+          Run with every hook off for this invocation; configuration is unchanged
+      --allow <RULE>
+          Allow rule, e.g. 'read(src/**)'. Repeatable
+      --deny <RULE>
+          Deny rule, e.g. 'write(**)'. Repeatable
+      --profile <PROFILE>
+          Layer [profile.NAME] from config
+      --trust-workspace
+          Trust this launch's workspace without asking; remember the answer
+      --trust-development-programs
+          Trust this workspace and future edits to its current named programs; remember the grant
+      --session <SESSION>
+          Named session: created or attached
+      --session-id <SESSION_ID>
+          A session id supplied by the caller
+      --session-dir <SESSION_DIR>
+          Override the store location
+  -C <DIR>
+          Run as if started in DIR
+      --output <OUTPUT>
+          text|json|jsonl [possible values: text, json, jsonl]
+      --artifact-dir <ARTIFACT_DIR>
+          Override the sanitized run-artifact root for profile `ci`
+      --schema <SCHEMA>
+          JSON Schema the final answer must validate against; `@file` or inline
+      --schema-retries <SCHEMA_RETRIES>
+          How many times to re-prompt on a schema mismatch [default: 2]
+      --retry <RETRY>
+          Additional delivery-safe attempts for each candidate
+      --fallback <P/M>
+          Ordered provider/model candidate used after a delivery-safe failure
+      --budget <BUDGET>
+          Hard cap: '2.5$' or '400k' tokens
+      --max-output-tokens <MAX_OUTPUT_TOKENS>
+          Maximum generated tokens per request
+      --goal <GOAL>
+          Set a checked session objective
+      --no-context-tool
+          Disable model-requested context transitions
+      --context-clear
+          Permit the model to discard conversation history using clear
+      --context-interval <CONTEXT_INTERVAL>
+          Minimum completed turns between model-requested transitions [default: 10]
+      --goal-turns <GOAL_TURNS>
+          Maximum automatic goal continuation turns [default: 20]
+      --goal-check-command <GOAL_CHECK_COMMAND>
+          Evaluator argv as a JSON string array; reads evidence JSON on stdin
+      --max-turns <MAX_TURNS>
+          Cap the turns this run may take
+      --timeout <TIMEOUT>
+          Wall clock, e.g. '90s' or '10m'
+      --mcp <NAME|@FILE>
+          Select an effective server by name, even one marked enabled = false, or attach a strict invocation-scoped JSON MCP server
+      --mode <MODE>
+          Permission mode: plan|default|auto|accept-edits|yolo (alias: edits)
+      --plan
+          Shorthand for --mode plan
+      --yolo
+          Shorthand for --mode yolo
+  -c, --set <K=V>
+          Dotted-path config override, value parsed as TOML
+  -q, --quiet
+          Suppress progress and diagnostics on stderr; stdout is unaffected
+      --no-color
+          Never emit ANSI colour, whatever the terminal claims to support
+      --plain
+          Append plain output without terminal styling or live retry updates
+      --memory
+          Keep a memory file for this workspace that the model can add to
+      --no-session-compression
+          Do not compress old sessions in the background during this run
+      --no-checkpoints
+          Do not save file checkpoints before writes during this run
+  -h, --help
+          Print help

@@ -223,6 +223,23 @@ describe("FilesScreen", () => {
 		expect(calls).not.toContain("list_directory");
 	});
 
+	// Catches: a terminal link to an owner file outside every registered repository
+	// (for example a plan under ~/.claude/plans) is still refused on the phone, although
+	// the authenticated HTTP read serves it since 2650-bc7c.
+	it("opens a terminal-linked file outside every registered repository", async () => {
+		const outside = "/home/boss/.claude/plans/plan.md";
+		files.set(outside, "# Outside plan\n");
+		onTestFinished(() => {
+			files.delete(outside);
+		});
+		linkedTarget.value = { absolute_path: outside, is_directory: false };
+		const view = render(() => (
+			<FilesScreen initialRepo={{ cwd: "/repo-one", worktreePath: "/repo-one" }} initialLink={{ candidate: outside }} />
+		));
+		await waitFor(() => expect(view.getByRole("heading", { name: "Outside plan" })).toBeTruthy());
+		expect(view.queryByRole("alert")).toBeNull();
+	});
+
 	it("shows the complete repository path on a long press", async () => {
 		const view = render(() => <FilesScreen />);
 		const repository = await waitFor(() => view.getByRole("button", { name: /repo-one/ }));

@@ -219,7 +219,6 @@ fn truncate(s: String, max: usize) -> String {
     truncated
 }
 
-/// Detect the base branch by checking which of main/master/develop exists locally.
 /// Parse owner and slug from a git remote URL.
 /// Handles SSH (git@github.com:owner/repo.git) and HTTPS (https://github.com/owner/repo.git).
 fn parse_remote_owner_slug(url: &str) -> Option<(String, String)> {
@@ -244,18 +243,33 @@ fn parse_remote_owner_slug(url: &str) -> Option<(String, String)> {
     Some((owner, slug))
 }
 
+/// Automatic base: prefer origin's default, then conventional local names.
+/// Explicit repository settings override this value in the smart-prompt caller.
 fn detect_base_branch(repo_path: &str) -> Option<String> {
+    if let Some(default_ref) = git_output(
+        repo_path,
+        &["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"],
+    ) && let Some(branch) = default_ref.strip_prefix("refs/remotes/origin/")
+        && !branch.is_empty()
+    {
+        return Some(branch.to_string());
+    }
+    // Formatting the ref name also avoids the '+' marker for branches checked
+    // out in another worktree.
     let output = git_output(
         repo_path,
-        &["branch", "--list", "main", "master", "develop"],
+        &[
+            "branch",
+            "--format=%(refname:short)",
+            "--list",
+            "main",
+            "master",
+            "develop",
+        ],
     )?;
-    // Each line is like "  main" or "* main"; pick first in priority order.
-    let branches: Vec<String> = output
-        .lines()
-        .map(|l| l.trim_start_matches('*').trim().to_string())
-        .collect();
+    let branches: Vec<&str> = output.lines().collect();
     for candidate in &["main", "master", "develop"] {
-        if branches.iter().any(|b| b == candidate) {
+        if branches.contains(candidate) {
             return Some(candidate.to_string());
         }
     }
@@ -498,6 +512,110 @@ pub(crate) async fn resolve_context_variables(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn base_branch_repo() -> tempfile::TempDir {
+        let repo = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        for args in [
+            vec!["init", "-b", "feature"],
+            vec![
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "fixture",
+            ],
+        ] {
+            let output = Command::new(crate::cli::resolve_cli("git"))
+                .arg("-C")
+                .arg(repo.path())
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        repo
+    }
+
+    #[tokio::test]
+    async fn base_branch_remote_default_resolves_without_local_base() {
+        // Catches unresolved merge templates when the base exists only on origin.
+        let repo = base_branch_repo();
+        let path = repo.path().to_str().unwrap();
+        git_output(path, &["update-ref", "refs/remotes/origin/trunk", "HEAD"]).unwrap();
+        git_output(
+            path,
+            &[
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                "refs/remotes/origin/trunk",
+            ],
+        )
+        .unwrap();
+        let resolved = resolve_prompt_variables(
+            "Merge the latest {base_branch} into {branch}.".into(),
+            Some(path.into()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            resolved.vars.get("branch").map(String::as_str),
+            Some("feature")
+        );
+        assert_eq!(
+            process_content(
+                "Merge the latest {base_branch} into {branch}.",
+                &resolved.vars
+            ),
+            "Merge the latest trunk into feature."
+        );
+    }
+
+    #[test]
+    fn base_branch_remote_default_beats_local_name_guess() {
+        // Catches merging the wrong base when the remote uses a custom default.
+        let repo = base_branch_repo();
+        let path = repo.path().to_str().unwrap();
+        git_output(path, &["branch", "main"]).unwrap();
+        git_output(
+            path,
+            &["update-ref", "refs/remotes/origin/release/stable", "HEAD"],
+        )
+        .unwrap();
+        git_output(
+            path,
+            &[
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                "refs/remotes/origin/release/stable",
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_single_var(path, "base_branch").as_deref(),
+            Some("release/stable")
+        );
+    }
+
+    #[test]
+    fn base_branch_without_remote_default_keeps_local_priority() {
+        // Catches losing offline local-only repos while preferring remote HEAD.
+        let repo = base_branch_repo();
+        let path = repo.path().to_str().unwrap();
+        for branch in ["develop", "master", "main"] {
+            git_output(path, &["branch", branch]).unwrap();
+        }
+        assert_eq!(
+            resolve_single_var(path, "base_branch").as_deref(),
+            Some("main")
+        );
+    }
 
     // --- extract_variables tests ---
 

@@ -105,7 +105,7 @@ export interface GitOperationsDeps {
 		finalizeMergedWorktree: (
 			repoPath: string,
 			workspaceId: string,
-			action: "archive" | "delete",
+			action: "archive" | "delete" | "archive_and_drop_branch",
 			force?: boolean,
 			expectedFingerprint?: string,
 		) => Promise<{ merged: boolean; action: string; archive_path: string | null }>;
@@ -122,6 +122,7 @@ export interface GitOperationsDeps {
 			worktreePath: string,
 			safeOnly?: boolean,
 			confirmedSessions?: string[],
+			expectedFingerprint?: string,
 		) => Promise<void>;
 		mergePrViaGithub: (
 			repoPath: string,

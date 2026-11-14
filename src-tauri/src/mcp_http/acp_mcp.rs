@@ -298,6 +298,7 @@ impl McpOverAcpHost for AcpMcpHost {
             let response = Box::pin(mcp_post(
                 State(state),
                 ConnectInfo(loopback()),
+                None,
                 headers,
                 Json(body),
             ))
@@ -377,7 +378,7 @@ const INBOX_PAGE: usize = 100;
 fn resource_list() -> Value {
     json!({ "resources": [
         { "uri": WORKSPACE_URI, "name": "workspace", "mimeType": "application/json",
-          "description": "Every repository: name, path, branch, live agents, and the one Boss is viewing" },
+          "description": "Every repository: name, path, branch, live agents, and the one the user is viewing" },
         { "uri": INBOX_URI, "name": "inbox", "mimeType": "application/json",
           "description": "Unread peer mail for this ego, in arrival order; `agent inbox` marks it read" },
     ] })
@@ -741,6 +742,7 @@ mod tests {
         let over_http = mcp_post(
             State(Arc::clone(&state)),
             ConnectInfo("127.0.0.1:0".parse().unwrap()),
+            None,
             HeaderMap::new(),
             Json(json!({
                 "jsonrpc": "2.0", "id": 1, "method": "tools/list",
@@ -850,6 +852,7 @@ mod tests {
             from_name: "orc-1".to_owned(),
             content: body.to_owned(),
             timestamp: 1,
+            report: None,
             delivered_via_channel: false,
         }
     }
@@ -907,6 +910,7 @@ mod tests {
         let over_http = mcp_post(
             State(Arc::clone(&state)),
             ConnectInfo(loopback()),
+            None,
             HeaderMap::new(),
             Json(json!({ "jsonrpc": "2.0", "id": 1, "method": "server/discover", "params": {} })),
         )
@@ -1147,6 +1151,7 @@ mod tests {
                     executable: launcher,
                     profile: String::new(),
                     master_prompt: String::new(),
+                    ai_chat: false,
                 },
                 AcpConnectRequest {
                     root: workspace.clone(),
@@ -1221,6 +1226,7 @@ mod tests {
                     from_name: "tuic".into(),
                     content: m["content"].as_str().unwrap().into(),
                     timestamp: m["timestamp"].as_u64().unwrap(),
+                    report: None,
                     delivered_via_channel: false,
                 },
             );

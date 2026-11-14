@@ -1,0 +1,1 @@
+agent_pid=6892 hook_stdout_pipe=true

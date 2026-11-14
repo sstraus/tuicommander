@@ -6,11 +6,11 @@ describe("agent hook instrumentation toggle", () => {
 	it("HOOK_SUPPORT gates the hook-instrumented agents (A1)", () => {
 		// Adapters landed incrementally: Claude/Gemini (#048), then Grok (#051),
 		// Codex (#050), OpenCode (#052) flipped on. Keep this in sync with agents.ts.
-		const on: AgentType[] = ["claude", "gemini", "grok", "codex", "opencode"];
+		const on: AgentType[] = ["claude", "gemini", "grok", "codex", "opencode", "pi"];
 		for (const a of on) {
 			expect(HOOK_SUPPORT[a]).toBe(true);
 		}
-		const off: AgentType[] = ["cursor", "amp", "goose", "droid", "pi", "ego", "git", "api"];
+		const off: AgentType[] = ["cursor", "amp", "goose", "droid", "ego", "git", "api"];
 		for (const a of off) {
 			expect(HOOK_SUPPORT[a]).toBe(false);
 		}

@@ -13,13 +13,13 @@
 
 use agent_client_protocol::schema::v1;
 use tuicommander_lib::acp::{
-    AcpAttachKind, AcpAttachmentState, AcpClientErrorCode, AcpClientEvent, AcpDetachKind,
-    AcpOperation, AcpTurnState,
+    AcpAttachKind, AcpAttachmentState, AcpChatActivityState, AcpClientErrorCode, AcpClientEvent,
+    AcpDetachKind, AcpOperation, AcpTurnState,
 };
 
 use crate::acp_support;
 
-use acp_support::{Fixture, authority, chunk, text, until_settled};
+use acp_support::{Fixture, authority, chunk, text, until, until_settled};
 
 const SESSION: &str = "01932d5e-0000-7000-8000-0000000000aa";
 
@@ -91,7 +91,21 @@ async fn a_turn_streams_its_updates_in_wire_order_and_settles_on_its_response() 
         .expect("the turn is recorded");
     assert_eq!(turn.state, AcpTurnState::Settled);
     assert_eq!(turn.stop_reason, Some(v1::StopReason::EndTurn));
-    assert_eq!(snapshot.latest_sequence, *sequences.last().unwrap());
+    // The settlement is followed by exactly one more event: the chat's activity
+    // going idle (#2637-c6d3). It is the newest thing the journal holds.
+    let after = until(&mut stream, |event| {
+        matches!(event, AcpClientEvent::ActivityChanged { .. })
+    })
+    .await;
+    let [idle] = after.as_slice() else {
+        panic!("only the activity change follows the settlement: {after:?}");
+    };
+    let AcpClientEvent::ActivityChanged { activity } = &idle.event else {
+        unreachable!()
+    };
+    assert_eq!(activity.state, AcpChatActivityState::Idle);
+    assert_eq!(idle.sequence, *sequences.last().unwrap() + 1);
+    assert_eq!(snapshot.latest_sequence, idle.sequence);
 
     fixture
         .manager

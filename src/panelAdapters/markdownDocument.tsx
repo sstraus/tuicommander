@@ -2,7 +2,7 @@ import { emitTo } from "@tauri-apps/api/event";
 import { type Component, createSignal, lazy, onCleanup, onMount, Suspense } from "solid-js";
 import type { MarkdownFileLink } from "../components/MarkdownTab/MarkdownTab";
 import { initPanelWindow } from "../hooks/initPanelWindow";
-import { invoke } from "../invoke";
+import { invoke, listen } from "../invoke";
 import type { PanelAdapter } from "../panelRouter";
 import { appLogger } from "../stores/appLogger";
 import { type FileTab, mdTabsStore } from "../stores/mdTabs";
@@ -27,10 +27,16 @@ const DetachedMarkdownDocument: Component<{ params: URLSearchParams }> = (props)
 		mdTabsStore.setActive(tabId);
 		const refresh = () => setReloadToken((value) => value + 1);
 		window.addEventListener("focus", refresh);
-		const interval = window.setInterval(refresh, 2000);
+		// The repo watcher broadcasts to every window. This window has no
+		// repositories store of its own, so it reloads on its repo's events.
+		const unlisten = repoPath
+			? listen<{ repo_path: string }>("repo-changed", (event) => {
+					if (event.payload.repo_path === repoPath) refresh();
+				})
+			: undefined;
 		onCleanup(() => {
 			window.removeEventListener("focus", refresh);
-			window.clearInterval(interval);
+			void unlisten?.then((stop) => stop());
 		});
 	});
 

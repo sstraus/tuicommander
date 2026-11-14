@@ -93,7 +93,13 @@ describe("repositoriesStore", () => {
 			testInScope(() => {
 				store.add({ path: "/repo", displayName: "test" });
 				store.setWorktreeDiagnostics("/repo", [
-					{ path: "/old/path", branch: null, state: "missing", guidance: "Run git worktree repair" },
+					{
+						path: "/old/path",
+						branch: null,
+						state: "missing",
+						guidance: "Run git worktree repair",
+						checkout_present: false,
+					},
 				]);
 				store.setWorkspace("/repo", "main");
 				vi.advanceTimersByTime(500);
@@ -1636,6 +1642,31 @@ describe("repositoriesStore", () => {
 				vi.advanceTimersByTime(1000);
 
 				expect(mockInvoke).not.toHaveBeenCalled();
+			});
+		});
+
+		// Catches: a refresh tick (diffstat, merge flag, dirty-file count) saved as an edit,
+		// rewriting all of repositories.json every few seconds.
+		it("does not save when only git stats differ, and keeps them with the next real edit", async () => {
+			await testInScopeAsync(async () => {
+				store.add({ path: "/repo", displayName: "Original" });
+				store.setWorkspace("/repo", "main");
+				await vi.advanceTimersByTimeAsync(500);
+				mockInvoke.mockClear();
+
+				store.updateWorkspaceStats("/repo", "main", 10, 5);
+				store.setDisplayName("/repo", "Original");
+				await vi.advanceTimersByTimeAsync(1000);
+				expect(mockInvoke.mock.calls.filter((c: unknown[]) => c[0] === "save_repositories")).toHaveLength(0);
+
+				store.setDisplayName("/repo", "Renamed");
+				await vi.advanceTimersByTimeAsync(500);
+				const saves = mockInvoke.mock.calls.filter((c: unknown[]) => c[0] === "save_repositories");
+				expect(saves).toHaveLength(1);
+				const after = (
+					saves[0][1] as { config: { repos: Array<{ after: { workspaces: Record<string, { additions: number }> } }> } }
+				).config.repos[0].after;
+				expect(after.workspaces.main.additions).toBe(10);
 			});
 		});
 

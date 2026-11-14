@@ -20,20 +20,18 @@ const TIMER_INTERVAL_MS = 50;
 interface FreezeEntry {
 	at: number;
 	gapMs: number;
-	/** "main" = real main-thread block (timer drift). "paint" = rAF cadence
-	 *  stall with the main thread responsive (compositor/GPU backpressure). */
-	kind: "main" | "paint";
+	/** A real main-thread block (timer drift). */
+	kind: "main";
 }
 
 let running = false;
+let timerId: ReturnType<typeof setInterval> | undefined;
 let lastTimerTick = 0;
-let lastRafTick = 0;
 let lastMainLogAt = 0;
-let lastPaintLogAt = 0;
 const freezes: FreezeEntry[] = [];
 
-function record(kind: "main" | "paint", gapMs: number, at: number) {
-	if (freezes.length < MAX_ENTRIES) freezes.push({ at, gapMs, kind });
+function record(gapMs: number, at: number) {
+	if (freezes.length < MAX_ENTRIES) freezes.push({ at, gapMs, kind: "main" });
 }
 
 /** A timer gap is a background/suspend artefact — NOT a real main-thread block —
@@ -59,7 +57,7 @@ function timerTick() {
 	// Skip sleep/suspend re-baselines and background timer-clamp artefacts.
 	if (isBackgroundTimerGap(gap, document.hidden, document.hasFocus())) return;
 	if (gap > THRESHOLD_MS) {
-		record("main", Math.round(gap), now);
+		record(Math.round(gap), now);
 		void dumpFrameWorkload("main-thread-freeze", true).catch(() => {});
 		if (now - lastMainLogAt > LOG_COOLDOWN_MS) {
 			lastMainLogAt = now;
@@ -72,39 +70,21 @@ function timerTick() {
 	}
 }
 
-/** Paint-cadence detector: rAF-driven. A gap here with NO matching main-thread
- *  gap means the compositor fell behind (e.g. heavy terminal frame load) while
- *  the main thread stayed responsive — visual stutter, not an input freeze.
- *  Logged at debug so it no longer masquerades as a "UI freeze". */
-function rafTick() {
-	if (!running) return;
-	const now = performance.now();
-	const gap = now - lastRafTick;
-	lastRafTick = now;
-	if (gap > SLEEP_GAP_MS) {
-		requestAnimationFrame(rafTick);
-		return;
-	}
-	if (gap > THRESHOLD_MS) {
-		record("paint", Math.round(gap), now);
-		if (now - lastPaintLogAt > LOG_COOLDOWN_MS) {
-			lastPaintLogAt = now;
-			appLogger.debug("app", `Paint jank: ${Math.round(gap)}ms rAF gap (main thread responsive)`);
-		}
-	}
-	requestAnimationFrame(rafTick);
-}
-
 export function startFreezeDetector() {
 	if (!isPerfDebug()) return;
 	if (running) return;
 	running = true;
-	const now = performance.now();
-	lastTimerTick = now;
-	lastRafTick = now;
-	setInterval(timerTick, TIMER_INTERVAL_MS);
-	requestAnimationFrame(rafTick);
-	appLogger.debug("app", "Freeze detector started (timer 200ms main-thread + rAF paint-jank)");
+	lastTimerTick = performance.now();
+	timerId = setInterval(timerTick, TIMER_INTERVAL_MS);
+	appLogger.debug("app", `Freeze detector started (timer ${TIMER_INTERVAL_MS}ms main-thread)`);
+}
+
+/** Stop the detector so turning perfDebug off leaves no timer behind. */
+export function stopFreezeDetector() {
+	if (!running) return;
+	running = false;
+	clearInterval(timerId);
+	timerId = undefined;
 }
 
 export function getFreezes(): FreezeEntry[] {

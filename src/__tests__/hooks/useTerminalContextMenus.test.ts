@@ -74,7 +74,9 @@ function createOptions(available: Array<{ type: string }> = []) {
 }
 
 describe("useTerminalContextMenus", () => {
-	beforeEach(() => {
+	beforeEach(async () => {
+		await (await import("../../stores/activityStore")).activityStore.hydrate();
+		localStorage.clear();
 		mockTerminals.state.activeId = null;
 		mockTerminals.get.mockReset();
 		mockTerminals.getActive.mockReset();
@@ -158,6 +160,64 @@ describe("useTerminalContextMenus", () => {
 		expect(getBufferLines).not.toHaveBeenCalled();
 	});
 
+	// Catches: flat labels leak default suffixes, hide multiple config names, or lose the selected command.
+	it.each([0, 1, 2])("keeps structured agent/config presentation for %i run configs", async (count) => {
+		mockTerminals.get.mockReturnValue({ tuicSession: "tuic-1" });
+		const configs = [
+			{ name: "Fast", command: "claude", args: ["--model", "sonnet"], is_default: false },
+			{ name: "Thorough", command: "claude", args: ["--model", "opus"], is_default: true },
+		].slice(0, count);
+		mockAgentConfigs.getRunConfigs.mockReturnValue(configs);
+		const items = useTerminalContextMenus(createOptions([{ type: "claude" }]) as never).buildSidebarAgentMenuItems(
+			"/repo",
+			"feature",
+			true,
+		);
+		expect(
+			items.map(({ label, agentType, agentName, configName, isDefault }) => ({
+				label,
+				agentType,
+				agentName,
+				configName,
+				isDefault,
+			})),
+		).toEqual(
+			count === 2
+				? [
+						{
+							label: "Claude Code Fast",
+							agentType: "claude",
+							agentName: "Claude Code",
+							configName: "Fast",
+							isDefault: false,
+						},
+						{
+							label: "Claude Code Thorough",
+							agentType: "claude",
+							agentName: "Claude Code",
+							configName: "Thorough",
+							isDefault: true,
+						},
+					]
+				: [
+						{
+							label: "Claude Code",
+							agentType: "claude",
+							agentName: "Claude Code",
+							configName: undefined,
+							isDefault: count === 0,
+						},
+					],
+		);
+		await items.at(-1)!.action();
+		expect(mockTerminals.update).toHaveBeenCalledWith(
+			"new-term",
+			expect.objectContaining({
+				agentLaunchCommand: count === 2 ? "claude --model opus" : count === 1 ? "claude --model sonnet" : "claude",
+			}),
+		);
+	});
+
 	it("creates and configures a branch terminal from the sidebar agent action", async () => {
 		mockTerminals.get.mockReturnValue({ tuicSession: "tuic-1" });
 		const options = createOptions([{ type: "claude" }]);
@@ -169,7 +229,12 @@ describe("useTerminalContextMenus", () => {
 		expect(options.gitOps.handleAddTerminalToWorkspace).toHaveBeenCalledWith("/repo", "feature");
 		expect(mockTerminals.update).toHaveBeenCalledWith(
 			"new-term",
-			expect.objectContaining({ name: "Claude Code", agentType: "claude", agentLaunchCommand: "claude" }),
+			expect.objectContaining({
+				name: "Claude Code",
+				nameIsCustom: false,
+				agentType: "claude",
+				agentLaunchCommand: "claude",
+			}),
 		);
 	});
 
@@ -192,6 +257,7 @@ describe("useTerminalContextMenus", () => {
 			expect.objectContaining({
 				agentLaunchCommand: "claude",
 				name: "Claude Code",
+				nameIsCustom: false,
 			}),
 		);
 	});

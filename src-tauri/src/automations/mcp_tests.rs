@@ -202,7 +202,6 @@ fn mcp_automation_tool_is_discoverable_with_all_definition_actions() {
             "template",
             "worktree_preview",
             "cleanup_worktree",
-            "triage_decision",
             "help"
         ])
     );

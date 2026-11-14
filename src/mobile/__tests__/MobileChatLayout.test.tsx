@@ -50,8 +50,8 @@ it.each([
 			emptyMessage=""
 		/>
 	));
-	const copy = screen.getByRole("button", { name: "Copy assistant message" });
-	const actions = copy.parentElement!;
+	const copy = screen.getByRole("button", { name: "Assistant message actions" });
+	const actions = copy.parentElement!.parentElement!;
 	const content = view.container.querySelector("#markdown-content")!;
 	expect(content.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 	expect(["", "static", "relative"]).toContain(getComputedStyle(actions).position);

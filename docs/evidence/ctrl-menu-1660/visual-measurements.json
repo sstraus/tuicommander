@@ -1,0 +1,220 @@
+{
+  "evidence": [
+    {
+      "name": "iphone",
+      "width": 390,
+      "height": 844,
+      "visible": 500,
+      "png": "/Users/stefano.straus/Gits/personal/tuicommander/docs/evidence/ctrl-menu-1660/iphone-keyboard-open-ctrl-menu.png",
+      "bounds": {
+        "layout": {
+          "width": 390,
+          "height": 844
+        },
+        "visualHeight": 500,
+        "appHeight": "500px",
+        "menu": {
+          "x": 12,
+          "y": 188,
+          "width": 118.28125,
+          "height": 212,
+          "bottom": 400,
+          "right": 130.28125
+        },
+        "items": [
+          {
+            "text": "Ctrl+C",
+            "x": 21,
+            "y": 197,
+            "width": 100.28125,
+            "height": 44,
+            "bottom": 241,
+            "right": 121.28125,
+            "disabled": false,
+            "color": "rgb(239, 68, 68)"
+          },
+          {
+            "text": "Ctrl+B",
+            "x": 21,
+            "y": 247,
+            "width": 100.28125,
+            "height": 44,
+            "bottom": 291,
+            "right": 121.28125,
+            "disabled": false,
+            "color": "rgb(160, 160, 160)"
+          },
+          {
+            "text": "Ctrl+D",
+            "x": 21,
+            "y": 297,
+            "width": 100.28125,
+            "height": 44,
+            "bottom": 341,
+            "right": 121.28125,
+            "disabled": false,
+            "color": "rgb(239, 68, 68)"
+          },
+          {
+            "text": "Ctrl+Enter",
+            "x": 21,
+            "y": 347,
+            "width": 100.28125,
+            "height": 44,
+            "bottom": 391,
+            "right": 121.28125,
+            "disabled": false,
+            "color": "rgb(160, 160, 160)"
+          }
+        ]
+      },
+      "touchChecks": "four choices each wrote exact bytes once and dismissed; outside tap dismissed without write"
+    },
+    {
+      "name": "ipad",
+      "width": 1024,
+      "height": 1366,
+      "visible": 966,
+      "png": "/Users/stefano.straus/Gits/personal/tuicommander/docs/evidence/ctrl-menu-1660/ipad-keyboard-open-ctrl-menu.png",
+      "bounds": {
+        "layout": {
+          "width": 1024,
+          "height": 1366
+        },
+        "visualHeight": 966,
+        "appHeight": "966px",
+        "menu": {
+          "x": 12,
+          "y": 654,
+          "width": 118.28125,
+          "height": 212,
+          "bottom": 866,
+          "right": 130.28125
+        },
+        "items": [
+          {
+            "text": "Ctrl+C",
+            "x": 21,
+            "y": 663,
+            "width": 100.28125,
+            "height": 44,
+            "bottom": 707,
+            "right": 121.28125,
+            "disabled": false,
+            "color": "rgb(239, 68, 68)"
+          },
+          {
+            "text": "Ctrl+B",
+            "x": 21,
+            "y": 713,
+            "width": 100.28125,
+            "height": 44,
+            "bottom": 757,
+            "right": 121.28125,
+            "disabled": false,
+            "color": "rgb(160, 160, 160)"
+          },
+          {
+            "text": "Ctrl+D",
+            "x": 21,
+            "y": 763,
+            "width": 100.28125,
+            "height": 44,
+            "bottom": 807,
+            "right": 121.28125,
+            "disabled": false,
+            "color": "rgb(239, 68, 68)"
+          },
+          {
+            "text": "Ctrl+Enter",
+            "x": 21,
+            "y": 813,
+            "width": 100.28125,
+            "height": 44,
+            "bottom": 857,
+            "right": 121.28125,
+            "disabled": false,
+            "color": "rgb(160, 160, 160)"
+          }
+        ]
+      },
+      "touchChecks": "four choices each wrote exact bytes once and dismissed; outside tap dismissed without write"
+    }
+  ],
+  "writes": [
+    {
+      "data": "\u0003"
+    },
+    {
+      "data": "\u0002"
+    },
+    {
+      "data": "\u0004"
+    },
+    {
+      "data": "\u001b[13;5u"
+    },
+    {
+      "data": "\u0003"
+    },
+    {
+      "data": "\u0002"
+    },
+    {
+      "data": "\u0004"
+    },
+    {
+      "data": "\u001b[13;5u"
+    }
+  ],
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/sessions"
+    },
+    {
+      "method": "GET",
+      "path": "/api/version"
+    },
+    {
+      "method": "GET",
+      "path": "/config/notes"
+    },
+    {
+      "method": "GET",
+      "path": "/config/ui-prefs"
+    },
+    {
+      "method": "GET",
+      "path": "/config/themes"
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/owned-mobile-1660/output"
+    },
+    {
+      "method": "GET",
+      "path": "/sessions"
+    },
+    {
+      "method": "GET",
+      "path": "/api/version"
+    },
+    {
+      "method": "GET",
+      "path": "/config/notes"
+    },
+    {
+      "method": "GET",
+      "path": "/config/themes"
+    },
+    {
+      "method": "GET",
+      "path": "/config/ui-prefs"
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/owned-mobile-1660/output"
+    }
+  ]
+}

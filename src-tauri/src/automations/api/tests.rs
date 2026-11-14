@@ -280,6 +280,58 @@ fn canonical_run_lookup_survives_definition_deletion() {
     assert_eq!(reply["definition"]["id"], "notice");
 }
 
+// Catches: list_runs embedding every run's full stdout (1.1 MB for 6 runs) while `run` must stay full.
+#[test]
+fn list_runs_bounds_stdout_but_run_returns_it_whole() {
+    let (_dir, definitions, owner) = setup();
+    let runs = owner.store();
+    call(
+        &definitions,
+        runs,
+        json!({"action":"create","definition":definition("big")}),
+    )
+    .unwrap();
+    let run = runs
+        .reserve(
+            &definitions.get("big").unwrap(),
+            RunTrigger::Manual,
+            now().timestamp_millis(),
+        )
+        .unwrap()
+        .unwrap();
+    let output = format!("{}TAIL-MARKER", "x".repeat(200_000));
+    runs.transition(
+        &run.id,
+        RunStatus::Failed,
+        crate::automations::run::RunDetails {
+            stdout: Some(output.clone()),
+            stderr: Some(output.clone()),
+            ..Default::default()
+        },
+        now().timestamp_millis(),
+    )
+    .unwrap();
+    for grouped in [false, true] {
+        let listed = call(
+            &definitions,
+            runs,
+            json!({"action":"list_runs","id":"big","limit":1,"group_failures":grouped}),
+        )
+        .unwrap();
+        let text = listed[0]["stdout"]["text"].as_str().unwrap();
+        assert!(
+            text.len() <= 4096,
+            "grouped={grouped}: {} bytes",
+            text.len()
+        );
+        assert!(text.ends_with("TAIL-MARKER"));
+        assert_eq!(listed[0]["stdout"]["truncated"], true);
+        assert!(listed[0]["stderr"]["text"].as_str().unwrap().len() <= 4096);
+    }
+    let full = call(&definitions, runs, json!({"action":"run","id":run.id})).unwrap();
+    assert_eq!(full["stdout"]["text"].as_str().unwrap(), output);
+}
+
 mod templates;
 
 // Catches: relative requests requiring a caller-computed wall clock or rejecting in_secs.
@@ -531,34 +583,49 @@ fn automation_profiles_uses_the_same_saved_profiles_as_validation() {
     assert_eq!(reply, json!(["Review profile"]));
 }
 
-// Catches: review-only definitions advertise generic scheduled launches in shared API responses.
+// Catches: losing close policy through shared create/update or accepting non-boolean policy.
 #[test]
-fn review_only_list_has_no_scheduled_next_run() {
+fn shared_api_persists_close_on_finish_and_defaults_to_false() {
     let (dir, definitions, owner) = setup();
-    std::fs::write(
-        dir.path().join("automations.json"),
-        json!({
-            "definitions":[definition("review")],
-            "pull_request_reviews":{"repositories":["cli/cli"],"definition_id":"review"}
-        })
-        .to_string(),
+    let mut value = definition("close-policy");
+    let saved = call(
+        &definitions,
+        owner.store(),
+        json!({"action":"create","definition":value}),
     )
     .unwrap();
-    let listed = call(&definitions, owner.store(), json!({"action":"list"})).unwrap();
-    assert_eq!(listed[0]["definition"]["id"], "review");
-    assert_eq!(listed[0]["next_run_ms"], Value::Null);
-    assert_eq!(listed[0]["run_config_error"], Value::Null);
-}
-
-// Catches: an unbound HTTP/IPC client or agent submits a triage decision for another run.
-#[tokio::test]
-async fn triage_decision_requires_bound_agent_transport_identity() {
-    let state = std::sync::Arc::new(crate::state::tests_support::make_test_app_state());
-    let input = serde_json::json!({"action":"triage_decision","id":"not-owned", "decision":{"outcome":"accepted","reason":"Policy permits"}});
-    for caller in [super::Caller::Client, super::Caller::Agent(None)] {
-        let error = super::execute_as(input.clone(), state.clone(), caller)
-            .await
-            .unwrap_err();
-        assert_eq!(error, "Triage decision requires a bound agent caller");
+    assert_eq!(saved["close_on_finish"], false);
+    for enabled in [true, false] {
+        value["close_on_finish"] = json!(enabled);
+        call(
+            &definitions,
+            owner.store(),
+            json!({"action":"update","definition":value}),
+        )
+        .unwrap();
+        let disk: Value =
+            serde_json::from_slice(&std::fs::read(dir.path().join("automations.json")).unwrap())
+                .unwrap();
+        assert_eq!(disk["definitions"][0]["close_on_finish"], enabled);
+    }
+    value["id"] = json!("opt-in-create");
+    value["close_on_finish"] = json!(true);
+    let saved = call(
+        &definitions,
+        owner.store(),
+        json!({"action":"create","definition":value}),
+    )
+    .unwrap();
+    assert_eq!(saved["close_on_finish"], true);
+    for invalid in [json!("true"), json!(1), Value::Null] {
+        value["close_on_finish"] = invalid;
+        assert!(
+            call(
+                &definitions,
+                owner.store(),
+                json!({"action":"update","definition":value})
+            )
+            .is_err()
+        );
     }
 }

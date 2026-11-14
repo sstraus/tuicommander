@@ -205,13 +205,19 @@ When a PR is merged or closed on GitHub, TUICommander can automatically clean up
 |------|----------|
 | **Off** (default) | No action taken |
 | **Ask** | Shows a confirmation dialog before deleting |
-| **Auto** | Deletes silently; falls back to Ask if worktree has uncommitted changes |
+| **Auto** | Deletes silently, only when a fresh inspection proves the branch merged and the checkout safe; otherwise keeps it and says why |
 
 **Safety guarantees:**
 - The default/main branch is never deleted
+- A closed PR is not proof of a merge: a closed-unmerged PR keeps its branch in Auto mode
+- Uncommitted or untracked files, unpushed submodule commits, live sessions and an unproven or unknown merge state keep the checkout; nothing is forced
+- Ask mode re-inspects after you confirm and refuses to delete if the branch tip, local state or sessions changed while the dialog was open
 - If a branch has a linked worktree, the worktree is removed first
-- Uses safe `git branch -d` — refuses to delete branches with unmerged commits
-- Dirty worktrees (uncommitted changes) always escalate to Ask mode, even when set to Auto
+
+**Retry and Keep:**
+- A failed deletion (or an inspection that could not run) is retried up to three times (after 5 s, 30 s and 2 min), each time behind a fresh inspection; a successful deletion is never repeated
+- Choosing **Keep** in the Ask dialog is remembered for that PR until you reset it; repeated notifications and a switch to Auto do not override it. The reset is shown on the sidebar row of a checkout marked Keep and only while Keep is set: compact rows show a reset icon, and rich rows show **Reset Keep**. It needs no restart. Pressing it makes the next PR notification for that checkout be handled again by the current Off/Ask/Auto setting (the hook's `resetKeep(repoPath, prNumber)`). Keep is held in memory only, so it also ends when TUIC quits
+- While the setting is Off, nothing is recorded, so enabling it later still handles the next notification for that PR
 
 ## Remote-Only Pull Requests
 

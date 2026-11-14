@@ -152,6 +152,15 @@ impl StatusCache {
             .collect();
         let common = base.join(".git");
         for path in &event.paths {
+            // A lock file carries no status: git renames it onto the real file,
+            // which is its own event. Agent status lines create `index.lock` in
+            // a linked worktree's admin dir every few seconds, and counting it
+            // here made every sidebar refresh recompute that checkout's status.
+            if path.starts_with(&common) && crate::repo_watcher::is_git_lock_file(path) {
+                #[cfg(test)]
+                self.record(format!("event decision=ignore lock file path={path:?}"));
+                continue;
+            }
             // Existing directory metadata is not a status change: recursive
             // child events carry file/index/ref/config changes. Keep checkout
             // roots and unmapped paths conservative for watch identity loss.
@@ -600,6 +609,48 @@ mod tests {
         assert_cli_status(&cache, &sibling);
         assert_cli_status(&cache, &sibling);
         assert_eq!(computations(&cache, &sibling), 4);
+    }
+
+    /// Catches an agent's status-line `git status` (it creates `index.lock` in the
+    /// linked worktree's admin dir every few seconds) retiring that checkout's
+    /// snapshot, so each sidebar refresh recomputed its status.
+    #[test]
+    fn monitoring_status_lock_file_events_keep_the_snapshot() {
+        let (_guard, repo) = setup_test_repo_with_commit();
+        let repo = repo.canonicalize().unwrap();
+        let holder = tempfile::tempdir().unwrap();
+        let linked = holder.path().canonicalize().unwrap().join("linked");
+        run_git(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "lock-sibling",
+                linked.to_str().unwrap(),
+            ],
+        );
+        let admin = crate::git::resolve_git_dir(&linked)
+            .unwrap()
+            .canonicalize()
+            .unwrap();
+        let cache = StatusCache::default();
+        cache.set_watching(&repo, &repo, true);
+        cache.set_watching(&repo, &linked, true);
+        let _ = cache.read(&linked);
+        assert_eq!(computations(&cache, &linked), 1);
+
+        for lock in [admin.join("index.lock"), repo.join(".git/index.lock")] {
+            changed(&cache, &repo, &lock);
+            let _ = cache.read(&linked);
+            assert_eq!(computations(&cache, &linked), 1, "{}", lock.display());
+        }
+        // The rename target is a real write and still retires the snapshot.
+        std::fs::write(linked.join("staged.txt"), "staged\n").unwrap();
+        run_git(&linked, &["add", "staged.txt"]);
+        changed(&cache, &repo, &admin.join("index"));
+        let _ = cache.read(&linked);
+        assert_eq!(computations(&cache, &linked), 2);
     }
 
     /// Catches recorded Windows directory metadata rejecting an unchanged status load.

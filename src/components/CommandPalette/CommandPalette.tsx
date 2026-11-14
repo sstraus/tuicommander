@@ -96,6 +96,7 @@ const BROWSER_ACTION_IDS = new Set([
 	"progress",
 	"automations",
 	"plans-stories",
+	"workflows",
 	"reset-panel-sizes",
 	"search-terminals",
 	"search-files",

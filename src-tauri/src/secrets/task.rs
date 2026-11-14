@@ -19,6 +19,9 @@ impl Drop for Put {
     }
 }
 
+/// Stored status, scope generation, and the instant new injection stops.
+pub(super) type PutOutcome = (Status, uuid::Uuid, Instant);
+
 pub(super) struct ScopedValues {
     values: BTreeMap<String, Zeroizing<String>>,
     deadline: Instant,
@@ -46,8 +49,12 @@ impl ScopedEnvironment {
     }
 }
 
+fn needles<'a>(values: impl IntoIterator<Item = &'a str>) -> Arc<Vec<Zeroizing<String>>> {
+    Arc::new(values.into_iter().flat_map(mask::representations).collect())
+}
+
 impl SecretStore {
-    pub(super) fn put(&self, mut put: Put) -> Result<(Status, uuid::Uuid, Instant), String> {
+    pub(super) fn put(&self, mut put: Put) -> Result<PutOutcome, String> {
         if put.scope.is_empty()
             || put.scope.len() > 256
             || put.scope.contains('\0')
@@ -127,13 +134,7 @@ impl SecretStore {
             .iter()
             .map(|(name, value)| (name.clone(), Zeroizing::new(value.to_string())))
             .collect();
-        let needles = Arc::new(
-            entry
-                .values
-                .values()
-                .flat_map(|value| mask::representations(value))
-                .collect(),
-        );
+        let needles = needles(entry.values.values().map(|value| value.as_str()));
         Ok(ScopedEnvironment {
             values,
             needles,
@@ -148,10 +149,40 @@ impl SecretStore {
 
     pub(crate) fn release_session(&self, session: &str) {
         self.session_masks.remove(session);
+        self.literal_reads.remove(session);
+    }
+
+    /// Owner grant for literal terminal reads of one PTY session (#2643-6b38).
+    /// Pattern redaction is skipped for that session; registered and scoped
+    /// values stay masked. Only the desktop owner control calls the setter.
+    pub(crate) fn set_literal_reads(&self, session: &str, enabled: bool) {
+        if enabled {
+            self.literal_reads.insert(session.to_owned());
+        } else {
+            self.literal_reads.remove(session);
+        }
+    }
+
+    pub(crate) fn literal_reads_granted(&self, session: &str) -> bool {
+        self.literal_reads.contains(session)
+    }
+
+    /// Mask the registered and session-scoped values without moving byte offsets.
+    pub(crate) fn mask_session_preserving_offsets(
+        &self,
+        session: &str,
+        bytes: &[u8],
+    ) -> Zeroizing<Vec<u8>> {
+        mask::mask_preserving_offsets(bytes, &self.pty_needles(session))
     }
 
     pub(crate) fn has_pty_secrets(&self, session: &str) -> bool {
-        !self.inner.lock().values.is_empty() || self.session_masks.contains_key(session)
+        self.inner
+            .lock()
+            .values
+            .values()
+            .any(|value| value.kind != FieldKind::Username)
+            || self.session_masks.contains_key(session)
     }
 
     /// Legacy form values also protect every PTY; scoped values protect bound PTYs.
@@ -160,7 +191,7 @@ impl SecretStore {
         let mut needles: Vec<_> = inner
             .values
             .values()
-            .flat_map(|value| mask::representations(value))
+            .flat_map(FormValue::mask_representations)
             .collect();
         if let Some(scoped) = self.session_masks.get(session) {
             needles.extend(scoped.iter().map(|value| Zeroizing::new(value.to_string())));

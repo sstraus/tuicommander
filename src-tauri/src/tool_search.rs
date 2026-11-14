@@ -106,11 +106,28 @@ impl ToolSearchIndex {
             }
         }
         if required.is_empty() {
-            let results: Vec<SearchResult<u32>> = self.engine.search(query, limit);
-            return results
+            // A word that is a tool's exact name selects that tool first: BM25 alone
+            // ranks short descriptions that mention the word ("agent") above the
+            // tool's own longer description.
+            let mut results: Vec<&ToolEntry> = self
+                .entries
+                .iter()
+                .filter(|e| optional.iter().any(|w| w.eq_ignore_ascii_case(&e.name)))
+                .take(limit)
+                .collect();
+            let ranked: Vec<SearchResult<u32>> = self.engine.search(query, limit);
+            for entry in ranked
                 .into_iter()
                 .filter_map(|r| self.entries.get(r.document.id as usize))
-                .collect();
+            {
+                if results.len() == limit {
+                    break;
+                }
+                if !results.iter().any(|e| std::ptr::eq(*e, entry)) {
+                    results.push(entry);
+                }
+            }
+            return results;
         }
 
         let matches: Vec<bool> = self
