@@ -166,6 +166,13 @@ fn sweep_with_snapshot(
     now_ms: u64,
     mut snapshot: impl FnMut() -> Option<Vec<String>>,
 ) {
+    crate::agent_health::sweep(state, now_ms, crate::agent_health::configured_delay_ms());
+    let mut processes = None;
+    crate::agent_health::report_stops(state, now_ms, &mut || {
+        processes
+            .get_or_insert_with(crate::pty::process_tree_snapshot)
+            .clone()
+    });
     sweep_abandoned_shells(state);
     sweep_hibernation(state, tracker, now_ms, &mut snapshot);
     let children: Vec<String> = state
@@ -180,6 +187,12 @@ fn sweep_with_snapshot(
     state
         .blocked_children
         .retain(|session_id| children.contains(session_id));
+    state
+        .reported_children
+        .retain(|session_id| children.contains(session_id));
+    state
+        .child_obligations
+        .retain(|session_id, _| children.contains(session_id));
     let mut runner_commands: Option<Option<Vec<String>>> = None;
     for session_id in children {
         let candidate = observation(state, &session_id);
@@ -595,6 +608,738 @@ pub(crate) fn spawn(state: Arc<AppState>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Catches: a silent live worker is never flagged, or each sweep repeats its mail.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn working_agent_past_threshold_is_flagged_once() {
+        let temp = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _config = crate::config::set_config_dir_override(temp.path().to_path_buf());
+        let fixture = stalled_recovery_fixture();
+        make_working(&fixture.state, &fixture.id);
+        let state = &fixture.state;
+        let id = &fixture.id;
+        state.keep_open_sessions.insert(id.clone());
+        // This test covers the stall alarm only: the child owes no report, so
+        // no `child_report` joins the parent mail counted below.
+        state.child_obligations.insert(
+            id.clone(),
+            crate::agent_health::Obligation {
+                opened_by: "spawn".into(),
+                closed: true,
+                recovered: false,
+            },
+        );
+        let mut tracker = IdleCloseTracker::default();
+        sweep_with_commands(state, &mut tracker, 0, &[]);
+        sweep_with_commands(state, &mut tracker, 1_799_999, &[]);
+        assert!(!state.agent_inbox.contains_key("coordinator"));
+        // Fresh output starts a new silence window before recovery is due.
+        state
+            .session_maps
+            .last_output_ms
+            .insert(id.clone(), std::sync::atomic::AtomicU64::new(17));
+        sweep_with_commands(state, &mut tracker, 1_800_000, &[]);
+        sweep_with_commands(state, &mut tracker, 3_599_999, &[]);
+        assert!(state.session_maps.sessions.contains_key(id));
+        let accepted = crate::agent_stage::Reports::prepare(
+            state,
+            id,
+            crate::agent_report::AgentReport {
+                state: crate::agent_report::ReportState::Waiting,
+                wait_for: Some(crate::agent_report::WaitFor::Dependency),
+                question: None,
+            },
+        );
+        state.agent_reports.commit(id, "declared-wait", accepted);
+        sweep_with_commands(state, &mut tracker, 7_200_000, &[]);
+        assert!(
+            !state.agent_inbox.contains_key("coordinator"),
+            "declared dependency wait is not silence"
+        );
+        assert!(state.session_maps.sessions.contains_key(id));
+        // A new submitted turn invalidates the old wait report.
+        state
+            .session_maps
+            .session_states
+            .get_mut(id)
+            .unwrap()
+            .turn_epoch += 1;
+        sweep_with_commands(state, &mut tracker, 7_200_001, &[]);
+        sweep_with_commands(state, &mut tracker, 9_000_001, &[]);
+        sweep_with_commands(state, &mut tracker, 10_800_001, &[]);
+        let mail: Vec<serde_json::Value> = state
+            .agent_inbox
+            .get("coordinator")
+            .unwrap()
+            .iter()
+            .filter_map(|m| serde_json::from_str(&m.content).ok())
+            .collect();
+        assert_eq!(mail.iter().filter(|m| m["state"] == "stalled").count(), 1);
+        assert!(
+            state.session_maps.sessions.contains_key(id),
+            "only the parent may stop a stalled worker"
+        );
+        let subscribed = state.mail_subscriptions.action(&crate::config::config_dir(), "coordinator",
+            &serde_json::json!({"action":"subscribe", "subscription_id":"stall-alarm", "filter":"actionable"}));
+        assert!(subscribed.get("error").is_none(), "{subscribed}");
+        let actionable = state.mail_subscriptions.action(
+            &crate::config::config_dir(),
+            "coordinator",
+            &serde_json::json!({"action":"inbox", "subscription_id":"stall-alarm"}),
+        );
+        assert_eq!(
+            actionable["count"], 1,
+            "the stall notice reaches subscribers: {actionable}"
+        );
+        let failure = state.mail_subscriptions.action(&crate::config::config_dir(), "coordinator",
+            &serde_json::json!({"action":"subscribe", "subscription_id":"stall-failure", "filter":"failure"}));
+        assert!(failure.get("error").is_none(), "{failure}");
+        let failures = state.mail_subscriptions.action(
+            &crate::config::config_dir(),
+            "coordinator",
+            &serde_json::json!({"action":"inbox", "subscription_id":"stall-failure"}),
+        );
+        assert_eq!(
+            failures["count"], 1,
+            "the stall notice must reach failure subscribers: {failures}"
+        );
+    }
+
+    // Catches: recovery stops a silent worker as its first action instead of
+    // nudging it and leaving the stop to its parent (2748: five agents lost).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stalled_worker_is_nudged_and_parent_decides_the_stop() {
+        let fixture = stalled_recovery_fixture();
+        make_working(&fixture.state, &fixture.id);
+        let state = &fixture.state;
+        crate::agent_health::sweep(state, 0, 100);
+        crate::agent_health::sweep(state, 99, 100);
+        assert_eq!(stall_notices(state), 0);
+        crate::agent_health::sweep(state, 100, 100);
+        crate::agent_health::sweep(state, 150, 100);
+        {
+            let entry = state.session_maps.sessions.get(&fixture.id).unwrap();
+            let mut session = entry.lock();
+            assert!(
+                session._child.try_wait().unwrap().is_none(),
+                "a stalled worker must keep running until its parent stops it"
+            );
+        }
+        let inbox = state.agent_inbox.get("coordinator").unwrap();
+        let notices: Vec<serde_json::Value> = inbox
+            .iter()
+            .filter_map(|m| serde_json::from_str(&m.content).ok())
+            .filter(|m: &serde_json::Value| m["state"] == "stalled")
+            .collect();
+        assert_eq!(notices.len(), 1, "one parent notice per silence episode");
+        assert_eq!(notices[0]["recovery"], "nudged_worker");
+        assert!(
+            notices[0]["stop"]
+                .as_str()
+                .is_some_and(|stop| stop.contains("action=kill") && stop.contains(&fixture.id)),
+            "the parent notice names the explicit stop: {}",
+            notices[0]
+        );
+        assert!(
+            inbox.iter().all(|m| m.report.is_none()),
+            "a silent worker has not failed; no typed failure report"
+        );
+        drop(inbox);
+        let nudges = state.agent_inbox.get(&fixture.id).map_or(0, |mail| {
+            mail.iter()
+                .filter(|m| m.content.contains("stall_nudge"))
+                .count()
+        });
+        assert_eq!(nudges, 1, "the worker receives one nudge");
+    }
+
+    #[cfg(unix)]
+    fn stall_notices(state: &AppState) -> usize {
+        state.agent_inbox.get("coordinator").map_or(0, |mail| {
+            mail.iter()
+                .filter(|m| m.content.contains(r#""state":"stalled""#))
+                .count()
+        })
+    }
+
+    // Catches: the worker PTY is stopped while it waits for its parent (2748: tuic-2743).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn blocked_worker_waiting_for_parent_is_not_stalled() {
+        let fixture = stalled_recovery_fixture();
+        make_working(&fixture.state, &fixture.id);
+        let state = &fixture.state;
+        state.push_agent_inbox(
+            "coordinator",
+            crate::state::AgentMessage {
+                id: "blocked-1".into(),
+                from_tuic_session: fixture.id.clone(),
+                from_name: "worker".into(),
+                content: "BLOCKED contract decision needed".into(),
+                timestamp: 1,
+                report: None,
+                delivered_via_channel: false,
+            },
+        );
+        for now in [0, 100, 200, 300] {
+            crate::agent_health::sweep(state, now, 100);
+        }
+        assert!(
+            state.session_maps.sessions.contains_key(&fixture.id),
+            "a BLOCKED worker must stay alive"
+        );
+        assert_eq!(stall_notices(state), 0, "a BLOCKED hold is not silence");
+    }
+
+    // Catches: a finished worker is nudged every episode and resends its RESULT
+    // (2748 critic F2: ego-792, tuic-2705).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn finished_worker_gets_no_nudge() {
+        let fixture = stalled_recovery_fixture();
+        make_working(&fixture.state, &fixture.id);
+        let state = &fixture.state;
+        state.push_agent_inbox(
+            "coordinator",
+            crate::state::AgentMessage {
+                id: "result-1".into(),
+                from_tuic_session: fixture.id.clone(),
+                from_name: "worker".into(),
+                content: "RESULT story done, branch ready".into(),
+                timestamp: 1,
+                report: None,
+                delivered_via_channel: false,
+            },
+        );
+        for now in [0, 100, 150] {
+            crate::agent_health::sweep(state, now, 100);
+        }
+        assert!(state.session_maps.sessions.contains_key(&fixture.id));
+        assert_eq!(stall_notices(state), 1, "the parent still decides the stop");
+        let nudges = state.agent_inbox.get(&fixture.id).map_or(0, |mail| {
+            mail.iter()
+                .filter(|m| m.content.contains("stall_nudge"))
+                .count()
+        });
+        assert_eq!(nudges, 0, "a worker that reported RESULT is not nudged");
+    }
+
+    // Catches: a long background build kills its owner (2748: int-tuic, orch-174).
+    // The parent still hears about the silence: it decides whether the build hangs.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn worker_with_running_background_command_is_not_stalled() {
+        let fixture = stalled_recovery_fixture();
+        let state = &fixture.state;
+        state
+            .session_maps
+            .session_states
+            .get_mut(&fixture.id)
+            .unwrap()
+            .background_work = true;
+        for now in [0, 100, 150] {
+            crate::agent_health::sweep(state, now, 100);
+        }
+        assert!(
+            state.session_maps.sessions.contains_key(&fixture.id),
+            "a worker with a running background command must stay alive"
+        );
+        assert_eq!(stall_notices(state), 1, "one notice per silence episode");
+        let notice = state
+            .agent_inbox
+            .get("coordinator")
+            .unwrap()
+            .iter()
+            .find(|m| m.content.contains(r#""state":"stalled""#))
+            .map(|m| m.content.clone())
+            .unwrap();
+        assert!(
+            notice.contains(r#""background_work":true"#),
+            "the parent sees the running background work: {notice}"
+        );
+    }
+
+    /// The agent of a fixture session claims a turn: busy shell, no settled
+    /// completion, so `agent_state` reads `working`.
+    #[cfg(unix)]
+    fn make_working(state: &AppState, id: &str) {
+        state
+            .session_maps
+            .session_states
+            .get_mut(id)
+            .unwrap()
+            .suggested_actions = None;
+        state.session_maps.shell_states.insert(
+            id.into(),
+            std::sync::atomic::AtomicU8::new(crate::pty::SHELL_BUSY),
+        );
+    }
+
+    /// The (stage, stalled) pair every client reads for a session.
+    #[cfg(unix)]
+    fn stage_of(state: &AppState, id: &str) -> (Option<String>, bool) {
+        let snapshot = state.session_state_with_shell(id);
+        let view = state
+            .agent_reports
+            .view(state, id, Some(id), snapshot.as_ref());
+        (view.stage, view.stalled)
+    }
+
+    /// A session a user opened by hand: no parent records it.
+    #[cfg(unix)]
+    fn hand_opened_fixture() -> ShellFixture {
+        let fixture = stalled_recovery_fixture();
+        fixture
+            .state
+            .session_maps
+            .session_parent
+            .remove(&fixture.id);
+        fixture
+    }
+
+    // Catches: stall detection limited to managed children, so a hand-opened
+    // session silent for hours still reads working (story 3050, wa-2: 6.3 h).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn hand_opened_working_session_silent_past_threshold_is_stalled() {
+        let fixture = hand_opened_fixture();
+        let (state, id) = (&fixture.state, &fixture.id);
+        make_working(state, id);
+        crate::agent_health::sweep(state, 0, 100);
+        crate::agent_health::sweep(state, 99, 100);
+        assert_eq!(stage_of(state, id), (Some("working".into()), false));
+        crate::agent_health::sweep(state, 100, 100);
+        assert_eq!(stage_of(state, id), (Some("stalled".into()), true));
+        let nudges = state.agent_inbox.get(id.as_str()).map_or(0, |mail| {
+            mail.iter()
+                .filter(|m| m.content.contains("stall_nudge"))
+                .count()
+        });
+        assert_eq!(nudges, 0, "only a managed child is nudged");
+        assert_eq!(stall_notices(state), 0, "no parent, no parent mail");
+        // Output ends the silence at once, before the next sweep.
+        state
+            .session_maps
+            .last_output_ms
+            .insert(id.clone(), std::sync::atomic::AtomicU64::new(150));
+        assert_eq!(stage_of(state, id), (Some("working".into()), false));
+    }
+
+    // Catches: two code paths for one state, so a managed child and a
+    // hand-opened session with the same silence get different stages.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn managed_and_hand_opened_sessions_with_same_silence_share_the_stage() {
+        let managed = stalled_recovery_fixture();
+        let hand = hand_opened_fixture();
+        for fixture in [&managed, &hand] {
+            make_working(&fixture.state, &fixture.id);
+            crate::agent_health::sweep(&fixture.state, 0, 100);
+            crate::agent_health::sweep(&fixture.state, 100, 100);
+        }
+        let expected = (Some("stalled".to_string()), true);
+        assert_eq!(stage_of(&managed.state, &managed.id), expected);
+        assert_eq!(stage_of(&hand.state, &hand.id), expected);
+        assert_eq!(stall_notices(&managed.state), 1, "the parent still hears");
+    }
+
+    // Catches: the silence rule applied to idle agents, so every tab that
+    // waits for its user overnight reads stalled.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn idle_hand_opened_session_is_never_stalled() {
+        let fixture = hand_opened_fixture();
+        let (state, id) = (&fixture.state, &fixture.id);
+        for now in [0, 100, 200] {
+            crate::agent_health::sweep(state, now, 100);
+        }
+        assert_eq!(stage_of(state, id), (Some("idle".into()), false));
+    }
+
+    // Catches: a stall visible to rows but never pushed, so the tab keeps its
+    // green busy indicator (story 3050 criterion 5).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stall_is_published_in_the_session_state_clients_render() {
+        let fixture = hand_opened_fixture();
+        let (state, id) = (&fixture.state, &fixture.id);
+        make_working(state, id);
+        crate::agent_health::sweep(state, 0, 100);
+        let queued = state.session_maps.session_state_events.depth();
+        crate::agent_health::sweep(state, 100, 100);
+        assert_eq!(
+            state.session_maps.session_state_events.depth(),
+            queued + 1,
+            "the flagged stall is republished once"
+        );
+        crate::agent_health::sweep(state, 200, 100);
+        assert_eq!(state.session_maps.session_state_events.depth(), queued + 1);
+        let snapshot = state.session_state_with_shell(id).unwrap();
+        assert_eq!(snapshot.agent_state.as_deref(), Some("working"));
+        assert_eq!(serde_json::to_value(&snapshot).unwrap()["stalled"], true);
+    }
+
+    #[cfg(unix)]
+    fn child_reports(state: &AppState) -> Vec<serde_json::Value> {
+        state.agent_inbox.get("coordinator").map_or(vec![], |mail| {
+            mail.iter()
+                .filter_map(|m| serde_json::from_str::<serde_json::Value>(&m.content).ok())
+                .filter(|m| m["type"] == "child_report")
+                .collect()
+        })
+    }
+
+    #[cfg(unix)]
+    fn report_stops_at(
+        state: &Arc<AppState>,
+        now: u64,
+        processes: &[crate::pty::ProcessTreeEntry],
+    ) {
+        crate::agent_health::report_stops(state, now, &mut || Some(processes.to_vec()));
+    }
+
+    /// The child's foreground process, alive for an hour, with no descendant.
+    #[cfg(unix)]
+    fn quiet_agent_tree(state: &AppState, id: &str) -> Vec<crate::pty::ProcessTreeEntry> {
+        let root = crate::pty::session_foreground_pid(state, id).unwrap();
+        vec![crate::pty::test_process_entry(
+            root, 1, "sh", "/bin/sh", 3600,
+        )]
+    }
+
+    // Catches: a report on the bare idle edge (a consecutive turn), a report
+    // held back for ever by a status line that repaints below the input box,
+    // a report repeated on every sweep, a new parent task that never re-arms
+    // it, or a report that a `report` subscription cannot select (story 3014).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn silent_child_reports_once_per_task_after_fifteen_quiet_seconds() {
+        let temp = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _config = crate::config::set_config_dir_override(temp.path().to_path_buf());
+        let fixture = stalled_recovery_fixture();
+        let (state, id) = (&fixture.state, &fixture.id);
+        let quiet = quiet_agent_tree(state, id);
+        report_stops_at(state, 0, &quiet);
+        state
+            .session_maps
+            .last_input_ms
+            .insert(id.clone(), std::sync::atomic::AtomicU64::new(5));
+        report_stops_at(state, 10_000, &quiet);
+        state
+            .session_maps
+            .last_output_ms
+            .insert(id.clone(), std::sync::atomic::AtomicU64::new(20_000));
+        report_stops_at(state, 24_999, &quiet);
+        assert_eq!(
+            child_reports(state),
+            Vec::<serde_json::Value>::new(),
+            "input restarts the window"
+        );
+        // The first stop is the one automatic reprompt (story 3016). A
+        // reprompt that starts no turn makes the next window the report.
+        report_stops_at(state, 25_000, &quiet);
+        crate::pty::wait_for_injection_queue();
+        state.pending_injections.remove(id.as_str());
+        report_stops_at(state, 40_000, &quiet);
+        report_stops_at(state, 60_000, &quiet);
+        let reports: Vec<_> = child_reports(state)
+            .into_iter()
+            .filter(|r| r["recovery"] != "reprompt")
+            .collect();
+        assert_eq!(reports.len(), 1, "one report per task: {reports:?}");
+        assert_eq!(reports[0]["state"], "ended_without_result");
+        assert_eq!(reports[0]["obligation"], "spawn");
+        assert_eq!(reports[0]["resume"]["agent"], "claude");
+        assert_eq!(reports[0]["resume"]["tuic_session"], id.as_str());
+        state.push_agent_inbox(
+            id,
+            crate::state::AgentMessage {
+                id: "task-2".into(),
+                from_tuic_session: "coordinator".into(),
+                from_name: "coordinator".into(),
+                content: "next task".into(),
+                timestamp: 2,
+                report: None,
+                delivered_via_channel: false,
+            },
+        );
+        report_stops_at(state, 70_000, &quiet);
+        crate::pty::wait_for_injection_queue();
+        state.pending_injections.remove(id.as_str());
+        report_stops_at(state, 85_000, &quiet);
+        let reports: Vec<_> = child_reports(state)
+            .into_iter()
+            .filter(|r| r["recovery"] != "reprompt")
+            .collect();
+        assert_eq!(reports.len(), 2, "a new task opens a new report");
+        assert_eq!(reports[1]["obligation"], "task-2");
+        let dir = crate::config::config_dir();
+        let subscribe = state.mail_subscriptions.action(&dir, "coordinator",
+            &serde_json::json!({"action":"subscribe", "subscription_id":"reports", "filter":"report"}));
+        assert!(subscribe.get("error").is_none(), "{subscribe}");
+        let batch = state.mail_subscriptions.action(
+            &dir,
+            "coordinator",
+            &serde_json::json!({"action":"inbox", "subscription_id":"reports"}),
+        );
+        assert_eq!(
+            batch["count"], 4,
+            "two reprompt notices, two reports: {batch}"
+        );
+    }
+
+    // Catches: a report for a child that already sent RESULT for its task.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn child_that_sent_result_gets_no_child_report() {
+        let fixture = stalled_recovery_fixture();
+        let state = &fixture.state;
+        state.push_agent_inbox(
+            "coordinator",
+            crate::state::AgentMessage {
+                id: "result-1".into(),
+                from_tuic_session: fixture.id.clone(),
+                from_name: "worker".into(),
+                content: "RESULT done".into(),
+                timestamp: 1,
+                report: None,
+                delivered_via_channel: false,
+            },
+        );
+        let quiet = quiet_agent_tree(state, &fixture.id);
+        report_stops_at(state, 0, &quiet);
+        report_stops_at(state, 60_000, &quiet);
+        assert_eq!(child_reports(state), Vec::<serde_json::Value>::new());
+    }
+
+    // Catches: a child that ended its turn to wait on its own `tuic bg` job,
+    // or on a background command of the agent (Claude run_in_background: a
+    // hooked agent then reads idle), reported as stopped (critic-3014 F1).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn child_waiting_on_background_work_gets_no_child_report() {
+        let fixture = stalled_recovery_fixture();
+        let (state, id) = (&fixture.state, &fixture.id);
+        let quiet = quiet_agent_tree(state, id);
+        let root = quiet[0].pid;
+        let mut runner = quiet.clone();
+        runner.push(crate::pty::test_process_entry(
+            root + 100_000,
+            1,
+            "tuic",
+            &format!("tuic __bg-runner /log {id} -- cargo test"),
+            30,
+        ));
+        let mut build = quiet.clone();
+        build.push(crate::pty::test_process_entry(
+            root + 100_001,
+            root,
+            "cargo",
+            "cargo nextest run",
+            30,
+        ));
+        report_stops_at(state, 0, &runner);
+        report_stops_at(state, 60_000, &runner);
+        report_stops_at(state, 120_000, &build);
+        assert_eq!(child_reports(state), Vec::<serde_json::Value>::new());
+        report_stops_at(state, 180_000, &quiet);
+        assert_eq!(child_reports(state).len(), 1, "the work ended: a stop");
+    }
+
+    // Catches: a dialog held back for the idle delay, or held back for ever by
+    // the repaints some agents make while they wait.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn child_on_a_dialog_reports_blocked_dialog_after_five_seconds() {
+        let fixture = stalled_recovery_fixture();
+        let (state, id) = (&fixture.state, &fixture.id);
+        {
+            let mut session = state.session_maps.session_states.get_mut(id).unwrap();
+            session.awaiting_input = true;
+            session.question_text = Some("Allow external imports?".into());
+        }
+        report_stops_at(state, 0, &[]);
+        state
+            .session_maps
+            .last_output_ms
+            .insert(id.clone(), std::sync::atomic::AtomicU64::new(3_000));
+        report_stops_at(state, 5_000, &[]);
+        let reports = child_reports(state);
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        assert_eq!(reports[0]["state"], "blocked_dialog");
+        assert_eq!(reports[0]["detail"]["on"], "Allow external imports?");
+    }
+
+    // Catches: an agent child that exits by itself goes unreported, or an exit
+    // that TUIC caused (kill, close, suspend) is reported as a dead child.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn only_a_self_exit_reports_a_dead_child() {
+        let fixture = stalled_recovery_fixture();
+        let (state, id) = (&fixture.state, &fixture.id);
+        state
+            .session_maps
+            .exit_reasons
+            .insert(id.clone(), "killed".into());
+        crate::agent_health::report_exit(state, id, Some(143));
+        assert_eq!(child_reports(state), Vec::<serde_json::Value>::new());
+        state.session_maps.exit_reasons.remove(id);
+        crate::agent_health::report_exit(state, id, Some(1));
+        let reports = child_reports(state);
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        assert_eq!(reports[0]["state"], "dead");
+        assert_eq!(reports[0]["detail"]["exit_code"], 1);
+    }
+
+    #[cfg(unix)]
+    fn reprompts(state: &AppState, id: &str) -> usize {
+        state.agent_inbox.get(id).map_or(0, |mail| {
+            mail.iter()
+                .filter(|m| m.content.contains("report_reprompt"))
+                .count()
+        })
+    }
+
+    /// A refused turn on an idle composer whose writes are recorded.
+    #[cfg(unix)]
+    fn refused_turn(state: &AppState, id: &str) -> Arc<std::sync::Mutex<Vec<u8>>> {
+        let bytes = Arc::new(std::sync::Mutex::new(Vec::new()));
+        state.session_maps.sessions.get(id).unwrap().lock().writer = Arc::new(
+            parking_lot::Mutex::new(Box::new(crate::test_support::RecordingWriter {
+                bytes: Arc::clone(&bytes),
+            })),
+        );
+        refuse_turn(state, id);
+        bytes
+    }
+
+    #[cfg(unix)]
+    fn refuse_turn(state: &AppState, id: &str) {
+        state.session_maps.shell_states.insert(
+            id.into(),
+            std::sync::atomic::AtomicU8::new(crate::pty::SHELL_IDLE),
+        );
+        let mut session = state.session_maps.session_states.get_mut(id).unwrap();
+        session.agent_error = true;
+        session.last_error = Some("API Error: 529 overloaded".into());
+    }
+
+    #[cfg(unix)]
+    fn typed(bytes: &Arc<std::sync::Mutex<Vec<u8>>>) -> String {
+        crate::pty::wait_for_injection_queue();
+        String::from_utf8_lossy(&bytes.lock().unwrap()).into_owned()
+    }
+
+    // Catches: a child that ended its turn without a report goes to its parent
+    // with no automatic reprompt, a reprompt the parent is not told of, or a
+    // reprompt repeated on each silent turn (a loop) (story 3016).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn silent_child_gets_one_reprompt_then_a_report() {
+        let fixture = stalled_recovery_fixture();
+        let (state, id) = (&fixture.state, &fixture.id);
+        let quiet = quiet_agent_tree(state, id);
+        report_stops_at(state, 0, &quiet);
+        report_stops_at(state, 15_000, &quiet);
+        let reports = child_reports(state);
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        assert_eq!(reports[0]["state"], "ended_without_result");
+        assert_eq!(reports[0]["recovery"], "reprompt");
+        assert_eq!(reprompts(state, id), 1, "the child is reprompted once");
+        // The reprompt is typed and starts a second turn, which also ends
+        // without a report.
+        crate::pty::wait_for_injection_queue();
+        state.pending_injections.remove(id.as_str());
+        state
+            .session_maps
+            .last_input_ms
+            .insert(id.clone(), std::sync::atomic::AtomicU64::new(16_000));
+        report_stops_at(state, 16_000, &quiet);
+        report_stops_at(state, 31_000, &quiet);
+        report_stops_at(state, 120_000, &quiet);
+        let reports = child_reports(state);
+        assert_eq!(reports.len(), 2, "{reports:?}");
+        assert_eq!(reports[1]["state"], "ended_without_result");
+        assert_eq!(reports[1]["recovery"], "exhausted");
+        assert_eq!(reprompts(state, id), 1, "never a second reprompt");
+    }
+
+    // Catches: a provider error goes to the parent with no automatic retry, a
+    // retry sooner than 60 s, or a retry the parent is not told of (story 3016).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn refused_turn_gets_one_retry_after_sixty_seconds() {
+        let fixture = stalled_recovery_fixture();
+        let (state, id) = (&fixture.state, &fixture.id);
+        let written = refused_turn(state, id);
+        report_stops_at(state, 0, &[]);
+        report_stops_at(state, 59_999, &[]);
+        assert_eq!(child_reports(state), Vec::<serde_json::Value>::new());
+        assert_eq!(typed(&written), "", "no retry before 60 s");
+        report_stops_at(state, 60_000, &[]);
+        let reports = child_reports(state);
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        assert_eq!(reports[0]["state"], "error");
+        assert_eq!(reports[0]["recovery"], "retry");
+        assert_eq!(reports[0]["detail"]["reason"], "API Error: 529 overloaded");
+        assert!(typed(&written).contains("continue"), "one retry is typed");
+    }
+
+    // Catches: a second provider error after the retry retried again (a loop),
+    // or never reported to the parent (story 3016).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn second_refused_turn_reports_without_another_retry() {
+        let fixture = stalled_recovery_fixture();
+        let (state, id) = (&fixture.state, &fixture.id);
+        let written = refused_turn(state, id);
+        report_stops_at(state, 0, &[]);
+        report_stops_at(state, 60_000, &[]);
+        assert_eq!(typed(&written).matches("continue").count(), 1);
+        // The retried turn is refused again.
+        refuse_turn(state, id);
+        report_stops_at(state, 61_000, &[]);
+        report_stops_at(state, 76_000, &[]);
+        report_stops_at(state, 300_000, &[]);
+        let reports = child_reports(state);
+        assert_eq!(reports.len(), 2, "{reports:?}");
+        assert_eq!(reports[1]["state"], "error");
+        assert_eq!(reports[1]["recovery"], "exhausted");
+        assert_eq!(
+            typed(&written).matches("continue").count(),
+            1,
+            "never a second retry"
+        );
+    }
+
+    #[cfg(unix)]
+    fn stalled_recovery_fixture() -> ShellFixture {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let id = uuid::Uuid::new_v4().to_string();
+        live_child_command(
+            &state,
+            &id,
+            crate::test_support::test_temp_root(),
+            portable_pty::CommandBuilder::new("/bin/sh"),
+        );
+        state
+            .session_maps
+            .session_parent
+            .insert(id.clone(), "coordinator".into());
+        state.peer_agents.insert(
+            id.clone(),
+            crate::state::PeerAgent {
+                tuic_session: id.clone(),
+                mcp_session_id: "test".into(),
+                name: "worker".into(),
+                project: None,
+                registered_at: 1,
+            },
+        );
+        ShellFixture { state, id }
+    }
 
     #[cfg(unix)]
     fn live_child(state: &Arc<AppState>, session_id: &str, worktree: std::path::PathBuf) {
@@ -1030,6 +1775,7 @@ mod tests {
                 from_name: "sender".into(),
                 content: "unread".into(),
                 timestamp: 1,
+                report: None,
                 delivered_via_channel: false,
             },
         );
@@ -1372,6 +2118,7 @@ mod tests {
                 from_name: "parent".into(),
                 content: "follow up".into(),
                 timestamp: 2_700_001,
+                report: None,
                 delivered_via_channel: false,
             },
         );
@@ -1402,6 +2149,7 @@ mod tests {
             from_name: from.into(),
             content: content.into(),
             timestamp,
+            report: None,
             delivered_via_channel: false,
         };
         state.push_agent_inbox("parent", mail(child, "BLOCKED: rb box unreachable", 10));
@@ -1487,6 +2235,7 @@ mod tests {
             from_name: from.into(),
             content: content.into(),
             timestamp,
+            report: None,
             delivered_via_channel: false,
         }
     }

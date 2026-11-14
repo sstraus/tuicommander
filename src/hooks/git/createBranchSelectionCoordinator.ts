@@ -141,6 +141,7 @@ export function createBranchSelectionCoordinator(deps: BranchSelectionCoordinato
 				cwd: terminal.cwd,
 				awaitingInput: null,
 				tuicSession: terminal.tuicSession ?? crypto.randomUUID(),
+				restoredIdentity: Boolean(terminal.tuicSession),
 				agentType: terminal.agentType ?? null,
 				agentSessionId: terminal.agentSessionId ?? null,
 				agentLaunchCommand: terminal.agentLaunchCommand ?? null,

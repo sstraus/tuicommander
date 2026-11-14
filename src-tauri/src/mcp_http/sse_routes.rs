@@ -313,8 +313,11 @@ fn event_type_name(event: &AppEvent) -> &str {
         AppEvent::McpConfirmResolved { .. } => "mcp-confirm-resolved",
         AppEvent::AcpNotice(_) => "acp-notice",
         AppEvent::SettingsChanged(_) => "settings-changed",
+        AppEvent::ProviderQuotaChanged(_) => "provider-quota-changed",
+        AppEvent::ProviderQuotaBindingChanged(_) => "provider-quota-binding-changed",
         AppEvent::RepositoriesChanged => "repositories-changed",
         AppEvent::IdeasChanged => "ideas-changed",
+        AppEvent::BossAttentionChanged => "boss-attention-changed",
         AppEvent::AiChatSelectionChanged => "ai-chat-selection-changed",
         AppEvent::OpenMarkdownTabsChanged => "open-markdown-tabs-changed",
         AppEvent::DirChanged { .. } => "dir-changed",
@@ -332,6 +335,7 @@ fn event_type_name(event: &AppEvent) -> &str {
         AppEvent::ConflictAssistStatus { .. } => "conflict-assist-status",
         AppEvent::ProgressRecorded { .. } => "progress-recorded",
         AppEvent::WorkflowRunChanged { .. } => "workflow-run-changed",
+        AppEvent::StoriesChanged { .. } => "stories-changed",
         AppEvent::AutomationRunChanged { .. } => "automation-run-changed",
         AppEvent::ReviewProgress { .. } => "review-progress",
         AppEvent::ProposalsReady { .. } => "proposals-ready",
@@ -363,7 +367,7 @@ pub(crate) fn event_payload_for_test(event: &AppEvent) -> serde_json::Value {
 
 fn event_payload(event: &AppEvent) -> serde_json::Value {
     match event {
-        AppEvent::AiChatSelectionChanged => serde_json::json!({}),
+        AppEvent::AiChatSelectionChanged | AppEvent::BossAttentionChanged => serde_json::json!({}),
         AppEvent::OpenMarkdownTabsChanged => serde_json::json!({}),
         AppEvent::WorkItemProviderRequest {
             request_id,
@@ -517,6 +521,8 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         AppEvent::AcpNotice(notice) => serde_json::json!(notice),
         // Payload-free: the receiver re-reads `repositories.json` itself.
         AppEvent::SettingsChanged(notice) => serde_json::json!(notice),
+        AppEvent::ProviderQuotaChanged(payload)
+        | AppEvent::ProviderQuotaBindingChanged(payload) => payload.clone(),
         AppEvent::RepositoriesChanged | AppEvent::IdeasChanged => serde_json::json!({}),
         AppEvent::DirChanged { dir_path } => {
             serde_json::json!({ "dir_path": dir_path })
@@ -574,6 +580,7 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         AppEvent::ConflictAssistStatus { repo_path, payload }
         | AppEvent::ProgressRecorded { repo_path, payload }
         | AppEvent::WorkflowRunChanged { repo_path, payload }
+        | AppEvent::StoriesChanged { repo_path, payload }
         | AppEvent::ReviewProgress { repo_path, payload }
         | AppEvent::ProposalsReady { repo_path, payload } => {
             serde_json::json!({ "repo_path": repo_path, "payload": payload })

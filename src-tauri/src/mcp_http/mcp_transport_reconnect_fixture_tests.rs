@@ -38,6 +38,7 @@ async fn replay(
     let response = mcp_post(
         State(state),
         ConnectInfo(loopback_addr()),
+        None,
         headers,
         Json(row["request"].clone()),
     )
@@ -91,9 +92,12 @@ async fn managed_reconnect_fixture_restart_preserves_stable_identity_and_subscri
         peer, pty,
         "capture must exercise a new PTY for the retained tab"
     );
+
     let cwd = root.path().to_str().unwrap();
     let state = state_at(root.path());
     restore_binding(&state, &peer, &peer, cwd);
+    // subscribe is an orchestrator action; the captured peer is the coordinator.
+    state.orchestrator_peers.insert(peer.clone());
     for label in [
         "ego-discover-before",
         "managed-inbox-before",
@@ -116,6 +120,7 @@ async fn managed_reconnect_fixture_restart_preserves_stable_identity_and_subscri
     let state = state_at(root.path());
     assert!(state.mcp.to_session.is_empty());
     restore_binding(&state, &peer, &pty, cwd);
+    state.orchestrator_peers.insert(peer.clone());
     let (discovery, sid) = replay(state.clone(), "ego-discover-after", None).await;
     assert!(discovery.get("error").is_none(), "{discovery}");
     assert!(sid.is_none());

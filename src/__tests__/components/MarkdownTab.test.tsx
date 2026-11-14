@@ -12,7 +12,7 @@ const { mockInvoke, mockRpc, mockEmitTo } = vi.hoisted(() => ({
 let fileContent = "";
 let cleanupInfo: ReturnType<typeof vi.spyOn>;
 
-vi.mock("../../invoke", () => ({ invoke: mockInvoke }));
+vi.mock("../../invoke", () => ({ invoke: mockInvoke, listen: vi.fn().mockResolvedValue(vi.fn()) }));
 vi.mock("@tauri-apps/api/event", () => ({
 	emitTo: mockEmitTo,
 	listen: vi.fn().mockResolvedValue(vi.fn()),
@@ -638,6 +638,14 @@ describe("MarkdownTab agent review actions", () => {
 
 	it("shows the agent controls after a checkbox tick in a file without tweak comments, and sends without a tweak count", async () => {
 		fileContent = "- [ ] Approve the plan\n";
+		const read = mockInvoke.getMockImplementation()!;
+		mockInvoke.mockImplementation((command, args) => {
+			if (command === "write_file") {
+				fileContent = args.content;
+				return Promise.resolve();
+			}
+			return read(command, args);
+		});
 		addAgent("Reviewer", "session-one", "/repo");
 		const tabId = mdTabsStore.add("/repo", "docs/answers.md");
 		const { container } = render(() => <MarkdownTab tab={mdTabsStore.get(tabId) as FileTab} />);

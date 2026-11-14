@@ -293,7 +293,11 @@ mod tests {
     #[tokio::test]
     async fn foreign_origin_cannot_reach_debug_or_session_write() {
         let app = super::super::build_router(state(), true, true);
-        for path in ["/debug/invoke_js", "/sessions/missing/write"] {
+        for path in [
+            "/debug/invoke_js",
+            "/debug/reload_webview",
+            "/sessions/missing/write",
+        ] {
             let response = app
                 .clone()
                 .oneshot(request(
@@ -313,7 +317,11 @@ mod tests {
     #[tokio::test]
     async fn rebinding_host_cannot_reach_debug_or_session_write() {
         let app = super::super::build_router(state(), true, true);
-        for path in ["/debug/invoke_js", "/sessions/missing/write"] {
+        for path in [
+            "/debug/invoke_js",
+            "/debug/reload_webview",
+            "/sessions/missing/write",
+        ] {
             let response = app
                 .clone()
                 .oneshot(request(
@@ -360,7 +368,11 @@ mod tests {
         state.config.write().services.auth.lan_auth_bypass = true;
         let app = super::super::build_router(state, true, true);
         for peer in [[127, 0, 0, 1], [192, 168, 1, 12]] {
-            for path in ["/debug/invoke_js", "/sessions/missing/write"] {
+            for path in [
+                "/debug/invoke_js",
+                "/debug/reload_webview",
+                "/sessions/missing/write",
+            ] {
                 let response = app
                     .clone()
                     .oneshot(request(path, "127.0.0.1:9876", None, false, peer))

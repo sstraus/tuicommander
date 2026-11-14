@@ -196,6 +196,10 @@ pub(super) async fn call_with_caller(
             if let Some(token) = args["continuation"].as_str() {
                 query.append_pair("continuation", token);
             }
+            // The remote host still requires its own owner grant.
+            if args["literal"] == true {
+                query.append_pair("literal", "true");
+            }
         }
         state.remote.http_client().get(url)
     };

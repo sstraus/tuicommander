@@ -76,7 +76,8 @@ async fn upstream_stdio_class_requires_confirmation() {
         }
         assert_eq!(std::fs::read(&file).unwrap(), bytes);
     }
-    let error = service
+    // Replacing stdio execution with an outbound HTTP destination narrows authority.
+    let reply = service
         .patch(
             Target::Machine,
             "upstreams".into(),
@@ -93,9 +94,8 @@ async fn upstream_stdio_class_requires_confirmation() {
             ],
         )
         .await
-        .unwrap_err();
-    assert_eq!(error.code, "confirmation_required");
-    assert_eq!(std::fs::read(&file).unwrap(), bytes);
+        .unwrap();
+    assert!(reply.persisted);
 }
 
 // Catches: treating an outbound HTTP destination as local execution or inbound exposure.
@@ -201,8 +201,8 @@ async fn tunnel_class_requires_confirmation_after_owner_validation() {
 async fn disabled_mcp_and_unauthenticated_http_cannot_write() {
     let (dir, _guard, _state, service) = fixture();
     for caller in [
-        Caller::mcp("127.0.0.1:4321".parse().unwrap(), "disabled".into(), false),
-        Caller::http("unauthenticated".into(), false),
+        Caller::mcp("disabled".into(), false),
+        Caller::http(String::new()),
     ] {
         let request = Request::Set {
             target: Target::Machine,

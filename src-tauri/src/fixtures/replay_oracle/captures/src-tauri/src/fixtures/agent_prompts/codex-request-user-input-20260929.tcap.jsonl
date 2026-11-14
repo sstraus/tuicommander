@@ -697,6 +697,7 @@
 {"record":696,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":697,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":698,"event":{"type":"shell-state","state":"idle","agent_type":"codex"}}
+{"record":698,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":698,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":699,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":700,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
@@ -5644,6 +5645,7 @@
 {"record":5642,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"| Choose red or blue | poc-01201-mobile-code...","confident":true,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":5643,"event":{"type":"protocol-question-cleared"}}
 {"record":5643,"event":{"type":"shell-state","state":"idle","agent_type":"codex"}}
+{"record":5643,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":5643,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":5645,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":5646,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}

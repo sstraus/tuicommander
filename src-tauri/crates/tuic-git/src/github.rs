@@ -575,6 +575,17 @@ pub struct GitHubIssue {
     pub comments_count: i32,
     pub created_at: String,
     pub updated_at: String,
+    /// Digest of the issue's title and body as polled; empty when the poll did not
+    /// fetch the body. The body itself is never retained.
+    pub requirements_digest: String,
+}
+
+/// Digest of an issue's requirements: its title and body, line endings normalised.
+/// The poller and the host's re-read before admission must agree on it.
+pub fn requirements_digest(title: &str, body: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let normalised = format!("{title}\0{body}").replace("\r\n", "\n");
+    hex::encode(Sha256::digest(normalised.as_bytes()))
 }
 
 /// Parse a single issue node from GraphQL JSON.
@@ -625,6 +636,10 @@ pub fn parse_issue_node(v: &serde_json::Value) -> Option<GitHubIssue> {
     let comments_count = v["comments"]["totalCount"].as_i64().unwrap_or(0) as i32;
     let created_at = v["createdAt"].as_str().unwrap_or("").to_string();
     let updated_at = v["updatedAt"].as_str().unwrap_or("").to_string();
+    let requirements_digest = v["body"]
+        .as_str()
+        .map(|body| requirements_digest(&title, body))
+        .unwrap_or_default();
 
     Some(GitHubIssue {
         number,
@@ -639,6 +654,7 @@ pub fn parse_issue_node(v: &serde_json::Value) -> Option<GitHubIssue> {
         author_association: v["authorAssociation"].as_str().unwrap_or("").into(),
         created_at,
         updated_at,
+        requirements_digest,
     })
 }
 
@@ -688,7 +704,7 @@ pub fn intake_issues_section(label: &str, after: Option<&str>) -> String {
     };
     let after = serde_json::to_string(&after).expect("a cursor is a JSON string or null");
     format!(
-        "intakeIssues: issues(first: 100, states: [OPEN]{label}, after: {after}, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{\n      nodes {{ {ISSUE_NODE_FIELDS} }}\n      pageInfo {{ hasNextPage endCursor }}\n    }}"
+        "intakeIssues: issues(first: 100, states: [OPEN]{label}, after: {after}, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{\n      nodes {{ {ISSUE_NODE_FIELDS} body }}\n      pageInfo {{ hasNextPage endCursor }}\n    }}"
     )
 }
 
@@ -799,7 +815,7 @@ pub fn build_unified_batch_query_with_intake(
             issues_section.push_str(&format!("\n    {}", intake_issues_section(label, None)));
         }
         parts.push(format!(
-            "  {alias}: repository(owner: \"{owner}\", name: \"{name}\") {{\n    mergeCommitAllowed\n    squashMergeAllowed\n    rebaseMergeAllowed\n    pullRequests(first: {pr_first}, states: {states}, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{\n      nodes {{ {pr_node_fields} }}\n    }}{issues_section}\n  }}"
+            "  {alias}: repository(owner: \"{owner}\", name: \"{name}\") {{\n    mergeCommitAllowed\n    squashMergeAllowed\n    rebaseMergeAllowed\n    pullRequests(first: {pr_first}, states: {states}, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{\n      nodes {{ {pr_node_fields} }}\n    }}\n    closedPullRequests: pullRequests(first: 10, states: [CLOSED], orderBy: {{field: UPDATED_AT, direction: DESC}}) {{\n      nodes {{ {pr_node_fields} }}\n    }}{issues_section}\n  }}"
         ));
         aliases.push((alias, path.clone()));
     }
@@ -823,6 +839,23 @@ pub fn build_unified_batch_query_with_intake(
     parts.push("}".to_string());
 
     (parts.join("\n"), aliases)
+}
+
+/// Parse separate PR connections, retaining the active connection for shared branches.
+pub fn parse_batch_pr_nodes(repo: &serde_json::Value) -> Option<Vec<BranchPrStatus>> {
+    let mut statuses: Vec<_> = repo["pullRequests"]["nodes"]
+        .as_array()?
+        .iter()
+        .filter_map(parse_pr_node)
+        .collect();
+    if let Some(closed) = repo["closedPullRequests"]["nodes"].as_array() {
+        for pr in closed.iter().filter_map(parse_pr_node) {
+            if !statuses.iter().any(|existing| existing.branch == pr.branch) {
+                statuses.push(pr);
+            }
+        }
+    }
+    Some(statuses)
 }
 
 /// Result of a unified batch poll.
@@ -941,7 +974,7 @@ pub fn truncate_ci_logs(logs: &str) -> String {
 }
 
 pub fn sanitize_ci_logs(logs: &str) -> String {
-    String::from_utf8_lossy(&tuic_ansi::strip(logs.as_bytes()))
+    String::from_utf8_lossy(&tuic_ansi::strip_preserving_tabs(logs.as_bytes()))
         .chars()
         .filter(|character| {
             (*character == '\n' || *character == '\t' || !character.is_control())
@@ -985,6 +1018,50 @@ pub fn failed_jobs_from_run_json(value: &serde_json::Value) -> Vec<(u64, String)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Catches: a closed unmerged PR disappears from the poll before its transition can fire.
+    #[test]
+    fn poll_query_includes_closed_prs_for_terminal_transition() {
+        let repos = vec![("/repo".into(), "owner".into(), "repo".into())];
+        for include_merged in [false, true] {
+            let (query, _) =
+                build_unified_batch_query(&repos, include_merged, "disabled", "", false);
+            let expected = if include_merged {
+                "pullRequests(first: 20, states: [OPEN, MERGED]"
+            } else {
+                "pullRequests(first: 20, states: [OPEN]"
+            };
+            assert!(query.contains(expected), "open PR query changed: {query}");
+            assert!(
+                query.contains("closedPullRequests: pullRequests(first: 10, states: [CLOSED]"),
+                "closed PRs lack a separate query: {query}"
+            );
+        }
+    }
+
+    // Catches: a body edit leaves the polled digest unchanged, so a returned issue never retriggers.
+    #[test]
+    fn intake_issue_digest_follows_title_and_body() {
+        let node = |title: &str, body: Option<&str>| {
+            let mut v = serde_json::json!({"number": 3, "title": title, "state": "OPEN"});
+            if let Some(body) = body {
+                v["body"] = body.into();
+            }
+            parse_issue_node(&v).unwrap().requirements_digest
+        };
+        let original = node("Add greeting", Some("Say hello"));
+        assert_eq!(original.len(), 64);
+        assert_eq!(original, node("Add greeting", Some("Say hello")));
+        assert_ne!(original, node("Add greeting", Some("Say hello twice")));
+        assert_ne!(original, node("Add a greeting", Some("Say hello")));
+        assert_eq!(node("Add greeting", None), "", "no body polled, no digest");
+        assert_eq!(
+            requirements_digest("t", "a\r\nb"),
+            requirements_digest("t", "a\nb"),
+            "line endings do not change the requirements"
+        );
+        assert!(intake_issues_section("run", None).contains("body"));
+    }
 
     // Catches: triage polls retain the intake label filter or omit author-association evidence.
     #[test]

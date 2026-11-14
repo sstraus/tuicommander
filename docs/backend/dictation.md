@@ -4,6 +4,11 @@
 
 **Application adapters:** `src-tauri/src/dictation/`
 
+Playback admission stays busy across every closed utterance in a capture batch,
+including an empty or rejected transcript followed by another utterance. After
+the batch, admission still waits for any remaining open phrase and pending
+submission. A disarm or new conversation invalidates the old batch.
+
 The application enables native dictation with the non-default Cargo feature
 `dictation`. Plain application Cargo dev/test builds omit Whisper and WebRTC;
 use `--features dictation` to check or test the voice adapters. Tauri builds
@@ -690,12 +695,20 @@ a notice the feature ships a voice nobody ever hears. Two constants in
 
 | Constant | Sent when | Says |
 |---|---|---|
-| `MODE_ENTRY_HINT` | `arm_hands_free_with`, before the runtime starts | what arrives from now on was spoken, and the `voice` tool can answer out loud |
+| `MODE_ENTRY_HINT` | `arm_hands_free_with`, before the runtime starts | messages are spoken; acknowledge aloud at once, then give a short spoken answer when done |
 | `MODE_EXIT_HINT` | both disarm paths | the tool can no longer speak here; reply as text |
 
 `hands_free_notify_model` (default **true**) controls both. Off sends neither
 and changes nothing else — in particular, a disarm still revokes speech, because
 that is a fact about this machine rather than a message to a model.
+
+The default start notice is one line:
+
+> Hands-free voice is on: messages from now on are spoken. Answer aloud with the `voice` tool (tuicommander MCP, action "speak"; if not loaded, search deferred tools for "voice"): one short sentence at once that you are on it, then a short answer when done.
+
+This asks the model to acknowledge each spoken message before starting work,
+then speak a short answer when done. It is an instruction, not a guarantee of
+model compliance or playback timing.
 
 `hands_free_start_notice` (default empty) replaces the start notice with the
 user's own text; empty or blank means `MODE_ENTRY_HINT`. It is read at arm time
@@ -940,8 +953,9 @@ Stored in dictation config. Applied after transcription, before injecting into t
 ## Platform Notes
 
 - **macOS:** Metal acceleration via whisper-rs (GPU-accelerated, always)
-- **Linux:** CPU-only (optional `cuda`/`vulkan` build feature)
-- **Windows:** CPU-only — the whisper.cpp Vulkan backend's `vulkan-shaders-gen` sub-build is chronically broken on the Windows CI runner (MAX_PATH/MSBuild), so we ship CPU; re-enable `vulkan` once stabilized
+- **Linux:** releases build with `--features vulkan`. With the Vulkan loader but no GPU device, whisper.cpp runs on the CPU. Without the loader the binary does not start, so the `.deb` requires `libvulkan1`, the `.rpm` requires `libvulkan.so.1()(64bit)` and the AppImage carries `libvulkan.so.1` (`scripts/check-appimage-vulkan-loader.sh` checks it). Optional `cuda` build feature.
+- **Windows:** releases build with `--features vulkan`. The binary hard-imports `vulkan-1.dll` and does not start on a machine that has none (exit `0xC0000135`, story 3055-95d9). The NSIS hook `src-tauri/windows/installer-hooks.nsh` installs the pinned Khronos loader (`scripts/fetch-vulkan-loader.py`) next to the app only when `System32\vulkan-1.dll` is missing, removes that copy once System32 has one, and deletes it on uninstall. Release builds set `TUIC_REQUIRE_VULKAN_LOADER=1`, so a missing download fails `makensis`.
+- `transcribe::gpu_device()` asks ggml's device registry for the first GPU or integrated GPU, the device whisper.cpp takes with `use_gpu`. The `dictation-backend-info` event reports `gpu` only when that device exists, and whisper decodes on 1 thread with a GPU or 4 without.
 - Microphone permissions deferred until first use (avoids startup permission popup)
 
 ## Microphone Permission Detection
@@ -2081,6 +2095,31 @@ string. The backend uses one locked playback state for appends, holds, stops and
 ACKs, adds queued durations, and ignores ACKs that would retire newer audio.
 Client and backend ship together; reload an old browser tab after updating.
 
+With perfDebug on (`window.__TUIC__.setPerfDebug(true)`), each chunk logs an INFO `dictation` line at schedule time (`seq`, audio-clock `at`, `dur`, `gapMs`) and one when it ends (`audioClock`). `gapMs` is the silence between the previous scheduled end and this start on the audio clock; it is large after an idle period and `0` for chunks queued back to back. Output is off by default. A hidden browser tab delivers no `ended` callbacks, so keep it visible when measuring.
+
 This fixes browser truncation present since `f03ec66af5`. It does not establish
 that browser playback caused the reported native stutter. The retained native
 probe and capture-hold evidence describe separate mechanisms and limitations.
+
+
+### Reply admission during near-end speech (#2683-5b0f)
+
+Synthesis may complete while the user speaks. A new rendered reply stays in the
+reply queue until the segmenter has closed the utterance and its transcript has
+passed hold-back and completed submission. A draft or question that holds the
+submission also holds playback. A failed submission does not release playback;
+a later successful turn can release it. With no pending input, playback starts
+immediately.
+
+Native and browser output share one backend gate. It reads the existing hands-free
+state under the same lock as capture edges and transcript submission. The final
+output append occurs under that lock. A blocked renderer releases its queue lock
+and retries at the existing 25 ms playback cadence, so cancellation and shutdown
+remain immediate. The gate precedes the far-end tap: unplayed audio is not added
+to the echo reference. A new phrase still open after a closed phrase in the same
+capture batch keeps the gate closed, even if the closed phrase was submitted.
+
+The existing barge-in policy remains: accepted activation can cancel obsolete
+replies. This admission rule does not diagnose acoustic echo or replace the
+separate pause/resume verdict policy. State/queue regressions use the real
+segmenter and submit boundary; they do not claim a speaker/microphone reproduction.

@@ -1,0 +1,44 @@
+[
+  {
+    "session_id": "dc75c7e4-f6b1-4f5c-91c0-00ab2ecb3a12",
+    "hook_event_name": "SessionStart",
+    "source": "startup",
+    "model": "claude-sonnet-5-5"
+  },
+  {
+    "session_id": "dc75c7e4-f6b1-4f5c-91c0-00ab2ecb3a12",
+    "prompt_id": "9b6666a9-56af-4a77-9f3b-cbcc100b6c73",
+    "permission_mode": "default",
+    "hook_event_name": "UserPromptSubmit",
+    "prompt": "Run Bash: touch permission-proof.txt. Ask for approval if needed."
+  },
+  {
+    "session_id": "dc75c7e4-f6b1-4f5c-91c0-00ab2ecb3a12",
+    "prompt_id": "9b6666a9-56af-4a77-9f3b-cbcc100b6c73",
+    "permission_mode": "default",
+    "effort": {
+      "level": "low"
+    },
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "touch permission-proof.txt",
+      "description": "Create an empty file"
+    },
+    "tool_use_id": "toolu_01Vvc5PpuvQG6ipBmwpuMR62"
+  },
+  {
+    "session_id": "dc75c7e4-f6b1-4f5c-91c0-00ab2ecb3a12",
+    "prompt_id": "9b6666a9-56af-4a77-9f3b-cbcc100b6c73",
+    "permission_mode": "default",
+    "effort": {
+      "level": "low"
+    },
+    "hook_event_name": "PermissionRequest",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "touch permission-proof.txt",
+      "description": "Create an empty file"
+    }
+  }
+]

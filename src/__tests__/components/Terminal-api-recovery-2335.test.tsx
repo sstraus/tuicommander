@@ -172,15 +172,12 @@ describe("Terminal API failure recovery 2335", () => {
 		mounted?.unmount();
 		terminalsStore.remove(id);
 		vi.useRealTimers();
-		// These scenarios deliberately report provider failures and retry exhaustion.
+		// These scenarios deliberately report provider failures.
 		for (const [source, message] of vi.mocked(appLogger.error).mock.calls) {
 			expect(source).toBe("terminal");
 			expect(message).toMatch(/^claude: (server error \(claude-transport-error\)|auth failure \(codex-native-auth\))$/);
 		}
-		for (const [source, message] of vi.mocked(appLogger.warn).mock.calls) {
-			expect(source).toBe("terminal");
-			expect(message).toBe("[AutoRetry] claude: exhausted 3 retries, manual intervention needed");
-		}
+		expect(appLogger.warn).not.toHaveBeenCalled();
 		vi.restoreAllMocks();
 		vi.unstubAllGlobals();
 	});
@@ -257,11 +254,9 @@ describe("Terminal API failure recovery 2335", () => {
 	});
 
 	// Catches: continue input erases the failure even when the harness never resumes.
-	it("keeps Error when injected continue leaves the harness idle", async () => {
+	it("keeps Error when a submitted continue leaves the harness idle", async () => {
 		failed();
 		snapshot("idle", "Connection lost mid-response.");
-		await vi.advanceTimersByTimeAsync(5_000);
-		expect(sendCommand).toHaveBeenCalledExactlyOnceWith("live-session", "continue", "claude");
 		emit({ type: "user-input", content: "continue", line: -1 });
 		emit({ type: "shell-state", state: "busy" });
 		emit({ type: "shell-state", state: "idle" });
@@ -270,50 +265,23 @@ describe("Terminal API failure recovery 2335", () => {
 		expect(terminalsStore.get(id)?.awaitingInput).toBe("error");
 	});
 
-	// Catches: a late pre-error idle snapshot cancels the first parked retry.
-	it("does not treat a no-error idle snapshot as a recovered turn", async () => {
-		failed();
-		snapshot("idle");
-		snapshot("idle", "Connection lost mid-response.");
-		await vi.advanceTimersByTimeAsync(5_000);
-		expect(sendCommand).toHaveBeenCalledExactlyOnceWith("live-session", "continue", "claude");
-		expect(terminalsStore.get(id)?.awaitingInput).toBe("error");
-	});
-
-	// Catches: each failed attempt's spinner/intent replenishes the retry budget forever.
-	it("exhausts three retries despite working rows and intent between failures", async () => {
-		for (const [index, delay] of [5_000, 15_000, 30_000].entries()) {
-			failed();
-			snapshot("idle", "Connection lost mid-response.");
-			await vi.advanceTimersByTimeAsync(delay - 1);
-			expect(sendCommand).toHaveBeenCalledTimes(index);
-			await vi.advanceTimersByTimeAsync(1);
-			expect(sendCommand).toHaveBeenCalledTimes(index + 1);
-			emit({ type: "user-input", content: "continue", line: -1 });
-			snapshot("busy");
-			emit({ type: "status-line", task_name: "Working" });
-			emit({ type: "intent", text: "Retrying the request", title: "Retry" });
-		}
+	// Catches: the frontend retries as well as the backend (api_retry.rs), submitting continue twice.
+	it("never submits continue itself: the backend owns the retry", async () => {
 		failed();
 		snapshot("idle", "Connection lost mid-response.");
 		await vi.advanceTimersByTimeAsync(60_000);
-		expect(sendCommand).toHaveBeenCalledTimes(3);
+		expect(sendCommand).not.toHaveBeenCalled();
 		expect(terminalsStore.get(id)?.awaitingInput).toBe("error");
 	});
 
-	// Catches: a recovered successful turn remains red or inherits an exhausted budget.
-	it("clears Error after recovery and gives a later failure its own retry budget", async () => {
+	// Catches: a recovered successful turn remains red.
+	it("clears Error after recovery", async () => {
 		failed();
 		snapshot("idle", "Connection lost mid-response.");
-		await vi.advanceTimersByTimeAsync(5_000);
 		snapshot("busy");
 		emit({ type: "status-line", task_name: "Working" });
 		snapshot("idle");
 		expect(terminalsStore.get(id)?.awaitingInput).toBeNull();
-		failed();
-		snapshot("idle", "Connection lost mid-response.");
-		await vi.advanceTimersByTimeAsync(5_000);
-		expect(sendCommand).toHaveBeenCalledTimes(2);
 	});
 
 	// Catches: authentication failures send pointless continue retries or turn green on idle.

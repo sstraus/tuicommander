@@ -4,7 +4,9 @@ import { invoke, listen } from "../../invoke";
 import { createVisibilityInterval } from "../../mobile/utils/visibilityInterval";
 import { type ChatViewWake, chatViewStore } from "../../stores/chatView";
 import { settingsStore } from "../../stores/settings";
+import { HttpRpcError } from "../../transport/http";
 import { Transcript, type TranscriptSearchRef } from "../AIChatPanel/Transcript";
+import { Button } from "../ui/Button";
 import s from "./TerminalChatView.module.css";
 
 /** Shared lifecycle and renderer; hosts own mode, input and navigation. */
@@ -22,8 +24,11 @@ export const TerminalChatTranscript: Component<{
 	subscribeWake?: ChatViewWake;
 	onUnavailable: (reason: string) => void;
 	onAtBottomChange?: (atBottom: boolean) => void;
+	onNewTextBelowChange?: (visible: boolean) => void;
 	onRegisterScrollToBottom?: (jump: (() => void) | undefined) => void;
 	onSearchRef?: (ref: TranscriptSearchRef | undefined) => void;
+	/** Host composer: quote reply and response feedback are drafted into it, never sent. */
+	onQuote?: (text: string) => void;
 	onOpenFile?: (href: string) => void | Promise<boolean | undefined> | Promise<void>;
 }> = (props) => {
 	// A submission bridges only the gap before existing state/output catches up.
@@ -54,10 +59,30 @@ export const TerminalChatTranscript: Component<{
 		try {
 			await invoke(sendNow ? "send_queued_agent_command_now" : "remove_queued_agent_command", { sessionId, commandId });
 		} catch (error) {
-			if (!disposed) setActionError(error instanceof Error ? error.message : String(error));
+			// The backend reason ("Steer refused (idle_timeout)…") reads better than the transport wrapper.
+			if (!disposed)
+				setActionError(
+					error instanceof HttpRpcError ? error.detail : error instanceof Error ? error.message : String(error),
+				);
 		} finally {
 			await chatViewStore.refreshQueue(sessionId).catch(() => {});
 			if (!disposed) setPendingAction(null);
+		}
+	}
+	const [fullText, setFullText] = createSignal<string | null>(null);
+	async function showFullText(messageId: string) {
+		setActionError(null);
+		try {
+			const result = await invoke<{ text: string }>("chat_view_full_text", {
+				sessionId: props.sessionId,
+				messageId,
+			});
+			if (!disposed) setFullText(result.text);
+		} catch (error) {
+			if (!disposed)
+				setActionError(
+					error instanceof HttpRpcError ? error.detail : error instanceof Error ? error.message : String(error),
+				);
 		}
 	}
 	const refresh = () => {
@@ -110,14 +135,13 @@ export const TerminalChatTranscript: Component<{
 				terminalAgent={props.terminalAgent}
 				mobile={props.mobile}
 				onAtBottomChange={props.onAtBottomChange}
+				onNewTextBelowChange={props.onNewTextBelowChange}
 				onRegisterScrollToBottom={props.onRegisterScrollToBottom}
 				onSearchRef={props.onSearchRef}
 				onOpenFile={props.onOpenFile}
-				onSendPendingNow={
-					["claude", "codex", "ego"].includes(props.terminalAgent ?? "") && !props.awaitingInput
-						? (id) => void actOnQueued(id, true)
-						: undefined
-				}
+				onQuote={props.onQuote}
+				onShowFullText={(id) => void showFullText(id)}
+				onSendPendingNow={!props.awaitingInput ? (id) => void actOnQueued(id, true) : undefined}
 				onCancelPending={(id) => void actOnQueued(id, false)}
 				pendingAction={pendingAction() !== null}
 				entries={() => chatViewStore.entries(props.sessionId)}
@@ -131,6 +155,18 @@ export const TerminalChatTranscript: Component<{
 						: "No messages in this conversation yet."
 				}
 			/>
+			{fullText() !== null && (
+				<div class={s.fullText} role="dialog" aria-label="Full message">
+					<div class={s.fullTextBar}>
+						<Button type="button" variant="ghost" size="compact" onClick={() => setFullText(null)}>
+							Close
+						</Button>
+					</div>
+					<pre class={s.fullTextBody} data-testid="chat-full-text">
+						{fullText()}
+					</pre>
+				</div>
+			)}
 		</div>
 	);
 };

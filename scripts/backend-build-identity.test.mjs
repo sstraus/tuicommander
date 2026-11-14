@@ -56,7 +56,7 @@ before(() => {
 	const startedAt = Number(execFileSync(exe, { encoding: "utf8" }).trim());
 	assert.ok(Number.isFinite(startedAt) && startedAt >= binaryTime);
 	backend = { exe, started_at_ms: startedAt, bridge_exe: copies["tuic-bridge"], git_hash: "compiled" };
-	inputs = ["plugins/plan/main.js", "src-tauri/tests/fixtures/agent-help/ego.txt", "browser-extension/design-mode/main.js", "src-tauri/local-input/src/lib.rs", "src-tauri/local-input/Cargo.toml", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock"];
+	inputs = ["plugins/plan/main.js", "src-tauri/tests/fixtures/agent-help/ego.txt", "browser-extension/design-mode/main.js", "src-tauri/local-input/src/lib.rs"];
 	// Verify that these assets really reached the compiler-generated dep-info.
 	assert.match(readFileSync(depInfoPath(exe), "utf8"), /plugins\/plan\/main\.js/);
 	assert.match(readFileSync(depInfoPath(backend.bridge_exe), "utf8"), /browser-extension\/design-mode\/main\.js/);
@@ -64,7 +64,7 @@ before(() => {
 after(() => { if (root) rmSync(root, { recursive: true, force: true }); });
 
 // Catches: source-path allowlists omit embedded fixture/out-of-tree assets or path crates.
-test("warns for every compiler-recorded runtime input and local Cargo manifest or lockfile", () => {
+test("warns for every compiler-recorded runtime input", () => {
 	assert.equal(check().status, "current");
 	for (const file of inputs) {
 		const path = join(root, file);
@@ -132,4 +132,23 @@ test("warns when the copy runner bridge is rebuilt without refreshing its launch
 		utimesSync(backend.bridge_exe, rebuilt, rebuilt);
 		assert.equal(backendBuildIdentity(root, { ...backend, exe: join(root, "protected-copy"), build_exe: backend.exe }).status, "stale");
 	} finally { utimesSync(backend.bridge_exe, original.atime, original.mtime); }
+});
+
+// Catches: a manifest or lockfile edit that real Cargo does not relink for keeps the
+// restart warning on for ever, because nothing rebuilds the binary to clear it.
+test("a dev-dependency-only manifest edit that Cargo does not relink for stays quiet", () => {
+	const manifest = join(root, "src-tauri/Cargo.toml");
+	const original = readFileSync(manifest, "utf8");
+	const built = (name) => join(root, "src-tauri/target/debug", name);
+	const before = statSync(built("skew-fixture")).mtimeMs;
+	try {
+		writeFileSync(manifest, `${original}\n[dev-dependencies]\nlocal-input={path="local-input"}\n`);
+		execFileSync("cargo", ["build", "--manifest-path", manifest], { stdio: "pipe", cwd: join(root, "src-tauri"), env: { ...process.env, TMPDIR: join(homedir(), "Gits/.tmp/") } });
+		assert.equal(statSync(built("skew-fixture")).mtimeMs, before, "Cargo relinked: the premise of this test is gone");
+		for (const file of ["src-tauri/Cargo.toml", "src-tauri/Cargo.lock"]) touch(join(root, file));
+		assert.equal(check().status, "current");
+	} finally {
+		writeFileSync(manifest, original);
+		utimesSync(manifest, new Date(binaryTime - 5000), new Date(binaryTime - 5000));
+	}
 });

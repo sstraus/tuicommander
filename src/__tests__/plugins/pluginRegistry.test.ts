@@ -1689,8 +1689,33 @@ describe("PluginHost — Tier 3c readCredential capability gating", () => {
 				host = h;
 			}),
 		);
-		// Mocked invoke returns undefined → null, no consent dialog for built-in
+		// Mocked invoke returns undefined → null, no dialog
 		await expect(host!.readCredential("Claude Code-credentials")).resolves.not.toThrow();
+	});
+
+	// Catches: a trusted installed plugin is interrupted by a bypassable consent
+	// dialog and plugin-writable consent bookkeeping.
+	it("plugin_credential_read_needs_no_first_use_dialog", async () => {
+		let host: PluginHost | null = null;
+		await pluginRegistry.register(
+			makePlugin("ext", (h) => {
+				host = h;
+			}),
+			["credentials:read"],
+		);
+		const confirm = vi.fn(async () => true);
+		vi.doMock("@tauri-apps/plugin-dialog", () => ({ confirm }));
+		vi.mocked(invoke).mockClear();
+		vi.mocked(invoke).mockImplementation(
+			async (cmd: string) => (cmd === "plugin_read_credential" ? "secret" : null) as never,
+		);
+
+		await expect(host!.readCredential("svc")).resolves.toBe("secret");
+
+		expect(vi.mocked(invoke).mock.calls.map((c) => c[0])).toEqual(["plugin_read_credential"]);
+		expect(confirm).not.toHaveBeenCalled();
+		vi.doUnmock("@tauri-apps/plugin-dialog");
+		vi.mocked(invoke).mockReset();
 	});
 });
 
@@ -1747,7 +1772,39 @@ describe("PluginHost — execCli capability gating", () => {
 			args: ["--format", "json", "status"],
 			cwd: "/Users/me/repo",
 			pluginId: "ext",
+			timeoutMs: null,
 		});
+	});
+
+	// Catches: a raised deadline lost on the way to the backend, so an indexing command dies at 30 s.
+	it("passes a raised timeout to the Rust command", async () => {
+		let host: PluginHost | null = null;
+		await pluginRegistry.register(
+			makePlugin("ext", (h) => {
+				host = h;
+			}),
+			["exec:cli"],
+		);
+		await host!.execCli("mdkb", ["index"], "/Users/me/repo", { timeoutMs: 600_000 });
+		const { invoke } = await import("../../invoke");
+		expect(invoke).toHaveBeenCalledWith("plugin_exec_cli", expect.objectContaining({ timeoutMs: 600_000 }));
+	});
+
+	// Catches: Infinity or NaN serialized as null and silently run with the default deadline.
+	it("rejects a timeout that JSON cannot carry", async () => {
+		let host: PluginHost | null = null;
+		await pluginRegistry.register(
+			makePlugin("ext", (h) => {
+				host = h;
+			}),
+			["exec:cli"],
+		);
+		const { invoke } = await import("../../invoke");
+		vi.mocked(invoke).mockClear();
+		for (const timeoutMs of [Number.POSITIVE_INFINITY, Number.NaN, 1.5]) {
+			await expect(host!.execCli("mdkb", ["index"], undefined, { timeoutMs })).rejects.toThrow("timeoutMs");
+		}
+		expect(invoke).not.toHaveBeenCalled();
 	});
 
 	it("passes null cwd when not provided", async () => {
@@ -2622,4 +2679,33 @@ it("plugin HTTP uses UUID fallback on an insecure browser origin", async () => {
 	} finally {
 		vi.stubGlobal("crypto", original);
 	}
+});
+
+// Catches: fractional or unsafe JS coordinates becoming a different native byte range.
+it("refuses invalid binary coordinates before IPC and gates random reads with fs:read", async () => {
+	let host: PluginHost | undefined;
+	await pluginRegistry.register(
+		makePlugin("binary-ranges", (value) => {
+			host = value;
+		}),
+		["fs:read"],
+	);
+	vi.mocked(invoke).mockClear();
+	for (const [offset, length] of [
+		[-1, 1],
+		[0.5, 1],
+		[Number.MAX_SAFE_INTEGER + 1, 1],
+		[0, 8388609],
+	]) {
+		await expect(host?.readFileRange("/data/file", offset, length)).rejects.toThrow("Invalid binary range");
+	}
+	expect(invoke).not.toHaveBeenCalled();
+	await pluginRegistry.register(
+		makePlugin("binary-no-read", (value) => {
+			host = value;
+		}),
+		[],
+	);
+	await expect(host?.fileSize("/data/file")).rejects.toThrow();
+	await expect(host?.readFileRange("/data/file", 0, 1)).rejects.toThrow();
 });

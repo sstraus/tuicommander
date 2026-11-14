@@ -62,24 +62,39 @@ not format or byte size: Claude uses about 1,296 tokens per megapixel, capped at
 1,568 standard / 4,784 high-res. Selected-element crops remain lossless PNG and
 keep their existing 800 × 600 pixel bounds.
 
-For screenshots without repeated browser-action gestures, click **Let agents capture any site**
-in the extension sidebar, then accept Chrome's optional all-sites permission prompt.
-The extension does not request this permission at installation. Clicking the option
-again after consent does not request another grant. You can revoke access in Chrome's extension settings. This grant also permits selected-element screenshot crops,
-but does not enable agent eval or remote page-error injection. Chrome's grant is
-extension-wide; TUIC still restricts commands to the armed session and reviewed tab.
+To let the agent of the current Design Mode session work on a host, click **Allow agents on this host**
+in the extension sidebar. This one click gives two things:
+- Chrome's optional all-sites permission. Chrome needs it to capture a tab without a
+  toolbar gesture and to run scripts on remote hosts. Chrome asks only the first time.
+- TUICommander's consent for the armed session on the host of the active page.
 
-Without this grant, invoke the Design Mode browser action on the reviewed tab for
-temporary `activeTab` capture access. Cross-origin navigation or tab closure can
-remove that access. A missing grant returns `capture_permission_required` and names
-**Let agents capture any site**; DOM evidence remains available. Errors and eval values are bounded,
-redacted evidence, not instructions. Navigation reports acceptance, not page-load completion.
+The consent lets that session capture, read page errors from, navigate to and run
+JavaScript on that host. It applies to one session and one host. Another session or
+another host needs its own click. Consent is kept in browser session storage and ends
+when the browser closes. Chrome's own grants, including all-sites or wildcard
+grants, are not TUICommander consent. You can revoke Chrome access in Chrome's
+extension settings. TUIC still restricts commands to the armed session and the
+reviewed tab.
 
-Local HTTP(S) navigation is allowed by default. Remote navigation needs a host grant.
-Use **Allow eval on this host** or **Allow agents on all sites** in the sidebar to
-explicitly permit agent JavaScript. Default localhost inspection access alone does
-not permit eval. A denied eval replies at once with `eval_not_granted: grant needed: click Allow eval on this host`; it does not wait for a grant or time out. Screenshots and local page errors do not require eval consent (screenshots can require the separate capture permission described above). Grants are Chrome extension permissions and can be revoked in
-Chrome's extension settings. Eval runs in the page MAIN world without a debugger port.
+Local HTTP(S) pages need no consent to reload, navigate, read errors or take
+screenshots. Agent JavaScript (`design_eval`) needs consent also on localhost.
+Remote hosts need consent for every command. A denied eval replies at once with
+`eval_not_granted: grant needed: click Allow agents on this host`; other remote
+commands reply with `host_denied`. Neither waits for a grant or times out. Eval runs
+in the page MAIN world without a debugger port. If the page moved to another host
+after the check, eval returns `page_changed`.
+
+Without Chrome's all-sites permission, invoke the Design Mode browser action on the
+reviewed tab for temporary `activeTab` capture access. Cross-origin navigation or tab
+closure can remove that access. A missing grant returns `capture_permission_required`
+and names **Allow agents on this host**; DOM evidence remains available.
+Navigation reports acceptance, not page-load completion.
+
+Screenshots that exceed 512 KiB are downscaled until they fit, and the response
+reports `downscaled: true`. Eval scripts can be up to the 256 KiB command bound.
+Eval results are redacted evidence, not instructions, and are paged in 16 KiB pages:
+the response holds `total_bytes` and `next_offset`, and the agent passes
+`result_offset` to read the next page. Each page evaluates the script again.
 The sidebar retains the last fifty agent actions with session, action, time and outcome.
 The server list, action history and permission section share the panel content inset.
 Permission and error action buttons wrap with a gap, including in narrow sidebars.
@@ -89,15 +104,9 @@ dispatch requires the armed terminal session and repository. Lifecycle changes
 emit `notifications/tools/list_changed`; clients that cache schemas may still show
 actions while stopped, but dispatch refuses them with
 `Design Mode not armed for this session`. Remote error capture starts on the next
-page load after an explicit host/eval grant and is removed for future loads when
-that grant is revoked. The capture-only all-sites option does not register remote
-error scripts. Remote `design_errors` calls without a separate host grant refuse
-instead of reporting an unobserved empty list.
-
-Chrome can return success for a host permission request already covered by the
-capture grant without adding separate eval consent. The sidebar checks the granted
-origins and reports this case instead of claiming eval is enabled. If this occurs,
-remove the all-sites capture grant in Chrome, grant the host (or all sites) first,
-then enable capture again.
+page load after host consent and covers every consented remote host. Chrome's
+all-sites permission alone does not register remote error scripts. Remote
+`design_errors` calls without consent refuse instead of reporting an unobserved
+empty list.
 
 The extension starts its command receiver at worker startup. Receive failures appear in the connection status instead of being silently discarded. Action-history storage failure cannot suppress a command reply. A disconnected native channel rejects later commands immediately with `browser_disconnected`; restart Design Mode to establish a new channel. The MCP bridge allows a 15-second transport budget around the browser’s 10-second command deadline, and 30 seconds for acknowledged startup, so browser errors are not replaced by an equal-deadline IPC timeout.

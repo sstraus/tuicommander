@@ -1,10 +1,12 @@
-import { type Component, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
-import { cx } from "../../utils";
+import { type Component, createEffect, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
+import { cx } from "../../utils/cx";
 import { Button } from "../ui/Button";
 import s from "./ContextMenu.module.css";
 
 export interface ContextMenuItem {
 	label: string;
+	icon?: JSX.Element;
+	labelContent?: JSX.Element;
 	shortcut?: string;
 	action: () => void;
 	separator?: boolean;
@@ -16,6 +18,7 @@ export interface ContextMenuItem {
 
 export interface ContextMenuProps {
 	items: ContextMenuItem[];
+	size?: "large";
 	x: number;
 	y: number;
 	visible: boolean;
@@ -127,6 +130,7 @@ const MenuItem: Component<{
 					variant="ghost"
 					class={cx(s.item, props.item.disabled && s.disabled)}
 					title={props.item.title}
+					aria-label={props.item.labelContent ? props.item.label : undefined}
 					onClick={() => {
 						if (props.item.disabled) return;
 						if (hasChildren()) {
@@ -142,7 +146,12 @@ const MenuItem: Component<{
 					}}
 					disabled={props.item.disabled}
 				>
-					<span class={s.label}>{props.item.label}</span>
+					<Show when={props.item.icon}>
+						<span class={s.icon} aria-hidden="true">
+							{props.item.icon}
+						</span>
+					</Show>
+					<span class={s.label}>{props.item.labelContent ?? props.item.label}</span>
 					<Show when={props.item.shortcut}>
 						<span class={s.shortcut}>{props.item.shortcut}</span>
 					</Show>
@@ -263,7 +272,7 @@ export const ContextMenu: Component<ContextMenuProps> = (props) => {
 		<Show when={props.visible}>
 			<div
 				ref={menuRef}
-				class={s.menu}
+				class={cx(s.menu, props.size === "large" && s.large)}
 				onClick={(e) => e.stopPropagation()}
 				style={{
 					left: `${props.x}px`,

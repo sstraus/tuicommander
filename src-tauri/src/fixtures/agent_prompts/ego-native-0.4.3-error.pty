@@ -1,0 +1,31 @@
+[1;35m⠀⢀⡴⠋⠉⠉[36m⠀⣴⠋⠉⣷⠀⢠⡞⠉⢳⡄[0m
+[1;35m⠀⢴⡋⠉⠁⠀[36m⠀⠻⣄⣀⣿⠀⠸⣇⠀⣸⠇[0m
+[1;35m⠀⠀⠉⠉⠉⠀[36m⠀⠲⣄⣠⠟⠀⠀⠈⠉⠁⠀[0m
+εgo: ego 0.4.3
+[?u[cεgo: sandbox is off; commands can access any file your user account can access
+
+εgo: model ollama/fixture
+mode yolo (flags) · sandbox off (flags)
+     Ctrl+B backgrounds · Esc interrupts · Enter queues · Up recalls · Ctrl+Enter steers · Ctrl+S draft
+     Option+P models · Shift+Tab mode · /help
+]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1iZmVjLTc3NTUtODhlMC1iNzhiMGE1NWJhNzYiLCJ0dXJuIjpudWxsLCJldmVudCI6InNlc3Npb25fc3RhcnQiLCJpZCI6bnVsbCwiZGF0YSI6e319\[?2004h[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1iZmVjLTc3NTUtODhlMC1iNzhiMGE1NWJhNzYiLCJ0dXJuIjoiMDFhMTk3MjYtYzAzYS03MzViLThiMDgtODVmZDEwMmFhOTViIiwiZXZlbnQiOiJ0dXJuX3N0YXJ0IiwiaWQiOm51bGwsImRhdGEiOnt9fQ==\]0;ɛ । Capture native error evidence.]7770;intent=Capture native error evidence. (εgo)]9;4;0;0]7770;state=busy]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1iZmVjLTc3NTUtODhlMC1iNzhiMGE1NWJhNzYiLCJ0dXJuIjoiMDFhMTk3MjYtYzAzYS03MzViLThiMDgtODVmZDEwMmFhOTViIiwiZXZlbnQiOiJlcnJvciIsImlkIjpudWxsLCJkYXRhIjp7ImtpbmQiOiJ0cmFuc2llbnQifX0=\]9;4;2;0]777;notify;εgo;the provider returned HTTP 500: owned provider failure; review the output, then send a new prompt to continue]7770;state=idle]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1iZmVjLTc3NTUtODhlMC1iNzhiMGE1NWJhNzYiLCJ0dXJuIjoiMDFhMTk3MjYtYzAzYS03MzViLThiMDgtODVmZDEwMmFhOTViIiwiZXZlbnQiOiJ0dXJuX2VuZCIsImlkIjpudWxsLCJkYXRhIjp7Im91dGNvbWUiOiJmYWlsZWQiLCJyZWFzb24iOiJQcm92aWRlciJ9fQ==\[1;2H[J[1;1H[K
+[Kεgo: Turn elapsed 62ms · stopped 1:47 PM · [38;5;175mthe provider returned HTTP 500: owned provider failure; review the[0m
+[K[38;5;175moutput, then send a new prompt to continue[0m
+[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h[?2004l[6n[0m[?25l[1;2H[J[1;1H[92m[96m[35m[0m[0m[37m> /quit[0m78[?25h[J
+[?2004h[6n[0m[?25l[1;2H[J[1;1H[92m[96mfixture · off · yolo ▱▱▱▱▱▱▱▱▱▱ ?/? unpriced ~ trust=untrusted
+> [35m[0m[0m7[37m[0m
+ 8[?25h]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1iZmVjLTc3NTUtODhlMC1iNzhiMGE1NWJhNzYiLCJ0dXJuIjpudWxsLCJldmVudCI6InNlc3Npb25fZW5kIiwiaWQiOm51bGwsImRhdGEiOnsib3V0Y29tZSI6ImNvbXBsZXRlZCJ9fQ==\]9;4;0;0]7770;state=idle]0;ɛ । ]133;D;0[1;2H[J[1;1H[K
+[Kεgo: 0 unsent drafts discarded; 0 prompts waiting to run.
+[6n[0m[?25l[1;2H[J[1;1H[92m[96mfixture · off · yolo ▱▱▱▱▱▱▱▱▱▱ ?/? unpriced ~ trust=untrusted
+> [35m[0m[0m7[37m[0m
+ 8[?25h[1;2H[J[1;1H[K
+[6n[0m[?25l[1;2H[J[1;1H[92m[96mfixture · off · yolo ▱▱▱▱▱▱▱▱▱▱ ?/? unpriced ~ trust=untrusted
+> [35m[0m[0m7[37m[0m
+ 8[?25h[1;2H[J[1;1H[Kεgo: To resume: 'ego resume 01a19726-bfec-7755-88e0-b78b0a55ba76'
+[6n[0m[?25l[1;2H[J[1;1H[92m[96mfixture · off · yolo ▱▱▱▱▱▱▱▱▱▱ ?/? unpriced ~ trust=untrusted
+> [35m[0m[0m7[37m[0m
+ 8[?25h[?2004l

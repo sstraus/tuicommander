@@ -11,11 +11,18 @@ describe("remove_orphan_worktree transport binding (critic-1188 r2)", () => {
 				worktreePath: "/r/wt",
 				safeOnly: false,
 				confirmedSessions: ["s1", "s2"],
+				expectedFingerprint: "reviewed",
 			}),
 		).toEqual({
 			method: "POST",
 			path: "/repo/remove-orphan",
-			body: { repoPath: "/r", worktreePath: "/r/wt", safeOnly: false, confirmedSessions: ["s1", "s2"] },
+			body: {
+				repoPath: "/r",
+				worktreePath: "/r/wt",
+				safeOnly: false,
+				confirmedSessions: ["s1", "s2"],
+				expectedFingerprint: "reviewed",
+			},
 		});
 	});
 

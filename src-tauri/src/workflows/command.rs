@@ -80,7 +80,14 @@ pub enum CommandResource {
     Mutation,
     Gui(String),
     Device(String),
+    // No description here: it would be copied into the workflow tool schema, which has a byte
+    // budget. Maintenance names the published operation an environment node is authorized for.
+    Maintenance(String),
 }
+
+/// Operations a maintenance node may name. Growing this list is a reviewed contract change
+/// (docs/backend/wf16d-maintenance-contract.md), never a per-definition choice.
+pub(crate) const MAINTENANCE_OPERATIONS: &[&str] = &["cache_gc"];
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -115,6 +122,7 @@ impl CommandDefinition {
         {
             return Err("invalid typed command contract".into());
         }
+        self.validate_maintenance()?;
         match &self.invocation {
             Invocation::Shell {
                 version,
@@ -171,126 +179,40 @@ impl CommandDefinition {
     }
 }
 
+impl CommandDefinition {
+    /// A node that mutates the environment names one published operation, runs on this machine
+    /// and carries no credentials.
+    fn validate_maintenance(&self) -> Result<(), String> {
+        let operations: Vec<&str> = self
+            .resources
+            .iter()
+            .filter_map(|resource| match resource {
+                CommandResource::Maintenance(name) => Some(name.as_str()),
+                _ => None,
+            })
+            .collect();
+        if operations.is_empty() {
+            return Ok(());
+        }
+        if operations.len() != 1 || !MAINTENANCE_OPERATIONS.contains(&operations[0]) {
+            return Err("maintenance node requires one named, published operation".into());
+        }
+        if !self.secret_refs.is_empty() {
+            return Err("maintenance node never receives credentials".into());
+        }
+        if !matches!(self.target, CommandTarget::Local { .. }) {
+            return Err("maintenance node runs on the local target only".into());
+        }
+        Ok(())
+    }
+}
+
 fn env_name(value: &str) -> bool {
     let mut bytes = value.bytes();
     bytes
         .next()
         .is_some_and(|c| c.is_ascii_alphabetic() || c == b'_')
         && bytes.all(|c| c.is_ascii_alphanumeric() || c == b'_')
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct CommandIdentity {
-    pub run: String,
-    pub execution: String,
-    pub activation: String,
-    pub attempt: String,
-    pub generation: u64,
-    pub effect: String,
-    pub tool: Option<(String, u16)>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct CommandSubject {
-    pub workspace: String,
-    pub commit: String,
-    pub tree: String,
-    pub stdin_sha256: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct CommandReceipt {
-    pub identity: CommandIdentity,
-    pub definition: CommandDefinition,
-    pub duration_ms: u64,
-    pub definition_sha256: String,
-    pub command_sha256: String,
-    pub subject: CommandSubject,
-    pub workspace_unchanged: bool,
-    pub result_artifact: Option<CommandSubject>,
-    pub os: String,
-    pub arch: String,
-    pub executor: String,
-    pub toolchain: String,
-    pub exit_code: i32,
-    pub succeeded: bool,
-    pub reason: String,
-    pub stdout: String,
-    pub stderr: String,
-    pub output_sha256: String,
-    pub stopped: bool,
-    pub released: bool,
-    pub remote_handle: Option<serde_json::Value>,
-    pub source_manifest_sha256: Option<String>,
-    pub source_fingerprint: Option<String>,
-}
-
-impl CommandReceipt {
-    /// Target proof is not interchangeable, even for an otherwise passing command.
-    pub fn proves_target(&self, target: &CommandTarget) -> bool {
-        self.succeeded
-            && self.workspace_unchanged
-            && self.stopped
-            && self.released
-            && match target {
-                CommandTarget::Local { os, arch } => {
-                    self.executor == "local" && self.os == *os && self.arch == *arch
-                }
-                CommandTarget::Rb | CommandTarget::RbAfterNative { .. } => {
-                    self.executor == "rb" && self.os == "linux"
-                }
-            }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct CommandObservation {
-    pub sequence: i64,
-    pub identity: CommandIdentity,
-    pub state: String,
-    pub reason: String,
-    pub receipt: Option<CommandReceipt>,
-}
-
-pub(crate) fn validate_output(schema: &CommandOutput, stdout: &str) -> Result<(), String> {
-    if matches!(schema, CommandOutput::ExitStatus) {
-        return Ok(());
-    }
-    let json: serde_json::Value = serde_json::from_str(stdout)
-        .map_err(|_| "command output is not the declared JSON schema")?;
-    let object = json
-        .as_object()
-        .ok_or("command output must be a JSON object")?;
-    match schema {
-        CommandOutput::TestSummary { minimum_matched } => {
-            let matched = object
-                .get("matched")
-                .and_then(|v| v.as_u64())
-                .ok_or("missing matched test count")?;
-            let passed = object
-                .get("passed")
-                .and_then(|v| v.as_u64())
-                .ok_or("missing passed test count")?;
-            let failed = object
-                .get("failed")
-                .and_then(|v| v.as_u64())
-                .ok_or("missing failed test count")?;
-            if matched < *minimum_matched || passed != matched || failed != 0 {
-                return Err("required test scope did not pass with nonzero matches".into());
-            }
-        }
-        CommandOutput::JsonObject { required_fields } => {
-            if required_fields.iter().any(|key| !object.contains_key(key)) {
-                return Err("command output lacks required fields".into());
-            }
-        }
-        CommandOutput::ExitStatus => {}
-    }
-    Ok(())
 }
 
 pub(crate) mod executor;

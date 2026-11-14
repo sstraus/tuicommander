@@ -52,36 +52,6 @@ pub(super) fn git_output(path: &Path, args: &[&str]) -> Result<String, String> {
         .map_err(|error| format!("decode git output: {error}"))
 }
 
-pub(super) fn require_merge_tree_support(path: &Path) -> Result<(), String> {
-    let version = git_output(path, &["--version"])?;
-    let mut components = version
-        .strip_prefix("git version ")
-        .unwrap_or("")
-        .split('.');
-    let major = components
-        .next()
-        .and_then(|value| value.parse::<u32>().ok());
-    let minor = components
-        .next()
-        .and_then(|value| value.parse::<u32>().ok());
-    match (major, minor) {
-        (Some(major), Some(minor)) => require_merge_tree_git_version(major, minor),
-        _ => Err(format!(
-            "git >= 2.38 required; cannot verify installed version: {version}"
-        )),
-    }
-}
-
-fn require_merge_tree_git_version(major: u32, minor: u32) -> Result<(), String> {
-    if (major, minor) < (2, 38) {
-        Err(format!(
-            "git >= 2.38 required for workflow merge-tree verification (detected {major}.{minor})"
-        ))
-    } else {
-        Ok(())
-    }
-}
-
 pub(in crate::workflows) fn clean_artifact(path: &Path) -> Result<(String, String), String> {
     if !git_output(path, &["status", "--porcelain", "--untracked-files=all"])?.is_empty() {
         return Err("workflow check requires a clean worktree".into());
@@ -93,6 +63,26 @@ pub(in crate::workflows) fn clean_artifact(path: &Path) -> Result<(String, Strin
     }
     if tree.len() != commit.len() {
         return Err("invalid Git tree digest".into());
+    }
+    Ok((commit, tree))
+}
+
+/// The artifact a native step may act on: HEAD plus the exact index tree. The
+/// worktree must equal the index and hold no untracked file, so staged work is an
+/// artifact and foreign dirt is not. With a clean worktree this is `clean_artifact`.
+pub(in crate::workflows) fn staged_artifact(path: &Path) -> Result<(String, String), String> {
+    if !git_output(path, &["diff", "--name-only"])?.is_empty()
+        || !git_output(path, &["ls-files", "--others", "--exclude-standard"])?.is_empty()
+    {
+        return Err(
+            "native artifact requires a clean worktree apart from staged work: unstaged or untracked changes"
+                .into(),
+        );
+    }
+    let commit = git_output(path, &["rev-parse", "HEAD"])?;
+    let tree = git_output(path, &["write-tree"])?;
+    if (commit.len() != 40 && commit.len() != 64) || tree.len() != commit.len() {
+        return Err("invalid Git artifact digest".into());
     }
     Ok((commit, tree))
 }
@@ -430,21 +420,4 @@ pub(in crate::workflows) fn execute_process(
         stdout: stdout.join().unwrap_or_default(),
         stderr: stderr.join().unwrap_or_default(),
     })
-}
-
-#[cfg(test)]
-mod git_version_tests {
-    use super::*;
-
-    #[test]
-    fn old_git_is_refused_with_the_required_version_not_conflict_review() {
-        // catches: an unsupported merge-tree command being blamed on conflict resolution.
-        let error = require_merge_tree_git_version(2, 37).unwrap_err();
-        assert!(error.contains("git >= 2.38 required"), "{error}");
-        assert!(!error.contains("human review"), "{error}");
-        assert!(require_merge_tree_git_version(1, 99).is_err());
-        assert!(require_merge_tree_git_version(2, 38).is_ok());
-        assert!(require_merge_tree_git_version(2, 55).is_ok());
-        assert!(require_merge_tree_git_version(3, 0).is_ok());
-    }
 }

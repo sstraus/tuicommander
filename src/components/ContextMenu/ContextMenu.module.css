@@ -87,3 +87,36 @@
 .submenu .item {
   white-space: nowrap;
 }
+
+.large {
+  min-width: min(320px, calc(100vw - 16px));
+  padding: 8px;
+  --control-height: 44px;
+}
+
+.large .item {
+  font-size: var(--font-lg);
+  gap: 12px;
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.launchLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.configName {
+  color: var(--fg-secondary);
+  font-size: var(--font-md);
+}
+
+.defaultMark {
+  color: var(--fg-muted);
+  margin-left: auto;
+}

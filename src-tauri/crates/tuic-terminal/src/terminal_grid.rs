@@ -701,6 +701,10 @@ pub struct TerminalGrid {
     /// Armed by a resize of the primary screen: `total_scrolled` at that moment.
     /// While armed, [`Self::merge_reprinted_history_tail`] runs after every chunk.
     reprint_merge_armed_at: Option<usize>,
+    /// The program has drawn with DEC 2026 synchronized updates and no output
+    /// has scrolled outside a frame since, so a resize reprint merge can still
+    /// drop displaced history rows.
+    seen_sync_update: bool,
     /// Tail of the previous chunk, so a frame end split across chunks is seen.
     frame_end_carry: Vec<u8>,
     /// Screen rows at the last frame end seen while armed (or at the resize). A
@@ -765,6 +769,7 @@ impl TerminalGrid {
             events,
             reflow_history: true,
             reprint_merge_armed_at: None,
+            seen_sync_update: false,
             frame_end_carry: Vec::new(),
             reprint_head_snapshot: Vec::new(),
             reprint_snapshot_scrolled: 0,
@@ -782,6 +787,8 @@ impl TerminalGrid {
     /// as `TermEvent::Osc133` (parsed natively by the patched VTE handler).
     pub fn process(&mut self, data: &[u8]) -> Vec<ChangedRow> {
         self.grid_sequence = self.grid_sequence.wrapping_add(1);
+        let synced = self.is_sync_update_active();
+        let scrolled = self.term.grid().total_scrolled();
         if self.reprint_merge_armed_at.is_some() {
             if self.advance_frame_by_frame(data) {
                 // History shrank: the cached rows and the frame bookkeeping are stale.
@@ -790,6 +797,18 @@ impl TerminalGrid {
         } else {
             self.processor.advance(&mut self.term, data);
             self.invalidate_suppressed_screen_prefix();
+        }
+        if synced
+            || self.is_sync_update_active()
+            || data
+                .windows(8)
+                .any(|w| w == b"\x1b[?2026h" || w == b"\x1b[?2026l")
+        {
+            self.seen_sync_update = true;
+        } else if self.term.grid().total_scrolled() > scrolled {
+            // Output scrolls outside any frame: the program that drew with
+            // synchronized updates no longer owns the screen.
+            self.seen_sync_update = false;
         }
 
         // Prefer the alacritty parse-damage set: read+diff ONLY the lines whose
@@ -965,9 +984,29 @@ impl TerminalGrid {
             .collect()
     }
 
-    /// True when the newest history row soft-wraps into the row below it.
-    pub fn newest_history_row_wraps(&self) -> bool {
-        self.term.grid().history_size() > 0 && self.row_wrapped(Line(-1))
+    /// True when the history row above the `newer` newest rows soft-wraps
+    /// into the row below it.
+    pub fn history_row_wraps_above(&self, newer: usize) -> bool {
+        self.term.grid().history_size() > newer && self.row_wrapped(Line(-(newer as i32) - 1))
+    }
+
+    /// A synchronized-update program may still reprint the rows the last
+    /// resize displaced, and [`Self::merge_reprinted_history_tail`] would then
+    /// drop them from history. Same window as the merge: until it disarms or
+    /// the output scrolls a screenful.
+    pub fn resize_reprint_pending(&self) -> bool {
+        let grid = self.term.grid();
+        self.seen_sync_update
+            && self
+                .reprint_merge_armed_at
+                .is_some_and(|at| grid.total_scrolled().saturating_sub(at) <= grid.screen_lines())
+    }
+
+    /// Newest primary history rows that the last resize moved off the viewport.
+    pub fn last_resize_displaced_rows(&self) -> usize {
+        self.resize_viewport
+            .as_ref()
+            .map_or(0, |resize| resize.displaced_rows)
     }
 
     /// Text of the history rows that soft-wrap into screen row 0: the head of a
@@ -4306,6 +4345,29 @@ mod tests {
             stream.extend_from_slice(ESU);
         }
         stream
+    }
+
+    /// Catches: decoding each input chunk independently replaces a split UTF-8 glyph.
+    #[test]
+    fn split_utf8_ruler_does_not_create_replacement_glyphs() {
+        const TEXT: &str = "A─中🦀Z";
+        for stream in [TEXT.to_owned(), format!("\x1b[?2026h{TEXT}\x1b[?2026l")] {
+            for split in 1..stream.len() {
+                let mut grid = TerminalGrid::new(3, 20, 100);
+                grid.process(&stream.as_bytes()[..split]);
+                grid.process(&stream.as_bytes()[split..]);
+                assert_eq!(
+                    grid.row_to_text(Line(0)).as_deref(),
+                    Some(TEXT),
+                    "split {split} in {stream:?}"
+                );
+            }
+            let mut grid = TerminalGrid::new(3, 20, 100);
+            for byte in stream.as_bytes() {
+                grid.process(std::slice::from_ref(byte));
+            }
+            assert_eq!(grid.row_to_text(Line(0)).as_deref(), Some(TEXT));
+        }
     }
 
     #[test]
@@ -7990,3 +8052,7 @@ mod reprint_merge_round3_critic_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "terminal_grid_diff_padding_2780_tests.rs"]
+mod diff_padding_2780_tests;

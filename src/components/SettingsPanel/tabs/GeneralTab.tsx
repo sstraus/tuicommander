@@ -127,6 +127,24 @@ export const GeneralTab: Component<{ onOpenAiChat?: () => void }> = (props) => {
 		}
 	};
 
+	const [egoInstalling, setEgoInstalling] = createSignal(false);
+	const [egoError, setEgoError] = createSignal<string | null>(null);
+
+	// The backend saves the installed path as the ego executable; the store
+	// picks it up from the settings-changed notice.
+	const handleInstallEgo = async () => {
+		setEgoInstalling(true);
+		setEgoError(null);
+		try {
+			await invoke<string>("install_ego");
+		} catch (err) {
+			setEgoError(typeof err === "string" ? err : String(err));
+			appLogger.error("app", "Failed to install ego", err);
+		} finally {
+			setEgoInstalling(false);
+		}
+	};
+
 	const handleSelectEgo = async () => {
 		try {
 			const picked = await openDialog({
@@ -428,12 +446,23 @@ export const GeneralTab: Component<{ onOpenAiChat?: () => void }> = (props) => {
 								? t("general.hint.egoConfigured", "Configured at {path}", { path: settingsStore.state.egoExecutable })
 								: t(
 										"general.hint.egoExecutableEmpty",
-										"Not configured: the AI Chat panel cannot start a conversation until you select the ego binary.",
+										"Not configured: the AI Chat panel cannot start a conversation until you install or select the ego binary.",
 									)
 						}
+						error={egoError() ?? undefined}
 					>
 						{() => (
 							<div>
+								<Button
+									data-setting-id="app.ego_executable"
+									class={s.testBtn}
+									onClick={handleInstallEgo}
+									disabled={egoInstalling()}
+								>
+									{egoInstalling()
+										? t("general.btn.installing", "Installing...")
+										: t("general.btn.installEgo", "Install latest")}
+								</Button>
 								<Button data-setting-id="app.ego_executable" class={s.testBtn} onClick={handleSelectEgo}>
 									{t("general.btn.selectEgo", "Select…")}
 								</Button>
@@ -641,7 +670,7 @@ export const GeneralTab: Component<{ onOpenAiChat?: () => void }> = (props) => {
 						label="Content index memory budget (MB)"
 						value={String(settingsStore.state.indexMemoryBudgetMb)}
 						onInput={(value) => value.trim() !== "" && settingsStore.setIndexMemoryBudgetMb(Number(value))}
-						hint="Total memory available for content search indexes before older indexes are dropped."
+						hint="Approximate memory budget for content search indexes. The default is 256 MiB; older indexes reload when needed."
 					/>
 				</ExpertSetting>
 				<ExpertSetting configKey="app.attachment_max_bytes" value={settingsStore.state.attachmentMaxBytes}>

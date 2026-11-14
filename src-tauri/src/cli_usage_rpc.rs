@@ -39,6 +39,67 @@ impl<T: Clone> UsageCache<T> {
     }
 }
 
+/// Failure cooldown for a provider usage reader: after a failed read, callers inside
+/// the window get the cached error instead of spawning the CLI again. The delay doubles on
+/// repeats (60 s up to 600 s) and follows a retry delay the CLI reports (clamped to 1800 s).
+pub(crate) struct FailureBackoff(parking_lot::Mutex<Option<(String, Instant, u32)>>);
+
+impl Default for FailureBackoff {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FailureBackoff {
+    pub(crate) const fn new() -> Self {
+        Self(parking_lot::Mutex::new(None))
+    }
+
+    /// The error of the last failed read while its cooldown runs.
+    pub(crate) fn active(&self) -> Option<String> {
+        let guard = self.0.lock();
+        let (error, until, _) = guard.as_ref()?;
+        (Instant::now() < *until).then(|| error.clone())
+    }
+
+    pub(crate) fn record(&self, error: &str) {
+        let mut guard = self.0.lock();
+        let failures = guard.as_ref().map_or(0, |(_, _, n)| *n).saturating_add(1);
+        let delay = reported_retry_secs(error).map_or_else(
+            || (60u64 << (failures - 1).min(4)).min(600),
+            |secs| secs.clamp(1, 1800),
+        );
+        *guard = Some((
+            error.to_string(),
+            Instant::now() + Duration::from_secs(delay),
+            failures,
+        ));
+    }
+
+    pub(crate) fn clear(&self) {
+        *self.0.lock() = None;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn remaining(&self) -> Option<Duration> {
+        let guard = self.0.lock();
+        let (_, until, _) = guard.as_ref()?;
+        Some(until.saturating_duration_since(Instant::now()))
+    }
+}
+
+/// Seconds a CLI error asks us to wait ("retry after 90", "try again in 90s", "retry-after: 90").
+fn reported_retry_secs(message: &str) -> Option<u64> {
+    let lower = message.to_ascii_lowercase();
+    ["retry after ", "retry-after: ", "try again in "]
+        .iter()
+        .find_map(|marker| {
+            let rest = &lower[lower.find(marker)? + marker.len()..];
+            let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+            digits.parse().ok()
+        })
+}
+
 pub(crate) fn looks_like_auth_failure(message: &str) -> bool {
     let lower = message.to_ascii_lowercase();
     lower.contains("not logged in")
@@ -197,6 +258,23 @@ pub fn decode_result<T: serde::de::DeserializeOwned>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Catches: a backoff that never grows, so a persistent 429 is retried every minute.
+    #[test]
+    fn failure_backoff_grows_on_repeats_is_capped_and_honours_a_reported_delay() {
+        let backoff = FailureBackoff::new();
+        assert!(backoff.active().is_none());
+        let mut seen = Vec::new();
+        for _ in 0..7 {
+            backoff.record("429 Too Many Requests");
+            seen.push(backoff.remaining().unwrap().as_secs().div_ceil(10) * 10);
+        }
+        assert_eq!(seen, [60, 120, 240, 480, 600, 600, 600]);
+        backoff.record("429 retry after 900s");
+        assert!(backoff.remaining().unwrap().as_secs() > 600);
+        backoff.clear();
+        assert!(backoff.active().is_none());
+    }
 
     #[test]
     fn records_only_requested_numeric_responses() {

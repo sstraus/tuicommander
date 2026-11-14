@@ -1,0 +1,333 @@
+{
+  "key": "github-pr-review",
+  "name": "GitHub PR review",
+  "description": "Bind it to a GitHub pull_request trigger (events opened, reopened, updated) that maps repository, number, head and base. It captures the exact head and base, runs a review and a verification model in parallel, asks you when verification fails, and publishes one COMMENT review pinned to that head. Set the model profile, model and effort of both model activities before you publish.",
+  "editor": {
+    "labels": {
+      "snapshot": "Capture exact PR head and base",
+      "checks": "Review and verify in parallel",
+      "verified": "Verification passed?",
+      "ask": "Ask the operator",
+      "publish": "Publish review on the captured head"
+    },
+    "presets": {}
+  },
+  "definition": {
+    "control": {
+      "nodes": {
+        "start": {
+          "type": "start"
+        },
+        "snapshot": {
+          "type": "activity",
+          "activity": 0
+        },
+        "checks": {
+          "type": "fork",
+          "scope": "checks"
+        },
+        "verified": {
+          "type": "condition",
+          "condition": "verified"
+        },
+        "ask": {
+          "type": "activity",
+          "activity": 4
+        },
+        "publish": {
+          "type": "activity",
+          "activity": 3
+        },
+        "published": {
+          "type": "end",
+          "outcome": "published"
+        },
+        "superseded": {
+          "type": "end",
+          "outcome": "superseded"
+        },
+        "blocked": {
+          "type": "end",
+          "outcome": "blocked"
+        }
+      },
+      "edges": {
+        "start": {
+          "next": "snapshot"
+        },
+        "snapshot": {
+          "ok": "checks",
+          "stale": "superseded"
+        },
+        "checks": {
+          "complete": "verified",
+          "blocked": "blocked"
+        },
+        "verified": {
+          "true": "publish",
+          "false": "ask",
+          "unknown": "blocked"
+        },
+        "ask": {
+          "complete": "publish"
+        },
+        "publish": {
+          "published": "published",
+          "stale": "superseded"
+        }
+      }
+    },
+    "outputs": {
+      "fields": {}
+    },
+    "outcomes": [
+      "blocked",
+      "published",
+      "superseded"
+    ],
+    "inputs": {
+      "fields": {
+        "repository": {
+          "value_type": "string",
+          "required": true,
+          "default": null
+        },
+        "number": {
+          "value_type": "integer",
+          "required": true,
+          "default": null
+        },
+        "head": {
+          "value_type": "string",
+          "required": true,
+          "default": null
+        },
+        "base": {
+          "value_type": "string",
+          "required": true,
+          "default": null
+        }
+      }
+    },
+    "subject": null,
+    "instances": [
+      {
+        "descriptor": {
+          "namespace": "github",
+          "name": "pull_request.snapshot",
+          "version": 1
+        },
+        "config": {},
+        "execution_policy": "local"
+      },
+      {
+        "descriptor": {
+          "namespace": "model",
+          "name": "request",
+          "version": 1
+        },
+        "config": {
+          "request": {
+            "profile": "",
+            "model": "",
+            "effort": "",
+            "instructions": "Review this GitHub pull request at its exact head commit. Report concrete defects with file and line, and say what is good when nothing is wrong. Put the complete review text in body.",
+            "context": [],
+            "output_schema": {
+              "fields": {
+                "body": {
+                  "value_type": "string",
+                  "required": true,
+                  "default": null
+                }
+              }
+            },
+            "limits": {
+              "timeout_ms": 300000,
+              "max_context_bytes": 1048576,
+              "max_output_bytes": 65536
+            },
+            "unavailable_policy": "fail"
+          }
+        },
+        "execution_policy": "local"
+      },
+      {
+        "descriptor": {
+          "namespace": "model",
+          "name": "request",
+          "version": 1
+        },
+        "config": {
+          "request": {
+            "profile": "",
+            "model": "",
+            "effort": "",
+            "instructions": "Verify this GitHub pull request at its exact head commit: does the change do what its title and description claim, without an obvious regression? Set passed to false when it does not, and explain why in summary.",
+            "context": [],
+            "output_schema": {
+              "fields": {
+                "passed": {
+                  "value_type": "boolean",
+                  "required": true,
+                  "default": null
+                },
+                "summary": {
+                  "value_type": "string",
+                  "required": true,
+                  "default": null
+                }
+              }
+            },
+            "limits": {
+              "timeout_ms": 300000,
+              "max_context_bytes": 1048576,
+              "max_output_bytes": 65536
+            },
+            "unavailable_policy": "fail"
+          }
+        },
+        "execution_policy": "local"
+      },
+      {
+        "descriptor": {
+          "namespace": "github",
+          "name": "pull_request.review",
+          "version": 1
+        },
+        "config": {},
+        "execution_policy": "local"
+      },
+      {
+        "descriptor": {
+          "namespace": "inbox",
+          "name": "approval",
+          "version": 1
+        },
+        "config": {},
+        "execution_policy": "local"
+      }
+    ],
+    "input_bindings": {
+      "0": {
+        "repository": {
+          "source": "workflow_input",
+          "field": "repository"
+        },
+        "number": {
+          "source": "workflow_input",
+          "field": "number"
+        },
+        "head": {
+          "source": "workflow_input",
+          "field": "head"
+        },
+        "base": {
+          "source": "workflow_input",
+          "field": "base"
+        }
+      },
+      "1": {
+        "text": {
+          "source": "activity_output",
+          "activity": 0,
+          "field": "text"
+        }
+      },
+      "2": {
+        "text": {
+          "source": "activity_output",
+          "activity": 0,
+          "field": "text"
+        }
+      },
+      "3": {
+        "repository": {
+          "source": "workflow_input",
+          "field": "repository"
+        },
+        "number": {
+          "source": "workflow_input",
+          "field": "number"
+        },
+        "head": {
+          "source": "workflow_input",
+          "field": "head"
+        },
+        "base": {
+          "source": "workflow_input",
+          "field": "base"
+        },
+        "body": {
+          "source": "projection",
+          "from": {
+            "source": "activity_output",
+            "activity": 1,
+            "field": "result"
+          },
+          "pointer": "/body",
+          "value_type": "string"
+        },
+        "event": {
+          "source": "constant",
+          "value": "COMMENT"
+        }
+      },
+      "4": {
+        "text": {
+          "source": "constant",
+          "value": "Verification did not pass for this pull request head. Publish the review anyway?"
+        },
+        "details": {
+          "source": "projection",
+          "from": {
+            "source": "activity_output",
+            "activity": 2,
+            "field": "result"
+          },
+          "pointer": "/summary",
+          "value_type": "string"
+        }
+      }
+    },
+    "conditions": {
+      "verified": {
+        "operator": "compare",
+        "comparison": "equal",
+        "left": {
+          "source": "projection",
+          "from": {
+            "source": "activity_output",
+            "activity": 2,
+            "field": "result"
+          },
+          "pointer": "/passed",
+          "value_type": "boolean"
+        },
+        "right": {
+          "source": "constant",
+          "value": true
+        }
+      }
+    },
+    "collections": {},
+    "loops": {},
+    "forks": {
+      "checks": {
+        "branches": {
+          "review": {
+            "activity": 1,
+            "required": true
+          },
+          "verify": {
+            "activity": 2,
+            "required": true
+          }
+        },
+        "max_concurrency": 2
+      }
+    },
+    "output_bindings": {},
+    "subflows": []
+  }
+}

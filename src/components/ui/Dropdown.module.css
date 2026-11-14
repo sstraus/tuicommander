@@ -41,7 +41,8 @@
   transition: background 0.1s;
 }
 
-.item:hover {
+.item:hover,
+.item:focus-visible {
   background: var(--bg-highlight);
   color: var(--fg-primary);
 }
@@ -55,4 +56,16 @@
   height: 1px;
   background: var(--border);
   margin: 4px 0;
+}
+
+@media (pointer: coarse) {
+  .item { min-height: 44px; box-sizing: border-box; }
+}
+
+.search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px;
+  background: var(--bg-secondary);
 }

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render } from "@solidjs/testing-library";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { Transcript } from "../../components/AIChatPanel/Transcript";
 import type { AcpTranscriptEntry } from "../../stores/acpTranscript";
 
@@ -77,6 +77,11 @@ describe("intermediate assistant text", () => {
 			/>
 		));
 		const muted = container.querySelector("[data-intermediate]");
-		expect(muted?.querySelector('button[aria-label="Copy assistant message"]')).not.toBeNull();
+		expect(muted?.querySelector('button[aria-label="Assistant message actions"]')).not.toBeNull();
 	});
 });
+
+// Settle the shared UI persistence owner imported by the control utilities.
+import { activityStore } from "../../stores/activityStore";
+
+beforeAll(() => activityStore.hydrate());

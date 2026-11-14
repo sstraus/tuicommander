@@ -22,6 +22,12 @@ pub(crate) enum EventCategory {
     Noise,
 }
 
+/// A git lock file (`index.lock`, `refs/heads/x.lock`, ...).
+pub(crate) fn is_git_lock_file(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|extension| extension == "lock")
+}
+
 /// Classify a filesystem event path into an `EventCategory`.
 ///
 /// Pure function: no I/O, no side effects. The `ignores` matcher is used
@@ -47,6 +53,13 @@ pub(crate) fn classify_path(
         // sub-watched until the watcher restarts post-transition.
         if rel_str.is_empty() {
             return EventCategory::GitState;
+        }
+
+        // A lock file never carries state: git renames it onto the real file, and
+        // that rename is its own event. Agent status lines create one every few
+        // seconds in each linked worktree.
+        if is_git_lock_file(path) {
+            return EventCategory::Noise;
         }
 
         // .git/HEAD (exactly, not .git/logs/HEAD or similar)
@@ -836,6 +849,7 @@ pub(crate) fn start_watching(repo_path: &str, state: &Arc<AppState>) -> Result<(
     // (blocking, must-not-run-on-event-loop-thread) `watch()` call.
     #[cfg(target_os = "linux")]
     let rt_for_cb = rt_handle.clone();
+    let stories_rt = rt_handle.clone();
     let emitter = Arc::new(CategoryEmitter::new(rt_handle));
     // The base-checkout fingerprint cannot see a sibling ref/HEAD move. Keep
     // one pending bit across the debounce rather than reading every checkout.
@@ -875,6 +889,13 @@ pub(crate) fn start_watching(repo_path: &str, state: &Arc<AppState>) -> Result<(
             if event.need_rescan() {
                 tuic_git::worktree::set_monitoring_watch_active(&repo_for_cb, false);
             }
+            // Before classification: an adapter's store is often gitignored.
+            crate::story_adapter::binding::watcher_event(
+                &stories_rt,
+                &repo_for_cb,
+                &event.paths,
+                &event_bus,
+            );
             let git_paths: Vec<_> = event.paths.iter()
                 .filter(|path| path.starts_with(&git_dir_for_cb)).cloned().collect();
             if !git_paths.is_empty() {
@@ -1481,6 +1502,39 @@ mod tests {
             ),
             EventCategory::GitState
         );
+    }
+
+    // Catches: an agent's status line runs `git status` in its linked worktree every
+    // few seconds; each run creates and removes `index.lock` there, and classifying
+    // that lock as GitState made TUIC fork `git status` for the main checkout each time.
+    #[test]
+    fn test_classify_git_lock_files_are_noise() {
+        let root = Path::new("/repo");
+        let git = Path::new("/repo/.git");
+        let gi = empty_gitignore();
+        for lock in [
+            "/repo/.git/worktrees/feat/index.lock",
+            "/repo/.git/refs/heads/main.lock",
+            "/repo/.git/index.lock",
+            "/repo/.git/packed-refs.lock",
+        ] {
+            assert_eq!(
+                classify_path(Path::new(lock), root, git, &[], &gi),
+                EventCategory::Noise,
+                "{lock}"
+            );
+        }
+        // The real state arrives as the renamed target, which keeps its category.
+        for state in [
+            "/repo/.git/worktrees/feat/index",
+            "/repo/.git/refs/heads/main",
+        ] {
+            assert_eq!(
+                classify_path(Path::new(state), root, git, &[], &gi),
+                EventCategory::GitState,
+                "{state}"
+            );
+        }
     }
 
     // Catches: packing refs or changing integration configuration never wakes monitoring.

@@ -1,7 +1,7 @@
 //! HTTP endpoints for the application log ring buffer.
 
 use axum::Json;
-use axum::extract::{ConnectInfo, Query, State};
+use axum::extract::{ConnectInfo, Extension, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use serde::Deserialize;
@@ -187,7 +187,7 @@ pub(crate) async fn capture_set(
 }
 
 // ---------------------------------------------------------------------------
-// invoke_js — execute a debug script in the main WebView (loopback only)
+// invoke_js — execute a debug script in the main WebView (local or authenticated)
 // ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
@@ -197,17 +197,19 @@ pub(crate) struct InvokeJsBody {
 
 /// POST /debug/invoke_js — execute JavaScript in the main WebView.
 ///
-/// Loopback-only (this is an RCE surface): mirrors the MCP `debug
-/// action=invoke_js` path so the dev build — reachable only over HTTP, not the
-/// MCP stdio transport — is scriptable for diagnostics. Fire-and-forget: the
+/// Local or token-authenticated callers only (this is an RCE surface, and an
+/// authenticated owner already has terminal execution — #2658-7301): mirrors
+/// the MCP `debug action=invoke_js` path so the owner's phone and the dev
+/// build can script diagnostics over HTTP. Fire-and-forget: the
 /// result + captured console output are pushed to the ring buffer with
 /// source="eval_js"; read them back via GET /logs?source=eval_js.
 pub(crate) async fn invoke_js_http(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<super::guards::Authenticated>>,
     State(state): State<Arc<AppState>>,
     Json(body): Json<InvokeJsBody>,
 ) -> impl IntoResponse {
-    if let Err(resp) = super::guards::localhost_only(&addr) {
+    if let Err(resp) = super::guards::require_local_or_auth(&addr, auth.is_some()) {
         return resp.into_response();
     }
     Json(eval_debug_script(&state, &body.script)).into_response()
@@ -217,11 +219,16 @@ pub(crate) async fn invoke_js_http(
 /// serialization) and evaluate it in the main WebView. The harness invokes the
 /// `push_log` command so the result lands in the ring buffer as source="eval_js".
 /// Shared by the MCP `debug` tool and the HTTP `/debug/invoke_js` route.
-#[cfg(feature = "desktop")]
 pub(crate) fn eval_debug_script(state: &Arc<AppState>, script: &str) -> serde_json::Value {
+    // Checked before the build split, so a headless build refuses for the same reason.
     if state.secrets.tools_blocked() {
         return serde_json::json!({"error": "Agent inspection is disabled while a private secret form is open"});
     }
+    eval_in_main_webview(state, script)
+}
+
+#[cfg(feature = "desktop")]
+fn eval_in_main_webview(state: &Arc<AppState>, script: &str) -> serde_json::Value {
     use tauri::Manager;
     let app_handle = state.app_handle.read().clone();
     let Some(handle) = app_handle else {
@@ -278,12 +285,14 @@ pub(crate) fn eval_debug_script(state: &Arc<AppState>, script: &str) -> serde_js
 ///
 /// It runs entirely on the native side, so it works precisely when the JS side
 /// does not. Sessions live in the backend, so this costs nothing but a repaint.
-/// Loopback-only, like its neighbour.
+/// Local or token-authenticated callers, like its neighbour: the owner's phone
+/// is the remaining remedy when the desktop window is white (#2658-7301).
 pub(crate) async fn reload_webview_http(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<super::guards::Authenticated>>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if let Err(resp) = super::guards::localhost_only(&addr) {
+    if let Err(resp) = super::guards::require_local_or_auth(&addr, auth.is_some()) {
         return resp.into_response();
     }
     tracing::info!(source = "webview", caller = %addr, "HTTP WebView reload requested");
@@ -301,7 +310,7 @@ pub(crate) fn reload_main_webview(state: &Arc<AppState>) -> serde_json::Value {
 }
 
 #[cfg(not(feature = "desktop"))]
-pub(crate) fn eval_debug_script(_state: &Arc<AppState>, _script: &str) -> serde_json::Value {
+fn eval_in_main_webview(_state: &Arc<AppState>, _script: &str) -> serde_json::Value {
     serde_json::json!({"error": "invoke_js requires desktop feature"})
 }
 

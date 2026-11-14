@@ -149,6 +149,7 @@ pub(crate) struct WorktreeRemovalPreview {
     #[serde(flatten)]
     pub lifecycle: WorkspaceLifecycleStatus,
     pub untracked_files: Option<usize>,
+    pub copied_files: Vec<tuic_git::copy_provenance::CopyInventoryEntry>,
     pub live_sessions: Vec<WorktreeLiveSession>,
     pub warnings: Vec<String>,
     pub archive_checklist: ArchiveChecklist,
@@ -294,6 +295,26 @@ pub(crate) fn inspect_worktree_removal(
         .map(|path| live_sessions_in(state, path))
         .unwrap_or_default();
     let mut warnings = Vec::new();
+    let copied_files = match worktree_path
+        .as_deref()
+        .map(tuic_git::copy_provenance::inventory)
+        .transpose()
+    {
+        Ok(inventory) => inventory.unwrap_or_default(),
+        Err(error) => {
+            warnings.push(format!(
+                "Copy inventory unavailable: {error}; no copy exemption is trusted"
+            ));
+            Vec::new()
+        }
+    };
+    let uncertain = copied_files
+        .iter()
+        .filter(|entry| entry.classification == "uncertain-no-copy-proof")
+        .count();
+    if uncertain > 0 {
+        warnings.push(format!("{uncertain} untracked files have no copy-time proof; their origin is uncertain and automatic cleanup is blocked"));
+    }
     match lifecycle.commit_status {
         WorkspaceCommitStatus::InSync => {
             warnings.push("This branch has nothing of its own, not merged work".to_string())
@@ -429,6 +450,7 @@ pub(crate) fn inspect_worktree_removal(
     WorktreeRemovalPreview {
         lifecycle,
         untracked_files,
+        copied_files,
         live_sessions,
         warnings,
         archive_checklist,
@@ -735,9 +757,23 @@ pub(crate) fn allocate_workspace(
     config: &WorktreeConfig,
     base_ref: Option<&str>,
 ) -> Result<(CreatedWorkspace, Option<serde_json::Value>), String> {
-    let (workspace, recycled) = create_workspace_recycling(directory, config, base_ref, |path| {
-        live_sessions_in(state, path).is_empty()
-    })?;
+    allocate_workspace_with_creator(state, directory, config, base_ref, None)
+}
+
+pub(crate) fn allocate_workspace_with_creator(
+    state: &Arc<AppState>,
+    directory: &Path,
+    config: &WorktreeConfig,
+    base_ref: Option<&str>,
+    creator_session: Option<&str>,
+) -> Result<(CreatedWorkspace, Option<serde_json::Value>), String> {
+    let (workspace, recycled) = create_workspace_recycling_with_creator(
+        directory,
+        config,
+        base_ref,
+        |path| live_sessions_in(state, path).is_empty(),
+        creator_session,
+    )?;
     let rename = recycled.as_ref().map(|old| {
         serde_json::json!({
             "old_path": old.path, "new_path": workspace.path.to_string_lossy()
@@ -1016,6 +1052,7 @@ pub(crate) fn remove_orphan_checkout(
     worktree_path: &str,
     safe_only: bool,
     confirmed_sessions: &[String],
+    expected_fingerprint: Option<&str>,
 ) -> Result<(), String> {
     validate_worktree_path(repo_path, worktree_path)?;
     orphan_removal_guard(
@@ -1036,7 +1073,14 @@ pub(crate) fn remove_orphan_checkout(
         branch: None,
         base_repo: PathBuf::from(repo_path),
     };
-    tuic_git::worktree::remove_orphan_worktree_internal(&worktree)?;
+    tuic_git::worktree::remove_orphan_worktree_internal(
+        &worktree,
+        if safe_only {
+            None
+        } else {
+            expected_fingerprint
+        },
+    )?;
     state.invalidate_repo_caches(repo_path);
     Ok(())
 }
@@ -1054,6 +1098,7 @@ pub(crate) async fn remove_orphan_worktree(
     worktree_path: String,
     safe_only: Option<bool>,
     confirmed_sessions: Option<Vec<String>>,
+    expected_fingerprint: Option<String>,
 ) -> Result<(), String> {
     let state = state.inner().clone();
     tokio::task::spawn_blocking(move || {
@@ -1063,7 +1108,28 @@ pub(crate) async fn remove_orphan_worktree(
             &worktree_path,
             safe_only.unwrap_or(false),
             &confirmed_sessions.unwrap_or_default(),
+            expected_fingerprint.as_deref(),
         )
+    })
+    .await
+    .map_err(|e| format!("Task panic: {e}"))?
+}
+
+/// Repair or prune one unavailable worktree registration shown as a sidebar diagnostic.
+/// The path must be a current diagnostic; prune never deletes files.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn resolve_worktree_diagnostic_cmd(
+    state: State<'_, Arc<AppState>>,
+    repo_path: String,
+    worktree_path: String,
+    action: WorktreeDiagnosticAction,
+) -> Result<(), String> {
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        resolve_worktree_diagnostic(&repo_path, &worktree_path, action)?;
+        state.invalidate_repo_caches(&repo_path);
+        Ok(())
     })
     .await
     .map_err(|e| format!("Task panic: {e}"))?
@@ -1254,7 +1320,7 @@ fn cleanup_needs_lifecycle_confirmation(
     if cleanup_needs_confirmation(action, force, dirt) {
         return true;
     }
-    if force || (action != "archive" && action != "delete") {
+    if force || (action != "archive" && action != ARCHIVE_AND_DROP_BRANCH && action != "delete") {
         return false;
     }
     let preview = inspect_worktree_removal(state, repo_path, workspace_id);
@@ -1263,6 +1329,10 @@ fn cleanup_needs_lifecycle_confirmation(
         || preview.lifecycle.commit_status == WorkspaceCommitStatus::Unknown
         || (require_merged && preview.lifecycle.commit_status != WorkspaceCommitStatus::Merged)
 }
+
+/// Archive the checkout and drop its branch (recovery ref kept). Only the
+/// unattended merged-worktree sweep asks for it; plain "archive" keeps the branch.
+pub(crate) const ARCHIVE_AND_DROP_BRANCH: &str = "archive_and_drop_branch";
 
 pub(crate) fn finalize_merged_worktree_impl_with_confirmation(
     state: &Arc<AppState>,
@@ -1306,7 +1376,10 @@ pub(crate) fn finalize_merged_worktree_impl_with_confirmation(
     }
 
     match action.as_str() {
-        "archive" => {
+        "archive" | ARCHIVE_AND_DROP_BRANCH => {
+            // Same merged test as the badge and the checklist; read before the move.
+            let outside =
+                tuic_git::worktree::workspace_commits_outside_default(&base_repo, &workspace_id);
             // Read the branch off the record BEFORE the directory moves: archiving
             // takes the worktree out of `git worktree list`, after which the id
             // resolves to nothing and the removal event would have no branch to
@@ -1314,6 +1387,18 @@ pub(crate) fn finalize_merged_worktree_impl_with_confirmation(
             // mutated yet.
             let branch = resolve_workspace(&base_repo, &workspace_id)?.branch;
             let archive_path = archive_worktree(&base_repo, &workspace_id, script.as_deref())?;
+            let branch_delete_warning = if action == ARCHIVE_AND_DROP_BRANCH
+                && outside.as_ref().is_ok_and(|(_, count)| *count == 0)
+            {
+                tuic_git::worktree::retire_archived_branch(
+                    &base_repo,
+                    Path::new(&archive_path),
+                    &branch,
+                )
+                .err()
+            } else {
+                None
+            };
             // Archiving moves the worktree out of the repo — as far as the sidebar
             // is concerned the row is gone, same as a delete.
             state.notify_worktree_removed(crate::state::WorktreeRemovedPayload {
@@ -1329,7 +1414,7 @@ pub(crate) fn finalize_merged_worktree_impl_with_confirmation(
                 // this one; its pre-flight numbers were reported there.
                 commits_ahead: 0,
                 worktree_dirty: dirt.is_dirty(),
-                branch_delete_warning: None,
+                branch_delete_warning,
             })
         }
         "delete" => {
@@ -1653,6 +1738,8 @@ pub(crate) async fn get_workspace_lifecycle(
 pub(crate) fn get_worktree_paths(
     repo_path: String,
 ) -> Result<HashMap<String, WorkspaceWorktree>, String> {
+    // Do not expose the Git registration between allocation and durable creator publication.
+    let _publication = allocation_guard(Path::new(&repo_path))?;
     let pool = archive_pool_for_repo(
         Path::new(&repo_path),
         &crate::config::config_dir().join("worktrees"),
@@ -2872,6 +2959,183 @@ mod tests {
         assert!(wt.join("scratch.txt").exists(), "still on disk, untouched");
     }
 
+    /// The smartmem shape: the main checkout sits on a feature branch the default
+    /// branch lacks, and a Claude Code agent worktree is cut from it with no commit
+    /// of its own. Returns the agent checkout path.
+    fn checked_out_feature_with_agent(repo: &Path, id: &str) -> PathBuf {
+        let git = |args: &[&str]| {
+            git_cmd(repo).args(args.iter().copied()).run().unwrap();
+        };
+        if rev_at_head_branch(repo) != "feat/geo" {
+            git(&["checkout", "-b", "feat/geo"]);
+            fs::write(repo.join("geo.txt"), "geo").unwrap();
+            git(&["add", "geo.txt"]);
+            git(&["commit", "-m", "geo work"]);
+        }
+        let agents = repo.join(".claude/worktrees");
+        fs::create_dir_all(&agents).unwrap();
+        let agent = agents.join(format!("agent-{id}"));
+        git(&[
+            "worktree",
+            "add",
+            "-b",
+            &format!("worktree-agent-{id}"),
+            agent.to_str().unwrap(),
+        ]);
+        agent
+    }
+
+    fn rev_at_head_branch(repo: &Path) -> String {
+        git_cmd(repo)
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .run()
+            .unwrap()
+            .stdout
+            .trim()
+            .to_string()
+    }
+
+    fn branch_exists(repo: &Path, branch: &str) -> bool {
+        !git_cmd(repo)
+            .args(["branch", "--list", branch])
+            .run()
+            .unwrap()
+            .stdout
+            .trim()
+            .is_empty()
+    }
+
+    /// Catches: the unattended sweep archiving a merged, clean agent worktree but
+    /// leaving its branch behind forever, or deleting it without a recovery ref.
+    #[test]
+    fn sweep_drops_branch_of_merged_clean_agent_worktree_keeping_recovery_ref() {
+        let (_cfg, _guard) = isolated_config();
+        let repo = setup_test_repo();
+        let _agent = checked_out_feature_with_agent(repo.path(), "b1");
+        let tip = git_cmd(repo.path())
+            .args(["rev-parse", "worktree-agent-b1"])
+            .run()
+            .unwrap()
+            .stdout
+            .trim()
+            .to_string();
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+
+        let result = finalize_merged_worktree_impl(
+            &state,
+            repo.path().to_string_lossy().to_string(),
+            "worktree-agent-b1".to_string(),
+            ARCHIVE_AND_DROP_BRANCH.to_string(),
+            false,
+        )
+        .expect("finalize");
+
+        assert_eq!(
+            result.action, "archived",
+            "warning: {:?}",
+            result.branch_delete_warning
+        );
+        assert!(!branch_exists(repo.path(), "worktree-agent-b1"));
+        let recovery = git_cmd(repo.path())
+            .args(["rev-parse", "refs/archive/worktree-agent-b1"])
+            .run()
+            .unwrap()
+            .stdout;
+        assert_eq!(recovery.trim(), tip, "tip stays recoverable");
+        assert!(
+            result
+                .archive_path
+                .is_some_and(|path| Path::new(&path).exists())
+        );
+    }
+
+    /// Catches: the branch of a dirty, locked or unmerged agent worktree being
+    /// deleted by the sweep. Each case keeps its checkout and its branch.
+    #[test]
+    fn sweep_keeps_branch_of_dirty_locked_and_unmerged_agent_worktrees() {
+        let (_cfg, _guard) = isolated_config();
+        let repo = setup_test_repo();
+        let dirty = checked_out_feature_with_agent(repo.path(), "c1");
+        fs::write(dirty.join("scratch.txt"), "wip").unwrap();
+        let locked = checked_out_feature_with_agent(repo.path(), "c2");
+        git_cmd(repo.path())
+            .args(["worktree", "lock", locked.to_str().unwrap()])
+            .run()
+            .unwrap();
+        let unmerged = checked_out_feature_with_agent(repo.path(), "c3");
+        fs::write(unmerged.join("own.txt"), "own").unwrap();
+        git_cmd(&unmerged).args(["add", "own.txt"]).run().unwrap();
+        git_cmd(&unmerged)
+            .args(["commit", "-m", "own work"])
+            .run()
+            .unwrap();
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+
+        for id in ["c1", "c2", "c3"] {
+            let outcome = finalize_merged_worktree_impl(
+                &state,
+                repo.path().to_string_lossy().to_string(),
+                format!("worktree-agent-{id}"),
+                ARCHIVE_AND_DROP_BRANCH.to_string(),
+                false,
+            );
+            assert!(
+                outcome
+                    .as_ref()
+                    .map_or(true, |r| r.action == "needs_confirmation"),
+                "{id} was archived: {:?}",
+                outcome.as_ref().map(|r| &r.action)
+            );
+            assert!(
+                branch_exists(repo.path(), &format!("worktree-agent-{id}")),
+                "{id} branch"
+            );
+        }
+        assert!(dirty.exists() && locked.exists() && unmerged.exists());
+    }
+
+    /// Catches: the Merged badge and the cleanup disagreeing. A Claude Code agent
+    /// branch with nothing of its own, cut from a checked-out feature branch that
+    /// the default branch lacks, shows Merged (it is an ancestor of the checkout's
+    /// HEAD) yet the removal checklist and archive record counted its commits
+    /// against the default branch only. One verdict: whatever the badge calls
+    /// merged, cleanup treats as merged.
+    #[test]
+    fn badge_merged_agent_worktree_is_cleaned_with_its_branch() {
+        let (_cfg, _guard) = isolated_config();
+        let repo = setup_test_repo();
+        let base = base_branch_of(repo.path());
+        let _agent = checked_out_feature_with_agent(repo.path(), "a1");
+        let badge = tuic_git::git::get_merged_branches_impl(repo.path()).unwrap();
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let verdict = inspect_worktree_removal(&state, repo.path(), "worktree-agent-a1");
+        assert!(
+            badge.contains(&"worktree-agent-a1".to_string()),
+            "badge must call it merged (base {base}); got {badge:?}"
+        );
+        assert!(
+            verdict.archive_checklist.can_delete,
+            "cleanup disagrees with badge: {:?}",
+            verdict.archive_checklist
+        );
+        let archived = tuic_git::worktree::archive_worktree(repo.path(), "worktree-agent-a1", None)
+            .expect("archive");
+        let record = git_cmd(repo.path())
+            .args(["worktree", "list", "--porcelain"])
+            .run()
+            .unwrap()
+            .stdout;
+        assert!(record.contains("__archived"), "archived at {archived}");
+        let admin = repo
+            .path()
+            .join(".git/worktrees/agent-a1/tuic-archive.json");
+        let record = fs::read_to_string(&admin).expect("archive record");
+        assert!(
+            !record.contains("unmerged"),
+            "archive record calls merged work unmerged: {record}"
+        );
+    }
+
     #[test]
     fn finalize_deletes_once_the_user_confirms() {
         let (_cfg, _guard) = isolated_config();
@@ -3401,6 +3665,7 @@ mod tests {
                     &linked.to_string_lossy(),
                     safe_only,
                     &[],
+                    None,
                 )
                 .unwrap_err();
                 assert!(
@@ -3440,12 +3705,26 @@ mod tests {
             );
             for path in [&deleted, &moved] {
                 assert!(
-                    remove_orphan_checkout(&state, &repo_path, &path.to_string_lossy(), true, &[])
-                        .is_err(),
+                    remove_orphan_checkout(
+                        &state,
+                        &repo_path,
+                        &path.to_string_lossy(),
+                        true,
+                        &[],
+                        None
+                    )
+                    .is_err(),
                     "automatic guard removed an unavailable registration"
                 );
-                remove_orphan_checkout(&state, &repo_path, &path.to_string_lossy(), false, &[])
-                    .expect("explicit removal remains available");
+                remove_orphan_checkout(
+                    &state,
+                    &repo_path,
+                    &path.to_string_lossy(),
+                    false,
+                    &[],
+                    None,
+                )
+                .expect("explicit removal remains available");
             }
             assert_eq!(
                 assess_orphan_cleanup_with_sessions(&state, &repo_path).unwrap(),
@@ -3462,11 +3741,100 @@ mod tests {
             );
             fs::remove_dir_all(&late).unwrap();
             assert!(
-                remove_orphan_checkout(&state, &repo_path, &late.to_string_lossy(), true, &[])
-                    .is_err()
+                remove_orphan_checkout(
+                    &state,
+                    &repo_path,
+                    &late.to_string_lossy(),
+                    true,
+                    &[],
+                    None
+                )
+                .is_err()
             );
-            remove_orphan_checkout(&state, &repo_path, &late.to_string_lossy(), false, &[])
-                .unwrap();
+            remove_orphan_checkout(
+                &state,
+                &repo_path,
+                &late.to_string_lossy(),
+                false,
+                &[],
+                None,
+            )
+            .unwrap();
+        }
+
+        // Catches: confirmed dirty orphans reaching git without force.
+        #[test]
+        fn confirmed_dirty_orphan_is_removed_2926() {
+            let repo = setup_test_repo();
+            let linked = detached(repo.path(), "dirty-confirmed");
+            fs::write(linked.join("untracked"), "reviewed").unwrap();
+            let state = crate::state::tests_support::make_test_app_state();
+            let fingerprint = tuic_git::worktree::dirty_fingerprint_at(&linked).unwrap().0;
+            remove_orphan_checkout(
+                &state,
+                &repo.path().to_string_lossy(),
+                &linked.to_string_lossy(),
+                false,
+                &[],
+                Some(&fingerprint),
+            )
+            .expect("confirmed dirty checkout must be removed");
+            assert!(!linked.exists());
+        }
+
+        // Catches: a stale confirmation deleting a checkout with newly added work.
+        #[test]
+        fn confirmed_dirty_orphan_rejects_new_changes_2926() {
+            let repo = setup_test_repo();
+            let linked = detached(repo.path(), "dirty-changed");
+            fs::write(linked.join("reviewed"), "reviewed").unwrap();
+            let fingerprint = tuic_git::worktree::dirty_fingerprint_at(&linked).unwrap().0;
+            fs::write(linked.join("new"), "new work").unwrap();
+            let state = crate::state::tests_support::make_test_app_state();
+            assert!(
+                remove_orphan_checkout(
+                    &state,
+                    &repo.path().to_string_lossy(),
+                    &linked.to_string_lossy(),
+                    false,
+                    &[],
+                    Some(&fingerprint)
+                )
+                .is_err()
+            );
+            assert_eq!(fs::read_to_string(linked.join("new")).unwrap(), "new work");
+            assert!(
+                remove_orphan_checkout(
+                    &state,
+                    &repo.path().to_string_lossy(),
+                    &linked.to_string_lossy(),
+                    true,
+                    &[],
+                    None
+                )
+                .is_err()
+            );
+        }
+
+        // Catches: new ignored entries being deleted after review without changing the fingerprint.
+        #[test]
+        fn confirmed_orphan_rejects_new_ignored_entry_2926() {
+            let repo = setup_test_repo();
+            let linked = detached(repo.path(), "ignored-new");
+            fs::write(linked.join(".gitignore"), "ignored*\n").unwrap();
+            let fingerprint = tuic_git::worktree::dirty_fingerprint_at(&linked).unwrap().0;
+            fs::write(linked.join("ignored-new"), "new work").unwrap();
+            let state = crate::state::tests_support::make_test_app_state();
+            let result = remove_orphan_checkout(
+                &state,
+                &repo.path().to_string_lossy(),
+                &linked.to_string_lossy(),
+                false,
+                &[],
+                Some(&fingerprint),
+            );
+            assert!(result.is_err(), "new ignored file must prevent removal");
+            assert!(linked.join("ignored-new").exists());
         }
 
         // Catches: automatic cleanup deleting a checkout rescued by a branch after discovery.
@@ -3501,6 +3869,7 @@ mod tests {
                 &linked.to_string_lossy(),
                 true,
                 &[],
+                None,
             );
             assert!(
                 result.is_err(),

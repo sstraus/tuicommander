@@ -105,7 +105,6 @@ describe("mobile login form", () => {
 	// Plausible bug: a rejected login redirects anyway, or leaves the button dead.
 	it.each([
 		[401, "Wrong username or password."],
-		[429, "Too many attempts. Try again later."],
 		[403, "Login refused: open this page from the TUICommander address."],
 	])("shows the %i refusal and stays on the page", async (status, text) => {
 		mount("", new Response(JSON.stringify({ error: "x" }), { status }));
@@ -113,6 +112,25 @@ describe("mobile login form", () => {
 		expect(document.getElementById("error")?.textContent).toBe(text);
 		expect((document.getElementById("submit") as HTMLButtonElement).disabled).toBe(false);
 		expect(replace).not.toHaveBeenCalled();
+	});
+
+	// Catches (story 2663-9519): a lockout says only "try later", so the owner never
+	// learns the wait or that the QR code signs in now while passwords are refused.
+	it("shows the server's lockout wait and recovery on a 429", async () => {
+		const text = "Too many failed authentication attempts. Try again in 42 s, or sign in now with the QR code.";
+		mount("", new Response(JSON.stringify({ error: text }), { status: 429 }));
+		await submit("boss", "correct");
+		expect(document.getElementById("error")?.textContent).toBe(text);
+		expect((document.getElementById("submit") as HTMLButtonElement).disabled).toBe(false);
+		expect(replace).not.toHaveBeenCalled();
+	});
+
+	it("falls back to the QR recovery hint when a 429 has no readable body", async () => {
+		mount("", new Response("busy", { status: 429 }));
+		await submit("boss", "correct");
+		expect(document.getElementById("error")?.textContent).toBe(
+			"Too many attempts. Try again later, or sign in now with the QR code in TUICommander Settings → Remote Access.",
+		);
 	});
 
 	it("reports an unreachable server and re-enables the button", async () => {

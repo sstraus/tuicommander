@@ -68,6 +68,7 @@ beforeEach(async () => {
 		if (command === "resolve_terminal_path") {
 			const candidate = args?.candidate ?? "";
 			if (candidate.includes("secret")) return { absolute_path: "/secret/private.md", is_directory: false };
+			if (candidate.includes("outerdir")) return { absolute_path: "/outerdir", is_directory: true };
 			if (candidate.includes("shortcut")) return { absolute_path: "/repo-other/private.md", is_directory: false };
 			if (args?.cwd !== "/repo") return null;
 			return { absolute_path: "/repo/docs/guide.md", is_directory: false };
@@ -77,6 +78,7 @@ beforeEach(async () => {
 		if (command === "stat_path") return { exists: true, is_dir: false, size: guide.length };
 		if (command === "fs_read_file") {
 			if (args?.repoPath === "/repo" && args?.file === "docs/guide.md") return guide;
+			if (args?.file === "private.md") return `external ${args.repoPath}`;
 			throw new Error("Read outside the expected repository");
 		}
 		if (command === "list_directory" || command === "list_open_markdown_tabs") return [];
@@ -118,7 +120,7 @@ describe("mobile session output links", () => {
 		expect(rpc).toHaveBeenCalledWith("resolve_terminal_path", expect.objectContaining({ cwd: "/repo" }));
 	});
 
-	it("positions the Markdown editor at a line and refuses a file outside the allowed roots", async () => {
+	it("positions the Markdown editor at a line and opens a file outside the registered repositories from its own folder", async () => {
 		output.text = "docs/guide.md:3 and /secret/private.md";
 		const view = render(() => <MobileApp />);
 		await fireEvent.click(await waitFor(() => view.getByRole("button", { name: "docs/guide.md:3" })));
@@ -130,9 +132,10 @@ describe("mobile session output links", () => {
 		await fireEvent.click(view.getByRole("button", { name: "Back to session" }));
 		// Back remounts the output, which refetches before the links render again.
 		await fireEvent.click(await waitFor(() => view.getByRole("button", { name: "/secret/private.md" })));
-		await waitFor(() => expect(view.getByRole("alert").textContent).toMatch(/outside.*registered repository/i));
-		expect(view.getByText("/secret/private.md", { selector: "[class*='message']" })).toBeTruthy();
-		expect(rpc).not.toHaveBeenCalledWith("fs_read_file", expect.objectContaining({ file: "/secret/private.md" }));
+		await waitFor(() =>
+			expect(view.container.querySelector("#markdown-content")?.textContent).toContain("external /secret"),
+		);
+		expect(rpc).toHaveBeenCalledWith("fs_read_file", { repoPath: "/secret", file: "private.md" });
 	});
 
 	it("opens web URLs outside the PWA and leaves non-Markdown paths as text", async () => {
@@ -150,13 +153,21 @@ describe("mobile session output links", () => {
 		expect(view.queryByRole("button", { name: "version.mdish" })).toBeNull();
 	});
 
-	it("refuses a symlink that the resolver canonicalizes into a sibling repository", async () => {
+	it("opens a symlink that the resolver canonicalizes into a sibling folder from its own folder", async () => {
 		output.text = "/repo/shortcut.md";
 		const view = render(() => <MobileApp />);
 		await fireEvent.click(await waitFor(() => view.getByRole("button", { name: "/repo/shortcut.md" })));
 		await waitFor(() =>
-			expect(view.getByText("/repo-other/private.md", { selector: "[class*='message']" })).toBeTruthy(),
+			expect(rpc).toHaveBeenCalledWith("fs_read_file", { repoPath: "/repo-other", file: "private.md" }),
 		);
+	});
+
+	it("refuses a directory outside the registered repositories and reads nothing from it", async () => {
+		output.text = "/outerdir/notes.md";
+		const view = render(() => <MobileApp />);
+		await fireEvent.click(await waitFor(() => view.getByRole("button", { name: "/outerdir/notes.md" })));
+		await waitFor(() => expect(view.getByRole("alert").textContent).toMatch(/Directory is outside/i));
+		expect(rpc).not.toHaveBeenCalledWith("list_directory", expect.anything());
 		expect(rpc).not.toHaveBeenCalledWith("fs_read_file", expect.anything());
 	});
 });

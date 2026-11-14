@@ -1,4 +1,5 @@
 import { createStore, produce, unwrap } from "solid-js/store";
+import type { SendNowMode } from "../hooks/usePty";
 import type {
 	AcpPlanEntry,
 	AcpSessionId,
@@ -39,7 +40,14 @@ export type AcpNoticeAction =
 	| { kind: "approve"; requestId: string };
 
 export type AcpTranscriptEntry = { messageId?: string; inherited?: boolean } & (
-	| { id: string; kind: "user"; text: string; pending?: boolean; queuedCommandId?: number }
+	| {
+			id: string;
+			kind: "user";
+			text: string;
+			pending?: boolean;
+			queuedCommandId?: number;
+			sendNow?: SendNowMode;
+	  }
 	| { id: string; kind: "agent"; text: string }
 	| { id: string; kind: "thought"; text: string }
 	| { id: string; kind: "tool"; call: AcpToolCall }

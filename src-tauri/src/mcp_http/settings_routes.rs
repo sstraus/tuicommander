@@ -21,13 +21,6 @@ pub(super) async fn settings_action(
         return response.into_response();
     }
     // A browser may replay its proposal on another TCP connection from the same client.
-    Json(
-        api::execute(
-            &state,
-            request,
-            Caller::http(format!("http:{}", addr.ip()), true),
-        )
-        .await,
-    )
-    .into_response()
+    Json(api::execute(&state, request, Caller::http(format!("http:{}", addr.ip()))).await)
+        .into_response()
 }

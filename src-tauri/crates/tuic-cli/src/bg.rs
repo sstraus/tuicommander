@@ -8,11 +8,12 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::{ipc, mcp};
+use crate::ipc;
 
 const WAKE_ATTEMPTS: u64 = 6;
 const INITIAL_RETRY_DELAY: Duration = Duration::from_millis(200);
 
+#[derive(Debug)]
 struct WakeError {
     message: String,
     retryable: bool,
@@ -103,6 +104,7 @@ fn write_marker(caller: &str, status: &Value) -> Result<(), String> {
 }
 
 pub fn launch(log: &str, command: &[String]) -> Result<(), String> {
+    crate::bg_process::timeout()?;
     let caller = std::env::var("TUIC_SESSION").unwrap_or_default();
     if caller.is_empty() {
         eprintln!("tuic: bg requires TUIC_SESSION; nobody would be woken");
@@ -142,12 +144,25 @@ pub fn launch(log: &str, command: &[String]) -> Result<(), String> {
     }
 
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    // Host unavailability must not prevent the detached command from running.
+    // Without launch-time authority its result is retained, never auto-submitted,
+    // unless the host predates wake origins: then it queues as before.
+    let session = caller_session(caller.as_str()).ok();
+    let origin = session
+        .as_ref()
+        .and_then(|session| session["state"]["background_wake_origin"].as_str())
+        .map(str::to_owned)
+        .unwrap_or_default();
+    let legacy_host = session.as_ref().is_some_and(predates_wake_origins);
     write_marker(
         &caller,
         &serde_json::json!({"status": "retrying", "attempts": 0}),
     )?;
-
     let mut runner = Command::new(exe);
+    runner.env("TUIC_BG_COMPLETION_ORIGIN", &origin);
+    runner.env(LEGACY_HOST_ENV, if legacy_host { "1" } else { "0" });
+    #[cfg(unix)]
+    runner.env("TUIC_SOCKET", crate::ipc::socket_path());
     if let Some(id) = tuic_ipc::app_instance::current_app_instance().named_id() {
         runner.env(tuic_ipc::app_instance::APP_INSTANCE_ENV_VAR, id);
     }
@@ -219,22 +234,32 @@ pub fn run(log: &str, caller: &str, command: &[String]) -> Result<(), String> {
     writeln!(output, "tuic bg: command={full_command}")
         .map_err(|e| format!("Cannot write background log header {log}: {e}"))?;
     let stderr = output.try_clone().map_err(|e| e.to_string())?;
-    let code = match Command::new(&command[0])
+    let mut process = Command::new(&command[0]);
+    process
         .args(&command[1..])
         // The command is not the foreground peer. A detached reviewer that
         // inherits its identity can report progress blocked as that peer and
         // strand this runner's completion behind its own confident wait.
-        // Keep the runner's identity for wake/mail, not in the command tree.
+        // Keep the runner's identity for completion delivery, not in the command tree.
         .env_remove("TUIC_SESSION")
         .env_remove("TUIC_PARENT")
+        .env_remove("TUIC_BG_COMPLETION_ORIGIN")
+        .env_remove(LEGACY_HOST_ENV)
         // Stop headerless MCP ancestry recovery at this detached command.
         .env("TUIC_BG_COMMAND", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::from(output.try_clone().map_err(|e| e.to_string())?))
-        .stderr(Stdio::from(stderr))
-        .status()
-    {
-        Ok(status) => status.code().unwrap_or(1),
+        .stderr(Stdio::from(stderr));
+    let code = match crate::bg_process::run(&mut process, crate::bg_process::timeout()?) {
+        Ok((code, true)) => {
+            writeln!(
+                output,
+                "tuic bg: background deadline exceeded; owned command stopped"
+            )
+            .map_err(|e| e.to_string())?;
+            code
+        }
+        Ok((code, false)) => code,
         Err(e) => {
             let _ = writeln!(output, "tuic bg: command failed: {e}");
             127
@@ -260,9 +285,11 @@ pub fn run(log: &str, caller: &str, command: &[String]) -> Result<(), String> {
     let key = format!("bg-{}-{started}", std::process::id());
     let mut acceptance_uncertain = false;
     for attempt in 1..=WAKE_ATTEMPTS {
-        let wake_status = match queue_wake(caller, &wake, &key) {
-            Ok(()) => {
-                serde_json::json!({"status": "queued", "tuic_session": caller, "attempts": attempt})
+        let origin = std::env::var("TUIC_BG_COMPLETION_ORIGIN").unwrap_or_default();
+        let legacy_host = std::env::var(LEGACY_HOST_ENV).is_ok_and(|value| value == "1");
+        let wake_status = match queue_wake(caller, &wake, &key, &origin, legacy_host) {
+            Ok(retained) => {
+                serde_json::json!({"status": if retained { "retained" } else { "queued" }, "tuic_session": caller, "attempts": attempt, "completion": wake})
             }
             Err(queue_error) => {
                 acceptance_uncertain |= queue_error.acceptance_uncertain;
@@ -271,47 +298,16 @@ pub fn run(log: &str, caller: &str, command: &[String]) -> Result<(), String> {
                     "tuic bg: queue wake attempt {attempt} failed: {}",
                     queue_error.message
                 );
-                let message = format!(
-                    "{wake}\ntuic bg: queue wake failed: {}",
-                    queue_error.message
-                );
-                let mail_result = mcp::McpClient::connect()
-                    .and_then(|client| mcp::agent_send(&client, caller, &message))
-                    .and_then(|report| {
-                        if report["delivered"] == true {
-                            Ok(())
-                        } else {
-                            Err(format!(
-                                "Mail stayed inbox-only ({})",
-                                report["delivery_path"]
-                            ))
-                        }
-                    });
-                match mail_result {
-                    Ok(()) => {
-                        serde_json::json!({"status": "mailed", "tuic_session": caller, "attempts": attempt, "queue_error": queue_error.message})
-                    }
-                    Err(mail_error) => {
-                        let _ = writeln!(
-                            output,
-                            "tuic bg: mail wake attempt {attempt} failed: {mail_error}"
-                        );
-                        let error = format!("queue: {}; mail: {mail_error}", queue_error.message);
-                        if queue_error.retryable && attempt < WAKE_ATTEMPTS {
-                            let status = serde_json::json!({"status": "retrying", "tuic_session": caller, "attempts": attempt, "error": error});
-                            write_marker(caller, &status)?;
-                            write_wake_status(&wake_file, &status)?;
-                            sleep_before_wake_retry(attempt, std::thread::sleep);
-                            continue;
-                        }
-                        let status = if acceptance_uncertain {
-                            "uncertain"
-                        } else {
-                            "failed"
-                        };
-                        serde_json::json!({"status": status, "tuic_session": caller, "attempts": attempt, "error": error})
-                    }
+                // Mail is not a second wake transport: it cannot carry the
+                // launch capability through the queue's stop/delivery gate.
+                if queue_error.retryable && attempt < WAKE_ATTEMPTS {
+                    let status = serde_json::json!({"status": "retrying", "tuic_session": caller, "attempts": attempt, "error": queue_error.message, "completion": wake});
+                    write_marker(caller, &status)?;
+                    write_wake_status(&wake_file, &status)?;
+                    sleep_before_wake_retry(attempt, std::thread::sleep);
+                    continue;
                 }
+                serde_json::json!({"status": if acceptance_uncertain { "uncertain" } else { "retained" }, "tuic_session": caller, "attempts": attempt, "error": queue_error.message, "completion": wake})
             }
         };
         write_marker(caller, &wake_status)?;
@@ -329,7 +325,7 @@ fn sleep_before_wake_retry(attempt: u64, sleep: impl FnOnce(Duration)) {
     sleep(INITIAL_RETRY_DELAY * (1 << (attempt - 1)));
 }
 
-fn queue_wake(caller: &str, wake: &str, key: &str) -> Result<(), WakeError> {
+fn caller_session(caller: &str) -> Result<Value, WakeError> {
     let sessions = ipc::get("/sessions").map_err(WakeError::from_io)?;
     if !sessions.is_success() {
         return Err(WakeError::from_http(
@@ -341,20 +337,56 @@ fn queue_wake(caller: &str, wake: &str, key: &str) -> Result<(), WakeError> {
     let rows: Value = sessions
         .json()
         .map_err(|e| WakeError::permanent(e.to_string()))?;
-    let matches: Vec<&str> = rows
+    let matches: Vec<&Value> = rows
         .as_array()
         .ok_or_else(|| WakeError::permanent("Session lookup did not return a list"))?
         .iter()
         .filter(|row| row["tuic_session"].as_str() == Some(caller))
-        .filter_map(|row| row["session_id"].as_str())
         .collect();
-    let [session_id] = matches.as_slice() else {
+    let [session] = matches.as_slice() else {
         return Err(WakeError::permanent(format!(
             "Expected one live session for {caller}, found {}",
             matches.len()
         )));
     };
-    let body = serde_json::json!({"text": wake, "idempotencyKey": key}).to_string();
+    Ok((*session).clone())
+}
+
+// DEFERRED (2026-11-13) — compatibility path for a host that predates
+// `background_wake_origin` (the CLI lands before the app restarts). Remove it
+// with the next host contract change.
+const LEGACY_HOST_ENV: &str = "TUIC_BG_LEGACY_HOST_WAKE";
+
+/// A state object without the field comes from an old host. A missing state is
+/// not proof of an old host: a current host cannot accept that wake either.
+fn predates_wake_origins(session: &Value) -> bool {
+    session["state"]
+        .as_object()
+        .is_some_and(|state| !state.contains_key("background_wake_origin"))
+}
+
+fn queue_wake(
+    caller: &str,
+    wake: &str,
+    key: &str,
+    origin: &str,
+    legacy_host: bool,
+) -> Result<bool, WakeError> {
+    if origin.is_empty() && !legacy_host {
+        return Ok(true); // An unbound legacy runner retains evidence, never wakes.
+    }
+    let session = caller_session(caller)?;
+    if origin.is_empty() && !predates_wake_origins(&session) {
+        return Ok(true); // The host restarted into one that revokes wakes.
+    }
+    let session_id = session["session_id"]
+        .as_str()
+        .ok_or_else(|| WakeError::permanent("Session has no PTY identity"))?;
+    let mut body = serde_json::json!({"text": wake, "idempotencyKey": key});
+    if !origin.is_empty() {
+        body["automaticCompletionOrigin"] = origin.into();
+    }
+    let body = body.to_string();
     let response = ipc::post(&format!("/sessions/{session_id}/queue"), &body)
         .map_err(|e| WakeError::from_io(e).after_post())?;
     if !response.is_success() {
@@ -376,12 +408,33 @@ fn queue_wake(caller: &str, wake: &str, key: &str) -> Result<(), WakeError> {
             response.body
         )));
     }
-    Ok(())
+    Ok(receipt["retained"] == true)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Catches: an unbound runner falls back to ordinary queue/mail authority.
+    #[test]
+    fn missing_completion_origin_retains_evidence_without_contacting_a_wake_transport() {
+        assert!(queue_wake("not-a-live-session", "retained-result", "job", "", false).unwrap());
+    }
+
+    // Catches: a current-host row without state (no accumulator entry) is read as an
+    // old host, so the CLI queues an unrevocable wake that an Escape cannot stop.
+    #[test]
+    fn only_a_state_without_the_origin_field_marks_an_old_host() {
+        let row = |state: Value| serde_json::json!({"session_id": "pty-1", "state": state});
+        assert!(predates_wake_origins(&row(serde_json::json!({}))));
+        assert!(!predates_wake_origins(&row(Value::Null)));
+        assert!(!predates_wake_origins(
+            &serde_json::json!({"session_id": "pty-1"})
+        ));
+        assert!(!predates_wake_origins(&row(
+            serde_json::json!({"background_wake_origin": "o"})
+        )));
+    }
 
     // Catches: division, reversed shifts or an off-by-one exponent collapses the retry backoff.
     #[test]

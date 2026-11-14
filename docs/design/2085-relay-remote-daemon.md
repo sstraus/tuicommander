@@ -1,9 +1,7 @@
 # Desktop access to a remote daemon through the relay
 
-- Story: `2085-721d`, acceptance criterion 1 only.
 - Date: 2026-10-20.
-- Status: **Proposal. Boss approval is required before implementation.**
-- This note does not mark criterion 1 complete: that criterion includes approval.
+- Status: **Proposal.**
 - Scope: one native desktop client and one already-installed headless daemon per relay room. No code changes, deployment, mobile onboarding, or hosted-service claim.
 
 ## 1. Result and roles
@@ -27,18 +25,19 @@ local loopback listener     opaque forwarding          fixed daemon listener
 | Remote daemon | Repositories, sessions, PTYs, existing request handlers/auth, outbound relay agent, fixed local upstream target | Desktop window state, arbitrary relay-requested TCP destinations |
 | Relay | Bearer admission, room occupancy, bounded forwarding, peer-loss hints | Pairing secret, daemon credential, application plaintext, command execution |
 
-The daemon must already be running and configured through host access or a trusted administrator. A relay is not a way to install a daemon on an inaccessible host. Start with an installed daemon; do not add relay-driven SSH deployment or automatic daemon upgrades in this story.
+The daemon must already be running and configured through host access or a trusted administrator. A relay is not a way to install a daemon on an inaccessible host. Start with an installed daemon; do not add relay-driven SSH deployment or automatic daemon upgrades in this design.
 
 ## 2. Observed baseline, not product acceptance
 
-The starting audit is the orchestrator report `reports/tuicommander/2026-10-16-cloud-relay-status.md`, audited at `904970561bcc1d271558c08e5094687a684f11b6`. It says that the hosted service was not deployed and that the prototype was not end-to-end encrypted. No new hosted-service probe was made for this note.
+This proposal does not establish that a hosted service is deployed. The baseline
+prototype does not provide endpoint encryption independent of relay admission.
 
-This note also checks source at `8d6c4430c2a1e1698fb8a8e7b6f6e0e2d0e9f579`. Important differences and seams:
+Source integration seams:
 
 | Source | Observation |
 |---|---|
 | [`tools/relay/src/routes.rs`](../../tools/relay/src/routes.rs), `build_router`, `register` | The relay has `/register` and `/ws/{session_id}`. Registration issues a relay bearer, not an endpoint identity or pairing secret. |
-| [`tools/relay/src/relay.rs`](../../tools/relay/src/relay.rs), `handle_ws` | The current source requires the first `Bearer` frame and atomically checks room ownership, capacity, and token limits. The old audit's admission bugs must not be described as all still present. Rooms still allow only two peers. |
+| [`tools/relay/src/relay.rs`](../../tools/relay/src/relay.rs), `handle_ws` | The current source requires the first `Bearer` frame and atomically checks room ownership, capacity, and token limits. Rooms still allow only two peers. |
 | Same file, `forward_to_others` | `try_send` still silently drops a full peer queue. This cannot carry a reliable tunnel without a defined close/backpressure policy. |
 | [`src-tauri/src/relay_client.rs`](../../src-tauri/src/relay_client.rs), `derive_key`, `connect_and_run` | Encryption still derives from the relay bearer. The decrypted command branch still logs that dispatch is not implemented. Its mobile event bridge is not a remote-daemon transport. |
 | [`src-tauri/src/remote_connection.rs`](../../src-tauri/src/remote_connection.rs), `RemoteTransport` | Saved transports are SSH and Direct. The store and existing connect/disconnect commands are the connection-management seam. |
@@ -71,6 +70,10 @@ P and D are separate values with separate storage. Existing `RemotePairingToken`
 7. Advertise `connected` only after those probes succeed. Start the existing mirror and allow frontend routing at that point, not at WSS open.
 
 A copied bundle is a capability: anyone holding it can impersonate either endpoint for that pairing. Initial scope is one desktop/daemon pair, not multi-user authorization. Delete pairing means remove P on the daemon, terminate its channel, and delete the desktop's stored association. Rotate P and use a fresh room/R after bundle exposure. Revoking P alone does not revoke an already disclosed D; rotate the daemon credential too, with an explicit warning that other direct clients using it must re-pair. Do not claim per-client revocation until the daemon supports it.
+
+**Live pairing changes (2700-c56d).** The headless daemon re-reads its stored pairing every 2 seconds. A pairing stored while it runs starts the agent; a replaced pairing restarts it on the new room and secret; a deleted pairing stops it, which closes the relay connection and any attached desktop session. The read bypasses the daemon's in-process cache, because `tuic-remote --relay-pair` runs as a separate process. An unreadable vault keeps the running agent: a read error is not a deletion. A daemon started with a credential file (`select_credential_file`) has no other writer to follow, so it keeps the pairing until restart.
+
+**Relay registration stays anonymous, with these bounds (decision, 2700-c56d).** `POST /register` issues a relay bearer R, and R is admission only. This matches the threat model of one developer with his own machines. The bounds are: R alone opens no upstream socket on the daemon, because the Noise handshake with P comes first; the relay rate-limits registration per IP (`RELAY_RATE_LIMIT_PER_HOUR`, default 10); a room holds two peers and a token holds a limited number of sessions (`RELAY_MAX_SESSIONS_PER_TOKEN`, default 5). An operator who wants no anonymous registration pre-provisions R and sets `TUIC_RELAY_TOKEN` instead of `--relay-register`, and sets the registration rate limit on the relay low (`0` means unlimited). A relay-side authenticated owner is not built: it would add an identity system that no named threat in this model needs.
 
 ### Encrypted channel requirements
 
@@ -144,9 +147,9 @@ Reconnect means **reattach**, not recreate. Keep daemon-issued session UUIDs and
 
 Relay room attachment does not itself count as a live user for idle lifetime. Existing HTTP SSE/PTY subscriptions reach the daemon and use its existing client counters. Loss must close those upstream sockets. Recommend installed-daemon operation for this scope; if the operator chooses a finite survive time, warn that it may expire while only waiting in a relay room and desktop reconnect cannot restart that host process.
 
-## 6. Open choices for Boss
+## 6. Design choices
 
-All boxes are intentionally unchecked. Recommendations are not approval.
+The following options remain proposals.
 
 - [ ] **Transport adapter: use the backend loopback byte tunnel (recommended).** It preserves HTTP, SSE, WS and backend consumers with one adapter. Cost: logical stream framing, flow control and a loopback listener. Alternative: relay-native RPC plus explicit event/PTY streams; it avoids the listener but adds adapters to every frontend/backend consumer and risks a parallel command surface. Do not choose a new command dispatcher.
 - [ ] **Pairing: host-generated, high-entropy bundle through a trusted independent channel (recommended).** It requires one host-side setup action but works without inbound access. Alternative: manually provision the same random secret on both endpoints. A short relay-issued code alone is not an independent secret; a short-code PAKE flow would need a separate reviewed design.
@@ -154,9 +157,9 @@ All boxes are intentionally unchecked. Recommendations are not approval.
 - [ ] **Initial topology: dedicated two-peer room, one installed daemon and one desktop (recommended).** It matches current capacity and limits lifecycle ambiguity. Multiple desktops require separate pairings/rooms and a separate review of daemon-credential revocation; increasing room capacity alone is not sufficient.
 - [ ] **Recovery: fail in-flight mutations and reattach without replay (recommended).** This preserves current handler contracts and prevents reconnect-created duplicates. Transparent retry would require backend idempotency and receipt semantics, beyond this note's scope.
 
-Approval must record the selected options and any changes to the scope. Only then can criterion 1 be checked and implementation begin.
+Select the transport, pairing protocol and topology before implementation.
 
-## 7. Smallest implementation sequence after approval
+## 7. Implementation sequence
 
 Each step must preserve a runnable direct/SSH path; no deployment is required to validate the tunnel.
 
@@ -167,5 +170,3 @@ Each step must preserve a runnable direct/SSH path; no deployment is required to
 5. **One local end-to-end harness, then failure cases.** Run a standalone local relay, isolated headless daemon and a desktop transport client using the production runtime adapter, not the daemon's API directly. Make the daemon address unavailable to that client except through the adapter. Register/attach outbound, list a fixture repository and sessions, create one PTY, send a deterministic command through the existing submit/input contract, and assert output through the existing terminal stream. Wrong P must fail before any command executes. Drop/restart the relay and restart the daemon, reconnect, and prove no extra create request, no duplicate session row, clean initial terminal state, typed disconnect and successful recovery. Count daemon-side creations to catch invisible duplicates, not only visible rows. Drop the reply after a create to prove uncertain mutations are not retried. Use setup budgets separate from asserted disconnect deadlines; retain harness logs with secrets redacted.
 
 Existing source tests to retain include `remote_mirror::tests::every_stream_reconnect_re_reads_the_session_list`, `a_stream_that_stops_speaking_is_retired_rather_than_awaited_forever`, and the remote-lifetime counter tests. They protect unchanged consumers; they do not prove a relay implementation exists.
-
-Implementation validation belongs to the coordinator's batch gates. Rust commands use the rb build-slot runner and targeted filters; frontend checks use the local build-slot runner. No Rust build, frontend suite, desktop instance, browser, or network registration was started for this documentation task. A design review cannot substitute for the later integration test in criterion 5.

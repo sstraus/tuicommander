@@ -21,5 +21,19 @@ include!("codex_binding_tests.rs");
 include!("question_parity_tests.rs");
 
 include!("grok_question_parity_tests.rs");
+include!("grok_hook_test_support.rs");
+include!("grok_hook_tests.rs");
+include!("hook_side_channel_tests.rs");
 include!("ego_question_parity_tests.rs");
 include!("codex_question_parity_tests.rs");
+
+include!("codex_tool_tests.rs");
+include!("codex_children_tests.rs");
+
+include!("codex_tool_capture_tests.rs");
+
+include!("claude_hook_test_support.rs");
+include!("claude_hook_tests.rs");
+include!("tool_readout_tests.rs");
+
+include!("ego_events_tests.rs");

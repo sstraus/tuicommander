@@ -74,13 +74,17 @@ const session: SessionInfo = {
 	worktree_branch: null,
 	state: { awaiting_input: false, rate_limited: false, last_activity_ms: 1 },
 };
+// The cold transform of these lazy screens takes 3-5 s alone and passed the
+// default 10 s hook bound in a loaded full-suite run. This bound is setup, not
+// behavior, so it is sized so that load cannot fail it.
+const PREWARM_TIMEOUT_MS = 60_000;
 beforeAll(async () => {
 	await Promise.all([
 		import("../screens/FilesScreen"),
 		import("../screens/SessionDetailScreen"),
 		import("../mobileTheme"),
 	]);
-});
+}, PREWARM_TIMEOUT_MS);
 beforeEach(() => {
 	tabs = [tab];
 	vi.stubGlobal("innerWidth", 390);

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# pre-commit — two gates, independent of each other:
+# pre-commit — three gates, independent of each other:
 #   1. Makefile `TUIC_APP_INSTANCE` scope (see below; no bypass but --no-verify)
+#   F. landing's cargo fmt / biome check on staged Rust and TS (bypass: TUIC_SKIP_FORMAT_GATE=1)
 #   2. the agent-state fixture gate (bypass: TUIC_SKIP_FIXTURE_GATE=1)
 #
-# Both stand down during merge / cherry-pick / revert conflict resolution — you
+# All stand down during merge / cherry-pick / revert conflict resolution — you
 # did not author those lines — and neither blocks on a verification failure.
 #
 # ---------------------------------------------------------------------------
@@ -22,6 +23,9 @@
 #   • only ADDED/REMOVED lines count — a change elsewhere in pty.rs is invisible;
 #   • comment-only and blank-line changes are stripped — a doc edit or a rustfmt
 #     reflow is not a behaviour change;
+#   • formatting-only hunks (reflow, trailing commas) and pure moves of whole items (fn/mod/impl…) are
+#     dropped; a moved statement never is (fixture-production-diff.py), and a plain `.awaiting_input` read is
+#     not a detection symbol — only writes, declarations and fn names are;
 #   • outside chrome.rs (detection end to end) a detection symbol must be named
 #     either by a changed line or by the hunk's enclosing function. Touching
 #     pty.rs is not the trigger; touching `awaiting_input`, or any line inside
@@ -32,7 +36,8 @@
 # symbol list has drifted; tighten it rather than teaching people to bypass.
 #
 # Escape hatch for a rename or refactor that genuinely needs no capture:
-#   TUIC_SKIP_FIXTURE_GATE=1 git commit ...   (or git commit --no-verify)
+#   TUIC_SKIP_FIXTURE_GATE=1 git commit ...  plus a `Fixture-Gate-Skip: <reason>` trailer
+#   (AGENTS.md says when this is allowed; report-fixture-gate-skips.sh lists the uses)
 set -euo pipefail
 
 git_dir="$(git rev-parse --git-dir 2>/dev/null)" || exit 0
@@ -67,7 +72,64 @@ if git diff --cached --name-only --diff-filter=ACMR | grep -qx 'Makefile'; then
 fi
 
 # --------------------------------------------------------------------------
+# Gate F — staged formatting. Landing refuses unformatted Rust/TS, and each
+# refusal costs a fixer round (orchestrator story 256-e3fc). It runs landing's
+# own checks — `cargo fmt --check` in src-tauri (per-crate edition, members
+# only) and `biome check` on src/ — and refuses only staged paths they report.
+# Like Gate 1 it reads the working tree, not the index. A missing tool, or a
+# check that fails without naming a file (parse error), skips: never block on
+# tooling.
+hook_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+top="$(pwd -P)"
+staged="$(mktemp)"
+trap 'rm -f "$staged"' EXIT
+[ "${TUIC_SKIP_FORMAT_GATE:-}" = "1" ] ||
+  git diff --cached --name-only --diff-filter=ACMR -- 'src-tauri/*.rs' 'src/*.ts' 'src/*.tsx' > "$staged"
+fix_rs=""
+fix_ts=""
+if grep -q '\.rs$' "$staged" && [ -f src-tauri/Cargo.toml ] && command -v cargo >/dev/null; then
+  while IFS= read -r f; do
+    f="${f#"$top"/}"
+    grep -qxF -- "$f" "$staged" && fix_rs="$fix_rs '$f'"
+  done < <(cd src-tauri && cargo fmt --check --message-format short 2>/dev/null || true)
+fi
+biome="$top/node_modules/.bin/biome"
+if grep -Eq '\.tsx?$' "$staged" && [ -x "$biome" ]; then
+  while IFS= read -r f; do
+    grep -qxF -- "$f" "$staged" && case "$fix_ts" in *"'$f'"*) ;; *) fix_ts="$fix_ts '$f'" ;; esac
+  done < <(grep -E '\.tsx?$' "$staged" | tr '\n' '\0' |
+    xargs -0 "$biome" check --no-errors-on-unmatched --reporter=github 2>/dev/null |
+    sed -n 's/^::error [^:]*file=\([^,]*\),.*/\1/p' || true)
+fi
+
+if [ -n "$fix_rs$fix_ts" ]; then
+  printf '\n\033[1;31m✗ pre-commit blocked:\033[0m landing format check fails on staged files:%s%s\n\nFix, review, then stage the result (git add -p keeps other unstaged edits out):\n' "$fix_rs" "$fix_ts" >&2
+  [ -z "$fix_rs" ] || printf '  cd src-tauri && cargo fmt\n' >&2
+  [ -z "$fix_ts" ] || printf '  pnpm exec biome check --fix%s\n' "$fix_ts" >&2
+  exit 1
+fi
+
+# --------------------------------------------------------------------------
 # Gate 2 — the agent-state fixture gate.
+
+# Every committed .tcap under src-tauri needs its replay-oracle capture and a
+# corpus.jsonl entry, or replay_oracle_all_committed_tcap_preserves_chunk_decisions
+# fails at landing (3018-a4fd). The skip variable does not cover this: no reason
+# makes that test pass.
+oracle_dir='src-tauri/src/fixtures/replay_oracle'
+missing_oracle=""
+while IFS= read -r f; do
+  if ! git cat-file -e ":$oracle_dir/captures/$f.jsonl" 2>/dev/null ||
+    ! git show ":$oracle_dir/corpus.jsonl" 2>/dev/null | grep -Fq "\"fixture\":\"$f\""; then
+    missing_oracle="$missing_oracle $f"
+  fi
+done < <(git diff --cached --name-only --diff-filter=ACR -- 'src-tauri/*.tcap')
+if [ -n "$missing_oracle" ]; then
+  printf '\n\033[1;31m✗ pre-commit blocked:\033[0m .tcap fixture without its replay-oracle capture:%s\n\n' "$missing_oracle" >&2
+  printf '  Run scripts/replay-oracle.sh regenerate captures/<path>.tcap.jsonl,corpus.jsonl,\n  review the result, and stage it under %s/.\n' "$oracle_dir" >&2
+  exit 1
+fi
+
 [ "${TUIC_SKIP_FIXTURE_GATE:-}" = "1" ] && exit 0
 
 fixtures_dir='src-tauri/src/fixtures/agent_prompts'
@@ -92,11 +154,10 @@ src-tauri/src/mcp_http/session.rs
 
 # The awaiting set/clear sites, the parsers they read, and the OSC that feeds
 # them. 7770 is the TUIC hook's state sequence.
-detection_symbols='awaiting_input|question_confident|question_text|question-cleared|suppress_heuristic_question|rearm_awaiting_for_open_dialog|find_chrome_cutoff|find_agent_chrome_cutoff|find_ego_composer|parse_intent|structured_token_anchor|intent_anchor_pattern|INTENT_ANCHOR_RE|parse_clean_lines|parse_choice_prompt|parse_grok_question|parse_ego_approval|parse_ego_question|parse_ego_free_text_question|footer_end|option_text|is_question_boundary|parse_slash_menu|is_ink_dialog_footer_row|resolve_choice_prompt_input|raw_stream_events|provider_recovery|ProviderRecovery|7770|injection_delivery_uncertain|recover_uncertain_injection_on_empty_composer|detect_ego_screen_activity'
+detection_symbols='awaiting_input|question_confident|question_text|question-cleared|suppress_heuristic_question|rearm_awaiting_for_open_dialog|find_chrome_cutoff|find_agent_chrome_cutoff|find_ego_composer|parse_intent|structured_token_anchor|intent_anchor_pattern|INTENT_ANCHOR_RE|parse_clean_lines|parse_choice_prompt|parse_grok_question|parse_ego_approval|parse_ego_question|parse_ego_free_text_question|footer_end|option_text|is_question_boundary|parse_slash_menu|is_ink_dialog_footer_row|resolve_choice_prompt_input|raw_stream_events|provider_recovery|ProviderRecovery|7770|injection_delivery_uncertain|recover_uncertain_injection_on_empty_composer|detect_ego_screen_activity|native_state|NativeActivity|native_idle_claim|unacknowledged_submission_is_stale'
 
 # Only framed captures with provenance satisfy production edits; a handwritten raw
 # fixture or a documentation-only addition is not recorded external evidence.
-hook_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if python3 "$hook_dir/fixture-production-diff.py" --capture; then
   exit 0
 fi
@@ -112,6 +173,13 @@ code_changes() {
     | grep -vE '^(\+\+\+|---) ' \
     | sed -E 's/^[-+][[:space:]]*//' \
     | grep -vE '^(//|/\*|\*|$)' || true
+}
+
+# A plain read of a detection field (`.awaiting_input` not followed by an
+# assignment) is a consumer such as push scheduling, not detection. Writes,
+# declarations and fn names keep the symbol and still count.
+strip_field_reads() {
+  perl -pe 'unless (/&mut\s+[\w.]*\.(?:awaiting_input|question_confident|question_text)\b/) { s/\.(?:awaiting_input|question_confident|question_text)\b(?!\s*(?:[-+*\/%|&^]|<<|>>)?=[^=])(?!\.(?:take|clear|push|push_str|insert|replace|set|get_or_insert\w*|as_mut|truncate|remove)\b)//g }'
 }
 
 # The function enclosing each hunk, off the `@@ ... @@ <ctx>` header. Without it
@@ -141,7 +209,7 @@ offenders=()                     # "path — symbol symbol" lines to report
 
 for f in $scoped_files; do
   d="$(staged_diff "$f")"
-  hits="$(printf '%s\n%s\n' "$(code_changes "$d")" "$(hunk_contexts "$d")" \
+  hits="$(printf '%s\n%s\n' "$(code_changes "$d" | strip_field_reads)" "$(hunk_contexts "$d")" \
     | grep -oE "$detection_symbols" | sort -u | tr '\n' ' ' || true)"
   [ -n "$hits" ] && offenders+=("$f — ${hits% }")
 done
@@ -171,6 +239,6 @@ still roll past the bytes that prove the fix, so record them before they go.
     "Awaiting-signal fixtures" block in src-tauri/src/pty/tests.rs.
 
   • Rename, refactor or no behaviour change:
-      TUIC_SKIP_FIXTURE_GATE=1 git commit ...   (or git commit --no-verify)
+      TUIC_SKIP_FIXTURE_GATE=1 git commit ...  with a Fixture-Gate-Skip: <reason> trailer
 EOF
 exit 1

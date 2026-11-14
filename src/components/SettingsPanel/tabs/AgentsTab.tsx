@@ -894,9 +894,10 @@ const AgentRow: Component<{
 	const display = () => AGENT_DISPLAY[props.agentType];
 	const configs = () => configStore.getRunConfigs(props.agentType);
 	const supportsMcp = () => MCP_SUPPORT[props.agentType];
-	const supportsHooks = () => HOOK_SUPPORT[props.agentType];
-	const supportsLaunchSignals = () => props.agentType === "claude" || props.agentType === "codex";
-	const supportsGlobalHooks = () => ["codex", "gemini", "grok", "opencode"].includes(props.agentType);
+	// Availability comes from the machine whose configuration this row edits.
+	const supportsHooks = () => HOOK_SUPPORT[props.agentType] && hookState() != null && hookState() !== "unsupported";
+	const supportsLaunchSignals = () => supportsHooks() && (props.agentType === "claude" || props.agentType === "codex");
+	const supportsGlobalHooks = () => ["codex", "gemini", "grok", "opencode", "pi"].includes(props.agentType);
 
 	/**
 	 * The MCP bridge is installed on this machine only.
@@ -918,18 +919,28 @@ const AgentRow: Component<{
 		}
 	};
 
+	let hookStateRequest = 0;
 	const loadHookState = async () => {
-		if (!supportsHooks() || (!isTauri() && !machine())) return;
+		if (!HOOK_SUPPORT[props.agentType]) return;
+		const request = ++hookStateRequest;
 		try {
 			const st = await rpc<AgentHookState>("get_agent_hook_state", { agentType: props.agentType }, machine());
-			setHookState(st);
+			if (request === hookStateRequest) setHookState(st);
 		} catch (err) {
 			appLogger.error("config", `Failed to get hook state for ${props.agentType}`, err);
 		}
 	};
 
+	createEffect(
+		on(machine, () => {
+			++hookStateRequest;
+			setHookState(null);
+			if (expanded()) void loadHookState();
+		}),
+	);
+
 	const handleHookToggle = async () => {
-		if (hookLoading()) return;
+		if (hookLoading() || !supportsHooks()) return;
 		setHookLoading(true);
 		try {
 			const next = !(configStore.getHookInstrumentation(props.agentType) ?? false);
@@ -945,7 +956,7 @@ const AgentRow: Component<{
 	};
 
 	const handleNativeStatusToggle = async () => {
-		if (hookLoading()) return;
+		if (hookLoading() || !supportsHooks()) return;
 		setHookLoading(true);
 		try {
 			const next = !configStore.getNativeStatusSignals(props.agentType);
@@ -1158,7 +1169,7 @@ const AgentRow: Component<{
 						</SettingRow>
 					</ExpertSetting>
 
-					<Show when={props.agentType === "claude" || props.agentType === "codex"}>
+					<Show when={props.agentType === "claude" || props.agentType === "codex" || props.agentType === "ego"}>
 						<ExpertSetting
 							configKey="agent_settings.skip_trust_dialog"
 							value={configStore.state.agents[props.agentType]?.skip_trust_dialog ?? null}
@@ -1696,6 +1707,34 @@ export const AgentsTab: Component<AgentsTabProps> = (props) => {
 									</>
 								)}
 							</Show>
+
+							<SettingRow
+								label="Workflow agent profile"
+								hint="Run configuration that every workflow Agent step launches with. Without a choice, a workflow run stops when several agents have a default."
+							>
+								{(id, descriptionId) => (
+									<Select
+										data-setting-id="agents.workflow_profile"
+										id={id}
+										aria-describedby={descriptionId()}
+										value={activeStore().getWorkflowProfile() ?? ""}
+										onChange={(e) => void activeStore().setWorkflowProfile(e.currentTarget.value || null)}
+									>
+										<option value="">— Not chosen —</option>
+										<For each={ALL_AGENT_TYPES.filter((t) => t !== "api")}>
+											{(type) => (
+												<For each={activeStore().getRunConfigs(type)}>
+													{(cfg) => (
+														<option value={cfg.name}>
+															{cfg.name} ({AGENTS[type].name})
+														</option>
+													)}
+												</For>
+											)}
+										</For>
+									</Select>
+								)}
+							</SettingRow>
 
 							<div class={a.agentList}>
 								<For each={sortedAgents()}>

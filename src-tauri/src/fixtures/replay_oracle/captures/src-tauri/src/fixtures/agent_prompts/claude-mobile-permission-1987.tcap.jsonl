@@ -68,5 +68,6 @@
 {"record":63,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":64,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":65,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
-{"record":66,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":66,"event":{"type":"choice-prompt","title":"Do you want to proceed?","options":[{"key":"1","label":"Yes","highlighted":true,"destructive":false},{"key":"2","label":"Yes, and always allow access to /Users/stefano.straus/Gits/.tmp/mobile-b/scratch from this project","highlighted":false,"destructive":false},{"key":"3","label":"Yes, and switch to auto mode · auto mode handles these prompts for you","highlighted":false,"destructive":false},{"key":"4","label":"No","highlighted":false,"destructive":true}],"dismiss_key":"cancel","amend_key":"amend","_turn_epoch":0}}
+{"record":66,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Do you want to proceed?","confident":true,"last_question":null,"choice_sig":"Do you want to proceed?|1,2,3,4","fullscreen":false}}
 {"ring_len":13440}

@@ -1,10 +1,15 @@
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, normalize } from "node:path";
+import { cleanup, fireEvent, render } from "@solidjs/testing-library";
+import { createComponent } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { IdeLauncher } from "../../components/IdeLauncher/IdeLauncher";
 import { createRepositoryRefreshCoordinator } from "../../hooks/git/createRepositoryRefreshCoordinator";
+import { keptReason } from "../../hooks/git/workspaceCleanupDecision";
 import { buildAgentSeed, useGitOperations } from "../../hooks/useGitOperations";
 import * as platform from "../../platform";
+import { activityStore } from "../../stores/activityStore";
 import { appLogger } from "../../stores/appLogger";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { editorTabsStore } from "../../stores/editorTabs";
@@ -12,6 +17,7 @@ import { getForRepo as getFocusForRepo, recordTerminalRepo } from "../../stores/
 import { githubStore } from "../../stores/github";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { paneLayoutStore, resetGroupCounter } from "../../stores/paneLayout";
+import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { repoSettingsStore } from "../../stores/repoSettings";
 import { repositoriesStore } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
@@ -103,6 +109,26 @@ describe("buildAgentSeed", () => {
 });
 
 describe("useGitOperations", () => {
+	/** A merged, clean, fully proven inspection; every test starts from this. */
+	const mergedLifecycle = () => ({
+		dirtyFingerprint: "confirmed-worktree",
+		dirtyFiles: 0,
+		commitStatus: "merged",
+		proofSource: "ancestry",
+		tip: "tip-1",
+		base: "base-1",
+		removalSafety: "safe",
+	});
+
+	/** Phase 2 result proving the named workspaces merged, as the PR proof does. */
+	const phase2Merged = (...ids: string[]) => ({
+		diff_stats: {},
+		last_commit_ts: {},
+		workspace_statuses: Object.fromEntries(
+			ids.map((id) => [id, { dirty_files: 0, commit_status: "merged", removal_safety: "safe" }]),
+		),
+	});
+
 	const mockRepo = {
 		getInfo: vi.fn(),
 		getDiffStats: vi.fn().mockResolvedValue({ additions: 0, deletions: 0 }),
@@ -136,12 +162,7 @@ describe("useGitOperations", () => {
 			.fn()
 			.mockResolvedValue({ success: true, stashed: false, previous_branch: "main", new_branch: "feature" }),
 		runSetupScript: vi.fn().mockResolvedValue({ exit_code: 0, stdout: "", stderr: "" }),
-		getWorkspaceLifecycle: vi.fn().mockResolvedValue({
-			dirtyFingerprint: "confirmed-worktree",
-			dirtyFiles: 0,
-			commitStatus: "merged",
-			removalSafety: "safe",
-		}),
+		getWorkspaceLifecycle: vi.fn().mockResolvedValue(mergedLifecycle()),
 	};
 
 	const mockPty = {
@@ -165,7 +186,7 @@ describe("useGitOperations", () => {
 
 	let gitOps: ReturnType<typeof useGitOperations>;
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		vi.useFakeTimers();
 		resetStores();
 		paneLayoutStore.reset();
@@ -181,6 +202,11 @@ describe("useGitOperations", () => {
 		mockRepo.assessOrphanCleanup.mockImplementation(async (repoPath: string) =>
 			(await mockRepo.detectOrphanWorktrees(repoPath)).map((path: string) => ({ path, safe: true })),
 		);
+		// Tests below install persistent implementations on these two; restore the defaults.
+		mockRepo.getWorkspaceLifecycle.mockReset();
+		mockRepo.getWorkspaceLifecycle.mockResolvedValue(mergedLifecycle());
+		mockRepo.finalizeMergedWorktree.mockReset();
+		mockRepo.finalizeMergedWorktree.mockResolvedValue({ merged: true, action: "archived", archive_path: null });
 		mockPty.canSpawn.mockResolvedValue(true);
 		mockDialogs.confirmRemoveRepo.mockResolvedValue(true);
 		mockDialogs.confirmRemoveWorktree.mockResolvedValue(true);
@@ -191,6 +217,8 @@ describe("useGitOperations", () => {
 		// Both fail SAFE (an unanswered question reads as dirty), so a bare
 		// `resolves undefined` mock would make every ask-mode test look dirty.
 		mockInvoke.mockImplementation(defaultInvoke);
+		await activityStore.hydrate();
+		await repoSettingsStore.hydrate();
 		mockRepo.switchBranch.mockResolvedValue({
 			success: true,
 			stashed: false,
@@ -1193,6 +1221,22 @@ describe("useGitOperations", () => {
 	});
 
 	describe("handleNewTab", () => {
+		it("catches the Open in shell entry launching an agent or using the wrong worktree", async () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setWorkspace("/repo", "feature", { worktreePath: "/repo/feature" });
+			repositoriesStore.setActive("/repo");
+			repositoriesStore.setActiveWorkspace("/repo", "feature");
+			const view = render(() =>
+				createComponent(IdeLauncher, { repoPath: "/repo/feature", onNewShell: gitOps.handleNewTab }),
+			);
+			fireEvent.click(view.getByRole("button", { name: "Choose editor" }));
+			fireEvent.click(view.getByRole("button", { name: "TUICommander shell" }));
+			await vi.waitFor(() => expect(repositoriesStore.get("/repo")?.workspaces.feature.terminals).toHaveLength(1));
+			const id = repositoriesStore.get("/repo")!.workspaces.feature.terminals[0];
+			expect(terminalsStore.get(id)?.cwd).toBe("/repo/feature");
+			expect(terminalsStore.get(id)?.agentType).toBeNull();
+			cleanup();
+		});
 		it("creates terminal in active branch", async () => {
 			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
 			repositoriesStore.setWorkspace("/repo", "main", { worktreePath: "/repo" });
@@ -2866,31 +2910,41 @@ describe("useGitOperations", () => {
 			expect(repo?.workspaces["feature-a"]?.additions).toBe(0);
 		});
 
-		it("auto-archive runs after Phase 1, before Phase 2", async () => {
+		it("PR-only lifecycle merged is swept after Phase 2", async () => {
 			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
 			repositoriesStore.setWorkspace("/repo", "main", { worktreePath: "/repo" });
 			repoSettingsStore.getOrCreate("/repo", "Repo");
 			repoSettingsStore.update("/repo", { autoArchiveMerged: true });
 
-			let archiveCalledBeforeDiffStats = false;
+			let archiveCalledAfterDiffStats = false;
 
 			mockRepo.getRepoStructure.mockResolvedValue({
 				worktree_paths: wtPaths({ main: "/repo", "merged-branch": "/repo/wt-merged" }),
-				merged_branches: ["merged-branch"],
+				merged_branches: [],
 			});
 			mockRepo.finalizeMergedWorktree.mockImplementation(async () => {
-				archiveCalledBeforeDiffStats = !mockRepo.getRepoDiffStats.mock.calls.length;
+				archiveCalledAfterDiffStats = mockRepo.getRepoDiffStats.mock.calls.length > 0;
 				return { merged: true, action: "archived", archive_path: null };
 			});
+			// Phase 2 carries the PR proof (merged_github_pr_proves_tip_monitoring).
 			mockRepo.getRepoDiffStats.mockResolvedValue({
 				diff_stats: { "/repo": { additions: 0, deletions: 0 } },
 				last_commit_ts: {},
+				workspace_statuses: {
+					"merged-branch": { dirty_files: 0, commit_status: "merged", removal_safety: "safe" },
+				},
 			});
 
 			await gitOps.refreshAllBranchStats();
 
-			expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith("/repo", "merged-branch", "archive");
-			expect(archiveCalledBeforeDiffStats).toBe(true);
+			expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith(
+				"/repo",
+				"merged-branch",
+				"archive_and_drop_branch",
+				false,
+				"confirmed-worktree",
+			);
+			expect(archiveCalledAfterDiffStats).toBe(true);
 		});
 	});
 
@@ -4843,8 +4897,94 @@ describe("useGitOperations", () => {
 
 			await gitOps.refreshAllBranchStats();
 
-			expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith("/repo", "feature/x", "archive");
+			expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith(
+				"/repo",
+				"feature/x",
+				"archive_and_drop_branch",
+				false,
+				"confirmed-worktree",
+			);
 			expect(mockSetStatusInfo).toHaveBeenCalledWith("Auto-archived 1 merged worktree(s)");
+		});
+
+		// Catches: every refresh running the full removal preflight (status, submodules,
+		// merge proof, GitHub query) on worktrees that Phase 2 already proved unmerged.
+		it("inspects only worktrees that Phase 2 reports merged", async () => {
+			repoSettingsStore.getOrCreate("/repo", "Repo");
+			repoSettingsStore.update("/repo", { autoArchiveMerged: true });
+			mockRepo.getRepoStructure.mockResolvedValue({
+				worktree_paths: wtPaths({
+					main: "/repo",
+					"feature/x": "/repo/.worktrees/feature-x",
+					busy: "/repo/.worktrees/busy",
+				}),
+				merged_branches: [],
+			});
+			mockRepo.getRepoDiffStats.mockResolvedValue({
+				diff_stats: {},
+				last_commit_ts: {},
+				workspace_statuses: {
+					"feature/x": { dirty_files: 0, commit_status: "merged", removal_safety: "safe" },
+					busy: { dirty_files: 3, commit_status: "unmerged", removal_safety: "needs_review" },
+				},
+			});
+
+			await gitOps.refreshAllBranchStats();
+
+			expect(mockRepo.getWorkspaceLifecycle).toHaveBeenCalledWith("/repo", "feature/x");
+			expect(mockRepo.getWorkspaceLifecycle).not.toHaveBeenCalledWith("/repo", "busy");
+		});
+
+		// Catches: a merged worktree that every inspection keeps (ignored build output,
+		// a lock) being re-inspected from scratch on every refresh, forever.
+		it("re-inspects a kept merged worktree only after the re-inspection interval", async () => {
+			repoSettingsStore.getOrCreate("/repo", "Repo");
+			repoSettingsStore.update("/repo", { autoArchiveMerged: true });
+			mockRepo.getWorkspaceLifecycle.mockResolvedValue({ ...mergedLifecycle(), removalSafety: "requires_force" });
+
+			await gitOps.refreshAllBranchStats(undefined, { immediate: true });
+			await gitOps.refreshAllBranchStats(undefined, { immediate: true });
+			expect(mockRepo.getWorkspaceLifecycle).toHaveBeenCalledTimes(1);
+
+			vi.setSystemTime(Date.now() + 10 * 60_000);
+			await gitOps.refreshAllBranchStats(undefined, { immediate: true });
+			expect(mockRepo.getWorkspaceLifecycle).toHaveBeenCalledTimes(2);
+			expect(mockRepo.finalizeMergedWorktree).not.toHaveBeenCalled();
+		});
+
+		// Catches: a repo never opened in repo settings has no per-repo entry, and the
+		// sweep read that as "off" instead of inheriting the global autoArchiveMerged.
+		it("archives merged linked worktrees from the global default when the repo has no settings entry", async () => {
+			const previous = repoDefaultsStore.state.autoArchiveMerged;
+			repoDefaultsStore.setAutoArchiveMerged(true);
+			onTestFinished(() => repoDefaultsStore.setAutoArchiveMerged(previous));
+			expect(repoSettingsStore.get("/repo")).toBeUndefined();
+
+			await gitOps.refreshAllBranchStats();
+
+			expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith(
+				"/repo",
+				"feature/x",
+				"archive_and_drop_branch",
+				false,
+				"confirmed-worktree",
+			);
+		});
+
+		// Catches: a locked or dirty merged worktree being skipped with no reason on its row.
+		it("records on the row why a merged worktree was kept", async () => {
+			repoSettingsStore.getOrCreate("/repo", "Repo");
+			repoSettingsStore.update("/repo", { autoArchiveMerged: true });
+			mockRepo.finalizeMergedWorktree.mockResolvedValue({
+				merged: true,
+				action: "needs_confirmation",
+				archive_path: null,
+			});
+
+			await gitOps.refreshAllBranchStats();
+
+			const cleanup = repositoriesStore.get("/repo")?.workspaces["feature/x"]?.cleanup;
+			expect(cleanup?.decision).toMatchObject({ eligible: false, detail: "uncommitted work" });
 		});
 
 		// Catches: a stale merged inventory overrides the fresh empty-start preview.
@@ -4980,11 +5120,20 @@ describe("useGitOperations", () => {
 				}),
 				merged_branches: ["feature/x", "feature/y"],
 			});
-			mockRepo.finalizeMergedWorktree.mockRejectedValueOnce(new Error("locked worktree"));
+			// Both attempts at feature/x fail; feature/y then proceeds.
+			mockRepo.finalizeMergedWorktree
+				.mockRejectedValueOnce(new Error("locked worktree"))
+				.mockRejectedValueOnce(new Error("locked worktree"));
 
 			await gitOps.refreshAllBranchStats();
 
-			expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith("/repo", "feature/y", "archive");
+			expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledWith(
+				"/repo",
+				"feature/y",
+				"archive_and_drop_branch",
+				false,
+				"confirmed-worktree",
+			);
 			expect(mockSetStatusInfo).toHaveBeenCalledWith("Auto-archived 1 merged worktree(s)");
 			expect(repositoriesStore.get("/repo")?.workspaces["feature/x"]).toBeDefined();
 		});
@@ -4992,7 +5141,9 @@ describe("useGitOperations", () => {
 		it("does not claim automatic archive success when the only archive fails", async () => {
 			repoSettingsStore.getOrCreate("/repo", "Repo");
 			repoSettingsStore.update("/repo", { autoArchiveMerged: true });
-			mockRepo.finalizeMergedWorktree.mockRejectedValueOnce(new Error("locked worktree"));
+			mockRepo.finalizeMergedWorktree
+				.mockRejectedValueOnce(new Error("locked worktree"))
+				.mockRejectedValueOnce(new Error("locked worktree"));
 
 			await gitOps.refreshAllBranchStats();
 
@@ -5054,6 +5205,266 @@ describe("useGitOperations", () => {
 			await gitOps.refreshAllBranchStats();
 
 			expect(mockRepo.finalizeMergedWorktree).not.toHaveBeenCalled();
+		});
+
+		// Catches: retained UI merged state or an incomplete preview authorizes cleanup.
+		it.each([
+			["missing preview", undefined],
+			["preview error", { dirtyFiles: 0, commitStatus: "merged", removalSafety: "safe", error: "proof unavailable" }],
+			["unknown proof", { dirtyFiles: 0, commitStatus: "unknown", removalSafety: "safe" }],
+			["stale PR tip", { dirtyFiles: 0, commitStatus: "unmerged", removalSafety: "safe" }],
+			["unknown dirt", { dirtyFiles: null, commitStatus: "merged", removalSafety: "safe" }],
+			["untracked file", { dirtyFiles: 1, untrackedFiles: 1, commitStatus: "merged", removalSafety: "requires_force" }],
+			[
+				"submodule commits",
+				{
+					dirtyFiles: 0,
+					commitStatus: "merged",
+					removalSafety: "requires_force",
+					submoduleUnpushedCommits: [{ path: "plugins", count: 1 }],
+				},
+			],
+			[
+				"worktree lock",
+				{ dirtyFiles: 0, commitStatus: "merged", removalSafety: "requires_force", warnings: ["Worktree is locked"] },
+			],
+		])("keeps a PR-only candidate with %s", async (_reason, preview) => {
+			repoSettingsStore.getOrCreate("/repo", "Repo");
+			repoSettingsStore.update("/repo", { autoArchiveMerged: true });
+			mockRepo.getRepoStructure.mockResolvedValue({
+				worktree_paths: wtPaths({ main: "/repo", "feature/x": "/repo/.worktrees/feature-x" }),
+				merged_branches: [],
+			});
+			mockRepo.getRepoDiffStats.mockResolvedValue(phase2Merged("feature/x"));
+			mockRepo.getWorkspaceLifecycle.mockResolvedValueOnce(preview);
+			const warn = vi.spyOn(appLogger, "warn").mockImplementation(() => {});
+			onTestFinished(() => warn.mockRestore());
+
+			await gitOps.refreshAllBranchStats();
+			if (preview === undefined)
+				expect(warn).toHaveBeenCalledWith("git", expect.stringContaining("Could not inspect"), expect.any(Error));
+
+			expect(mockRepo.getWorkspaceLifecycle).toHaveBeenCalledWith("/repo", "feature/x");
+			expect(mockRepo.finalizeMergedWorktree).not.toHaveBeenCalled();
+			expect(repositoriesStore.get("/repo")?.workspaces["feature/x"]).toBeDefined();
+		});
+
+		// Catches: a failed Phase 2 reuses a retained merged verdict from a previous refresh.
+		it("does not sweep retained merged state when Phase 2 fails", async () => {
+			repoSettingsStore.getOrCreate("/repo", "Repo");
+			repoSettingsStore.update("/repo", { autoArchiveMerged: true });
+			mockRepo.getRepoDiffStats.mockRejectedValueOnce(new Error("lifecycle unavailable"));
+			const warn = vi.spyOn(appLogger, "warn").mockImplementation(() => {});
+			onTestFinished(() => warn.mockRestore());
+
+			await gitOps.refreshAllBranchStats();
+
+			expect(warn).toHaveBeenCalledWith("git", expect.stringContaining("Phase 2"), expect.any(Error));
+			expect(mockRepo.finalizeMergedWorktree).not.toHaveBeenCalled();
+		});
+
+		// Catches: a checkout replaced under the same id during an awaited preview is archived instead.
+		it.each(["path", "branch", "removed", "removing"])(
+			"keeps a workspace whose %s changes during preview",
+			async (change) => {
+				repoSettingsStore.getOrCreate("/repo", "Repo");
+				repoSettingsStore.update("/repo", { autoArchiveMerged: true });
+				const warn = vi.spyOn(appLogger, "warn").mockImplementation(() => {});
+				onTestFinished(() => warn.mockRestore());
+				mockRepo.getWorkspaceLifecycle.mockImplementationOnce(async () => {
+					if (change === "removed") repositoriesStore.removeWorkspace("/repo", "feature/x");
+					else
+						repositoriesStore.setWorkspace(
+							"/repo",
+							"feature/x",
+							change === "path"
+								? { worktreePath: "/repo/.worktrees/replacement" }
+								: change === "branch"
+									? { branchName: "feature/replacement" }
+									: { isRemoving: true },
+						);
+					return mergedLifecycle();
+				});
+
+				await gitOps.refreshAllBranchStats();
+
+				expect(mockRepo.finalizeMergedWorktree).not.toHaveBeenCalled();
+				expect(warn).toHaveBeenCalledWith("git", expect.stringContaining("Failed to auto-archive"), expect.any(Error));
+			},
+		);
+
+		// Catches: new dirt or a new session is force-accepted after the clean preview.
+		it("honors backend refusal after a clean preview without force or terminal closure", async () => {
+			repoSettingsStore.getOrCreate("/repo", "Repo");
+			repoSettingsStore.update("/repo", { autoArchiveMerged: true });
+			mockRepo.finalizeMergedWorktree.mockResolvedValueOnce({
+				merged: true,
+				action: "needs_confirmation",
+				archive_path: null,
+			});
+
+			await gitOps.refreshAllBranchStats();
+
+			expect(mockRepo.finalizeMergedWorktree.mock.calls).toEqual([
+				["/repo", "feature/x", "archive_and_drop_branch", false, "confirmed-worktree"],
+			]);
+			expect(repositoriesStore.get("/repo")?.workspaces["feature/x"]).toBeDefined();
+			expect(mockCloseTerminal).not.toHaveBeenCalled();
+			expect(mockSetStatusInfo).not.toHaveBeenCalledWith("Auto-archived 1 merged worktree(s)");
+		});
+
+		// Catches: branch-name addressing archives the other checkout; a trailing refresh repeats success.
+		it("archives exact PR-only workspace ids once across overlapping refreshes", async () => {
+			repoSettingsStore.getOrCreate("/repo", "Repo");
+			repoSettingsStore.update("/repo", { autoArchiveMerged: true });
+			const worktrees: Record<string, { branch: string; path: string; kind: "worktree" }> = {
+				main: { branch: "main", path: "/repo", kind: "worktree" },
+				"checkout-a": { branch: "same-branch", path: "/repo/a", kind: "worktree" as const },
+				"checkout-b": { branch: "same-branch", path: "/repo/b", kind: "worktree" as const },
+			};
+			mockRepo.getRepoStructure.mockImplementation(async () => ({
+				worktree_paths: { ...worktrees },
+				merged_branches: [],
+			}));
+			mockRepo.getRepoDiffStats.mockResolvedValue(phase2Merged("checkout-a", "checkout-b"));
+			mockRepo.getWorkspaceLifecycle.mockImplementation(async (_repo, id) => ({
+				...mergedLifecycle(),
+				dirtyFiles: id === "checkout-b" ? 1 : 0,
+			}));
+			mockRepo.finalizeMergedWorktree.mockImplementation(async (_repo, id) => {
+				delete worktrees[id];
+				repositoriesStore.removeWorkspace("/repo", id);
+				return { merged: true, action: "archived", archive_path: null };
+			});
+
+			const first = gitOps.refreshAllBranchStats();
+			const second = gitOps.refreshAllBranchStats(undefined, { immediate: true });
+			await Promise.all([first, second]);
+
+			expect(mockRepo.finalizeMergedWorktree.mock.calls).toEqual([
+				["/repo", "checkout-a", "archive_and_drop_branch", false, "confirmed-worktree"],
+			]);
+			expect(repositoriesStore.get("/repo")?.workspaces["checkout-b"]?.worktreePath).toBe("/repo/b");
+		});
+
+		// RED: records exact tip, base, source and freshness apart from the decision — catches: proof
+		// kept only as a merged flag, so a later reader cannot tell what was proven or when.
+		it("records exact proof and a separate cleanup decision for each inspected workspace", async () => {
+			repoSettingsStore.getOrCreate("/repo", "Repo");
+			repoSettingsStore.update("/repo", { autoArchiveMerged: true });
+			const before = Date.now();
+
+			await gitOps.refreshAllBranchStats();
+
+			const cleanup = repositoriesStore.get("/repo")?.workspaces["feature/x"]?.cleanup;
+			expect(cleanup?.proof).toMatchObject({
+				workspaceId: "feature/x",
+				tip: "tip-1",
+				base: "base-1",
+				source: "ancestry",
+				verdict: "merged",
+			});
+			expect(cleanup?.proof.inspectedAt).toBeGreaterThanOrEqual(before);
+			expect(cleanup?.decision).toMatchObject({ eligible: true, reason: "merged" });
+		});
+
+		// RED: retries a transient archive failure after a fresh inspection — catches: a failed
+		// archive stranding the workspace until a later refresh, or retrying on the old proof.
+		it("retries a transient archive failure once after a fresh inspection", async () => {
+			repoSettingsStore.getOrCreate("/repo", "Repo");
+			repoSettingsStore.update("/repo", { autoArchiveMerged: true });
+			mockRepo.finalizeMergedWorktree.mockRejectedValueOnce(new Error("index.lock busy"));
+
+			await gitOps.refreshAllBranchStats();
+
+			expect(mockRepo.getWorkspaceLifecycle).toHaveBeenCalledTimes(2);
+			expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledTimes(2);
+			expect(mockSetStatusInfo).toHaveBeenCalledWith("Auto-archived 1 merged worktree(s)");
+		});
+
+		it("makes no third attempt when the retry fails too", async () => {
+			repoSettingsStore.getOrCreate("/repo", "Repo");
+			repoSettingsStore.update("/repo", { autoArchiveMerged: true });
+			mockRepo.finalizeMergedWorktree
+				.mockRejectedValueOnce(new Error("locked worktree"))
+				.mockRejectedValueOnce(new Error("locked worktree"));
+			const warn = vi.spyOn(appLogger, "warn").mockImplementation(() => {});
+			onTestFinished(() => warn.mockRestore());
+
+			await gitOps.refreshAllBranchStats();
+
+			expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledTimes(2);
+			expect(warn).toHaveBeenCalledWith("git", expect.stringContaining("Failed to auto-archive"), expect.any(Error));
+			expect(mockSetStatusInfo).not.toHaveBeenCalledWith(expect.stringContaining("Auto-archived"));
+		});
+
+		// Catches: an archive that fails the same way every time (an unrepairable checkout) staying
+		// eligible, so every refresh repeats two full preflights and two archive moves forever.
+		it("waits the re-inspection interval after an archive that failed twice, and says why on the row", async () => {
+			repoSettingsStore.getOrCreate("/repo", "Repo");
+			repoSettingsStore.update("/repo", { autoArchiveMerged: true });
+			mockRepo.finalizeMergedWorktree.mockRejectedValue("Failed to repair archived worktree");
+			const warn = vi.spyOn(appLogger, "warn").mockImplementation(() => {});
+			onTestFinished(() => warn.mockRestore());
+
+			await gitOps.refreshAllBranchStats(undefined, { immediate: true });
+			await gitOps.refreshAllBranchStats(undefined, { immediate: true });
+
+			expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledTimes(2);
+			expect(keptReason(repositoriesStore.get("/repo")?.workspaces["feature/x"]?.cleanup)).toBe(
+				"archive failed: Failed to repair archived worktree",
+			);
+			vi.setSystemTime(Date.now() + 10 * 60_000);
+			await gitOps.refreshAllBranchStats(undefined, { immediate: true });
+			expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledTimes(4);
+		});
+
+		// RED: a retry never reuses stale proof — catches: retrying an archive for a tip that moved
+		// or a checkout that became dirty between the first attempt and the retry.
+		it.each([
+			["tip moved", { tip: "tip-2" }, "tip changed since the first inspection"],
+			["checkout became dirty", { dirtyFiles: 2, removalSafety: "requires_force" }, "removal needs review"],
+		])("does not retry when the fresh inspection shows %s", async (_case, change, reason) => {
+			repoSettingsStore.getOrCreate("/repo", "Repo");
+			repoSettingsStore.update("/repo", { autoArchiveMerged: true });
+			mockRepo.finalizeMergedWorktree.mockRejectedValueOnce(new Error("busy"));
+			const first = await mockRepo.getWorkspaceLifecycle("/repo", "feature/x");
+			mockRepo.getWorkspaceLifecycle.mockClear();
+			mockRepo.getWorkspaceLifecycle.mockResolvedValueOnce(first).mockResolvedValueOnce({ ...first, ...change });
+
+			await gitOps.refreshAllBranchStats();
+
+			expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledTimes(1);
+			expect(mockSetStatusInfo).toHaveBeenCalledWith(expect.stringContaining(reason));
+		});
+
+		// RED: success is idempotent and never suppresses a recreated workspace — catches: a
+		// "done" memo keyed by id that hides a new checkout reusing the archived workspace id.
+		it("archives a recreated workspace with the same id after an earlier success", async () => {
+			repoSettingsStore.getOrCreate("/repo", "Repo");
+			repoSettingsStore.update("/repo", { autoArchiveMerged: true });
+			await gitOps.refreshAllBranchStats();
+			mockRepo.getWorkspaceLifecycle.mockResolvedValueOnce({
+				dirtyFingerprint: "confirmed-worktree-2",
+				dirtyFiles: 0,
+				commitStatus: "merged",
+				proofSource: "github_pr",
+				tip: "tip-recreated",
+				base: "base-1",
+				removalSafety: "safe",
+			});
+			vi.advanceTimersByTime(5_000);
+
+			await gitOps.refreshAllBranchStats(undefined, { immediate: true });
+
+			expect(mockRepo.finalizeMergedWorktree).toHaveBeenCalledTimes(2);
+			expect(mockRepo.finalizeMergedWorktree).toHaveBeenLastCalledWith(
+				"/repo",
+				"feature/x",
+				"archive_and_drop_branch",
+				false,
+				"confirmed-worktree-2",
+			);
 		});
 
 		it("does nothing when autoArchiveMerged=false", async () => {
@@ -5439,7 +5850,8 @@ describe("useGitOperations", () => {
 			const p = ops.refreshAllBranchStats();
 			await vi.advanceTimersByTimeAsync(0);
 			await p;
-			expect(orphanStatuses()).toEqual(["Removed 1 orphaned worktree(s)"]);
+			expect(orphanStatuses()).toEqual([expect.stringContaining("Removed 1 orphaned worktree(s)")]);
+			expect(orphanStatuses()[0]).toContain("session appeared");
 			expect(mockCloseTerminal).not.toHaveBeenCalledWith(liveTerm, true);
 		});
 

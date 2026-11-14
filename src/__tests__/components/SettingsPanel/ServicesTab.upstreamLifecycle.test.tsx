@@ -1,4 +1,5 @@
 import { fireEvent, render } from "@solidjs/testing-library";
+import { DEV } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../../stores/appLogger", () => ({
@@ -261,5 +262,49 @@ describe("UpstreamMcpPanel lifecycle", () => {
 			registration.mockRestore();
 			notice.mockRestore();
 		}
+	});
+
+	// catches: the 3 s poll remounts rows (or re-runs every row's status bindings) with identical data
+	it("upstream_status_identical_refresh_keeps_rows", async () => {
+		const server = (name: string) => ({
+			id: `id-${name}`,
+			name,
+			transport: { type: "http", url: `https://${name}.example/mcp` },
+			enabled: true,
+			timeout_secs: 30,
+		});
+		const entry = (name: string) => ({
+			name,
+			status: "ready",
+			transport: { type: "http" },
+			tool_count: 2,
+			tools: ["a", "b"],
+			metrics: { call_count: 1, error_count: 0, last_latency_ms: 5 },
+			last_error: null,
+		});
+		vi.mocked(rpc).mockImplementation((command: string) => {
+			if (command === "load_mcp_upstreams") return Promise.resolve({ servers: [server("alpha"), server("beta")] });
+			if (command === "get_mcp_upstream_status") return Promise.resolve({ upstreams: [entry("alpha"), entry("beta")] });
+			return Promise.resolve(undefined);
+		});
+		const view = render(() => <UpstreamMcpPanel />);
+		await vi.advanceTimersByTimeAsync(0);
+		const labels = () => view.getAllByText("Connected");
+		const before = labels();
+		expect(before).toHaveLength(2);
+
+		let updates = 0;
+		DEV!.hooks.afterUpdate = () => updates++;
+		try {
+			await vi.advanceTimersByTimeAsync(3000);
+		} finally {
+			DEV!.hooks.afterUpdate = null;
+		}
+		expect(vi.mocked(rpc).mock.calls.filter(([c]) => c === "get_mcp_upstream_status")).toHaveLength(2);
+		expect(updates).toBe(0);
+		const after = labels();
+		expect(after[0]).toBe(before[0]);
+		expect(after[1]).toBe(before[1]);
+		view.unmount();
 	});
 });

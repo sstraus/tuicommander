@@ -9,6 +9,9 @@ mod scope;
 pub use context::{Audit, Caller, Preview};
 use parking_lot::Mutex;
 pub(super) use patch::patch;
+pub(crate) use scope::{
+    app_config_requires_confirmation, stdio_added, tunnel_profile_requires_confirmation,
+};
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -80,7 +83,7 @@ impl Policy {
         approval: Option<&str>,
         validate: impl Fn(&Value) -> Result<(), Failure>,
     ) -> Result<(), Failure> {
-        caller.check(true)?;
+        caller.check()?;
         let (target, store, revision, edits) = patch(request)?;
         let fingerprint = transaction::revision(&json!([target, store, revision, edits]))?;
         if let Some(id) = approval {
@@ -112,7 +115,7 @@ impl Policy {
             .iter()
             .filter_map(|id| cat.fields.get(id))
             .collect();
-        if !scope::requires_confirmation(&fields, latest, &prepared.value) {
+        if caller.owner_ui || !scope::adds_authority(&fields, latest, &prepared.value) {
             return Ok(());
         }
         let message = patch::preview(cat, store, &fields, &edits, latest, &prepared.value);
@@ -155,7 +158,7 @@ impl Policy {
 
     /// Lease a proposal to the real dialog once. This never grants approval itself.
     pub(crate) fn begin_confirmation(&self, caller: &Caller, id: &str) -> Result<Preview, Failure> {
-        caller.check(true)?;
+        caller.check()?;
         let mut state = self.state.lock();
         let pending = state
             .proposals

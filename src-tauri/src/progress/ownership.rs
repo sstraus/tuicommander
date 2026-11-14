@@ -11,23 +11,90 @@ pub fn resolve_owning_project(registered_project: Option<&str>) -> Result<PathBu
             "project_required: register an authoritative project before reporting progress"
                 .to_string()
         })?;
-    resolve_owning_project_in(registered, &crate::config::load_repositories())
+    let start = canonical_existing_dir(Path::new(registered))?;
+    follow_workspace_parents(start, &cached_workspace_parents())
 }
 
+#[cfg(test)]
 pub(crate) fn resolve_owning_project_in(
     registered_project: &str,
     repositories: &serde_json::Value,
 ) -> Result<PathBuf, String> {
     let start = canonical_existing_dir(Path::new(registered_project))?;
+    follow_workspace_parents(start, &workspace_parents_of(repositories))
+}
+
+/// How long a built ownership map may serve calls while `repositories.json` is
+/// unchanged. Building it stats every registered repository and workspace (about
+/// 150 ms for 58 repositories and 145 workspaces), and the automation reconcile
+/// asks on every session state change. The bound covers a checkout that appears
+/// or disappears on disk without a registry write.
+const OWNERSHIP_MAP_TTL: std::time::Duration = std::time::Duration::from_secs(30);
+
+type WorkspaceParents = std::sync::Arc<HashMap<PathBuf, PathBuf>>;
+/// (registry path, mtime, length) of the document the map was built from.
+type RegistryStamp = (PathBuf, Option<std::time::SystemTime>, u64);
+
+static OWNERSHIP_MAP: std::sync::Mutex<
+    Option<(RegistryStamp, std::time::Instant, WorkspaceParents)>,
+> = std::sync::Mutex::new(None);
+
+fn cached_workspace_parents() -> WorkspaceParents {
+    let path = crate::config::repository_file();
+    let meta = std::fs::metadata(&path).ok();
+    let stamp = (
+        path,
+        meta.as_ref().and_then(|m| m.modified().ok()),
+        meta.as_ref().map_or(0, std::fs::Metadata::len),
+    );
+    let mut cache = OWNERSHIP_MAP
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((cached, built, parents)) = cache.as_ref()
+        && *cached == stamp
+        && built.elapsed() < OWNERSHIP_MAP_TTL
+    {
+        return parents.clone();
+    }
+    let parents = WorkspaceParents::new(workspace_parents_of(&crate::config::load_repositories()));
+    *cache = Some((stamp, std::time::Instant::now(), parents.clone()));
+    parents
+}
+
+fn follow_workspace_parents(
+    start: PathBuf,
+    workspace_parents: &HashMap<PathBuf, PathBuf>,
+) -> Result<PathBuf, String> {
+    let mut current = start;
+    let mut visited = HashSet::new();
+    while let Some(parent) = workspace_parents.get(&current) {
+        if !visited.insert(current.clone()) {
+            return Err(format!(
+                "project_unavailable: managed workspace ownership cycle at '{}'",
+                current.display()
+            ));
+        }
+        current = parent.clone();
+    }
+
+    canonical_existing_dir(&current)
+}
+
+fn workspace_parents_of(repositories: &serde_json::Value) -> HashMap<PathBuf, PathBuf> {
+    let mut workspace_parents = HashMap::<PathBuf, PathBuf>::new();
     let Some(repos) = repositories
         .get("repos")
         .and_then(serde_json::Value::as_object)
     else {
-        return Ok(start);
+        return workspace_parents;
     };
-
-    let mut workspace_parents = HashMap::<PathBuf, PathBuf>::new();
     for (repo_path, repo) in repos {
+        // A repository of a remote connection is a path on another host. It owns
+        // no local journal, and resolving it here can stall on a local automount
+        // (`/home` on macOS costs about 40 ms per lookup).
+        if repo.get("connectionId").is_some_and(|id| !id.is_null()) {
+            continue;
+        }
         // Registrations can repeat the same shared Git inventory from a linked
         // checkout. Infer one main-checkout owner rather than opposite edges.
         let repo_path = Path::new(repo_path);
@@ -71,20 +138,7 @@ pub(crate) fn resolve_owning_project_in(
             }
         }
     }
-
-    let mut current = start;
-    let mut visited = HashSet::new();
-    while let Some(parent) = workspace_parents.get(&current) {
-        if !visited.insert(current.clone()) {
-            return Err(format!(
-                "project_unavailable: managed workspace ownership cycle at '{}'",
-                current.display()
-            ));
-        }
-        current = parent.clone();
-    }
-
-    canonical_existing_dir(&current)
+    workspace_parents
 }
 
 /// The registered managed workspace (worktree) a path lies in, deepest first.
@@ -431,6 +485,61 @@ mod tests {
             resolve_owning_project_in(&one.path().to_string_lossy(), &doc)
                 .unwrap_err()
                 .contains("ownership cycle")
+        );
+    }
+
+    // Catches: a repository of a remote connection taking part in local ownership,
+    // which both redirects a local workspace and stats a path on another host.
+    #[test]
+    fn a_remote_connection_repository_does_not_own_a_local_workspace() {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let doc = json!({
+            "repos": {
+                "/home/remote/project": {
+                    "connectionId": "c1",
+                    "workspaces": {
+                        "w": { "worktreePath": workspace.path(), "parentRepoPath": root.path() }
+                    }
+                }
+            }
+        });
+        assert_eq!(
+            resolve_owning_project_in(&workspace.path().to_string_lossy(), &doc).unwrap(),
+            workspace.path().canonicalize().unwrap()
+        );
+    }
+
+    // Catches: the cached ownership map serving a registry that has since been
+    // written, so a newly registered workspace keeps its own journal.
+    #[test]
+    fn a_registry_write_rebuilds_the_cached_ownership_map() {
+        let config = tempfile::tempdir().unwrap();
+        let _config_guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+        let root = tempfile::tempdir().unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        let registry = crate::config::repository_file();
+        let workspace_path = workspace.path().to_string_lossy().to_string();
+
+        std::fs::write(&registry, json!({ "repos": {} }).to_string()).unwrap();
+        assert_eq!(
+            resolve_owning_project(Some(&workspace_path)).unwrap(),
+            workspace.path().canonicalize().unwrap()
+        );
+
+        let doc = json!({
+            "repos": {
+                root.path().to_string_lossy(): {
+                    "workspaces": {
+                        "w": { "worktreePath": workspace.path(), "parentRepoPath": root.path() }
+                    }
+                }
+            }
+        });
+        std::fs::write(&registry, doc.to_string()).unwrap();
+        assert_eq!(
+            resolve_owning_project(Some(&workspace_path)).unwrap(),
+            root.path().canonicalize().unwrap()
         );
     }
 }

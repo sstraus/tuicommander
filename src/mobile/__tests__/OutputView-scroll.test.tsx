@@ -208,9 +208,23 @@ describe("mobile output follow", () => {
 		fireEvent.scroll(viewport);
 		append(650, 651);
 		paint();
-		expect(rows()).toHaveLength(500);
-		expect(rows()[0].textContent).toBe("history 151");
+		// Eviction drops whole fetched ranges (here 100..199) so history paging resumes at an exact offset.
+		expect(rows()).toHaveLength(451);
+		expect(rows()[0].textContent).toBe("history 200");
 		expect(viewport.scrollTop).toBe(viewport.scrollHeight - viewport.clientHeight);
+	});
+
+	// Catches: the live tail evicts lines but the history cursor stays put, so paging skips the evicted slots.
+	it("pages older history from the oldest retained line after live-tail eviction", async () => {
+		const { viewport, append, rows } = await mountCappedOutput();
+		append(600, 650);
+		paint();
+		viewport.scrollTop = 0;
+		fireEvent.scroll(viewport);
+		await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2));
+		await waitFor(() =>
+			expect(rows().map((row) => row.textContent)).toEqual(Array.from({ length: 550 }, (_, i) => `history ${100 + i}`)),
+		);
 	});
 
 	it("does not evict the reading window while a stationary touch guards output at the cap", async () => {
@@ -304,7 +318,10 @@ async function mountCappedOutput() {
 	});
 	await waitFor(() => expect(subscribePty).toHaveBeenCalled());
 	const append = (start: number, end: number) => {
-		stream.onLogLines?.(Array.from({ length: end - start }, (_, i) => ({ spans: [{ text: `history ${start + i}` }] })));
+		stream.onLogLines?.(
+			Array.from({ length: end - start }, (_, i) => ({ spans: [{ text: `history ${start + i}` }] })),
+			{ offset: start, total: end },
+		);
 	};
 	append(200, 600);
 	paint();

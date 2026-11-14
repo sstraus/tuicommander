@@ -10,7 +10,7 @@ pub(super) enum AgentScreenActivity {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ProcessTreeEntry {
-    pub(super) pid: u32,
+    pub(crate) pid: u32,
     pub(super) parent_pid: u32,
     pub(super) name: String,
     pub(crate) command: String,
@@ -18,78 +18,6 @@ pub(crate) struct ProcessTreeEntry {
     /// it. `None` on Windows, whose `PROCESSENTRY32` carries no creation time —
     /// see [`started_with_agent`] for what the absence costs.
     pub(super) age_seconds: Option<u64>,
-}
-
-/// Destructive workflow closure uses the complete tree, not the busy/idle
-/// detector's startup-age exemption. A young build is still live work.
-pub(crate) fn workflow_close_tree_quiet(
-    state: &AppState,
-    session_id: &str,
-    processes: &[ProcessTreeEntry],
-) -> bool {
-    let Some(pid) = state
-        .session_maps
-        .sessions
-        .get(session_id)
-        .and_then(|session| session.lock()._child.process_id())
-    else {
-        return false;
-    };
-    let Some(kind) = state
-        .session_state_with_shell(session_id)
-        .and_then(|s| s.agent_type)
-    else {
-        return false;
-    };
-    let Some(agent) = agent_process_root(pid, &kind, processes) else {
-        return false;
-    };
-    let mut pending = vec![pid];
-    let mut seen = std::collections::HashSet::new();
-    while let Some(parent) = pending.pop() {
-        if !seen.insert(parent) {
-            return false;
-        }
-        for child in processes.iter().filter(|p| p.parent_pid == parent) {
-            if child.pid != agent && !is_persistent_agent_helper(child) {
-                return false;
-            }
-            pending.push(child.pid);
-        }
-    }
-    true
-}
-
-/// Resolve only a direct ACP child carrying the host-issued peer identity.
-/// An absent or ambiguous observation is unknown, never authorization to stop.
-pub(crate) fn workflow_acp_process(
-    peer: &str,
-    processes: &[ProcessTreeEntry],
-) -> Result<u32, String> {
-    let owned = processes
-        .iter()
-        .filter(|p| p.parent_pid == std::process::id())
-        .filter(|p| {
-            tuic_core::process_env::read_process_env_var(p.pid, "TUIC_SESSION").as_deref()
-                == Some(peer)
-        })
-        .map(|p| p.pid)
-        .collect::<Vec<_>>();
-    match owned.as_slice() {
-        [pid] => Ok(*pid),
-        _ => Err("ACP owned process identity is unavailable or ambiguous".into()),
-    }
-}
-
-pub(crate) fn workflow_acp_tree_quiet(processes: &[ProcessTreeEntry], pid: u32) -> bool {
-    processes
-        .iter()
-        .any(|p| p.pid == pid && p.parent_pid == std::process::id())
-        && !processes.iter().any(|p| p.parent_pid == pid)
-}
-
-pub(crate) fn workflow_process_observed(processes: &[ProcessTreeEntry], pid: u32) -> bool {
-    processes.iter().any(|p| p.pid == pid)
 }
 
 #[derive(Default)]
@@ -173,6 +101,24 @@ pub(super) fn is_standalone_timed_caffeinate(command: &str) -> bool {
         || matches!((first, second, third), (Some("-t"), Some(value), Some("-i")) if positive_timeout(value))
 }
 
+/// Language servers an agent starts on its first LSP tool call. They arrive long
+/// after the startup window and idle until the session ends, so only the name
+/// can tell them from work.
+fn is_language_server(name: &str) -> bool {
+    matches!(
+        name,
+        "sourcekit-lsp"
+            | "rust-analyzer"
+            | "gopls"
+            | "clangd"
+            | "typescript-language-server"
+            | "pyright-langserver"
+            | "basedpyright-langserver"
+            | "jdtls"
+            | "lua-language-server"
+    )
+}
+
 pub(super) fn is_persistent_agent_helper_with_command_line(
     process: &ProcessTreeEntry,
     command_line_authoritative: bool,
@@ -184,8 +130,10 @@ pub(super) fn is_persistent_agent_helper_with_command_line(
     let executable = argv.next().map(normalized_process_name).unwrap_or("");
     let script = argv.next().map(normalized_process_name).unwrap_or("");
     matches!(name, "mdkb" | "tuic-bridge" | "node_repl")
+        || is_language_server(name)
         || (command_line_authoritative
             && (matches!(executable, "mdkb" | "tuic-bridge" | "node_repl")
+                || is_language_server(executable)
                 || (matches!(executable, "node" | "nodejs")
                     && script.trim_end_matches(".js") == "node_repl")
                 || is_standalone_timed_caffeinate(&command)))
@@ -314,6 +262,24 @@ pub(super) fn background_work_from_snapshot(
 ) -> Option<bool> {
     let agent_root = agent_process_root(session_root, agent_type, processes)?;
     Some(has_meaningful_descendant(agent_root, processes))
+}
+
+/// A process-list row for tests outside this module, which cannot name its fields.
+#[cfg(test)]
+pub(crate) fn test_process_entry(
+    pid: u32,
+    parent_pid: u32,
+    name: &str,
+    command: &str,
+    age_seconds: u64,
+) -> ProcessTreeEntry {
+    ProcessTreeEntry {
+        pid,
+        parent_pid,
+        name: name.into(),
+        command: command.into(),
+        age_seconds: Some(age_seconds),
+    }
 }
 
 /// Read-only power policy query. Reuse the established helper exclusions without
@@ -716,7 +682,8 @@ pub(super) fn set_background_work_for_epoch_with_hook<F: FnOnce()>(
     drop(session);
 
     let mut parent_dispatch = None;
-    let settled_idle = !active
+    let settled_idle = silence_state.native_state.activity().is_none()
+        && !active
         && state
             .session_maps
             .shell_states
@@ -749,11 +716,7 @@ pub(super) fn set_background_work_for_epoch_with_hook<F: FnOnce()>(
                 parent_dispatch = enqueue_state_change_to_parent(
                     state,
                     session_id,
-                    serde_json::json!({
-                        "type": "state_change",
-                        "state": "idle",
-                        "session_id": session_id,
-                    }),
+                    turn_end_payload(state, session_id),
                 );
             }
         }
@@ -954,20 +917,61 @@ pub(crate) fn spawn_process_snapshot_refresher(state: Arc<AppState>) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut last_scan: Option<std::time::Instant> = None;
         loop {
             interval.tick().await;
+            let due = process_snapshot_due(
+                process_snapshot_is_urgent(&state),
+                last_scan.map(|at| at.elapsed()),
+            );
             let refresh_state = Arc::clone(&state);
-            let _ = tokio::task::spawn_blocking(move || {
-                refresh_process_snapshot_if_demanded(&refresh_state, process_tree_snapshot);
+            let scanned = tokio::task::spawn_blocking(move || {
+                let scanned = due
+                    && refresh_process_snapshot_if_demanded(&refresh_state, process_tree_snapshot);
                 super::bg_wake_diagnostics::capture_overdue_bg_wakes(
                     &refresh_state,
                     std::time::Instant::now(),
                     process_tree_snapshot,
-                )
+                );
+                scanned
             })
-            .await;
+            .await
+            .unwrap_or(false);
+            if scanned {
+                last_scan = Some(std::time::Instant::now());
+            }
         }
     });
+}
+
+/// Cadence of the process-table scan while only tracked background work asks
+/// for it. A scan lists every process on the machine (`ps -axo`, about 60 ms and
+/// 250 KB for 1058 processes), and an agent can keep background work for hours.
+/// The end of background work may show up this much later; probes stay at 1 s.
+pub(super) const BACKGROUND_WORK_SCAN_INTERVAL: std::time::Duration =
+    std::time::Duration::from_secs(5);
+
+/// A pending background probe or a nested-prompt probe waits for the scan, so it
+/// gets the 1 s tick. Tracked background work alone does not.
+fn process_snapshot_is_urgent(state: &AppState) -> bool {
+    state.session_maps.session_states.iter().any(|session| {
+        (if session.agent_type.is_some() {
+            session.has_pending_background_probe()
+        } else {
+            prompt_probe_applies(state, session.key())
+        }) && state
+            .session_maps
+            .silence_states
+            .contains_key(session.key())
+            && state.session_maps.shell_states.contains_key(session.key())
+    })
+}
+
+pub(super) fn process_snapshot_due(
+    urgent: bool,
+    since_last_scan: Option<std::time::Duration>,
+) -> bool {
+    urgent || since_last_scan.is_none_or(|elapsed| elapsed >= BACKGROUND_WORK_SCAN_INTERVAL)
 }
 
 /// The live `›` composer row of a Codex screen.
@@ -1099,6 +1103,20 @@ pub(super) fn detect_claude_screen_activity(rows: &[String]) -> AgentScreenActiv
     } else {
         AgentScreenActivity::Unknown
     }
+}
+
+/// Claude puts the prompt of a turn cancelled before its first output back into
+/// the composer, so the composer row carries text and is not `Ready`. The row
+/// belongs to Claude, not a user draft, only where the caller proved no draft
+/// existed before its own Esc (#2913-8d0a).
+pub(super) fn claude_composer_holds_text(rows: &[String]) -> bool {
+    find_live_prompt_row(rows, 3, |row| {
+        row.trim()
+            .strip_prefix('\u{276F}')
+            .map(str::trim_start)
+            .is_some_and(|rest| !rest.is_empty() && !rest.starts_with("Try \""))
+    })
+    .is_some()
 }
 
 fn gemini_prompt_present(rows: &[String]) -> bool {
@@ -1729,6 +1747,14 @@ pub(super) fn apply_foreground_agent_observation(
     input_blocked: bool,
     fg_name: String,
 ) -> Option<String> {
+    // Serialize native receipt retirement with the identity commit, using the
+    // reader's lifecycle -> session-map lock order. Release it before grid work.
+    let lifecycle = state
+        .session_maps
+        .silence_states
+        .get(session_id)
+        .map(|entry| Arc::clone(entry.value()));
+    let mut native_owner = lifecycle.as_ref().map(|silence| silence.lock());
     let (effective, identity_changed) = {
         let mut entry = state.session_maps.session_states.get_mut(session_id)?;
         if generation <= entry.foreground_probe_generation {
@@ -1776,6 +1802,13 @@ pub(super) fn apply_foreground_agent_observation(
         };
         let changed = entry.agent_type != next;
         if changed {
+            // Initial discovery may follow the first native frame. Only a
+            // known identity changing retires its delivered native authority.
+            if entry.agent_type.is_some()
+                && let Some(silence) = native_owner.as_mut()
+            {
+                silence.native_state = NativeActivity::Unseen;
+            }
             entry.telegram_registration_lifetime = None;
             if next.as_deref() != Some("codex") || entry.agent_type.is_some() {
                 entry.codex_binding = None;
@@ -1804,6 +1837,7 @@ pub(super) fn apply_foreground_agent_observation(
         }
         (effective, changed)
     };
+    drop(native_owner);
 
     // The screen may already be quiet when the process is discovered. Its
     // cached shell-era verdict is not evidence about the newly known agent.

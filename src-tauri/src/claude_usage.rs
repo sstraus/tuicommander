@@ -24,7 +24,7 @@ use tauri::State;
 // API types (from Anthropic OAuth usage endpoint)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct RateBucket {
     pub utilization: f64,
@@ -45,7 +45,7 @@ impl Default for RateBucket {
 /// The Anthropic `/api/oauth/usage` endpoint returns the *credits* fields; the
 /// `/v1/messages` response headers provide `resets_at` and `in_use`. Both paths
 /// feed the same struct so the frontend sees a unified view.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct ExtraUsage {
     pub is_enabled: bool,
@@ -66,7 +66,7 @@ pub struct ExtraUsage {
 /// Metadata about the overall rate-limit state — populated from
 /// `anthropic-ratelimit-unified-*` response headers on `/v1/messages`.
 /// The primary `/api/oauth/usage` endpoint does not return these fields.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct RateLimitMeta {
     /// Overall request status: "allowed" / "allowed_warning" / "rejected".
@@ -78,7 +78,7 @@ pub struct RateLimitMeta {
 /// Plan / subscription info extracted from the local OAuth credentials file.
 /// NOT fetched from any remote endpoint — lives in the macOS Keychain or
 /// `~/.claude/.credentials.json`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct PlanInfo {
     pub subscription_type: Option<String>,
     pub rate_limit_tier: Option<String>,
@@ -87,7 +87,7 @@ pub struct PlanInfo {
 
 /// API response from Anthropic OAuth usage endpoint.
 /// Uses `deny_unknown_fields` = false (default) to tolerate new API fields.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct UsageApiResponse {
     pub five_hour: Option<RateBucket>,
@@ -103,6 +103,10 @@ pub struct UsageApiResponse {
     /// Injected by the backend from response headers — never deserialized from the API body.
     #[serde(skip_deserializing)]
     pub meta: Option<RateLimitMeta>,
+    /// Set by the backend when this is the last known reading served while the
+    /// endpoint is rate-limited: its age in seconds. Never part of the API body.
+    #[serde(skip_deserializing)]
+    pub stale_age_secs: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -734,6 +738,7 @@ fn parse_jsonl_file_from_offset(
 /// Read the selected Claude profile's Keychain entry first, then its
 /// `.credentials.json` file. On other platforms, read the file directly.
 /// Both the token and plan may be absent; callers decide how to react.
+#[cfg(test)]
 fn read_claude_credentials(
     config_dir: Option<&str>,
 ) -> Result<(Option<String>, Option<PlanInfo>), String> {
@@ -752,6 +757,7 @@ fn read_claude_credentials(
 /// Parse the `claudeAiOauth` object out of raw credentials JSON into a token + `PlanInfo`.
 /// Pure function (no I/O) — split out of `read_claude_credentials` so it's unit-testable
 /// without touching the filesystem or macOS Keychain.
+#[cfg(test)]
 fn parse_credentials_json(json_str: &str) -> Result<(Option<String>, Option<PlanInfo>), String> {
     let parsed: serde_json::Value =
         serde_json::from_str(json_str).map_err(|e| format!("Failed to parse credentials: {e}"))?;
@@ -786,7 +792,7 @@ fn parse_credentials_json(json_str: &str) -> Result<(Option<String>, Option<Plan
     Ok((token, plan))
 }
 
-fn read_credential_json(
+pub(crate) fn read_credential_json(
     config_dir: Option<&str>,
     home: &Path,
     read_keychain: impl FnOnce(&str) -> Result<Option<String>, String>,
@@ -900,18 +906,15 @@ static RATE_LIMITED_UNTIL: std::sync::LazyLock<
 > = std::sync::LazyLock::new(|| parking_lot::Mutex::new(HashMap::new()));
 
 /// Cache TTL: return cached data without hitting the API.
+#[cfg(test)]
 const API_CACHE_TTL: Duration = Duration::from_secs(300); // 5 minutes
 
-/// Maximum retry attempts for 429 responses.
-const MAX_429_RETRIES: u32 = 1;
-
-/// Initial backoff delay for 429 retry.
-const RETRY_INITIAL_DELAY: Duration = Duration::from_secs(10);
-
-/// Minimum backoff after exhausting 429 retries (prevents hammering on next poll).
+/// Minimum profile backoff after a usage 429 (prevents hammering on next poll).
+#[cfg(test)]
 const RATE_LIMIT_BACKOFF: Duration = Duration::from_secs(120);
 
 /// Error from a raw API fetch, carrying status and optional Retry-After.
+#[cfg(test)]
 struct FetchError {
     status: u16,
     message: String,
@@ -919,6 +922,7 @@ struct FetchError {
 }
 
 /// Raw HTTP fetch — no caching, no retry.
+#[cfg(test)]
 async fn fetch_usage_from_api(token: &str) -> Result<UsageApiResponse, FetchError> {
     let client = reqwest::Client::new();
     let resp = client
@@ -964,7 +968,7 @@ async fn fetch_usage_from_api(token: &str) -> Result<UsageApiResponse, FetchErro
     })
 }
 
-fn parse_primary_usage(body: &str) -> Result<UsageApiResponse, serde_json::Error> {
+pub(crate) fn parse_primary_usage(body: &str) -> Result<UsageApiResponse, serde_json::Error> {
     let mut value: serde_json::Value = serde_json::from_str(body)?;
     for key in [
         "five_hour",
@@ -991,6 +995,7 @@ fn parse_primary_usage(body: &str) -> Result<UsageApiResponse, serde_json::Error
 // ---------------------------------------------------------------------------
 
 /// Extract a header value as a string slice.
+#[cfg(test)]
 fn header_str<'a>(headers: &'a reqwest::header::HeaderMap, name: &str) -> Option<&'a str> {
     headers.get(name).and_then(|v| v.to_str().ok())
 }
@@ -998,6 +1003,7 @@ fn header_str<'a>(headers: &'a reqwest::header::HeaderMap, name: &str) -> Option
 /// Parse a single claim (e.g. "5h" or "7d") into a `RateBucket`.
 /// Utilization in headers is 0.0–1.0; we convert to 0–100 percentage.
 /// Reset is a unix epoch seconds timestamp; we convert to ISO8601.
+#[cfg(test)]
 fn parse_claim_bucket(headers: &reqwest::header::HeaderMap, abbrev: &str) -> Option<RateBucket> {
     let util_str = header_str(
         headers,
@@ -1021,6 +1027,7 @@ fn parse_claim_bucket(headers: &reqwest::header::HeaderMap, abbrev: &str) -> Opt
 }
 
 /// Convert a unix epoch header value (seconds since 1970) to an ISO8601 string.
+#[cfg(test)]
 fn header_epoch_to_iso(headers: &reqwest::header::HeaderMap, name: &str) -> Option<String> {
     header_str(headers, name)
         .and_then(|v| v.parse::<i64>().ok())
@@ -1030,6 +1037,7 @@ fn header_epoch_to_iso(headers: &reqwest::header::HeaderMap, name: &str) -> Opti
 
 /// Parse `anthropic-ratelimit-unified-*` headers into `UsageApiResponse`.
 /// Pure function, no I/O — used by fallback and tests.
+#[cfg(test)]
 fn parse_unified_rate_limit_headers(headers: &reqwest::header::HeaderMap) -> UsageApiResponse {
     let five_hour = parse_claim_bucket(headers, "5h");
     let seven_day = parse_claim_bucket(headers, "7d");
@@ -1082,50 +1090,17 @@ fn parse_unified_rate_limit_headers(headers: &reqwest::header::HeaderMap) -> Usa
         extra_usage,
         plan: None,
         meta,
+        stale_age_secs: None,
     }
 }
 
-/// Fallback: make a minimal Haiku call and extract rate limits from response headers.
-/// Cost: ~9 tokens per call (~$0.00001).
-async fn fetch_usage_from_headers(token: &str) -> Result<UsageApiResponse, FetchError> {
-    let client = reqwest::Client::new();
-    let resp = client
-        .post("https://api.anthropic.com/v1/messages")
-        .header("Authorization", format!("Bearer {token}"))
-        .header("anthropic-beta", "oauth-2025-04-20")
-        .header("anthropic-version", "2023-06-01")
-        .header("Content-Type", "application/json")
-        .body(r#"{"model":"claude-haiku-4-5-20251001","max_tokens":1,"messages":[{"role":"user","content":"h"}]}"#)
-        .send()
-        .await
-        .map_err(|e| FetchError {
-            status: 0,
-            message: format!("Headers fallback request failed: {e}"),
-            retry_after_secs: None,
-        })?;
-
-    let headers = resp.headers().clone();
-    let status = resp.status().as_u16();
-
-    // Rate limit headers are present on both 200 and 429 from /v1/messages
-    let data = parse_unified_rate_limit_headers(&headers);
-
-    // If no claim data was extracted, treat as failure
-    if data.five_hour.is_none() && data.seven_day.is_none() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(FetchError {
-            status,
-            message: format!(
-                "Headers fallback: no rate limit headers in {status} response: {body}"
-            ),
-            retry_after_secs: None,
-        });
-    }
-
-    Ok(data)
-}
+// Usage cache and cooldown kept across restarts (see the module for details).
+#[path = "claude_usage_state.rs"]
+mod usage_state;
+use usage_state::{hydrate_profile_once, persist_profile, unix_now_ms, usage_state_path};
 
 /// Store a successful response in the cache.
+#[cfg(test)]
 fn cache_response(profile: &CredentialProfile, data: &UsageApiResponse) {
     API_CACHE.lock().insert(
         profile.clone(),
@@ -1134,9 +1109,21 @@ fn cache_response(profile: &CredentialProfile, data: &UsageApiResponse) {
             fetched_at: Instant::now(),
         },
     );
+    persist_profile(&usage_state_path(), profile);
+}
+
+/// Last known reading for a rate-limited or failed poll, stamped with its age.
+#[cfg(test)]
+fn get_stale_cache_with_age(profile: &CredentialProfile) -> Option<UsageApiResponse> {
+    API_CACHE.lock().get(profile).map(|c| {
+        let mut data = c.data.clone();
+        data.stale_age_secs = Some(c.fetched_at.elapsed().as_secs());
+        data
+    })
 }
 
 /// Try to get a cached response. Returns Some if cache exists and is within TTL.
+#[cfg(test)]
 fn try_get_fresh_cache(profile: &CredentialProfile) -> Option<UsageApiResponse> {
     let guard = API_CACHE.lock();
     guard.get(profile).and_then(|c| {
@@ -1149,8 +1136,31 @@ fn try_get_fresh_cache(profile: &CredentialProfile) -> Option<UsageApiResponse> 
 }
 
 /// Get stale cached data (any age) as fallback on errors.
+#[cfg(test)]
 fn get_stale_cache(profile: &CredentialProfile) -> Option<UsageApiResponse> {
     API_CACHE.lock().get(profile).map(|c| c.data.clone())
+}
+
+/// Desktop and mobile share one bounded profile cooldown, never a request-path sleep.
+#[cfg(test)]
+fn record_usage_backoff(profile: &CredentialProfile, retry_after_secs: Option<u64>) -> Instant {
+    let delay_secs = retry_after_secs
+        .unwrap_or(RATE_LIMIT_BACKOFF.as_secs())
+        .clamp(RATE_LIMIT_BACKOFF.as_secs(), 300);
+    let until = Instant::now() + Duration::from_secs(delay_secs);
+    RATE_LIMITED_UNTIL.lock().insert(profile.clone(), until);
+    persist_profile(&usage_state_path(), profile);
+    tracing::warn!(source = "claude_usage", profile = ?profile, backoff_secs = delay_secs, "Usage API rate limited — backing off");
+    until
+}
+
+pub(crate) fn usage_retry_message(until: Instant, provider: &str) -> String {
+    let remaining = until.saturating_duration_since(Instant::now());
+    let retry_at = chrono::Local::now() + chrono::Duration::seconds(remaining.as_secs() as i64);
+    format!(
+        "{provider} usage rate-limited, retry {}",
+        retry_at.format("%H:%M")
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1158,7 +1168,7 @@ fn get_stale_cache(profile: &CredentialProfile) -> Option<UsageApiResponse> {
 // ---------------------------------------------------------------------------
 
 /// Fetch rate-limit usage from the Anthropic OAuth API.
-/// Uses an in-memory cache (5 min TTL) and retries 429s with exponential backoff.
+/// Uses a five-minute cache; on HTTP 429 it records a bounded cooldown.
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn get_claude_usage_api(
@@ -1173,99 +1183,62 @@ pub(crate) async fn get_claude_usage_api_impl(
     session_id: Option<&str>,
 ) -> Result<UsageApiResponse, String> {
     let profile = profile_for_session(state, session_id)?;
-    let (token_opt, plan) = read_claude_credentials(profile.config_dir()?)?;
-    let token = token_opt.ok_or_else(|| "No Claude OAuth token found".to_string())?;
-    // Return fresh cache if available
-    if let Some(cached) = try_get_fresh_cache(&profile) {
-        return Ok(cached);
-    }
+    let key = quota_key(&profile)?;
+    profile_registry_usage(&state.provider_quota, &key, &profile)
+        .await
+        .map(|(data, _)| data)
+}
 
-    // If we're in a rate-limit backoff window, return stale cache without hitting the API
-    if let Some(until) = RATE_LIMITED_UNTIL.lock().get(&profile).copied()
+// The same desktop use case with credential/network adapters at its IO boundary.
+#[cfg(test)]
+async fn usage_api_for_profile<F, Fut>(
+    profile: &CredentialProfile,
+    read_credentials: impl FnOnce(Option<&str>) -> Result<(Option<String>, Option<PlanInfo>), String>,
+    fetch: F,
+) -> Result<UsageApiResponse, String>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: std::future::Future<Output = Result<UsageApiResponse, FetchError>>,
+{
+    let config_dir = profile.config_dir()?;
+    hydrate_profile_once(profile);
+    if let Some(until) = RATE_LIMITED_UNTIL.lock().get(profile).copied()
         && Instant::now() < until
     {
-        if let Some(stale) = get_stale_cache(&profile) {
-            return Ok(stale);
-        }
-        return Err("Rate limited — waiting for backoff to expire".to_string());
+        // The cooldown guards the primary endpoint; the last reading stays valid.
+        return get_stale_cache_with_age(profile)
+            .ok_or_else(|| usage_retry_message(until, "Claude"));
     }
-
-    // Attempt fetch with 429 retry
-    let mut last_err_msg = String::new();
-    let mut was_rate_limited = false;
-    for attempt in 0..=MAX_429_RETRIES {
-        match fetch_usage_from_api(&token).await {
-            Ok(mut data) => {
-                // Clear any rate-limit backoff on success
-                RATE_LIMITED_UNTIL.lock().remove(&profile);
-                data.plan = plan.clone();
-                cache_response(&profile, &data);
-                return Ok(data);
-            }
-            Err(e) => {
-                last_err_msg = e.message.clone();
-                if e.status == 429 {
-                    was_rate_limited = true;
-                    if attempt < MAX_429_RETRIES {
-                        // Use server's retry-after if > 0, otherwise our own exponential backoff.
-                        // retry-after: 0 is treated as "no hint" since immediate retry is pointless.
-                        let delay = match e.retry_after_secs.filter(|&s| s > 0) {
-                            Some(secs) => Duration::from_secs(secs),
-                            None => RETRY_INITIAL_DELAY * 2u32.pow(attempt),
-                        };
-                        tracing::warn!(
-                            source = "claude_usage",
-                            attempt = attempt + 1,
-                            max_retries = MAX_429_RETRIES,
-                            delay_secs = delay.as_secs(),
-                            "429 rate limited, retrying"
-                        );
-                        tokio::time::sleep(delay).await;
-                        continue;
-                    }
-                }
-                // Non-429 error or exhausted retries — fall through
-                break;
-            }
-        }
+    if let Some(cached) = try_get_fresh_cache(profile) {
+        return Ok(cached);
     }
-
-    // Set backoff so next poll doesn't hammer a rate-limited endpoint
-    if was_rate_limited {
-        RATE_LIMITED_UNTIL
-            .lock()
-            .insert(profile.clone(), Instant::now() + RATE_LIMIT_BACKOFF);
-        tracing::warn!(
-            source = "claude_usage",
-            backoff_secs = RATE_LIMIT_BACKOFF.as_secs(),
-            "Rate limited — backing off"
-        );
-    }
-
-    // Fallback: extract rate limits from /v1/messages response headers (Haiku, ~9 tokens)
-    match fetch_usage_from_headers(&token).await {
+    let (token_opt, plan) = read_credentials(config_dir)?;
+    let token = token_opt.ok_or_else(|| "No Claude OAuth token found".to_string())?;
+    let last_err_msg = match fetch(token.clone()).await {
         Ok(mut data) => {
-            tracing::info!(
-                source = "claude_usage",
-                "Primary API failed, using headers fallback"
-            );
+            RATE_LIMITED_UNTIL.lock().remove(profile);
             data.plan = plan.clone();
-            cache_response(&profile, &data);
+            cache_response(profile, &data);
             return Ok(data);
         }
-        Err(e) => {
-            tracing::warn!(
-                source = "claude_usage",
-                "Headers fallback also failed: {}",
-                e.message
-            );
+        // A throttled usage endpoint must not blank the badge: record the cooldown
+        // and serve the last reading without a generating request.
+        Err(error) if error.status == 429 => {
+            let until = record_usage_backoff(profile, error.retry_after_secs);
+            return get_stale_cache_with_age(profile)
+                .ok_or_else(|| usage_retry_message(until, "Claude"));
         }
-    }
+        Err(error) => {
+            tracing::warn!(source = "claude_usage", profile = ?profile, status = error.status, "Primary usage API failed");
+            error.message
+        }
+    };
 
     // On error, return stale cache if available
-    if let Some(stale) = get_stale_cache(&profile) {
+    if let Some(stale) = get_stale_cache(profile) {
         tracing::info!(
             source = "claude_usage",
+            profile = ?profile,
             "Returning stale cache after error: {last_err_msg}"
         );
         return Ok(stale);
@@ -1274,21 +1247,121 @@ pub(crate) async fn get_claude_usage_api_impl(
     Err(last_err_msg)
 }
 
-/// Non-generating mobile read: cache or primary OAuth GET, never the messages fallback.
-/// Cache age is measured here; clients must not label an old fallback as fresh.
-pub(crate) async fn session_quota(
-    state: &crate::AppState,
-    session_id: &str,
+fn quota_key(
+    profile: &CredentialProfile,
+) -> Result<crate::provider_quota::SubscriptionKey, String> {
+    let dir = profile
+        .config_dir()?
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|h| h.join(".claude")))
+        .ok_or("Home not found")?;
+    Ok(crate::provider_quota::SubscriptionKey::new(
+        "claude-code",
+        "anthropic",
+        dir.to_string_lossy(),
+    ))
+}
+
+// The old persisted format is retained as storage only. All read decisions and
+// network requests belong to the registry, not the legacy in-memory cache.
+async fn profile_registry_usage(
+    registry: &crate::provider_quota::QuotaRegistry,
+    key: &crate::provider_quota::SubscriptionKey,
+    profile: &CredentialProfile,
 ) -> Result<(UsageApiResponse, bool), String> {
-    let profile = profile_for_session(state, Some(session_id))?;
-    session_quota_for_profile(&profile, read_claude_credentials, |token| async move {
-        fetch_usage_from_api(&token).await
-    })
-    .await
+    use crate::provider_quota::{QuotaDetail, QuotaState};
+    hydrate_profile_once(profile);
+    if registry.get(key).snapshot.is_none() {
+        if let Some(cached) = API_CACHE.lock().get(profile) {
+            let observed =
+                unix_now_ms().saturating_sub(cached.fetched_at.elapsed().as_millis() as u64);
+            if let Ok(body) = serde_json::to_value(&cached.data)
+                && let Ok(mut snapshot) =
+                    crate::provider_quota::adapters::parse_claude_usage(&body, observed)
+            {
+                snapshot.detail = Some(QuotaDetail::Claude {
+                    observed_at_ms: observed,
+                    response: cached.data.clone(),
+                });
+                registry.observe(key, snapshot);
+            }
+        }
+        if let Some(until) = RATE_LIMITED_UNTIL.lock().get(profile).copied() {
+            registry.restore_backoff(
+                key,
+                unix_now_ms() + until.saturating_duration_since(Instant::now()).as_millis() as u64,
+            );
+        }
+    }
+    let result = registry_usage(registry, key).await;
+    let view = registry.get(key);
+    if let Some(QuotaDetail::Claude {
+        observed_at_ms,
+        response,
+    }) = view.snapshot.and_then(|s| s.detail)
+    {
+        let age = Duration::from_millis(unix_now_ms().saturating_sub(observed_at_ms));
+        API_CACHE.lock().insert(
+            profile.clone(),
+            ApiCache {
+                data: response,
+                fetched_at: Instant::now().checked_sub(age).unwrap_or_else(Instant::now),
+            },
+        );
+    }
+    match view.state {
+        QuotaState::Backoff { until_ms } => {
+            RATE_LIMITED_UNTIL.lock().insert(
+                profile.clone(),
+                Instant::now() + Duration::from_millis(until_ms.saturating_sub(unix_now_ms())),
+            );
+        }
+        _ => {
+            RATE_LIMITED_UNTIL.lock().remove(profile);
+        }
+    }
+    persist_profile(&usage_state_path(), profile);
+    result
+}
+
+async fn registry_usage(
+    registry: &crate::provider_quota::QuotaRegistry,
+    key: &crate::provider_quota::SubscriptionKey,
+) -> Result<(UsageApiResponse, bool), String> {
+    use crate::provider_quota::{QuotaDetail, QuotaState};
+    let view = registry.ensure_detail(key).await;
+    let error = || match &view.state {
+        QuotaState::Backoff { until_ms } => usage_retry_message(
+            Instant::now() + Duration::from_millis(until_ms.saturating_sub(unix_now_ms())),
+            "Claude",
+        ),
+        QuotaState::AuthInvalid => "Claude usage API returned 401: sign in again".into(),
+        QuotaState::Unavailable { reason } => format!("No Claude OAuth token found: {reason}"),
+        _ => format!("Claude usage unavailable: {:?}", view.state),
+    };
+    let snapshot = view.snapshot.ok_or_else(error)?;
+    let Some(QuotaDetail::Claude {
+        observed_at_ms,
+        mut response,
+    }) = snapshot.detail
+    else {
+        return Err(error());
+    };
+    if matches!(
+        view.state,
+        QuotaState::AuthInvalid | QuotaState::ContractError { .. }
+    ) {
+        return Err(error());
+    }
+    let age = unix_now_ms().saturating_sub(observed_at_ms) / 1000;
+    let stale = age >= registry.config().cadence.as_secs();
+    response.stale_age_secs = stale.then_some(age);
+    Ok((response, stale))
 }
 
 // Keep credential and HTTP IO at the boundary so cache transitions can be tested
 // without touching a real account or issuing a generating request.
+#[cfg(test)]
 async fn session_quota_for_profile<F, Fut>(
     profile: &CredentialProfile,
     read_credentials: impl FnOnce(Option<&str>) -> Result<(Option<String>, Option<PlanInfo>), String>,
@@ -1299,6 +1372,7 @@ where
     Fut: std::future::Future<Output = Result<UsageApiResponse, FetchError>>,
 {
     let config_dir = profile.config_dir()?;
+    hydrate_profile_once(profile);
     if let Some(data) = try_get_fresh_cache(profile) {
         return Ok((data, false));
     }
@@ -1317,16 +1391,7 @@ where
                 return Ok((data, false));
             }
             Ok(Err(error)) if error.status == 429 => {
-                // Share desktop's minimum backoff, but cap untrusted Retry-After
-                // at five minutes so a malformed hint cannot strand the profile.
-                let delay_secs = error
-                    .retry_after_secs
-                    .unwrap_or(RATE_LIMIT_BACKOFF.as_secs())
-                    .clamp(RATE_LIMIT_BACKOFF.as_secs(), 300);
-                RATE_LIMITED_UNTIL.lock().insert(
-                    profile.clone(),
-                    Instant::now() + Duration::from_secs(delay_secs),
-                );
+                record_usage_backoff(profile, error.retry_after_secs);
             }
             _ => {}
         }
@@ -3051,3 +3116,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "claude_usage_backoff_tests.rs"]
+mod backoff_tests;

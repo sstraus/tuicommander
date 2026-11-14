@@ -271,6 +271,8 @@ function createAppLogger() {
 		if (last && last.level === level && last.source === source && last.message === message) {
 			last.repeatCount = (last.repeatCount ?? 0) + 1;
 			last.timestamp = Date.now();
+			// The latest repeat carries the current geometry or error detail.
+			last.data = data;
 			// Bump revision so UI sees updated repeat count
 			setRevision((r) => r + 1);
 			// UI coalescing must not discard a second stall's numeric metadata.

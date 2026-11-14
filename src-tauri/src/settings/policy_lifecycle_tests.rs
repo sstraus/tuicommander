@@ -161,7 +161,7 @@ async fn cancelled_dialog_revokes_approval_and_dismisses_question() {
 #[serial_test::serial]
 async fn approval_cannot_cross_connection_with_identical_content() {
     let (dir, _guard, state, service) = fixture();
-    let caller = Caller::http("owner-one".into(), true);
+    let caller = Caller::http("owner-one".into());
     let request = edit(revision(&service).await);
     let id = service
         .execute_as(request.clone(), &caller, None)
@@ -173,7 +173,7 @@ async fn approval_cannot_cross_connection_with_identical_content() {
         answer(state.clone(), caller, id.clone(), true).await["confirmed"],
         json!(true)
     );
-    let other = Caller::http("owner-two".into(), true);
+    let other = Caller::http("owner-two".into());
     assert_eq!(
         service
             .execute_as(request, &other, Some(&id))

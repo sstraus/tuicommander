@@ -272,7 +272,7 @@ Branch item anatomy (left to right):
 - **PR marker** (optional): a 7px square plus `#N`, both in the state color, no fill or border. A conflict rotates the square into a diamond so it does not rely on color. Draft and Review outline the square instead of filling it, as their pills did (Review vs Changes requested differ only by fill). Motion matches the pill form: the conflict marker pulses at 1.5s, Checking and CI Running at 2s; the number never moves. The UI Legend renders this same component The state word (Review, Conflicts, …) and any uncommitted-file count live in the `data-tooltip`
 - **Unmerged mark** (optional): a 7px outlined square in `--fg-secondary`, centered in a 14px target with no pill background. It marks a worktree with commits outside the default branch even when its working tree is clean; hover or focus explains why branch deletion is blocked.
 - **Diff numbers** (optional): plain `+N -N` in `--font-2xs`, `--success` / `--diff-del`, no chip. Always shown beside the PR marker, never alternating with it
-- **Actions** (on hover only): reveal the natural width of shared compact `Button` controls (+, ×), without reserving space while idle. Compact actions are 22px high on desktop and at least 44px high at touch widths. Swipe-tray actions use shared stretch geometry; the open tray grows with its controls.
+- **Actions** (on hover only): reveal the natural width of shared compact `Button` controls (+, ×) over the row’s inline end on hover or keyboard focus, without reserving space or pushing facts outside the row. Compact actions are 22px high on desktop and at least 44px high at touch widths. Swipe-tray actions use shared stretch geometry; the open tray grows with its controls.
 
 ### Tab Bar
 
@@ -476,7 +476,9 @@ use the shared 36px/44px control tokens. Its shared `Textarea` retains the teste
 panel-relative editor cap and one-line reset with a narrow `composer-editor`
 exception; this does not exempt other actions or fields. Keep desktop editor
 resize and overflow rules scoped to the non-mobile composer. The phone editor
-keeps its native scrollable surface for drafts beyond its height cap.
+keeps its native scrollable surface for drafts beyond its height cap. Use
+`Textarea embedded` inside the mobile composer: the surrounding shell owns the
+border and focus frame, so the editor does not add standalone form-field chrome.
 
 `SegmentedControl` is the shared view switch. It uses a named tablist, one
 keyboard tab stop, and Arrow Left/Right, Home and End to select and focus an
@@ -744,6 +746,8 @@ arrange the wrapping picker but must not resize its swatches.
 - Rich editors use the same `FormControls.autoGrow` intrinsic bounds. A rich
   editor can retain its established maximum through `--auto-grow-max-height`;
   CodeMirror owns content measurement, with no textarea sizing loop.
+  `FormControls.autoGrowMinimum` reserves the same minimum without a maximum
+  or scroll container, for layouts whose extra editor content overlays upward.
 
 ### Shared validation and removable toggles
 

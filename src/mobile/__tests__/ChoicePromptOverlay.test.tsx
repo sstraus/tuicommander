@@ -76,4 +76,27 @@ describe("ChoicePromptOverlay", () => {
 		expect(buttons[2].className).toContain("Destructive");
 		expect(buttons[0].className).not.toContain("Destructive");
 	});
+
+	// Catches: the second question of a multi-question payload renders without
+	// its header or position, or the context row shows for a plain dialog.
+	it("shows the payload header and question position only when present", () => {
+		const second: ChoicePrompt = {
+			title: "Which sizes should the probe use?",
+			options: [
+				{ key: "1", label: "Small", highlighted: true, destructive: false, hint: "Use small" },
+				{ key: "2", label: "Large", highlighted: false, destructive: false },
+			],
+			selection_mode: "toggle-enter",
+			header: "Sizes",
+			question_index: 2,
+			question_count: 2,
+		};
+		const { container, unmount } = render(() => <ChoicePromptOverlay prompt={second} onSelect={() => {}} />);
+		const context = container.firstElementChild?.firstElementChild;
+		expect(context?.textContent).toBe("Sizes2/2");
+		expect(container.textContent).toContain("Use small");
+		unmount();
+		const plain = render(() => <ChoicePromptOverlay prompt={CLAUDE_EDIT_CONFIRM} onSelect={() => {}} />);
+		expect(plain.container.firstElementChild?.firstElementChild?.textContent).toBe(CLAUDE_EDIT_CONFIRM.title);
+	});
 });

@@ -357,8 +357,8 @@ export interface ReconcileGate {
  * view. Pure, so the gate is unit-testable away from the CanvasTerminal closure.
  *
  * `hidden` belongs here for cost, not correctness: a background tab is
- * `display:none` and never unmounted, and its rowMap is cleared on hide, so every
- * partial frame it receives schedules a reconcile. Each fire forces
+ * `display:none` and never unmounted. Its retained viewport is not updated by
+ * hidden frames, and each unnecessary reconcile forces
  * `grid_force_full_damage()` — the most expensive frame there is — to be built,
  * shipped, decoded and dropped, once a second, per hidden tab. The show path
  * requests a fresh full frame anyway, so nothing is lost by staying quiet.

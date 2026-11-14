@@ -65,6 +65,16 @@ describe("buildTickerText", () => {
 		expect(text).toBe("7d: 68%");
 	});
 
+	// Catches a rate-limited ticker showing an old reading as if it were live.
+	it("labels a stale reading with its age", () => {
+		const stale = { ...empty, five_hour: { utilization: 42, resets_at: null } };
+		expect(buildTickerText({ ...stale, stale_age_secs: 6 * 60 + 20 })).toBe("5h: 42% (6m ago)");
+		expect(buildTickerText({ ...stale, stale_age_secs: 20 })).toBe("5h: 42% (<1m ago)");
+		expect(buildTickerText({ ...stale, stale_age_secs: 3 * 3600 })).toBe("5h: 42% (3h ago)");
+		expect(buildTickerText({ ...stale, stale_age_secs: null })).toBe("5h: 42%");
+		expect(buildTickerText({ ...empty, stale_age_secs: 600 })).toBe("no data");
+	});
+
 	it("returns 'no data' when no buckets are present", () => {
 		expect(buildTickerText(empty)).toBe("no data");
 	});

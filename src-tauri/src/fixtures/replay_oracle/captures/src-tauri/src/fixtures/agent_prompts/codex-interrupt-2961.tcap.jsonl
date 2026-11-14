@@ -1,0 +1,3 @@
+{"fixture":"src-tauri/src/fixtures/agent_prompts/codex-interrupt-2961.tcap","agent":"codex","geometry":[40,132]}
+{"record":0,"state":{"shell":0,"agent":"starting","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"ring_len":1065}

@@ -6,24 +6,28 @@ import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import type { RepositoryState, WorkspaceState } from "../../stores/repositories";
 import { repositoriesStore } from "../../stores/repositories";
 import { type TerminalState, terminalsStore } from "../../stores/terminals";
-import { toastsStore } from "../../stores/toasts";
-import { getSessionConnection } from "../../transportRuntime";
 import { writeClipboard } from "../../utils/clipboard";
 import { _resetMergedActivityAccum, activePrStatus } from "../../utils/mergedPrGrace";
 import { effectiveMergeMethod } from "../../utils/prMerge";
+import { revealRepoInSidebar } from "../../utils/revealRepoInSidebar";
+import { createSessionCopyItems } from "../ContextMenu/sessionCopyItems";
 import { Button } from "../ui/Button";
+import { WorktreeDiagnosticRow } from "./WorktreeDiagnosticRow";
 
 export { effectiveMergeMethod };
 
+import { keptReason } from "../../hooks/git/workspaceCleanupDecision";
 import { t } from "../../i18n";
 import { invoke } from "../../invoke";
 import { contextMenuActionsStore } from "../../stores/contextMenuActionsStore";
+import { keptCheckoutsStore } from "../../stores/keptCheckouts";
 import { progressStore } from "../../stores/progress";
 import { rateLimitStore } from "../../stores/ratelimit";
 import { remoteConnectionsStore } from "../../stores/remoteConnections";
 import { repoSettingsStore } from "../../stores/repoSettings";
 import { settingsStore } from "../../stores/settings";
 import { sidebarPluginStore } from "../../stores/sidebarPluginStore";
+import { uiStore } from "../../stores/ui";
 import { cx } from "../../utils";
 import { onClickKeyDown } from "../../utils/a11y";
 import { compareBranches } from "../../utils/branchSort";
@@ -56,6 +60,7 @@ import { AgentIcon } from "../ui/AgentIcon";
 import { ChevronIcon } from "../ui/ChevronIcon";
 import { SubAgentIcon } from "../ui/SubAgentIcon";
 import { BranchItemBadge } from "./BranchItemBadge";
+import { hasLiveHarness, isLiveHarness } from "./liveHarness";
 import { PR_STATE_LABELS, PrStateBadge, prBadgeKind } from "./PrStateBadge";
 import s from "./Sidebar.module.css";
 import { SidebarPluginSection } from "./SidebarPluginSection";
@@ -392,10 +397,7 @@ const CrossRepoChildren: Component<{ parent: TerminalState; repoPath: string }> 
 			.filter((target) => target.ids.length > 0),
 	);
 	const reveal = (repo: RepositoryState, id: string) => {
-		const group = repositoriesStore.getGroupForRepo(repo.path);
-		if (group?.collapsed) repositoriesStore.toggleGroupCollapsed(group.id);
-		if (repo.collapsed) repositoriesStore.toggleCollapsed(repo.path);
-		if (!repo.expanded) repositoriesStore.toggleExpanded(repo.path);
+		revealRepoInSidebar(repo.path);
 		const workspace = Object.values(repo.workspaces).find((item) => item.terminals.includes(id));
 		if (workspace?.tabsCollapsed) repositoriesStore.toggleWorkspaceTabsCollapsed(repo.path, workspace.workspaceId);
 		navigateToTerminal(id);
@@ -433,111 +435,9 @@ const CrossRepoChildren: Component<{ parent: TerminalState; repoPath: string }> 
 const BranchTabList: Component<{ terminalIds: string[]; repoPath: string }> = (props) => {
 	const sessionMenu = createContextMenu();
 	const [menuTerminalId, setMenuTerminalId] = createSignal<string | null>(null);
-	type SessionIdentity = {
-		session_id: string;
-		child_pid?: number | null;
-		alias?: string | null;
-		connection_id?: string;
-	};
-	const [identity, setIdentity] = createSignal<SessionIdentity | null>(null);
-	const menuTerminal = () => terminalsStore.get(menuTerminalId() ?? "");
-	const liveSessionId = () => {
-		const term = menuTerminal();
-		return term && term.shellState !== "exited" && !term.suspended ? term.sessionId : null;
-	};
-	const readIdentity = async (sessionId: string) => {
-		const connectionId = getSessionConnection(sessionId);
-		const rows = await invoke<SessionIdentity[]>("list_active_sessions");
-		return rows.find((row) => row.session_id === sessionId && row.connection_id === connectionId) ?? null;
-	};
-	createEffect(() => {
-		setIdentity(null);
-		if (!sessionMenu.visible()) return;
-		const sessionId = liveSessionId();
-		if (!sessionId) return;
-		let cancelled = false;
-		onCleanup(() => {
-			cancelled = true;
-		});
-		void readIdentity(sessionId)
-			.then((row) => {
-				if (!cancelled) setIdentity(row);
-			})
-			.catch((error) => appLogger.warn("app", "Could not read session identifiers", error));
-	});
-	const copyId = async (kind: "session" | "process" | "alias") => {
-		const sessionId = menuTerminal()?.sessionId;
-		if (!sessionId) return;
-		try {
-			const row = kind !== "session" && liveSessionId() === sessionId ? await readIdentity(sessionId) : null;
-			const value = kind === "session" ? sessionId : kind === "process" ? row?.child_pid : row?.alias;
-			if (value == null || value === "")
-				throw new Error(t("sidebar.identifierUnavailable", "Session identifier unavailable"));
-			await writeClipboard(String(value));
-			toastsStore.add(
-				kind === "process"
-					? t("sidebar.processIdCopied", "Process ID copied")
-					: kind === "alias"
-						? t("sidebar.aliasCopied", "Alias copied")
-						: t("sidebar.sessionIdCopied", "Session ID copied"),
-				String(value),
-				"info",
-				false,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				false,
-			);
-		} catch (error) {
-			toastsStore.add(
-				kind === "process"
-					? t("sidebar.copyProcessIdFailed", "Could not copy process ID")
-					: kind === "alias"
-						? t("sidebar.copyAliasFailed", "Could not copy alias")
-						: t("sidebar.copySessionIdFailed", "Could not copy session ID"),
-				String(error),
-				"error",
-				false,
-				undefined,
-				undefined,
-				undefined,
-				undefined,
-				false,
-			);
-		}
-	};
+	const copyItems = createSessionCopyItems(menuTerminalId, sessionMenu.visible);
 	const sessionMenuItems = (): ContextMenuItem[] => [
-		{
-			label: t("sidebar.copySessionId", "Copy session ID"),
-			title: menuTerminal()?.sessionId ?? undefined,
-			disabled: !menuTerminal()?.sessionId,
-			action: () => {
-				void copyId("session");
-			},
-		},
-		...(liveSessionId() && identity()?.child_pid != null
-			? [
-					{
-						label: t("sidebar.copyProcessId", "Copy process ID"),
-						title: String(identity()!.child_pid),
-						action: () => {
-							void copyId("process");
-						},
-					},
-				]
-			: []),
-		...(liveSessionId() && identity()?.alias
-			? [
-					{
-						label: t("sidebar.copyAlias", "Copy alias"),
-						title: identity()!.alias!,
-						action: () => {
-							void copyId("alias");
-						},
-					},
-				]
-			: []),
+		...copyItems(),
 		{ label: "", separator: true, action: () => {} },
 		{
 			label: globalWorkspaceStore.isPromoted(menuTerminalId() ?? "")
@@ -639,6 +539,7 @@ const BranchTabList: Component<{ terminalIds: string[]; repoPath: string }> = (p
 			const visual = terminalVisualState({
 				error: t.awaitingInput === "error",
 				question: t.awaitingInput === "question",
+				stalled: t.stalled === true,
 				busy: (t.sessionId != null && rateLimitStore.isRateLimited(t.sessionId)) || terminalsStore.isBusy(id),
 				unseen: t.unseen,
 				idle: t.shellState === "idle",
@@ -646,6 +547,7 @@ const BranchTabList: Component<{ terminalIds: string[]; repoPath: string }> = (p
 			const visualClass = {
 				error: s.branchTabDotError,
 				question: s.branchTabDotQuestion,
+				stalled: s.branchTabDotStalled,
 				busy: s.branchTabDotBusy,
 				unseen: s.branchTabDotUnseen,
 				idle: s.branchTabDotIdle,
@@ -1468,7 +1370,8 @@ export const BranchItem: Component<{
 										const risky = () =>
 											state() === "unknown" ||
 											state() === "unrelated_history" ||
-											(state() === "merged" && !!lifecycle() && lifecycle()?.removalSafety !== "safe");
+											(state() === "merged" && !!lifecycle() && lifecycle()?.removalSafety !== "safe") ||
+											(state() === "merged" && !!keptReason(props.branch.cleanup));
 										return (
 											<span
 												class={cx(
@@ -1476,13 +1379,25 @@ export const BranchItem: Component<{
 													state() === "merged" && !risky() ? s.richChipMerged : s.richChipWarn,
 													risky() && s.richChipRisk,
 												)}
-												data-tooltip={state() === "stale" ? staleTooltip() : tipFor("commit")}
+												data-tooltip={
+													state() === "stale"
+														? staleTooltip()
+														: [
+																keptReason(props.branch.cleanup) &&
+																	`${t("sidebar.keptReason", "Kept")}: ${keptReason(props.branch.cleanup)}`,
+																tipFor("commit"),
+															]
+																.filter(Boolean)
+																.join(" · ")
+												}
 												data-tooltip-pos="bottom"
 											>
 												{state() === "unknown"
 													? unknownLifecycleLabel(lifecycle())
 													: state() === "merged"
-														? t("sidebar.merged", "Merged")
+														? keptReason(props.branch.cleanup)
+															? t("sidebar.mergedKept", "Merged · kept")
+															: t("sidebar.merged", "Merged")
 														: state() === "unrelated_history"
 															? t("sidebar.unrelatedHistory", "Unrelated history")
 															: t("sidebar.stale", "Stale")}
@@ -1497,6 +1412,32 @@ export const BranchItem: Component<{
 								</Show>
 							</span>
 						</div>
+					</Show>
+					<Show when={keptCheckoutsStore.isKept(props.repoPath, props.branch.branchName)}>
+						<Button
+							size="compact"
+							variant="ghost"
+							class={s.mergedCleanup}
+							data-testid="reset-keep"
+							aria-label={t("sidebar.resetKeep", "Reset Keep")}
+							data-tooltip={t("sidebar.resetKeep", "Reset Keep")}
+							data-tooltip-pos="bottom"
+							onClick={(e) => {
+								e.stopPropagation();
+								keptCheckoutsStore.reset(props.repoPath, props.branch.branchName);
+							}}
+						>
+							<Show
+								when={rich()}
+								fallback={
+									<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+										<path d="M12 4a8 8 0 1 1-7.75 10h2.1A6 6 0 1 0 7.1 8H10v2H4V4h2v2.3A7.97 7.97 0 0 1 12 4Z" />
+									</svg>
+								}
+							>
+								{t("sidebar.resetKeep", "Reset Keep")}
+							</Show>
+						</Button>
 					</Show>
 				</div>
 				<ContextMenu
@@ -1632,6 +1573,14 @@ export const RepoSection: Component<{
 		}),
 	);
 	const canRemoveAny = createMemo(() => sortedBranches().length > 1);
+	// H view: keep only branches with a live harness, and on them only the live
+	// harness rows. Applied after the sort so order stays the unfiltered order.
+	const harnessOnly = () => uiStore.state.repoFilterHarnessOnly;
+	const shownBranches = createMemo(() =>
+		harnessOnly() ? sortedBranches().filter((b) => hasLiveHarness(b.terminals)) : sortedBranches(),
+	);
+	const shownTerminalIds = (branch: WorkspaceState) =>
+		harnessOnly() ? branch.terminals.filter(isLiveHarness) : branch.terminals;
 
 	const localBranchNames = createMemo(() => new Set(Object.keys(props.repo.workspaces)));
 	const remoteOnlyPrs = createMemo(() => githubStore.getRemoteOnlyPrs(props.repo.path, localBranchNames()));
@@ -1966,7 +1915,7 @@ export const RepoSection: Component<{
 			{/* Branches */}
 			<Show when={expanded() && !props.repo.collapsed}>
 				<div class={s.repoBranches}>
-					<For each={sortedBranches()}>
+					<For each={shownBranches()}>
 						{(branch, index) => (
 							<div
 								class={cx(
@@ -2017,12 +1966,12 @@ export const RepoSection: Component<{
 									githubBaseUrl={githubBaseUrl()}
 								/>
 								<Show when={!branch.tabsCollapsed && getBranchTabsAvailable(branch)}>
-									<BranchTabList terminalIds={branch.terminals} repoPath={props.repo.path} />
+									<BranchTabList terminalIds={shownTerminalIds(branch)} repoPath={props.repo.path} />
 								</Show>
 							</div>
 						)}
 					</For>
-					<For each={props.repo.detachedWorktrees ?? []}>
+					<For each={harnessOnly() ? [] : (props.repo.detachedWorktrees ?? [])}>
 						{(checkout) => (
 							<div
 								class={s.detachedWorktree}
@@ -2037,16 +1986,12 @@ ${checkout.head}`}
 							</div>
 						)}
 					</For>
-					<For each={props.repo.worktreeDiagnostics ?? []}>
-						{(checkout) => (
-							<div class={s.worktreeDiagnostic} data-testid="worktree-diagnostic" data-tooltip={checkout.path}>
-								<div class={s.detachedName}>{checkout.path}</div>
-								<div class={s.diagnosticGuidance}>{checkout.guidance}</div>
-							</div>
-						)}
+					<For each={harnessOnly() ? [] : (props.repo.worktreeDiagnostics ?? [])}>
+						{(checkout) => <WorktreeDiagnosticRow repoPath={props.repo.path} diagnostic={checkout} />}
 					</For>
 					<Show
 						when={
+							!harnessOnly() &&
 							sortedBranches().length === 0 &&
 							!props.repo.detachedWorktrees?.length &&
 							!props.repo.worktreeDiagnostics?.length

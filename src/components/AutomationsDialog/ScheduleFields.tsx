@@ -2,10 +2,12 @@ import { createSignal, For, Show } from "solid-js";
 import { t } from "../../i18n";
 import type { AutomationsStore } from "../../stores/automations";
 import { Button } from "../ui/Button";
+import { Dropdown } from "../ui/Dropdown";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import s from "./AutomationsDialog.module.css";
 import type { SchedulePreset } from "./contract";
+import { AUTOMATION_TIMEZONES } from "./timezones";
 
 /** Date formatting only; the backend supplies every occurrence. */
 export function zonedTime(value: number | string, timezone: string): string {
@@ -18,6 +20,18 @@ export function zonedTime(value: number | string, timezone: string): string {
 	}
 }
 export function ScheduleFields(props: { store: AutomationsStore }) {
+	const [zoneOpen, setZoneOpen] = createSignal(false);
+	let zoneButton: HTMLButtonElement | undefined;
+	const closeZone = () => {
+		setZoneOpen(false);
+		zoneButton?.focus();
+	};
+	const zoneItems = () => {
+		const saved = props.store.draft()?.timezone;
+		const names =
+			saved && !AUTOMATION_TIMEZONES.includes(saved) ? [saved, ...AUTOMATION_TIMEZONES] : AUTOMATION_TIMEZONES;
+		return names.map((zone) => ({ id: zone, label: zone }));
+	};
 	const [cadence, setCadence] = createSignal(props.store.draft()?.once_local != null ? "once" : "custom");
 	const [hour, setHour] = createSignal(9),
 		[minute, setMinute] = createSignal(0),
@@ -130,10 +144,29 @@ export function ScheduleFields(props: { store: AutomationsStore }) {
 
 				<label>
 					{t("automations.timezone", "Timezone")}
-					<Input
-						placeholder={t("automations.localZone", "Local zone from backend")}
-						value={props.store.draft()?.timezone ?? ""}
-						onInput={(event) => props.store.edit({ timezone: event.currentTarget.value })}
+					<Button
+						ref={zoneButton}
+						type="button"
+						aria-label={t("automations.timezone", "Timezone")}
+						aria-haspopup="menu"
+						aria-expanded={zoneOpen()}
+						onClick={() => setZoneOpen(!zoneOpen())}
+					>
+						{props.store.draft()?.timezone || t("automations.localZone", "Local zone from backend")}
+					</Button>
+					<Dropdown
+						class={s.timezoneMenu}
+						visible={zoneOpen()}
+						items={zoneItems()}
+						selected={props.store.draft()?.timezone}
+						searchLabel={t("automations.timezone", "Timezone")}
+						aria-label={t("automations.timezone", "Timezone")}
+						anchor={() => zoneButton?.getBoundingClientRect()}
+						onSelect={(timezone) => {
+							props.store.edit({ timezone });
+							closeZone();
+						}}
+						onClose={closeZone}
 					/>
 				</label>
 				<Button type="button" disabled={props.store.previewLoading()} onClick={() => void props.store.preview()}>

@@ -9,6 +9,13 @@ use tokio::sync::{mpsc, oneshot};
 
 pub(super) static HANDLE: OnceLock<mpsc::Sender<Command>> = OnceLock::new();
 pub(super) enum Command {
+    Workflow {
+        bot: String,
+        operation: crate::workflows::TelegramOperation,
+        notification_run: String,
+        request: crate::workflows::TelegramRequest,
+        reply: oneshot::Sender<Result<Value, Error>>,
+    },
     SetupReply {
         chat: i64,
         message: super::settings::SetupReply,
@@ -361,7 +368,8 @@ impl Runtime {
     }
     pub async fn update(&mut self, value: Value) -> Result<Value, Error> {
         self.retire_registration();
-        if !self.enabled() {
+        let workflow_callback = self.workflow_callback(&value).await;
+        if workflow_callback.is_none() && !self.enabled() {
             return Err(Error::Config);
         }
         if let Some(message) = value.get("message") {
@@ -386,7 +394,10 @@ impl Runtime {
         if !self.stop_acp(&value).await? {
             self.stop(&value)?;
         }
-        let callback = self.callback(&value).await;
+        let callback = match workflow_callback {
+            Some(accepted) => Ok(accepted),
+            None => self.callback(&value).await,
+        };
         if value.get("callback_query").is_some() {
             let outcome = match &callback {
                 Ok(true) => "delivered".into(),
@@ -503,6 +514,7 @@ impl Runtime {
                     }
                     let (reply,result) = match command {
                         Command::Automation { .. } => unreachable!(),
+                        Command::Workflow { bot, operation, request, notification_run, reply } => (reply, self.workflow(&bot, operation, request, &notification_run).await),
                         Command::Tool { caller,sid,input,reply } => (reply,self.tool(&caller,&sid,input).await),
                         Command::Deliver { mail,reply } => (reply,self.deliver(mail).await),
                         Command::Update { value,reply } => (reply,self.update(value).await),

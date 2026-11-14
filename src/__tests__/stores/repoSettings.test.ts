@@ -236,9 +236,12 @@ describe("repoSettingsStore", () => {
 			});
 		});
 
-		it("returns undefined for unknown repo", () => {
+		// Catches: a repo with no per-repo entry resolving to nothing, so every
+		// caller's "off" fallback silently overrides the global default.
+		it("resolves a repo without a settings entry from the global defaults", () => {
 			testInScope(() => {
-				expect(store.getEffective("/unknown")).toBeUndefined();
+				setMockDefaults("baseBranch", "develop");
+				expect(store.getEffective("/unknown")?.baseBranch).toBe("develop");
 			});
 		});
 
@@ -634,9 +637,10 @@ describe("repoSettingsStore", () => {
 			});
 		});
 
-		it("returns undefined for an unknown repo", () => {
+		it("resolves a field of a repo without a settings entry from the global defaults", () => {
 			testInScope(() => {
-				expect(store.getEffectiveField("/unknown", "baseBranch")).toBeUndefined();
+				setMockDefaults("baseBranch", "develop");
+				expect(store.getEffectiveField("/unknown", "baseBranch")).toBe("develop");
 			});
 		});
 	});

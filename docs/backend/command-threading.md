@@ -2,7 +2,7 @@
 
 ## Session Chat Send now
 
-`send_queued_agent_command_now` is async. Both IPC and HTTP run the shared blocking queue claim and native submission on `tokio::task::spawn_blocking`. The existing interruption path can wait up to ten seconds for independent idle evidence; no UI thread or Tokio worker performs that wait.
+`send_queued_agent_command_now` is async. Both IPC and HTTP run the shared blocking queue claim and native submission on `tokio::task::spawn_blocking`. In the interrupt mode the command returns after the Escape write: the queue flush on the next idle edge types the prompt, so no command waits for idle evidence. The background mode sleeps the native key and submit gaps, and the idle flush writes to the PTY, so neither runs on a UI thread or a Tokio worker.
 
 ## Plugin discovery
 
@@ -123,9 +123,6 @@ and restart verification await without blocking the IPC main thread.
 
 `story_action_command` is `async fn` and offloads SQLite and ownership resolution with `spawn_blocking`. The headless-compatible `/stories/action` route offloads the same shared Rust service independently; the MCP `workflow action=story` entry runs it through the existing blocking handler. This keeps disk I/O off the macOS IPC thread and Tokio workers.
 
-`workflow_definition_action` and its HTTP twin use `spawn_blocking` around graph validation and SQLite publication for the same reason.
-`workflow_run_action` and its HTTP twin also use `spawn_blocking` for SQLite run transitions and event paging.
-
 391 `#[tauri::command]` declarations, 222 of them syntactically sync. Most are
 correctly sync — cached getters, atomic reads, in-memory state. What follows is
 the part of the inventory that matters, so this class of bug does not regrow
@@ -138,6 +135,8 @@ unnoticed.
 `fs_read_file`, `list_directory`, `search_files`.
 `work_items/start_work_prompt.rs`: `build_start_work_prompt` uses the same
 `spawn_blocking_fs` lane to read and expand repository brief templates.
+`markdown_review.rs`: `markdown_review_changed_lines` checks saved text against disk and computes zero-context buffer diffs on the blocking pool.
+
 `lib.rs`: `read_file`, `read_editor_file`, `read_external_file`,
 `read_editor_file_external`, `write_external_file`.
 `ai_agent/tools.rs`: `read_file`, `write_file`, `edit_file`, `list_files`,
@@ -227,7 +226,7 @@ requires Boss to restart the build; no second desktop instance was launched.
 | `fs_transfer_remote_paths` (`remote_transfer.rs`) | Async IPC/HTTP coordinator. Source enumeration, tar production and receiver extraction run on the blocking pool; HTTP and archive spooling are streamed asynchronously. |
 | `fs_transfer_paths` (`fs.rs`) | Still sync, so its recursive directory copy runs on the main thread. It is the backend of a drag-drop, and the D&D surface needs Boss's approval before it is touched. Conversion is mechanical when that comes — see the `DEFERRED` note at the site. |
 | `resolve_terminal_path` (`fs.rs`) | A single `canonicalize` + `is_dir`. Microseconds on a local disk; a stale network mount could stall it, which is a real but unobserved risk. Its batched sibling `resolve_terminal_paths` — the one a terminal screen actually calls, with tens of candidates — **is** on the blocking pool, so the risk that scaled with candidate count is gone. |
-| `resolve_markdown_link` (`fs.rs`) | `async fn` using `spawn_blocking_fs` for canonicalization of the source, target and root. UNC paths are rejected before any filesystem probe. |
+| `resolve_markdown_link` (`fs.rs`) | `async fn` using `spawn_blocking_fs` for canonicalization of the source, target and root. UNC paths return `external` before any filesystem probe. |
 | `warm_content_index` (`fs.rs`) | `warm_index` is an in-memory config read plus a map entry plus a spawn — the build itself already runs in the background. It fires on every repo switch, so it stays cheap by design: the `index_strategy` gate and `ensure_index`'s dedup both short-circuit before any work. |
 | `set_ansi_colors` (`pty.rs`) | Locks *every* vt buffer in a loop on the IPC thread, so the stall grows with session count. Same reordering objection as the row below, and it fires once, when the user picks a theme. |
 | Terminal grid *mutations* (`pty.rs`) | `terminal_scroll`, `terminal_scroll_to`, `terminal_request_frame`, `terminal_exit_alt_screen` still take the vt lock inline. Same stall as the reads, but not the same safety: two `spawn_blocking` hops for one session can run in either order, and `terminal_scroll_to(line)` is absolute, so reordering lands the viewport on the wrong line. They need the coalescing `terminal_scroll_to_offset` already has — which is also why they are the cold path, since the wheel and the scrollbar drag go through the offset command and never touch this lock. |
@@ -305,6 +304,7 @@ worse than no comment — each one had already talked a reader out of checking:
 Private secret entry: `secret_form_bootstrap` is a short synchronous identity
 check; `secret_form_submit` is async. MCP request/consent waits on a oneshot
 without holding the blocking pool. Run uses Tokio child pipes; no PTY or shell.
+`set_terminal_literal_reads` is synchronous: one in-memory set update, no I/O.
 
 `get_prompt_receipt` is async and uses `spawn_blocking` for the metadata read and MCP receipt adoption. It performs no file reads on the IPC path; explicit instruction file snapshots happen at launch.
 
@@ -417,3 +417,34 @@ publication warning; this boundary does not add retries or durable outcomes.
 `get_voice_targets` is a synchronous read of live ACP attachment snapshots; it performs no filesystem or process I/O. HTTP hands-free disarm uses a blocking worker because an ACP exit notice waits for the existing prompt queue acknowledgement.
 
 `acp_session_set_viewed_repo` is synchronous: it only validates an attached session and updates its in-memory repository hint under the ACP connection lock. It does no filesystem, network or process work. The HTTP handler uses the same manager method.
+
+### AI Chat message actions
+
+`acp_message_action` is async. IPC and HTTP await the same prompt-queue acceptance path;
+configuration persistence runs on `spawn_blocking`, not the WebView or a Tokio worker.
+`acp_message_reactions` is a synchronous in-memory configuration read with no filesystem or
+process I/O. Accepted action ordering is serialized through persistence so desktop and phone
+marks follow the same order.
+
+## Waiting items and agent health
+
+`boss_attention` and its headless HTTP twin both run `boss_attention::snapshot` on `spawn_blocking`: native SQLite story/workflow reads and session projection never execute on the IPC thread or a Tokio worker. The command is desktop-gated, so the headless route invokes the shared service directly with the same placement.
+
+### Native update installation
+
+`install_app_update` is async: the verified plugin download runs asynchronously,
+then `spawn_blocking` owns archive scanning, filesystem free-space measurement and
+the plugin installer. No archive IO or installation runs on the WebView thread.
+The calling WebView owns its checked `Update` resource and progress channel.
+
+`workflow_neutral_action` is an async IPC command. It moves neutral authoring,
+publication, SQLite reads/writes and run commands into `spawn_blocking`; the
+HTTP action uses the same placement and shared backend service. Neither performs
+blocking workflow storage on the WebView main thread. MCP's existing synchronous
+workflow dispatch calls that same service on its transport execution path.
+
+Plugin `plugin_file_size` and `plugin_read_file_range` are async IPC/HTTP commands. Capability checks run before filesystem work is dispatched through `spawn_blocking_fs`; path canonicalization, stat, seek and exact reads run on the blocking pool.
+
+## Provider quota commands
+
+`get_provider_quotas`, `get_session_quota_binding`, and `refresh_provider_quota` are async Tauri commands. The first two read registry state; refresh awaits the registry's single-flight read and policy. The matching HTTP routes use the same operations.

@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import agentKeyFixture from "../../../docs/evidence/ctrl-menu-1660/agent-key-fixture.json";
 import { AGENT_TYPES } from "../../agents";
 import { rpc } from "../../transport";
 import { TerminalKeybar } from "../components/TerminalKeybar";
+import agentKeyFixture from "./fixtures/agent-key-fixture.json";
 
 const keybarCss = readFileSync(`${process.cwd()}/src/mobile/components/TerminalKeybar.module.css`, "utf8");
 

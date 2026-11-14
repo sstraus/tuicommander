@@ -4,9 +4,12 @@
 {"record":0,"event":{"type":"shell-state","state":"idle","agent_type":"ego"}}
 {"record":0,"event":{"type":"shell-state","state":"busy","agent_type":"ego"}}
 {"record":0,"event":{"type":"shell-state","state":"idle","agent_type":"ego"}}
+{"record":0,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":0,"event":{"type":"intent","text":"BG DONE exit=0 log=/Users/stefano.straus/Gits/.tmp/results/fix-2060-round2-brows","title":"εgo","_turn_epoch":0}}
 {"record":0,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
+{"record":0,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":0,"event":{"type":"intent","text":"COORDINATOR: Authorized: emit one native intent line from your own session (earl","title":"εgo","_turn_epoch":0}}
+{"record":0,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":0,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":0,"event":{"type":"intent","text":"Checking (local) configuration and preserving the full description while the terminal wraps an intentionally long title across physical rows without promoting the earlier aside into metadata","title":"Configuration review across wrapped physical rows","_turn_epoch":0}}
 {"record":0,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}

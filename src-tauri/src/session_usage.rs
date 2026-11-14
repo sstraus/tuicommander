@@ -86,14 +86,12 @@ impl SessionUsage {
 
 #[derive(Clone)]
 enum UsageRead {
-    Session(Box<SessionUsage>),
     Ego { report: Arc<Value>, stale: bool },
 }
 
 impl UsageRead {
     fn mark_stale(&mut self) {
         match self {
-            Self::Session(snapshot) => snapshot.stale = true,
             Self::Ego { stale, .. } => *stale = true,
         }
     }
@@ -154,30 +152,13 @@ async fn cached_read(
     }
 }
 
-async fn cached(
-    key: String,
-    ttl: Duration,
-    fetch: impl std::future::Future<Output = Result<SessionUsage, String>>,
-) -> Result<SessionUsage, String> {
-    match cached_read(key, ttl, async {
-        fetch
-            .await
-            .map(|snapshot| UsageRead::Session(Box::new(snapshot)))
-    })
-    .await?
-    {
-        UsageRead::Session(snapshot) => Ok(*snapshot),
-        UsageRead::Ego { .. } => Err("usage cache identity mismatch".into()),
-    }
-}
-
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn get_session_usage(
     state: tauri::State<'_, Arc<AppState>>,
     session_id: String,
 ) -> Result<SessionUsage, String> {
-    Ok(get_session_usage_impl(&state, &session_id).await)
+    Ok(Box::pin(get_session_usage_impl(&state, &session_id)).await)
 }
 
 pub(crate) async fn get_session_usage_impl(state: &AppState, session_id: &str) -> SessionUsage {
@@ -187,7 +168,12 @@ pub(crate) async fn get_session_usage_impl(state: &AppState, session_id: &str) -
             .await
             .unwrap_or_else(|| SessionUsage::unavailable("remote session"));
     }
-    match tokio::time::timeout(Duration::from_secs(30), local_usage(state, session_id)).await {
+    match Box::pin(tokio::time::timeout(
+        Duration::from_secs(30),
+        local_usage(state, session_id),
+    ))
+    .await
+    {
         Ok(Ok(snapshot)) => snapshot,
         // Do not expose provider stderr, profile paths or account metadata as an error reason.
         _ => SessionUsage::unavailable("session usage source unavailable"),
@@ -228,30 +214,38 @@ async fn local_usage(state: &AppState, session_id: &str) -> Result<SessionUsage,
     let Some(agent) = agent else {
         return Ok(SessionUsage::unavailable("no active agent"));
     };
-    let Some(pid) = crate::pty::session_leaf_pid(state, session_id) else {
+    if agent == "claude" || agent == "codex" {
+        let Some(key) = state.provider_quota.binding(session_id) else {
+            return Ok(SessionUsage::unavailable("quota binding unavailable"));
+        };
+        let view = state.provider_quota.get(&key);
+        let mut usage = SessionUsage::available(&agent, "account_quota", "provider_quota_registry");
+        usage.stale = view.state != crate::provider_quota::QuotaState::Fresh;
+        let Some(snapshot) = view.snapshot else {
+            return Ok(SessionUsage::unavailable("quota source unavailable"));
+        };
+        usage.observed_at_ms = Some(snapshot.observed_at_ms);
+        usage.quota_windows = snapshot
+            .windows
+            .into_iter()
+            .map(|window| QuotaWindow {
+                provider: key.provider.clone(),
+                plan: snapshot.plan.clone(),
+                window_seconds: window.window_seconds,
+                window_name: window
+                    .model
+                    .map(|model| format!("{model} {}", window.label))
+                    .unwrap_or(window.label),
+                used_percent: window.used_percent,
+                resets_at: window.resets_at,
+            })
+            .collect();
+        return Ok(usage.finish());
+    }
+    let Some(_pid) = crate::pty::session_leaf_pid(state, session_id) else {
         return Ok(SessionUsage::unavailable("session binding unavailable"));
     };
     match agent.as_str() {
-        "claude" => {
-            let (quota, stale) = crate::claude_usage::session_quota(state, session_id).await?;
-            let mut snapshot = claude_quota(quota);
-            snapshot.stale = stale;
-            Ok(snapshot)
-        }
-        "codex" => {
-            let environment = crate::process_env::read_process_environment(pid)
-                .map_err(|_| "Codex profile unavailable")?;
-            let argv =
-                crate::process_env::read_process_argv(pid).ok_or("Codex profile unavailable")?;
-            let (home, codex_home, profile) = codex_profile(&environment, &argv)?;
-            let key = format!("codex:{home:?}:{codex_home:?}:{profile:?}");
-            cached(key, Duration::from_secs(300), async {
-                crate::codex_usage::session_quota(&home, &codex_home, profile.as_deref())
-                    .await
-                    .map(codex_quota)
-            })
-            .await
-        }
         "ego" => {
             let Some(source) = ego_terminal_source(state, session_id).await? else {
                 return Ok(SessionUsage::unavailable("ego binding unavailable"));
@@ -277,7 +271,7 @@ fn env_value<'a>(environment: &'a [String], name: &str) -> Option<&'a str> {
     })
 }
 
-fn codex_profile(
+pub(crate) fn codex_profile(
     environment: &[String],
     argv: &[String],
 ) -> Result<(String, String, Option<String>), String> {
@@ -327,6 +321,7 @@ fn codex_profile(
     ))
 }
 
+#[cfg(test)]
 fn quota_window(
     snapshot: &mut SessionUsage,
     provider: &str,
@@ -349,6 +344,7 @@ fn quota_window(
     });
 }
 
+#[cfg(test)]
 fn claude_quota(quota: crate::claude_usage::UsageApiResponse) -> SessionUsage {
     let mut snapshot = SessionUsage::available("claude", "account_quota", "claude_oauth_usage");
     let plan = quota
@@ -369,33 +365,6 @@ fn claude_quota(quota: crate::claude_usage::UsageApiResponse) -> SessionUsage {
                 bucket.utilization,
                 bucket.resets_at,
             );
-        }
-    }
-    snapshot.finish()
-}
-
-fn codex_quota(quota: crate::codex_usage::CodexUsageApiResponse) -> SessionUsage {
-    let mut snapshot = SessionUsage::available("codex", "account_quota", "codex_app_server");
-    if let Some(rate) = quota.rate_limit {
-        for (name, window) in [
-            ("primary", rate.primary_window),
-            ("secondary", rate.secondary_window),
-        ] {
-            if let Some(window) = window {
-                let reset = window
-                    .reset_at
-                    .and_then(|at| chrono::DateTime::from_timestamp(at, 0))
-                    .map(|at| at.to_rfc3339());
-                quota_window(
-                    &mut snapshot,
-                    "Codex",
-                    quota.plan_type.as_deref(),
-                    name,
-                    window.limit_window_seconds,
-                    window.used_percent,
-                    reset,
-                );
-            }
         }
     }
     snapshot.finish()
@@ -488,7 +457,18 @@ impl EgoTerminalSource {
                 self.program, self.home, self.workspace, self.ego_session
             );
             let snapshot = cached_read(key, Duration::from_secs(30), async {
-                let report = ego_report(&self.program, &self.home, &self.workspace).await?;
+                let report = ego_report(
+                    &self.program,
+                    &self.home,
+                    &self.workspace,
+                    &self.ego_session,
+                )
+                .await?;
+                crate::provider_quota::observe_ego_usage_report(
+                    &state.provider_quota,
+                    &self.home,
+                    &report,
+                );
                 Ok(UsageRead::Ego {
                     report: Arc::new(report),
                     stale: false,
@@ -501,7 +481,6 @@ impl EgoTerminalSource {
             }
             match snapshot {
                 UsageRead::Ego { report, stale } => Ok((report, stale)),
-                UsageRead::Session(_) => Err("usage cache identity mismatch".into()),
             }
         };
         tokio::time::timeout(Duration::from_secs(30), read)
@@ -511,11 +490,24 @@ impl EgoTerminalSource {
 }
 
 /// Bound stdout before decoding: a large workspace is not an unbounded memory allocation.
-async fn ego_report(program: &Path, home: &Path, workspace: &str) -> Result<Value, String> {
+async fn ego_report(
+    program: &Path,
+    home: &Path,
+    workspace: &str,
+    session: &str,
+) -> Result<Value, String> {
     const MAX_REPORT: u64 = 4 * 1024 * 1024;
     let mut command = std::process::Command::new(program);
     command
-        .args(["usage", "--json", "-C", workspace, "--session-dir"])
+        .args([
+            "usage",
+            "--json",
+            "--session",
+            session,
+            "-C",
+            workspace,
+            "--session-dir",
+        ])
         .arg(home.join("sessions"))
         .env("EGO_HOME", home)
         .env_remove("EGO_PROFILE")
@@ -559,9 +551,7 @@ async fn ego_report(program: &Path, home: &Path, workspace: &str) -> Result<Valu
 }
 
 fn ego_snapshot(report: &Value, session_id: &str) -> Result<SessionUsage, String> {
-    if !matches!(report.get("v").and_then(Value::as_u64), Some(3 | 4)) {
-        return Err("Failed to parse ego usage version".into());
-    }
+    crate::ego_cli::usage::validate_report(report)?;
     let sessions = report
         .get("sessions")
         .and_then(Value::as_array)
@@ -652,6 +642,49 @@ mod tests {
     use super::*;
     use crate::state::tests_support::make_test_app_state;
 
+    /// Catches mobile details issuing a provider read instead of showing the registry.
+    #[tokio::test]
+    async fn session_quota_uses_registry_without_a_live_cli() {
+        let state = make_test_app_state();
+        let key = crate::provider_quota::SubscriptionKey::new(
+            "codex-cli",
+            "openai-codex",
+            "/not-installed",
+        );
+        state.session_maps.session_states.insert(
+            "quota-only".into(),
+            crate::state::SessionState {
+                agent_type: Some("codex".into()),
+                ..Default::default()
+            },
+        );
+        state.provider_quota.bind("quota-only", key.clone());
+        state.provider_quota.observe(
+            &key,
+            crate::provider_quota::QuotaSnapshot {
+                windows: vec![
+                    crate::provider_quota::QuotaWindow::from_duration(
+                        37.0,
+                        Some(18000),
+                        None,
+                        None,
+                    )
+                    .unwrap(),
+                ],
+                detail: None,
+                plan: Some("pro".into()),
+                credits: None,
+                account: None,
+                observed_at_ms: 1,
+                source: crate::provider_quota::QuotaSource::Passive,
+            },
+        );
+        let result = get_session_usage_impl(&state, "quota-only").await;
+        assert_eq!(result.availability, "available");
+        assert_eq!(result.source.as_deref(), Some("provider_quota_registry"));
+        assert_eq!(result.quota_windows[0].used_percent, 37.0);
+    }
+
     /// Catches: a live terminal ego ledger being hidden by empty ACP configuration.
     #[cfg(unix)]
     #[tokio::test]
@@ -683,7 +716,7 @@ mod tests {
         let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
         let script = crate::test_support::fake_ssh_script(
             "2150-terminal-ego-usage",
-            r#"[ "$1" = usage ] || exit 2
+            r#"[ "$1" = usage ] && [ "$2" = --json ] && [ "$3" = --session ] && [ "$4" = 01a02491-6a90-7ae2-9089-fd6a8532eb82 ] || exit 2
 printf "read\n" >> "$EGO_HOME/reads"
 cat "$EGO_HOME/report.json""#,
             "exit /b 2",
@@ -799,11 +832,10 @@ cat "$EGO_HOME/report.json""#,
         );
         let badge = crate::ego_cli::usage::read(&state, "terminal-ego").await;
         state.config.write().ego_executable = "/unrelated/acp/ego".into();
-        let with_other_acp = get_session_usage_impl(&state, "terminal-ego").await;
+        let with_other_acp = Box::pin(get_session_usage_impl(&state, "terminal-ego")).await;
         let badge_with_other_acp = crate::ego_cli::usage::read(&state, "terminal-ego").await;
         let reads = std::fs::read_to_string(dir.path().join("reads")).unwrap();
-        // Exercise the badge consumer with the recorded mixed accounting row,
-        // not just the private projection: spend and equivalents must coexist.
+        // The badge now reads model/context only; details retain accounting totals.
         let recorded: Value =
             serde_json::from_str(include_str!("fixtures/ego-usage-v3.json")).unwrap();
         let mut mixed = recorded["sessions"][1].clone();
@@ -828,7 +860,7 @@ cat "$EGO_HOME/report.json""#,
             // malformed reports silently reusing a previously priced result.
             expire_terminal_ego_cache(&state).await;
             std::fs::remove_file(dir.path().join("report.json")).unwrap();
-            let stale = get_session_usage_impl(&state, "terminal-ego").await;
+            let stale = Box::pin(get_session_usage_impl(&state, "terminal-ego")).await;
             let stale_badge = crate::ego_cli::usage::read(&state, "terminal-ego").await;
             std::fs::write(dir.path().join("report.json"), "not json").unwrap();
             let malformed = crate::ego_cli::usage::read(&state, "terminal-ego").await;
@@ -855,7 +887,7 @@ cat "$EGO_HOME/report.json""#,
         let source_error = if snapshot.availability != "available" {
             Some(format!(
                 "local={:?}; pid={:?}/{pid}; argv={:?}; home={:?}; binding={:?}",
-                local_usage(&state, "terminal-ego").await.err(),
+                Box::pin(local_usage(&state, "terminal-ego")).await.err(),
                 crate::pty::session_leaf_pid(&state, "terminal-ego"),
                 crate::process_env::read_process_argv(pid),
                 crate::process_env::read_process_env_var(pid, "EGO_HOME"),
@@ -893,43 +925,27 @@ cat "$EGO_HOME/report.json""#,
                 malformed.is_err(),
                 "contract failures must not serve cached prices"
             );
-            assert_eq!(
-                other.unwrap().text.as_deref(),
-                Some("USD 0 · API eq: USD 3.1727124")
-            );
+            assert_eq!(other.unwrap().text.as_deref(), Some("gpt-6.1-sol"));
             assert!(withdrawn.unwrap().text.is_none());
-            assert_eq!(
-                concurrent_badge.unwrap().text.as_deref(),
-                Some("USD 0.00156247")
-            );
+            assert_eq!(concurrent_badge.unwrap().text.as_deref(), Some("model"));
         }
         // Catches: the badge taking its executable from unrelated ACP settings.
         for badge in [badge, badge_with_other_acp] {
-            assert_eq!(badge.unwrap().text.as_deref(), Some("USD 0.00156247"));
+            assert_eq!(badge.unwrap().text.as_deref(), Some("model"));
         }
-        assert_eq!(
-            mixed_badge.unwrap().text.as_deref(),
-            Some("USD 0 · API eq: USD 3.1727124")
-        );
+        assert_eq!(mixed_badge.unwrap().text.as_deref(), Some("gpt-6.1-sol"));
         let v4_badge = v4_badge.unwrap();
         assert!(
             v4_badge
                 .tooltip
                 .as_deref()
                 .unwrap()
-                .contains("source: openrouter_key:data.limit_remaining")
-        );
-        assert!(
-            v4_badge
-                .tooltip
-                .as_deref()
-                .unwrap()
-                .contains("2026-10-27T17:53:47.635+00:00")
+                .contains("openrouter/openai/gpt-4o")
         );
         assert_eq!(v4_snapshot.unwrap().source.as_deref(), Some("ego_usage_v4"));
         assert_eq!(
             v4_badge.text.as_deref(),
-            Some("ctx: 14/128000 · openrouter key: USD 195.970819484 left")
+            Some("openai/gpt-4o · ctx: 14/128000")
         );
         for snapshot in [snapshot, with_other_acp] {
             assert_eq!(
@@ -994,6 +1010,22 @@ cat "$EGO_HOME/report.json""#,
         assert!(!snapshot.lines.iter().any(|line| line.value.contains("999")));
     }
 
+    // Catches: accepting v5 in the badge but rejecting the shared session-details consumer.
+    #[test]
+    fn ego_usage_v5_session_details_keep_model_and_accounting() {
+        let report: Value =
+            serde_json::from_str(include_str!("fixtures/ego-usage-v5.json")).unwrap();
+        let snapshot = ego_snapshot(&report, "01a1c787-d41f-7067-9cb5-db90deb9ca8d").unwrap();
+        assert_eq!(snapshot.model.as_deref(), Some("openai-codex/gpt-6.1-sol"));
+        assert_eq!(snapshot.source.as_deref(), Some("ego_usage_v5"));
+        assert!(
+            snapshot
+                .lines
+                .iter()
+                .any(|line| line.value.contains("4491 output"))
+        );
+    }
+
     /// Catches: missing, duplicated or future-version rows falling back to account totals.
     #[test]
     fn ego_usage_rejects_missing_duplicate_and_unsupported_rows() {
@@ -1001,7 +1033,7 @@ cat "$EGO_HOME/report.json""#,
         assert!(ego_snapshot(&report, "absent").is_err());
         report["sessions"][0] = report["sessions"][1].clone();
         assert!(ego_snapshot(&report, "exact").is_err());
-        report["v"] = serde_json::json!(5);
+        report["v"] = serde_json::json!(999);
         assert!(ego_snapshot(&report, "exact").is_err());
     }
 
@@ -1070,7 +1102,7 @@ cat "$EGO_HOME/report.json""#,
                 ..Default::default()
             },
         );
-        let snapshot = get_session_usage_impl(&state, "remote-pty").await;
+        let snapshot = Box::pin(get_session_usage_impl(&state, "remote-pty")).await;
         assert_eq!(snapshot.availability, "unavailable");
         assert_eq!(snapshot.reason.as_deref(), Some("remote session"));
         assert!(snapshot.lines.is_empty());

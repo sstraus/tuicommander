@@ -26,10 +26,10 @@ use super::{
     AcpAttachKind, AcpAttachmentSnapshot, AcpAttachmentState, AcpCapabilitySnapshot,
     AcpClientError, AcpClientEvent, AcpConnectRequest, AcpConnectionId, AcpConnectionSettlement,
     AcpConnectionSettlementReason, AcpConnectionSnapshot, AcpConnectionState, AcpDetachKind,
-    AcpHostRequestId, AcpInteractionSettlement, AcpNotice, AcpPendingInteraction,
-    AcpReconnectRequest, AcpSessionAuthority, AcpTurnId, EgoAcpConfig, EgoCompactRequest,
-    EgoCompactResponse, EgoHoldRequest, EgoHoldResponse, McpOverAcpHost, build_initialize_request,
-    capability_snapshot, launch_spec, tuicommander_acp_mcp_server,
+    AcpEventPage, AcpHostRequestId, AcpInteractionSettlement, AcpNotice, AcpPendingInteraction,
+    AcpReconnectRequest, AcpSessionAuthority, AcpTurnId, AcpTurnState, EgoAcpConfig,
+    EgoCompactRequest, EgoCompactResponse, EgoHoldRequest, EgoHoldResponse, McpOverAcpHost,
+    build_initialize_request, capability_snapshot, launch_spec, tuicommander_acp_mcp_server,
 };
 
 const INITIAL_GENERATION: u64 = 1;
@@ -198,7 +198,7 @@ impl AcpClientManager {
         config: &EgoAcpConfig,
         request: AcpConnectRequest,
     ) -> Result<AcpConnectionSnapshot, AcpClientError> {
-        self.connect_within_with_peer(config, request, INITIALIZE_TIMEOUT, None)
+        self.connect_within_with_peer(config, request, INITIALIZE_TIMEOUT, None, None)
             .await
     }
 
@@ -208,7 +208,7 @@ impl AcpClientManager {
         request: AcpConnectRequest,
         peer_id: String,
     ) -> Result<AcpConnectionSnapshot, AcpClientError> {
-        self.connect_within_with_peer(config, request, INITIALIZE_TIMEOUT, Some(peer_id))
+        self.connect_within_with_peer(config, request, INITIALIZE_TIMEOUT, Some(peer_id), None)
             .await
     }
 
@@ -225,8 +225,27 @@ impl AcpClientManager {
         request: AcpConnectRequest,
         initialize_timeout: std::time::Duration,
     ) -> Result<AcpConnectionSnapshot, AcpClientError> {
-        self.connect_within_with_peer(config, request, initialize_timeout, None)
+        self.connect_within_with_peer(config, request, initialize_timeout, None, None)
             .await
+    }
+
+    /// Fresh, isolated host catalogue for one kernel-mediated model activity.
+    pub(crate) async fn connect_mediated(
+        &self,
+        config: &EgoAcpConfig,
+        request: AcpConnectRequest,
+        initialize_timeout: std::time::Duration,
+        peer_id: String,
+        host: Arc<dyn McpOverAcpHost>,
+    ) -> Result<AcpConnectionSnapshot, AcpClientError> {
+        self.connect_within_with_peer(
+            config,
+            request,
+            initialize_timeout,
+            Some(peer_id),
+            Some(host),
+        )
+        .await
     }
 
     async fn connect_within_with_peer(
@@ -235,6 +254,7 @@ impl AcpClientManager {
         request: AcpConnectRequest,
         initialize_timeout: std::time::Duration,
         peer_id: Option<String>,
+        mediated_host: Option<Arc<dyn McpOverAcpHost>>,
     ) -> Result<AcpConnectionSnapshot, AcpClientError> {
         let peer_lock = if let Some(peer_id) = peer_id.as_deref() {
             validate_peer_id(peer_id)?;
@@ -262,6 +282,11 @@ impl AcpClientManager {
             // client asking again gets the ego this peer already has; `reconnect`
             // is the way to a fresh one.
             if let Some(connection_id) = self.live_connection_for_peer(peer_id) {
+                if mediated_host.is_some() {
+                    return Err(AcpClientError::invalid_input(
+                        "mediated ACP requires a fresh peer connection",
+                    ));
+                }
                 if request.env.is_some() {
                     return Err(AcpClientError::invalid_input(
                         "ACP env applies only to a fresh launch; disconnect the live connection first",
@@ -272,14 +297,34 @@ impl AcpClientManager {
         }
         let executable = canonical_executable(&config.executable).await?;
         let root = canonical_root(&request.root).await?;
-        let spec = launch_spec(
+        let mut spec = launch_spec(
             &EgoAcpConfig {
                 executable,
                 profile: config.profile.clone(),
                 master_prompt: config.master_prompt.clone(),
+                ai_chat: config.ai_chat,
             },
             &root,
         )?;
+        if let Some(host) = &mediated_host {
+            spec.args
+                .extend(["--no-tools", "--no-hooks", "--bare"].map(str::to_owned));
+            for name in host.preapproved_tools() {
+                if name.is_empty()
+                    || !name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+                {
+                    return Err(AcpClientError::invalid_input(
+                        "mediated tool names must be plain identifiers",
+                    ));
+                }
+                spec.args.extend([
+                    "--allow".to_owned(),
+                    format!("tool({}/{name})", super::TUICOMMANDER_MCP_SERVER_NAME),
+                ]);
+            }
+        }
         let mut agent_config = AcpAgentConfig::new(spec.program).args(spec.args);
         for (key, value) in request.env.into_iter().flatten() {
             if key.is_empty() || key.contains(['=', '\0']) || value.contains('\0') {
@@ -326,8 +371,11 @@ impl AcpClientManager {
                 updates: updates_rx,
                 shutdown: shutdown_rx,
                 journal: Arc::clone(&journal),
-                mcp: McpChannel::new(self.mcp_host.lock().clone(), peer_id.clone())
-                    .with_origin(connection_id, generation),
+                mcp: McpChannel::new(
+                    mediated_host.or_else(|| self.mcp_host.lock().clone()),
+                    peer_id.clone(),
+                )
+                .with_origin(connection_id, generation),
             },
             Arc::clone(&self.connections),
         ));
@@ -421,6 +469,7 @@ impl AcpClientManager {
                 executable,
                 profile: config.profile.clone(),
                 master_prompt: config.master_prompt.clone(),
+                ai_chat: config.ai_chat,
             },
             &root,
         )?;
@@ -431,6 +480,7 @@ impl AcpClientManager {
             AcpConnectRequest { root, env: None },
             INITIALIZE_TIMEOUT,
             peer_id,
+            None,
         )
         .await
     }
@@ -854,18 +904,41 @@ impl AcpClientManager {
         connection_id: AcpConnectionId,
         from: u64,
     ) -> Result<AcpEventStream, AcpClientError> {
-        let journal = {
-            let connections = self.connections.lock();
-            let connection = connections
-                .get(&connection_id)
-                .ok_or_else(|| AcpClientError::not_found(connection_id))?;
-            Arc::clone(&connection.journal)
-        };
-        journal.subscribe(from)
+        self.journal(connection_id)?.subscribe(from)
+    }
+
+    /// One bounded page of what a connection recorded, from `from` onwards.
+    ///
+    /// The socketless counterpart of [`Self::subscribe`], with the same cursor
+    /// and the same gap.
+    pub fn page(
+        &self,
+        connection_id: AcpConnectionId,
+        from: u64,
+        limit: Option<usize>,
+        max_bytes: Option<usize>,
+    ) -> Result<AcpEventPage, AcpClientError> {
+        self.journal(connection_id)?.page(from, limit, max_bytes)
+    }
+
+    fn journal(
+        &self,
+        connection_id: AcpConnectionId,
+    ) -> Result<Arc<AcpEventJournal>, AcpClientError> {
+        let connections = self.connections.lock();
+        let connection = connections
+            .get(&connection_id)
+            .ok_or_else(|| AcpClientError::not_found(connection_id))?;
+        Ok(Arc::clone(&connection.journal))
     }
 
     #[cfg(test)]
     pub(crate) fn test_peer_journal(&self, peer: &str) -> Arc<AcpEventJournal> {
+        self.test_peer_journal_at(peer, crate::test_support::test_temp_root())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_peer_journal_at(&self, peer: &str, root: PathBuf) -> Arc<AcpEventJournal> {
         let id = AcpConnectionId::new();
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
         let journal = Arc::new(AcpEventJournal::new(id, generation, self.notices.clone()));
@@ -885,7 +958,7 @@ impl AcpClientManager {
                     settlement: None,
                 },
                 peer_id: Some(peer.into()),
-                root: crate::test_support::test_temp_root(),
+                root,
                 attachment_directories: HashMap::new(),
                 viewed_repos: HashMap::new(),
                 commands,
@@ -979,7 +1052,9 @@ impl AcpClientManager {
         self.connections.lock().values().any(|connection| {
             connection.snapshot.settlement.is_none()
                 && connection.snapshot.attachments.iter().any(|attachment| {
-                    attachment.active_turn.is_some() || !attachment.queued_prompts.is_empty()
+                    attachment.active_turn.is_some()
+                        || !attachment.queued_prompts.is_empty()
+                        || !attachment.activity.children.is_empty()
                 })
         })
     }
@@ -1088,20 +1163,8 @@ impl AcpClientManager {
             .map(|(connection_id, _)| *connection_id)
     }
 
-    pub(crate) fn has_sent_prompt(
-        &self,
-        connection_id: AcpConnectionId,
-        turn: AcpTurnId,
-        text: &str,
-    ) -> bool {
-        self.connections
-            .lock()
-            .get(&connection_id)
-            .is_some_and(|connection| connection.journal.has_sent_prompt(turn, text))
-    }
-
-    /// Exact managed-peer observation, including a terminal settlement when
-    /// retained. Absence is unknown inventory, never process-stop proof.
+    /// The newest connection snapshot of a managed peer.
+    #[cfg(test)]
     pub(crate) fn peer_snapshot(&self, peer_id: &str) -> Option<AcpConnectionSnapshot> {
         self.connections
             .lock()
@@ -1534,6 +1597,7 @@ async fn supervise_connection(
                     Step::Command(command) => actor.handle(command, &connection, &in_flight),
                     Step::Accept(accepted) => actor.accept(accepted, &connection, &in_flight),
                 }
+                actor.flush_activity();
                 // Checked here rather than in the select, because the caller
                 // whose request uncovered the contradiction has just been
                 // answered and is owed that answer either way. Everything still
@@ -1637,12 +1701,34 @@ fn settle_connection(
     // is simply thinking. Appended after the lock is released so the journal's
     // subscribers are never woken while this map is held.
     let state = connection.snapshot.state;
+    // Nothing runs and nobody can answer on a connection that ended. The
+    // attachments stay as the last true record, but their activity must not go
+    // on saying busy or awaiting: no later frame will ever retract it.
+    let mut retired = Vec::new();
+    for attachment in &mut connection.snapshot.attachments {
+        let turn_running = attachment
+            .active_turn
+            .as_ref()
+            .is_some_and(|turn| turn.state != AcpTurnState::Settled);
+        let activity = attachment.activity.retired(turn_running);
+        if activity.revision != attachment.activity.revision {
+            attachment.activity = activity.clone();
+            retired.push((attachment.session_id.clone(), activity));
+        }
+    }
     let journal = Arc::clone(&connection.journal);
     // After this one has been recorded, never before: the connection that just
     // settled is the most recent of them and must survive its own settlement.
     forget_stale_settled(&mut connections);
     drop(connections);
     journal.append(None, None, AcpClientEvent::ConnectionState { state });
+    for (session_id, activity) in retired {
+        journal.append(
+            Some(session_id),
+            None,
+            AcpClientEvent::ActivityChanged { activity },
+        );
+    }
 }
 
 async fn canonical_executable(path: &Path) -> Result<std::path::PathBuf, AcpClientError> {
@@ -1718,6 +1804,7 @@ mod tests {
                 cwd: crate::test_support::test_temp_root(),
                 additional_directories: vec![],
                 config_options: vec![],
+                config_failure: None,
                 available_commands: vec![],
                 profile_warnings: vec![],
                 usage: None,
@@ -1725,6 +1812,7 @@ mod tests {
                 queued_prompts: vec![],
                 pending_permission_ids: vec![],
                 pending_elicitation_ids: vec![],
+                activity: Default::default(),
             });
         }
         (state, snapshot, receiver)

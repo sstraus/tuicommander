@@ -58,8 +58,8 @@ pub(crate) enum PollerCmd {
     SetVisibility(bool),
     PollRepo(String),
     UpdatePaths(Vec<String>),
-    /// Machine-owned intake paths cannot be removed or filtered by a UI client.
-    SetIntakePaths(Vec<String>),
+    /// Machine-owned neutral intake paths cannot be removed or filtered by a UI client.
+    SetNeutralIntakePaths(Vec<String>),
     SetIssueFilter(String),
     SetPrHideDrafts(bool),
     /// Re-emit current PR + issue state for all repos on the next poll, even when
@@ -71,7 +71,7 @@ pub(crate) enum PollerCmd {
 
 pub(crate) struct GitHubPoller {
     pub(crate) cmd_tx: mpsc::Sender<PollerCmd>,
-    pub(crate) intake_paths: Vec<String>,
+    pub(crate) neutral_intake_paths: Vec<String>,
     /// Successful PR snapshots also identify monitored repositories. Unlike the
     /// query cache, this state lives until a path is removed or this poller stops.
     pub(crate) previous_prs: Arc<parking_lot::RwLock<PrevState>>,
@@ -98,7 +98,7 @@ impl GitHubPoller {
         ));
         Self {
             cmd_tx: tx,
-            intake_paths: Vec::new(),
+            neutral_intake_paths: Vec::new(),
             stop,
             previous_prs,
         }
@@ -261,7 +261,7 @@ async fn poll_loop(
                         ps.retain_paths(&paths);
                         pending_poll_paths.retain(|path| paths.contains(path));
                     }
-                    Some(PollerCmd::SetIntakePaths(new_paths)) => {
+                    Some(PollerCmd::SetNeutralIntakePaths(new_paths)) => {
                         ps.intake_paths = new_paths;
                         paths = merged_paths(&client_paths, &ps.intake_paths);
                         ps.retain_paths(&paths);
@@ -482,6 +482,28 @@ async fn poll_filtered_batch(
             let force = ps.force_resync;
             ps.force_resync = false;
 
+            for repo_path in result.intake_issues.keys() {
+                if let Err(error) = crate::workflows::github_poll::observe(
+                    state,
+                    repo_path,
+                    crate::workflows::github_trigger::GithubResource::Issue,
+                )
+                .await
+                {
+                    tracing::warn!(source="workflows", %error, "Neutral GitHub issue admission refused");
+                }
+            }
+            for repo_path in result.prs.keys() {
+                if let Err(error) = crate::workflows::github_poll::observe(
+                    state,
+                    repo_path,
+                    crate::workflows::github_trigger::GithubResource::PullRequest,
+                )
+                .await
+                {
+                    tracing::warn!(source="workflows", %error, "Neutral GitHub PR admission refused");
+                }
+            }
             for (repo_path, issues) in result.intake_issues {
                 let _ = state
                     .event_bus
@@ -707,22 +729,22 @@ pub(crate) fn ensure_polling(
     *guard = Some(poller);
 }
 
-/// Reconcile the executor's subscription without replacing any client configuration.
-/// Only enqueue changes, so the scheduler's periodic read cannot flood the channel.
-pub(crate) fn set_intake_paths(state: &Arc<AppState>, paths: Vec<String>) -> Result<(), String> {
+/// Machine-owned neutral intake paths cannot be removed or filtered by a UI client.
+pub(crate) fn set_neutral_intake_paths(
+    state: &Arc<AppState>,
+    paths: Vec<String>,
+) -> Result<(), String> {
     let mut guard = state.github.poller.lock();
     if guard.is_none() && paths.is_empty() {
         return Ok(());
     }
     let poller = guard.get_or_insert_with(|| GitHubPoller::start(Arc::clone(state)));
-    if poller.intake_paths != paths {
+    if poller.neutral_intake_paths != paths {
         poller
             .cmd_tx
-            .try_send(PollerCmd::SetIntakePaths(paths.clone()))
-            .map_err(|error| {
-                format!("GitHub intake polling configuration not delivered: {error}")
-            })?;
-        poller.intake_paths = paths;
+            .try_send(PollerCmd::SetNeutralIntakePaths(paths.clone()))
+            .map_err(|e| format!("neutral GitHub polling configuration not delivered: {e}"))?;
+        poller.neutral_intake_paths = paths;
     }
     Ok(())
 }
@@ -779,7 +801,7 @@ pub(crate) async fn stop_poller(state: &AppState) -> Result<(), String> {
     // A client releases its subscription, not the executor's machine-owned one.
     let mut guard = state.github.poller.lock();
     if let Some(poller) = guard.as_ref()
-        && !poller.intake_paths.is_empty()
+        && !poller.neutral_intake_paths.is_empty()
     {
         return poller
             .cmd_tx
@@ -933,9 +955,7 @@ mod tests {
         let scratch = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
         let _config = crate::config::set_config_dir_override(scratch.path().join("config"));
         std::fs::create_dir_all(scratch.path().join("config")).unwrap();
-        std::fs::write(scratch.path().join("config/automations.json"), serde_json::to_vec(&serde_json::json!({
-            "event_intake": {"repositories": ["sstraus/tuicommander"], "label": "tuic-run", "definition_id": "pilot"}
-        })).unwrap()).unwrap();
+        let _binding = crate::workflows::install_github_issue_binding("sstraus/tuicommander");
         let repo = scratch.path().join("repo");
         std::fs::create_dir_all(&repo).unwrap();
         for args in [
@@ -1257,7 +1277,7 @@ mod tests {
         let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(8);
         let stop = Arc::new(tokio::sync::Notify::new());
         *state.github.poller.lock() = Some(GitHubPoller {
-            intake_paths: Vec::new(),
+            neutral_intake_paths: Vec::new(),
             cmd_tx,
             previous_prs: Default::default(),
             stop: Arc::clone(&stop),
@@ -1290,7 +1310,7 @@ mod tests {
         let state = crate::state::tests_support::make_test_app_state();
         let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel(8);
         *state.github.poller.lock() = Some(GitHubPoller {
-            intake_paths: Vec::new(),
+            neutral_intake_paths: Vec::new(),
             cmd_tx,
             previous_prs: Default::default(),
             stop: Arc::new(Notify::new()),
@@ -1454,7 +1474,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(8);
         let poller = GitHubPoller {
             cmd_tx: tx,
-            intake_paths: Vec::new(),
+            neutral_intake_paths: Vec::new(),
             previous_prs: Default::default(),
             stop: Arc::new(Notify::new()),
         };
@@ -1484,7 +1504,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(8);
         let poller = GitHubPoller {
             cmd_tx: tx,
-            intake_paths: Vec::new(),
+            neutral_intake_paths: Vec::new(),
             previous_prs: Default::default(),
             stop: Arc::new(Notify::new()),
         };

@@ -3,6 +3,7 @@ import { aiChatDraft } from "../../components/AIChatPanel/draft";
 import { HtmlPreviewTab } from "../../components/HtmlPreviewTab/HtmlPreviewTab";
 import type { MarkdownLinkTarget } from "../../components/MarkdownTab/MarkdownTab";
 import { Button, Input, Select } from "../../components/ui";
+import { createMarkdownReviewBaseline } from "../../hooks/markdownReviewBaseline";
 import { t } from "../../i18n";
 import { aiChatTabs } from "../../stores/aiChatTabs";
 import { appLogger } from "../../stores/appLogger";
@@ -108,6 +109,11 @@ export function FilesScreen(props: FilesScreenProps) {
 	const [previewPath, setPreviewPath] = createSignal<string | null>(null);
 	const [file, setFile] = createSignal<string | null>(null);
 	const [content, setContent] = createSignal("");
+	let reviewBaseline = createMarkdownReviewBaseline();
+	const loadContent = (text: string) => {
+		reviewBaseline.load(text);
+		setContent(text);
+	};
 	const [draft, setDraft] = createSignal("");
 	const [editing, setEditing] = createSignal(false);
 	const [busy, setBusy] = createSignal(false);
@@ -156,19 +162,25 @@ export function FilesScreen(props: FilesScreenProps) {
 		const repoPath = repo();
 		if (!sessionId || !filePath || !repoPath || !hasReviewChanges() || sendingChanges() || writing()) return;
 		const sentContent = content();
+		const captured = reviewBaseline.capture();
 		const comments = reviewComments();
 		const currentRequest = requestId;
 		setSendingChanges(true);
 		setNotice("");
 		try {
+			const path = isAbsolutePath(filePath) ? filePath : joinPath(repoPath, filePath);
+			const changedLines = await rpc<string | null>("markdown_review_changed_lines", {
+				path,
+				baseline: captured.baseline,
+				expected: sentContent,
+			}).catch(() => null);
+			if (currentRequest !== requestId) return;
 			const outcome = await rpc<{ typed: boolean; queued: number }>("enqueue_agent_command", {
 				sessionId,
-				text: buildMarkdownReviewPrompt(
-					isAbsolutePath(filePath) ? filePath : joinPath(repoPath, filePath),
-					comments.length,
-				),
+				text: buildMarkdownReviewPrompt(path, comments.length, changedLines),
 			});
 			if (currentRequest === requestId) {
+				reviewBaseline.acknowledge(sentContent, captured.epoch);
 				setSentCommentIds(new Set(comments.map((comment) => comment.id)));
 				if (content() === sentContent) setEditedSinceSend(false);
 				toastsStore.add(
@@ -277,9 +289,9 @@ export function FilesScreen(props: FilesScreenProps) {
 		const roots = [props.initialRepo?.worktreePath, ...Object.keys(config.repos ?? {})].filter(
 			(path): path is string => !!path,
 		);
-		const root = roots
-			.filter((path) => withinRoot(resolved.absolute_path, path))
-			.sort((a, b) => b.length - a.length)[0];
+		const root =
+			roots.filter((path) => withinRoot(resolved.absolute_path, path)).sort((a, b) => b.length - a.length)[0] ??
+			(resolved.is_directory ? undefined : pathDirname(resolved.absolute_path));
 		if (!root) {
 			setError(`${resolved.is_directory ? "Directory" : "File"} is outside an allowed registered repository.`);
 			toastsStore.add(
@@ -370,6 +382,10 @@ export function FilesScreen(props: FilesScreenProps) {
 				document.getElementById(target.anchor)?.scrollIntoView({ block: "start" });
 				return;
 			}
+			if (target.kind === "external") {
+				setNotice(`Open this network location from the desktop app: ${target.target}`);
+				return;
+			}
 			if (target.kind !== "file") {
 				setNotice(target.kind === "blocked" ? target.reason : `File not found: ${target.path}`);
 				return;
@@ -406,6 +422,7 @@ export function FilesScreen(props: FilesScreenProps) {
 
 	async function openFile(entry: FileEntry, line?: number) {
 		openedEntry = entry;
+		reviewBaseline = createMarkdownReviewBaseline();
 		const currentRequest = ++requestId;
 		setFile(entry.path);
 		setEditedSinceSend(false);
@@ -431,7 +448,7 @@ export function FilesScreen(props: FilesScreenProps) {
 			if (result.includes("\0")) {
 				setError("This is a binary or non-text file.");
 			} else {
-				setContent(result);
+				loadContent(result);
 				if (line) {
 					setDraft(result);
 					setEditing(true);
@@ -494,13 +511,15 @@ export function FilesScreen(props: FilesScreenProps) {
 		const repoPath = repo();
 		const filePath = file();
 		if (!repoPath || !filePath) return false;
+		const before = content();
 		const written = await rpc<boolean>("write_file_if_unchanged", {
 			repoPath,
 			file: filePath,
-			expected: content(),
+			expected: before,
 			content: next,
 		});
 		if (written) {
+			reviewBaseline.save(before, next);
 			setContent(next);
 			setEditedSinceSend(true);
 		}
@@ -516,7 +535,7 @@ export function FilesScreen(props: FilesScreenProps) {
 			const updated = next();
 			if (updated === null || updated === content()) return false;
 			if (await writeIfUnchanged(updated)) return true;
-			setContent(await rpc<string>("fs_read_file", { repoPath: repo(), file: file() }));
+			loadContent(await rpc<string>("fs_read_file", { repoPath: repo(), file: file() }));
 			setNotice("The file changed on disk. It was reloaded; repeat your change.");
 			return false;
 		} catch (err) {

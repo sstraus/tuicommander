@@ -351,22 +351,26 @@ pub(crate) async fn get_repo_structure_impl(
 ) -> Result<RepoStructure, String> {
     // Bound monitoring across repositories; the cache coalesces concurrent reads.
     let _permit = state.monitoring_git_permit().await;
+    let inventory = cached_worktree_paths(state, repo_path.clone()).await?;
+    // The sidebar reads the merged flag of its own workspaces. Phase 2 reuses
+    // these verdicts from the monitoring cache, so no other branch is classified.
+    let workspace_branches: Vec<String> = inventory
+        .worktree_paths
+        .values()
+        .map(|workspace| workspace.branch.clone())
+        .collect();
     let mb_path = repo_path.clone();
-    let (worktree_paths, merged_branches) = tokio::join!(
-        cached_worktree_paths(state, repo_path.clone()),
-        cached_try(
-            state.git_cache.merged_branches.clone(),
-            repo_path.clone(),
-            move || get_merged_branches_impl(Path::new(&mb_path)),
-        ),
-    );
-
-    let inventory = worktree_paths?;
+    let merged_branches = cached_try(
+        state.git_cache.workspace_merged_branches.clone(),
+        repo_path,
+        move || get_merged_workspace_branches_impl(Path::new(&mb_path), &workspace_branches),
+    )
+    .await?;
     Ok(RepoStructure {
         worktree_paths: inventory.worktree_paths,
         detached_worktrees: inventory.detached_worktrees,
         worktree_diagnostics: inventory.worktree_diagnostics,
-        merged_branches: merged_branches?,
+        merged_branches,
     })
 }
 
@@ -569,28 +573,48 @@ pub(crate) const ALLOWED_GIT_SUBCOMMANDS: &[&str] = &[
     "rev-parse",
 ];
 
-/// Reject caller-controlled Git options outside the flags used by the UI.
+/// Check a caller's argv before Git starts.
+///
+/// `args[0]` must be an allowlisted subcommand, so no global option (`-c`,
+/// `--exec-path`, `-C`) can precede it. After it, normal Git options pass: the
+/// caller is authenticated and every argument stays one argv entry. The one
+/// refusal is generic `branch` deletion, which would bypass the dedicated
+/// owner (`delete_branch_impl` archives the tip and refuses a checked-out
+/// branch), and so is any forced overwrite of an existing branch. The scan
+/// does not stop at `--`: Git can read `--` as an option value
+/// (`branch --format -- -D x`).
 pub(crate) fn validate_git_command_args(args: &[String]) -> Result<(), String> {
     let subcommand = args.first().map(String::as_str).unwrap_or("");
     if !ALLOWED_GIT_SUBCOMMANDS.contains(&subcommand) {
         return Err(format!("Git subcommand \"{subcommand}\" is not allowed"));
     }
-    let flags: &[&str] = match subcommand {
-        "fetch" => &["--all"],
-        "pull" => &["--ff-only"],
-        "push" => &["-u", "--delete"],
-        "diff" => &["--name-status"],
-        "status" => &["--porcelain"],
-        _ => &[],
-    };
-    for arg in &args[1..] {
-        if arg.starts_with('-') && arg != "--" && !flags.contains(&arg.as_str()) {
-            return Err(format!(
-                "Git option \"{arg}\" is not allowed for {subcommand}"
-            ));
-        }
+    if subcommand == "branch"
+        && let Some(arg) = args[1..].iter().find(|arg| is_branch_delete_option(arg))
+    {
+        return Err(format!(
+            "Git option \"{arg}\" can delete or overwrite a branch; use the branch deletion action instead"
+        ));
     }
     Ok(())
+}
+
+/// Whether `arg` selects `git branch` deletion or a forced overwrite: `--delete`
+/// or `--force` or any prefix Git accepts as an abbreviation, or a short-option
+/// cluster holding `d`, `D`, `M`, `C` or `f`.
+/// A cluster whose `d` is really an attached option value (`-uorigin/dev`) is
+/// refused too; that errs on the safe side.
+fn is_branch_delete_option(arg: &str) -> bool {
+    if let Some(long) = arg.strip_prefix("--") {
+        let name = long.split('=').next().unwrap_or_default();
+        !name.is_empty()
+            && ["delete", "force"]
+                .iter()
+                .any(|long| long.starts_with(name))
+    } else if let Some(short) = arg.strip_prefix('-') {
+        short.contains(['d', 'D', 'M', 'C', 'f'])
+    } else {
+        false
+    }
 }
 
 /// Run an allowlisted UI git command to completion, blocking the calling thread.
@@ -956,6 +980,32 @@ pub(crate) async fn git_stash_show(path: String, stash_ref: String) -> Result<St
     tokio::task::spawn_blocking(move || tuic_git::git::git_stash_show_blocking(path, stash_ref))
         .await
         .map_err(|e| format!("spawn_blocking join error: {e}"))?
+}
+
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub(crate) async fn git_stash_facts(
+    path: String,
+    stash_ref: String,
+) -> Result<tuic_git::stash_check::StashFacts, String> {
+    tokio::task::spawn_blocking(move || {
+        tuic_git::stash_check::stash_facts_blocking(path, stash_ref)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
+}
+
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub(crate) async fn git_stash_check_drop(
+    path: String,
+    stash_ref: String,
+    hash: String,
+    verdict: String,
+) -> Result<tuic_git::stash_check::StashCheckOutcome, String> {
+    tokio::task::spawn_blocking(move || {
+        tuic_git::stash_check::stash_check_drop_blocking(path, stash_ref, hash, verdict)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -1459,6 +1509,7 @@ mod tests {
                 worktree_paths: HashMap::from([(
                     "sentinel-id".to_string(),
                     crate::worktree::WorkspaceWorktree {
+                        creator_session: None,
                         branch: "sentinel-branch".to_string(),
                         path: repo.clone(),
                         kind: crate::worktree::WorkspaceKind::Worktree,
@@ -1480,6 +1531,46 @@ mod tests {
             stats.last_commit_ts.keys().collect::<Vec<_>>()
         );
     }
+    /// Catches the startup structure snapshot classifying every local branch: it
+    /// must flag a merged workspace branch and leave other branches to the Git
+    /// panel's own `get_merged_branches` call (#3021-3a69).
+    #[tokio::test]
+    async fn repo_structure_reports_merged_state_for_workspace_branches_only() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let git = |args: &[&str]| {
+            git_cmd(&path).args(args).run().unwrap();
+        };
+        for branch in ["merged-workspace", "merged-elsewhere"] {
+            git(&["branch", branch]);
+        }
+        std::fs::write(path.join("advance.txt"), "default moves on\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "advance"]);
+        for branch in ["merged-workspace", "merged-elsewhere"] {
+            git(&["checkout", "-q", branch]);
+            std::fs::write(path.join(format!("{branch}.txt")), "own\n").unwrap();
+            git(&["add", "."]);
+            git(&["commit", "-q", "-m", branch]);
+            git(&["checkout", "-q", "-"]);
+            git(&["merge", "-q", "--no-edit", "--no-ff", branch]);
+        }
+        let linked = tempfile::tempdir().unwrap();
+        git(&[
+            "worktree",
+            "add",
+            linked.path().join("ws").to_str().unwrap(),
+            "merged-workspace",
+        ]);
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let repo = path.to_string_lossy().into_owned();
+
+        let structure = get_repo_structure_impl(&state, repo.clone()).await.unwrap();
+        assert_eq!(structure.merged_branches, vec!["merged-workspace"]);
+        let mut all = get_merged_branches_impl(&path).unwrap();
+        all.sort();
+        assert_eq!(all, vec!["merged-elsewhere", "merged-workspace"]);
+    }
+
     /// `update_from_base` with the merge strategy must merge a diverged base even
     /// when `merge.ff=only` and the checked-out branch's `mergeOptions` say
     /// `--ff-only`: the explicit `--ff` it forwards is the last word.
@@ -1562,21 +1653,11 @@ mod tests {
         }
     }
 
-    // Catches: the retired private auto-fetch marker being accepted again and reaching git as an
-    // unknown option.
-    #[test]
-    fn the_retired_auto_fetch_marker_is_rejected() {
-        let args = ["fetch", "--all", "--tuic-auto-fetch"]
-            .map(str::to_owned)
-            .to_vec();
-        assert!(validate_git_command_args(&args).is_err());
-    }
-
-    // Catches: a flag-table edit that rejects an argument vector the frontend still sends
+    // Catches: a policy edit that rejects an argument vector the frontend still sends
     // (every `run_git_command` caller in src/, inventoried in story 1460-9ed8), or that
-    // admits an option-shaped argument in a position the first-arg check never saw.
+    // admits a global option before the subcommand or a generic branch deletion.
     #[test]
-    fn git_option_policy_accepts_every_frontend_argument_vector_and_rejects_option_injection() {
+    fn git_option_policy_accepts_every_frontend_argument_vector_and_rejects_global_options() {
         let vec_of = |args: &[&str]| args.iter().map(|a| (*a).to_owned()).collect::<Vec<_>>();
         for accepted in [
             vec!["pull"],
@@ -1593,6 +1674,12 @@ mod tests {
             vec!["rebase", "origin/feature"],
             vec!["status", "--porcelain"],
             vec!["diff", "--name-status", "main...feature"],
+            vec!["push", "--force-with-lease", "origin", "main"],
+            vec!["pull", "--rebase"],
+            vec!["stash", "push", "-m", "x"],
+            vec!["branch", "--list", "-v"],
+            vec!["branch", "-m", "old", "new"],
+            vec!["tag", "-d", "v1"],
         ] {
             assert_eq!(
                 validate_git_command_args(&vec_of(&accepted)),
@@ -1601,17 +1688,19 @@ mod tests {
             );
         }
         for rejected in [
-            vec!["push", "--force"],
-            vec!["pull", "--rebase"],
-            vec!["fetch", "--all", "--upload-pack=x"],
-            vec!["merge", "-s", "ours"],
-            vec!["status", "--porcelain", "--ignore-submodules"],
-            vec!["diff", "--name-status", "--ext-diff"],
-            vec!["stash", "push", "-m", "x"],
-            vec!["show", "--output=x", "HEAD"],
             vec!["branch", "-D", "main"],
+            vec!["branch", "--delete=main"],
+            vec!["branch", "-r", "--d", "origin/x"],
+            vec!["branch", "--format", "--", "-D", "x"],
+            vec!["branch", "-M", "a", "b"],
+            vec!["branch", "-C", "a", "b"],
+            vec!["branch", "-m", "--force", "a", "b"],
+            vec!["branch", "-m", "--fo", "a", "b"],
+            vec!["branch", "-f", "x", "main"],
             vec!["-c", "core.pager=x", "status"],
             vec!["--exec-path=x", "status"],
+            vec!["-C", "..", "status"],
+            vec!["worktree", "remove", "x"],
             vec![],
         ] {
             assert!(

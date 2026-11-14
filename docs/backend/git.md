@@ -12,6 +12,8 @@ The `tuic-git` crate owns Git subprocesses, reads, branch operations, worktree o
 
 Workflow launch uses `validate_branch_worktree_path`: the canonical path must identify a registered isolated branch checkout outside the archive pool, with no Git operation in progress. Detached-orphan removal uses the separate `validate_worktree_path` guard, which continues to refuse attached branch checkouts. Launch authorization never grants removal permission (#1883-eba0).
 
+Worktree allocation finds registrations under `git rev-parse --git-common-dir`, resolved from the base repository. This supports normal, bare and linked-worktree bases. Each registration must still match the requested checkout path before TUIC writes its allocation marker; foreign and unregistered checkouts remain rejected.
+
 Orphan scans and orphan removal share the temporary-path policy in
 `tuic_core::temp_paths`. OS/environment temp roots, `~/Gits/.tmp` and Unix
 `/tmp`, `/private/tmp`, `/var/folders`, `/private/var/folders` are excluded
@@ -209,6 +211,36 @@ reclaimed only via the hatch. That is safe rather than merely tolerable: Windows
 refuses to unlink a file another process holds open, so the OS enforces the same rule
 the probe does on unix.
 
+## Copy provenance and cleanup
+
+Warming can select an ignored directory in the source that is not ignored on an
+older destination branch. Those copied files then look like new untracked work.
+`copy_provenance.rs` snapshots their regular-file SHA-256 hashes before copying,
+checks both copies after copying, and atomically stores a receipt in the linked
+checkout's Git administrative directory. The receipt binds the source and
+checkout paths and the Git administrative identity. Registered archive moves keep
+that identity; a new registration cannot reuse another checkout's receipt. It is not stored in the working tree and does not change Git's
+index or ignore rules. Existing destinations and symlinks do not receive proof.
+Ignored destination caches keep normal Git semantics and are not hashed or added
+to the receipt. The existing copy settings do not change this selection path.
+
+Fresh lifecycle inspection and final no-force removal use the same classification.
+Only a non-ignored untracked file with matching receipt, current source and current
+destination hashes is an unchanged copy. Modified, missing, symlinked, unreadable,
+source-changed and new payload files still block cleanup. A failed or partial copy
+cannot publish proof for different bytes. A missing receipt never grants an
+exemption; a malformed or unreadable receipt makes safety unknown. There is no
+standalone file-deletion pass: the existing removal path still requires commit
+integration, exact checkout identity, no live or suspended users, lock handling,
+submodule preservation and its final fresh checks. Warming and removal retain
+the existing warm lock and cancellation token.
+
+Removal previews include `copied_files` with a path and classification. Untracked
+files in an older checkout without a receipt use `uncertain-no-copy-proof`.
+Equality with today's source does not establish historical origin. Inspection
+never writes a receipt or deletes legacy files. Copy proof is deliberately not
+reconstructed from a later source comparison.
+
 ## Linked-worktree warming (`cow.rs`)
 
 Every managed workspace is a linked Git worktree. After Git creates the clean
@@ -327,6 +359,21 @@ that differs from its branch ref bypasses the proof cache; destructive lifecycle
 preflights always bypass it.
 MCP `branch_integrations` and `branch_integration`, the branch panel's merged
 set, and workspace lifecycle share `classify_branch_merge` in `tuic-git`.
+Ancestry, base, reflog, branch-config, subject, changed-path and remote-containment
+reads run in process (gix). Only a branch that no ancestry proof settles runs the
+content heuristics. They first ask for the Git facts they need; the classifier then
+fetches them for all pending branches at once: one `merge-tree --stdin`, one
+`diff-tree | patch-id --stable` (the `git cherry` comparison) and one zero-context
+`diff-tree --stdin`. The process count does not grow with the branch count (#3024-58fe).
+A merge that must merge a submodule pointer runs in its own `merge-tree` process,
+because `merge-tree --stdin` (Git 2.54, 2.56) crashes on the next merge and loses every
+result; a failed shared run is retried one pair per process. The in-process work
+still takes seconds over hundreds of branches (19.6 s for 759 local branches of this
+repository on 2026-11-13), so `branches_detail`
+carries no merged flag; the branch panel requests `get_merged_branches` (every local
+branch) after the list renders. `get_repo_structure` classifies only the checked-out
+workspace branches (`get_merged_workspace_branches_impl`, its own cache), so a restart
+does not run the heuristics over every local branch (#3021-3a69).
 An empty or absent branch reflog is normal after expiry or when reflogs are disabled.
 The classifier returns `unknown` without an error or merge proof for that branch;
 repository structure and sibling branch classifications still load on repeated
@@ -345,7 +392,7 @@ removed lines. A squash message is corroborating evidence only. The
 worktree removal rechecks it after the archive hook. Safe branch-panel
 deletion uses this classifier and compare-and-delete instead of Git's
 upstream-dependent `branch -d`. Explicit force deletion retains `branch -D`.
-See [the fixture provenance](branch-integration-fixtures.md) for audit cases,
+The integration tests cover ancestry, patch equivalence, no-op merges,
 thresholds and known limits.
 
 Keeping the branch skips branch-deletion proof while retaining dirty-work,
@@ -484,7 +531,7 @@ struct ChangedFile {
 ```rust
 struct RepoStructure {
     worktree_paths: HashMap<String, String>,  // branch → worktree path
-    merged_branches: Vec<String>,             // branches merged into default
+    merged_branches: Vec<String>,             // workspace branches merged into default
 }
 ```
 
@@ -524,7 +571,7 @@ Sorts branches by priority:
 
 The workflow service checks both merge parents and compares the canonical merge tree with `git merge-tree --write-tree` for those exact parents before running pinned post-integration checks. A merge that adds unrelated content or drops checked source changes cannot receive an integration receipt. This verification requires Git >= 2.38; older installations receive an explicit version requirement. A conflicted merge is rejected with an explicit request for human review or a separately verified artifact; the current receipt path does not grant either exception.
 
-The `run_git_command` IPC command and `/repo/run-git` HTTP route share a subcommand and flag allowlist. Each argument is checked before Git starts; caller-controlled configuration, executable helpers, and output paths are rejected. Network commands share the 180 s `FETCH_TIMEOUT`. Supported UI flags are fetch `--all`, pull `--ff-only`, push `-u`/`--delete`, diff `--name-status`, and status `--porcelain`.
+The `run_git_command` IPC command and `/repo/run-git` HTTP route share one argument policy, checked before Git starts. The first argument must be an allowlisted subcommand, so global options such as `-c` or `--exec-path` cannot precede it. After the subcommand, normal Git options are accepted (for example `log --oneline`, `push --force-with-lease`); each argument stays one argv entry and `--` ends option parsing as in Git. Generic `branch` deletion (`-d`, `-D`, `--delete` and its abbreviations, short clusters such as `-fd`) is refused: branch deletion goes through the dedicated owner described below, and `worktree` is not allowlisted. On TCP listeners the HTTP route also requires authentication and a trusted origin; the local socket transport relies on the OS user. Network commands share the 180 s `FETCH_TIMEOUT`.
 
 Force branch deletion first preserves the exact tip at `refs/archive/<branch>` and uses an expected-old-tip ref deletion. If `refs/archive/<branch>` already holds a different tip, the tip is archived at `refs/archive/<branch>-<sha7>` instead; an archive already at the same tip is reused. A checkout of the branch refuses deletion.
 
@@ -550,7 +597,9 @@ Git administration directory before it returns. Only explicit archive or safe re
 writes `finished`; merged ancestry or missing sessions alone does not release a checkout.
 Creation can rename and reuse a finished checkout from the same repository when Git
 proves it clean and integrated, with no unpushed submodule commits, lock, operation,
-pending warm, or live session. Ignored artifacts stay in place. Git registration and
+pending warm, or live session. Recycling uses ordinary Git cleanliness, not the
+copy-proof cleanup exemption: non-ignored copied payloads prevent reuse so the next
+allocation cannot inherit their receipt. Ignored artifacts stay in place. Git registration and
 submodule paths are repaired. The old workspace removal event precedes the new creation
 event. A durable `tuic-worktree-renames.jsonl` journal lets external registry consumers
 reconcile paths. Each record, including its newline, is serialized before the

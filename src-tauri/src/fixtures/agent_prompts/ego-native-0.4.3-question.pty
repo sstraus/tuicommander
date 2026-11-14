@@ -1,0 +1,38 @@
+[1;35m⠀⢀⡴⠋⠉⠉[36m⠀⣴⠋⠉⣷⠀⢠⡞⠉⢳⡄[0m
+[1;35m⠀⢴⡋⠉⠁⠀[36m⠀⠻⣄⣀⣿⠀⠸⣇⠀⣸⠇[0m
+[1;35m⠀⠀⠉⠉⠉⠀[36m⠀⠲⣄⣠⠟⠀⠀⠈⠉⠁⠀[0m
+εgo: ego 0.4.3
+[?u[cεgo: sandbox is off; commands can access any file your user account can access
+
+εgo: model ollama/fixture
+mode yolo (flags) · sandbox off (flags)
+     Ctrl+B backgrounds · Esc interrupts · Enter queues · Up recalls · Ctrl+Enter steers · Ctrl+S draft
+     Option+P models · Shift+Tab mode · /help
+]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi04OTRkLTc2NWQtYWU3Zi01MDJmMGVhZDU5ZTMiLCJ0dXJuIjpudWxsLCJldmVudCI6InNlc3Npb25fc3RhcnQiLCJpZCI6bnVsbCwiZGF0YSI6e319\[?2004h[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi04OTRkLTc2NWQtYWU3Zi01MDJmMGVhZDU5ZTMiLCJ0dXJuIjoiMDFhMTk3MjYtOGEzNy03NmIzLThkMzItNTg1M2IyYWEyZjQwIiwiZXZlbnQiOiJ0dXJuX3N0YXJ0IiwiaWQiOm51bGwsImRhdGEiOnt9fQ==\]0;ɛ । Capture native question evidence.]7770;intent=Capture native question evidence. (εgo)]9;4;0;0]7770;state=busy]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi04OTRkLTc2NWQtYWU3Zi01MDJmMGVhZDU5ZTMiLCJ0dXJuIjoiMDFhMTk3MjYtOGEzNy03NmIzLThkMzItNTg1M2IyYWEyZjQwIiwiZXZlbnQiOiJ0b29sX3N0YXJ0IiwiaWQiOiIwMWExOTcyNi04YTgyLTc0NmEtOGViNC1kMTgwYjVkNGQ4MzEiLCJkYXRhIjp7ImxhYmVsIjoiYXNrX3F1ZXN0aW9uIn19\[?2004l[6n[1;1H[J]7770;state=awaiting]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi04OTRkLTc2NWQtYWU3Zi01MDJmMGVhZDU5ZTMiLCJ0dXJuIjoiMDFhMTk3MjYtOGEzNy03NmIzLThkMzItNTg1M2IyYWEyZjQwIiwiZXZlbnQiOiJtb2RhbF9vcGVuIiwiaWQiOiIwMWExOTcyNi04YTg0LTczMzEtYTA4Zi01OTZjZGRlMThmNzkiLCJkYXRhIjp7ImtpbmQiOiJxdWVzdGlvbiIsInF1ZXN0aW9uIjp7InByb21wdCI6IkNob29zZSByZWFkaW5lc3MiLCJtb2RlIjoic2luZ2xlIiwib3B0aW9ucyI6W3siaWQiOiJyZWFkeSIsImxhYmVsIjoiUmVhZHkifSx7ImlkIjoid2FpdCIsImxhYmVsIjoiV2FpdCJ9XSwiZnJlZV90ZXh0IjpmYWxzZX19fQ==\[?2004h[6n[0m[?25l[1;2H[J[1;1H[92m[39mChoose readiness
+[1;7m> 1. Ready[0m
+  2. Wait
+[2mUp/Down or number selects; Enter answers; Esc cancels.[0m[35m[0m[0m7[37m[0m8[?25h[?2004l[6n[1;1H[J]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi04OTRkLTc2NWQtYWU3Zi01MDJmMGVhZDU5ZTMiLCJ0dXJuIjoiMDFhMTk3MjYtOGEzNy03NmIzLThkMzItNTg1M2IyYWEyZjQwIiwiZXZlbnQiOiJtb2RhbF9lbmQiLCJpZCI6IjAxYTE5NzI2LThhODQtNzMzMS1hMDhmLTU5NmNkZGUxOGY3OSIsImRhdGEiOnsib3V0Y29tZSI6ImFuc3dlcmVkIn19\]7770;state=busy[?2004h[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi04OTRkLTc2NWQtYWU3Zi01MDJmMGVhZDU5ZTMiLCJ0dXJuIjoiMDFhMTk3MjYtOGEzNy03NmIzLThkMzItNTg1M2IyYWEyZjQwIiwiZXZlbnQiOiJ0b29sX2VuZCIsImlkIjoiMDFhMTk3MjYtOGE4Mi03NDZhLThlYjQtZDE4MGI1ZDRkODMxIiwiZGF0YSI6eyJvdXRjb21lIjoiY29tcGxldGVkIn19\]7770;state=idle]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi04OTRkLTc2NWQtYWU3Zi01MDJmMGVhZDU5ZTMiLCJ0dXJuIjoiMDFhMTk3MjYtOGEzNy03NmIzLThkMzItNTg1M2IyYWEyZjQwIiwiZXZlbnQiOiJ0dXJuX2VuZCIsImlkIjpudWxsLCJkYXRhIjp7Im91dGNvbWUiOiJjb21wbGV0ZWQiLCJyZWFzb24iOiJDb21wbGV0ZWQifX0=\[0m[?25l[1;1H[2K[96m◐ Working 0s · ↓ ~7 tokens [2m· Esc to interrupt[22m[0m8[?25h[1;2H[J[1;1H[K
+[KNative evidence completed.
+[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s · ↓ ~7 tokens [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h[?2004l[?2004h[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s · ↓ ~7 tokens [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h[1;2H[J[1;1H[K
+[Kεgo: Turn elapsed 146ms · done 1:47 PM
+[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s · ↓ ~7 tokens [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi04OTRkLTc2NWQtYWU3Zi01MDJmMGVhZDU5ZTMiLCJ0dXJuIjpudWxsLCJldmVudCI6InNlc3Npb25fZW5kIiwiaWQiOm51bGwsImRhdGEiOnsib3V0Y29tZSI6ImNvbXBsZXRlZCJ9fQ==\]9;4;0;0]7770;state=idle]0;ɛ । ]133;D;0[0m[?25l[1;2H[J[1;1H[92m[96mfixture · off · yolo [38;5;115m▱▱▱▱▱▱▱▱▱▱ 14/32.8k[0m unpriced ~ trust=untrusted
+> [35m[0m[0m7[37m[0m
+ 8[?25h[1;2H[J[1;1H[K
+[Kεgo: 0 unsent drafts discarded; 0 prompts waiting to run.
+[6n[0m[?25l[1;2H[J[1;1H[92m[96mfixture · off · yolo [38;5;115m▱▱▱▱▱▱▱▱▱▱ 14/32.8k[0m unpriced ~ trust=untrusted
+> [35m[0m[0m7[37m[0m
+ 8[?25h[1;2H[J[1;1H[K
+[Kεgo: To resume: 'ego resume 01a19726-894d-765d-ae7f-502f0ead59e3'
+[6n[0m[?25l[1;2H[J[1;1H[92m[96mfixture · off · yolo [38;5;115m▱▱▱▱▱▱▱▱▱▱ 14/32.8k[0m unpriced ~ trust=untrusted
+> [35m[0m[0m7[37m[0m
+ 8[?25h[?2004l

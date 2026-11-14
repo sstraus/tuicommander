@@ -21,34 +21,34 @@ pub(super) async fn repo_info(
     }
 }
 
-pub(super) async fn repo_diff(Query(q): Query<PathQuery>) -> Response {
+pub(super) async fn repo_diff(Query(q): Query<DiffScopeQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.path) {
         return e.into_response();
     }
     let path = q.path;
-    match crate::git::get_git_diff(path, None).await {
+    match crate::git::get_git_diff(path, q.scope).await {
         Ok(diff) => (StatusCode::OK, Json(serde_json::json!({"diff": diff}))).into_response(),
         Err(e) => err_500(&e),
     }
 }
 
-pub(super) async fn repo_diff_stats(Query(q): Query<PathQuery>) -> Response {
+pub(super) async fn repo_diff_stats(Query(q): Query<DiffScopeQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.path) {
         return e.into_response();
     }
     let path = q.path;
-    match crate::git::get_diff_stats(path, None).await {
+    match crate::git::get_diff_stats(path, q.scope).await {
         Ok(stats) => Json(stats).into_response(),
         Err(e) => err_500(&e),
     }
 }
 
-pub(super) async fn repo_changed_files(Query(q): Query<PathQuery>) -> Response {
+pub(super) async fn repo_changed_files(Query(q): Query<DiffScopeQuery>) -> Response {
     if let Err(e) = validate_repo_path(&q.path) {
         return e.into_response();
     }
     let path = q.path;
-    json_result(crate::git::get_changed_files(path, None).await)
+    json_result(crate::git::get_changed_files(path, q.scope).await)
 }
 
 pub(super) async fn repo_branches(Query(q): Query<PathQuery>) -> Response {
@@ -406,6 +406,27 @@ pub(super) async fn stash_drop_http(Json(body): Json<StashRefRequest>) -> Respon
     }
 }
 
+pub(super) async fn stash_facts_http(Query(q): Query<StashRefRequest>) -> Response {
+    if let Err(e) = validate_repo_path(&q.path) {
+        return e.into_response();
+    }
+    match crate::git::git_stash_facts(q.path, q.stash_ref).await {
+        Ok(facts) => Json(facts).into_response(),
+        Err(e) => err_500(&e),
+    }
+}
+
+pub(super) async fn stash_check_drop_http(Json(body): Json<StashCheckDropRequest>) -> Response {
+    if let Err(e) = validate_repo_path(&body.path) {
+        return e.into_response();
+    }
+    match crate::git::git_stash_check_drop(body.path, body.stash_ref, body.hash, body.verdict).await
+    {
+        Ok(outcome) => Json(outcome).into_response(),
+        Err(e) => err_500(&e),
+    }
+}
+
 pub(super) async fn stash_show_http(Query(q): Query<StashRefRequest>) -> Response {
     if let Err(e) = validate_repo_path(&q.path) {
         return e.into_response();
@@ -753,31 +774,223 @@ mod tests {
         assert_eq!(bounded, vec!["fetch", "pull", "push", "remote"]);
     }
 
-    // Catches: validating only args[0] lets executable/config/output options reach Git.
+    /// Runs fixture git in `dir` and returns stdout; a failing setup step panics with stderr.
+    fn git_in(dir: &std::path::Path, args: &[&str]) -> String {
+        let output = std::process::Command::new("git")
+            .current_dir(dir)
+            .args(["-c", "user.name=Test", "-c", "user.email=test@example.com"])
+            .args(args)
+            .output()
+            .expect("git");
+        assert!(
+            output.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).into_owned()
+    }
+
+    /// A throwaway clone with a local bare `origin`, a pushed `main`, a local
+    /// `feature` branch, and a committed file whose name starts with a dash.
+    fn repo_with_local_remote() -> (tempfile::TempDir, std::path::PathBuf) {
+        let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).expect("tempdir");
+        let remote = root.path().join("origin.git");
+        let work = root.path().join("work");
+        git_in(root.path(), &["init", "--bare", "-b", "main", "origin.git"]);
+        git_in(root.path(), &["init", "-b", "main", "work"]);
+        std::fs::write(work.join("-dash.txt"), "one\n").unwrap();
+        git_in(&work, &["add", "--", "-dash.txt"]);
+        git_in(&work, &["commit", "-m", "first subject"]);
+        git_in(
+            &work,
+            &["remote", "add", "origin", &remote.to_string_lossy()],
+        );
+        git_in(&work, &["push", "-u", "origin", "main"]);
+        git_in(&work, &["branch", "feature"]);
+        (root, work)
+    }
+
+    async fn run_git_http(
+        state: &std::sync::Arc<crate::AppState>,
+        dir: &std::path::Path,
+        args: &[&str],
+    ) -> (StatusCode, serde_json::Value) {
+        let response = run_git_command_http(
+            axum::extract::State(state.clone()),
+            Json(RunGitCommandRequest {
+                path: dir.to_string_lossy().into_owned(),
+                args: args.iter().map(|arg| (*arg).to_owned()).collect(),
+            }),
+        )
+        .await;
+        let status = response.status();
+        (status, json_body(response).await)
+    }
+
+    // Catches: the owner cannot request `log --oneline` or `push --force-with-lease`
+    // (or any other normal option) through the authenticated Git API.
     #[tokio::test]
-    async fn run_git_http_rejects_option_injection_in_every_position() {
-        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).expect("tempdir");
+    async fn authenticated_git_api_accepts_normal_flags() {
+        let (_root, work) = repo_with_local_remote();
         let state = std::sync::Arc::new(crate::state::tests_support::make_test_app_state());
+
+        let (status, body) = run_git_http(&state, &work, &["log", "--oneline"]).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["success"], true, "{body}");
+        let short = git_in(&work, &["rev-parse", "--short", "HEAD"]);
+        assert_eq!(
+            body["stdout"].as_str().unwrap().trim(),
+            format!("{} first subject", short.trim())
+        );
+
+        // An option value in its own argv slot, and a dash-prefixed file after `--`.
+        let (status, body) = run_git_http(
+            &state,
+            &work,
+            &["log", "-n", "1", "--format=%s", "--", "-dash.txt"],
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["success"], true, "{body}");
+        assert_eq!(body["stdout"].as_str().unwrap().trim(), "first subject");
+
+        // Rewrite the pushed tip, then a lease-protected force push must land it.
+        git_in(&work, &["commit", "--amend", "-m", "amended subject"]);
+        let local = git_in(&work, &["rev-parse", "HEAD"]);
+        let (status, body) = run_git_http(
+            &state,
+            &work,
+            &["push", "--force-with-lease", "origin", "main"],
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["success"], true, "{body}");
+        let remote = git_in(&work, &["ls-remote", "origin", "refs/heads/main"]);
+        assert!(remote.starts_with(local.trim()), "{remote} vs {local}");
+
+        // The IPC twin shares the policy: the same argv succeeds there too.
+        let ipc = crate::git::run_git_command_blocking(
+            &state,
+            &work.to_string_lossy(),
+            &["diff".to_owned(), "--stat".to_owned(), "HEAD".to_owned()],
+        );
+        assert!(ipc.success, "{}", ipc.stderr);
+    }
+
+    // Catches: the relaxed option policy letting an unauthenticated or cross-site
+    // request through, or letting generic `branch` delete a branch past the
+    // dedicated deletion owner (abbreviated long option, short cluster), while
+    // non-deleting `branch` options still work.
+    #[tokio::test]
+    async fn git_api_cannot_bypass_auth_or_deletion_safety() {
+        use tower::ServiceExt;
+        let (_root, work) = repo_with_local_remote();
+        let state = std::sync::Arc::new(crate::state::tests_support::make_test_app_state());
+        *state.session_token.write() = "git-token".into();
+        let app = super::super::build_router(state.clone(), true, true);
+        let feature_exists = || {
+            std::process::Command::new("git")
+                .current_dir(&work)
+                .args(["rev-parse", "--verify", "--quiet", "refs/heads/feature"])
+                .output()
+                .expect("git")
+                .status
+                .success()
+        };
+        let body = serde_json::json!({
+            "path": work.to_string_lossy(),
+            "args": ["branch", "-D", "feature"],
+        })
+        .to_string();
+        let request = |uri: &str, origin: Option<&str>| {
+            let mut req = axum::http::Request::post(uri)
+                .header(axum::http::header::HOST, "127.0.0.1:9876")
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .extension(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                    [192, 168, 1, 50],
+                    40000,
+                ))))
+                .body(axum::body::Body::from(body.clone()))
+                .unwrap();
+            if let Some(origin) = origin {
+                req.headers_mut()
+                    .insert(axum::http::header::ORIGIN, origin.parse().unwrap());
+            }
+            req
+        };
+        let unauthenticated = app
+            .clone()
+            .oneshot(request("/repo/run-git", None))
+            .await
+            .unwrap();
+        assert_eq!(unauthenticated.status(), StatusCode::UNAUTHORIZED);
+        let cross_site = app
+            .clone()
+            .oneshot(request(
+                "/repo/run-git?token=git-token",
+                Some("https://evil.example"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(cross_site.status(), StatusCode::FORBIDDEN);
+        assert!(feature_exists(), "a refused request must not delete");
+
         for args in [
-            vec!["rebase", "--exec", "touch x"],
-            vec!["rebase", "main", "--exec=touch x"],
-            vec!["fetch", "--upload-pack=x"],
-            vec!["fetch", "origin", "--upload-pack", "x"],
-            vec!["log", "-c", "core.pager=x"],
-            vec!["diff", "--output=x"],
-            vec!["push", "--receive-pack=x"],
-            vec!["log", "--", "--exec=x"],
-            vec!["-c", "alias.x=!touch x", "status"],
+            vec!["branch", "-D", "feature"],
+            vec!["branch", "-d", "feature"],
+            vec!["branch", "--delete", "feature"],
+            vec!["branch", "--del", "feature"],
+            vec!["branch", "-fd", "feature"],
+            vec!["branch", "--force", "-Dq", "feature"],
         ] {
-            let response = run_git_command_http(
-                axum::extract::State(state.clone()),
-                Json(RunGitCommandRequest {
-                    path: dir.path().to_string_lossy().into_owned(),
-                    args: args.iter().map(|arg| (*arg).to_owned()).collect(),
-                }),
-            )
-            .await;
-            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{args:?}");
+            let (status, body) = run_git_http(&state, &work, &args).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{args:?}: {body}");
+            assert!(feature_exists(), "{args:?} deleted the branch");
+            let ipc = crate::git::run_git_command_blocking(
+                &state,
+                &work.to_string_lossy(),
+                &args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(),
+            );
+            assert!(!ipc.success, "{args:?} passed over IPC");
+            assert!(feature_exists(), "{args:?} deleted the branch over IPC");
+        }
+
+        // Non-deleting options stay available; `--` ends option parsing, so a
+        // dash-named argument after it is never read as a deletion flag.
+        let (status, body) = run_git_http(&state, &work, &["branch", "-vv"]).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["success"], true, "{body}");
+        let (status, body) = run_git_http(&state, &work, &["log", "--oneline", "--", "-d"]).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert!(feature_exists());
+    }
+
+    // Catches: a force rename or copy (`branch -M`, `-C`, `--move --force`)
+    // overwriting an existing branch, which drops its unmerged commits past the
+    // dedicated deletion owner exactly like a generic `branch -D` would.
+    #[tokio::test]
+    async fn git_api_cannot_overwrite_an_existing_branch() {
+        let (_root, work) = repo_with_local_remote();
+        let state = std::sync::Arc::new(crate::state::tests_support::make_test_app_state());
+        git_in(&work, &["checkout", "-q", "-b", "victim"]);
+        git_in(
+            &work,
+            &["commit", "--allow-empty", "-m", "unique victim work"],
+        );
+        let unique = git_in(&work, &["rev-parse", "HEAD"]);
+        git_in(&work, &["checkout", "-q", "main"]);
+        for args in [
+            vec!["branch", "-M", "feature", "victim"],
+            vec!["branch", "-C", "feature", "victim"],
+            vec!["branch", "--move", "--force", "feature", "victim"],
+        ] {
+            let (status, body) = run_git_http(&state, &work, &args).await;
+            let victim = git_in(&work, &["rev-parse", "refs/heads/victim"]);
+            assert_eq!(
+                victim.trim(),
+                unique.trim(),
+                "{args:?} overwrote an unmerged branch: {status} {body}"
+            );
         }
     }
 
@@ -887,5 +1100,93 @@ mod tests {
                 .contains("timed out"),
             "expected the deadline named in stderr, got {json}"
         );
+    }
+
+    /// A repo where the index and the working tree disagree: `staged.txt` is a
+    /// new two-line file in the index only, and the committed `tracked.txt` has
+    /// one unstaged line edit. Each scope therefore names a different file and
+    /// a different line count.
+    fn repo_with_staged_and_unstaged_edits() -> (tempfile::TempDir, std::path::PathBuf) {
+        let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).expect("tempdir");
+        let work = root.path().join("work");
+        git_in(root.path(), &["init", "-b", "main", "work"]);
+        std::fs::write(work.join("tracked.txt"), "one\n").unwrap();
+        git_in(&work, &["add", "tracked.txt"]);
+        git_in(&work, &["commit", "-m", "first"]);
+        std::fs::write(work.join("staged.txt"), "alpha\nbeta\n").unwrap();
+        git_in(&work, &["add", "staged.txt"]);
+        std::fs::write(work.join("tracked.txt"), "two\n").unwrap();
+        (root, work)
+    }
+
+    /// GETs `route` through the real router, so the query string goes through
+    /// the same deserialization a browser or remote client hits.
+    async fn get_repo_route(route: &str, repo: &std::path::Path, scope: &str) -> serde_json::Value {
+        use axum::body::Body;
+        use axum::extract::connect_info::ConnectInfo;
+        use tower::ServiceExt;
+        let query = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("path", &repo.to_string_lossy())
+            .append_pair("scope", scope)
+            .finish();
+        let mut request = axum::http::Request::get(format!("{route}?{query}"))
+            .header(axum::http::header::HOST, "127.0.0.1:9876")
+            .body(Body::empty())
+            .expect("build GET request");
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 0))));
+        let response = super::super::build_router(super::super::tests::test_state(), false, true)
+            .oneshot(request)
+            .await
+            .expect("router response");
+        assert_eq!(response.status(), StatusCode::OK, "{route} scope={scope}");
+        json_body(response).await
+    }
+
+    // Catches: the HTTP diff routes drop `scope` and always answer with the
+    // unstaged diff, so browser and remote clients see the wrong changes.
+    #[tokio::test]
+    async fn diff_routes_honour_the_scope_query() {
+        let (_root, repo) = repo_with_staged_and_unstaged_edits();
+
+        let staged = get_repo_route("/repo/diff", &repo, "staged").await;
+        let staged = staged["diff"].as_str().expect("diff string");
+        assert!(staged.contains("+alpha"), "staged diff: {staged}");
+        assert!(!staged.contains("+two"), "staged diff: {staged}");
+        let unstaged = get_repo_route("/repo/diff", &repo, "").await;
+        let unstaged = unstaged["diff"].as_str().expect("diff string");
+        assert!(unstaged.contains("+two"), "unstaged diff: {unstaged}");
+        assert!(!unstaged.contains("+alpha"), "unstaged diff: {unstaged}");
+
+        assert_eq!(
+            get_repo_route("/repo/diff-stats", &repo, "staged").await,
+            serde_json::json!({"additions": 2, "deletions": 0})
+        );
+        assert_eq!(
+            get_repo_route("/repo/diff-stats", &repo, "").await,
+            serde_json::json!({"additions": 1, "deletions": 1})
+        );
+
+        let paths = |files: serde_json::Value| -> Vec<String> {
+            files
+                .as_array()
+                .expect("file list")
+                .iter()
+                .map(|file| file["path"].as_str().expect("path").to_owned())
+                .collect()
+        };
+        assert_eq!(
+            paths(get_repo_route("/repo/files", &repo, "staged").await),
+            ["staged.txt"]
+        );
+        assert_eq!(
+            paths(get_repo_route("/repo/files", &repo, "").await),
+            ["tracked.txt"]
+        );
+        // `head` is the third named scope: index and working tree together.
+        let mut head = paths(get_repo_route("/repo/files", &repo, "head").await);
+        head.sort();
+        assert_eq!(head, ["staged.txt", "tracked.txt"]);
     }
 }

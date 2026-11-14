@@ -1,5 +1,7 @@
 """Focused launcher contracts. No test starts a desktop application."""
 import json
+import importlib.util
+from unittest.mock import patch
 import os
 import re
 from pathlib import Path
@@ -18,6 +20,30 @@ class AgentTestPlanTests(unittest.TestCase):
             cwd=ROOT, env=env, text=True, capture_output=True, check=True,
         )
         return json.loads(result.stdout)
+
+    def test_profiler_configuration_cannot_abort_the_build_toolchain(self):
+        # Catches: rustc's non-profiling jemalloc aborts on inherited prof:true.
+        spec = importlib.util.spec_from_file_location("agent_test_launcher", ROOT / "scripts/agent-test.py")
+        launcher = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(launcher)
+        conf = "abort_conf:true,prof:true,prof_active:false"
+        with patch.dict(os.environ, {"AGENT_TEST_HEAP_PROFILE": "1", "_RJEM_MALLOC_CONF": conf}):
+            launch = launcher.plan("agent-test-2959-env-contract", "19879")
+            self.assertEqual(launch["environment"]["_RJEM_MALLOC_CONF"], conf)
+            def doctor(command, **kwargs):
+                self.assertEqual(command, ["mbx", "doctor"])
+                self.assertNotIn("_RJEM_MALLOC_CONF", kwargs["env"])
+                raise RuntimeError("toolchain boundary verified")
+            with patch.object(launcher.subprocess, "run", doctor):
+                with self.assertRaisesRegex(RuntimeError, "toolchain boundary verified"):
+                    launcher.start(launch)
+
+    def test_heap_profile_is_opt_in_for_isolated_whole_backend(self):
+        # Catches: diagnostic launcher accepts the flag but builds system allocator.
+        normal = self.plan(AGENT_TEST_HEAP_PROFILE="0")
+        diagnostic = self.plan(AGENT_TEST_HEAP_PROFILE="1")
+        self.assertNotIn("heap-profile", normal["cargo"][normal["cargo"].index("--features") + 1])
+        self.assertIn("heap-profile", diagnostic["cargo"][diagnostic["cargo"].index("--features") + 1])
 
     def test_dry_run_cannot_reuse_daily_config_binary_or_listener(self):
         binary = ROOT / ".tmp/agent-test/agent-test/tuicommander-agent-test"

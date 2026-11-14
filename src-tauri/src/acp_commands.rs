@@ -21,11 +21,12 @@ use tauri::State;
 use crate::AppState;
 use crate::acp::{
     AcpAttachKind, AcpAttachmentSnapshot, AcpClientError, AcpConnectRequest, AcpConnectionId,
-    AcpConnectionSettlement, AcpConnectionSnapshot, AcpDetachKind, AcpEventStream,
-    AcpHostRequestId, AcpInteractionSettlement, AcpPendingInteraction, AcpReconnectRequest,
-    AcpSessionAuthority, AcpStreamFrame, AcpTurnId, EgoAcpConfig, EgoCompactResponse,
-    EgoHoldRequest, EgoHoldResponse,
+    AcpConnectionSettlement, AcpConnectionSnapshot, AcpDetachKind, AcpHostRequestId,
+    AcpInteractionSettlement, AcpPendingInteraction, AcpReconnectRequest, AcpSessionAuthority,
+    AcpTurnId, EgoAcpConfig, EgoCompactResponse, EgoHoldRequest, EgoHoldResponse,
 };
+#[cfg(feature = "desktop")]
+use crate::acp::{AcpEventStream, AcpStreamFrame};
 
 /// The one executable this host may launch for ACP, as configured right now.
 ///
@@ -46,6 +47,7 @@ pub(crate) fn ego_config(state: &AppState) -> Result<EgoAcpConfig, AcpClientErro
         profile: settings.ego_profile.clone(),
         // AI Chat instructions belong to its conversation-specific ChatLaunch snapshot.
         master_prompt: String::new(),
+        ai_chat: false,
     })
 }
 
@@ -192,41 +194,30 @@ async fn peer_id_for_root(
     })?
 }
 
-/// Forward one connection's events as frames until the stream ends.
+/// Forward one connection's frames to a desktop Channel until the stream ends.
 ///
 /// The frames are what both transports carry: the desktop Channel and the
 /// browser WebSocket send the same JSON, so a host written against one is
 /// written against the other. A gap is a frame rather than a dropped
 /// connection, because the subscriber has to learn that it missed something.
 ///
-/// Returned as a future rather than spawned here, because the two transports
-/// run on different threads: the WebSocket handler is already inside the axum
-/// runtime, while a sync Tauri command runs on the main thread, where
-/// `tokio::spawn` panics and takes every PTY session down with the app.
-pub(crate) async fn forward(
+/// Spawned on the Tauri runtime, which any thread can reach: a sync Tauri
+/// command runs on the main thread, where `tokio::spawn` panics and takes every
+/// PTY session down with the app.
+#[cfg(feature = "desktop")]
+fn forward_detached(
     mut events: AcpEventStream,
     mut send: impl FnMut(AcpStreamFrame) -> bool + Send + 'static,
 ) {
-    while let Some(event) = events.recv().await {
-        let frame = match event {
-            Ok(envelope) => AcpStreamFrame::Event(Box::new(envelope)),
-            Err(gap) => AcpStreamFrame::Gap(gap),
-        };
-        let fatal = matches!(frame, AcpStreamFrame::Gap(_));
-        if !send(frame) || fatal {
-            return;
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let frame = events.next_frame().await;
+            let last = !matches!(frame, AcpStreamFrame::Event(_));
+            if !send(frame) || last {
+                return;
+            }
         }
-    }
-    send(AcpStreamFrame::End);
-}
-
-/// Forward frames from the Tauri runtime, which any thread can reach.
-#[cfg(feature = "desktop")]
-fn forward_detached(
-    events: AcpEventStream,
-    send: impl FnMut(AcpStreamFrame) -> bool + Send + 'static,
-) {
-    tauri::async_runtime::spawn(forward(events, send));
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -784,4 +775,24 @@ mod tests {
             "a closed journal ends the stream, got {last:?}"
         );
     }
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn acp_message_action(
+    state: State<'_, Arc<AppState>>,
+    connection_id: AcpConnectionId,
+    session_id: v1::SessionId,
+    request: crate::acp_message_actions::MessageActionRequest,
+) -> Result<crate::acp_message_actions::MessageActionReceipt, AcpClientError> {
+    crate::acp_message_actions::send(&state, connection_id, session_id, request).await
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) fn acp_message_reactions(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+) -> crate::acp_message_actions::MessageReactions {
+    crate::acp_message_actions::reactions(&state, &session_id)
 }

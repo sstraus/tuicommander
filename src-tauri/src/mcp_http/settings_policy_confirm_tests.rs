@@ -11,12 +11,6 @@ async fn ui_settings_confirm_uses_backend_diff_and_real_response_channel() {
     let _guard = crate::config::set_config_dir_override(dir.path().to_owned());
     crate::credentials::reset_test_faults();
     let state = Arc::new(crate::state::tests_support::make_test_app_state());
-    state
-        .config
-        .write()
-        .mcp_capabilities
-        .denied
-        .retain(|tool| tool != "settings");
     state.config.write().settings_mcp_enabled = true;
     let service = Service::new(
         Arc::new(native_catalogue().unwrap()),
@@ -25,8 +19,7 @@ async fn ui_settings_confirm_uses_backend_diff_and_real_response_channel() {
         )),
     )
     .with_policy(state.settings_policy.clone());
-    let addr = "127.0.0.1:4321".parse().unwrap();
-    let caller = Caller::mcp(addr, "policy-wire-connection".into(), true);
+    let caller = Caller::mcp("policy-wire-connection".into(), true);
     for accepted in [false, true] {
         let revision = service
             .get(Target::Machine, "app".into(), vec!["/font_size".into()])
@@ -52,7 +45,6 @@ async fn ui_settings_confirm_uses_backend_diff_and_real_response_channel() {
         let task = tokio::spawn(async move {
             super::mcp_transport_ancillary::handle_confirm(
                 &host,
-                addr,
                 &args,
                 Some("policy-wire-connection"),
             )

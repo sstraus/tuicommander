@@ -2,6 +2,7 @@ import { type Component, createMemo, createSignal, For, onCleanup, onMount, Show
 import { type CodexRateWindow, type CodexUsageApiResponse, windowLabel } from "../../features/codexUsage";
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
+import { providerQuotaStore } from "../../stores/providerQuota";
 import { formatQuotaWindow } from "../../utils/sessionUsageFormatting";
 // Reuses the Claude dashboard's CSS module on purpose: same card grid, same bar,
 // same insight tiles. A second stylesheet would drift on the first theme change.
@@ -112,30 +113,19 @@ export function barHeightPercent(tokens: number, peak: number): number {
 // ---------------------------------------------------------------------------
 
 export const CodexUsageDashboard: Component = () => {
-	const [usage, setUsage] = createSignal<CodexUsageApiResponse | null>(null);
+	const quota = () => providerQuotaStore.forOwner("codex-cli");
+	const usage = (): CodexUsageApiResponse | null => {
+		const detail = quota()?.snapshot?.detail;
+		return detail?.provider === "codex" ? (detail.response as CodexUsageApiResponse) : null;
+	};
 	const [stats, setStats] = createSignal<CodexStats | null>(null);
-	const [usageError, setUsageError] = createSignal<string | null>(null);
+	const usageError = () =>
+		quota()?.state === "fresh" ? null : (quota()?.state ?? "No unambiguous bound subscription");
 	const [statsError, setStatsError] = createSignal<string | null>(null);
 	const [loading, setLoading] = createSignal(true);
 
 	const refresh = async () => {
-		// The backend coalesces both commands into one App Server snapshot. Keep
-		// the calls independent so either transport error has an honest section.
-		const [usageResult, statsResult] = await Promise.allSettled([
-			invoke<CodexUsageApiResponse>("get_codex_usage_api"),
-			invoke<CodexStatsResponse>("get_codex_usage_stats"),
-		]);
-
-		if (usageResult.status === "fulfilled") {
-			setUsage(usageResult.value);
-			// A refresh that succeeds must retract the previous failure, else the
-			// section keeps showing an error next to fresh numbers.
-			setUsageError(null);
-		} else {
-			const message = String(usageResult.reason);
-			setUsageError(message);
-			appLogger.warn("network", "Codex usage fetch failed", message);
-		}
+		const [statsResult] = await Promise.allSettled([invoke<CodexStatsResponse>("get_codex_usage_stats")]);
 
 		if (statsResult.status === "fulfilled") {
 			setStats(statsResult.value.stats);
@@ -150,6 +140,9 @@ export const CodexUsageDashboard: Component = () => {
 	// Only the first load blanks the dashboard; a periodic refresh swaps the
 	// numbers in place.
 	onMount(() => {
+		void providerQuotaStore
+			.start()
+			.catch((error) => appLogger.warn("network", "Quota store unavailable", String(error)));
 		void refresh().finally(() => setLoading(false));
 	});
 
@@ -158,10 +151,17 @@ export const CodexUsageDashboard: Component = () => {
 	const timer = setInterval(() => void refresh(), 5 * 60 * 1000);
 	onCleanup(() => clearInterval(timer));
 
-	const windows = createMemo(() => {
-		const api = usage();
-		return api ? labelWindows(api) : [];
-	});
+	const windows = () =>
+		(quota()?.snapshot?.windows ?? []).map((window, index) => ({
+			key: `${window.kind}:${window.model ?? "account"}:${index}`,
+			label: `${window.model ? `${window.model} ` : ""}${window.label}`,
+			window: {
+				used_percent: window.used_percent,
+				limit_window_seconds: window.window_seconds,
+				reset_after_seconds: null,
+				reset_at: window.resets_at,
+			},
+		}));
 
 	const buckets = createMemo(() => stats()?.daily_usage_buckets ?? []);
 	const peakBucket = createMemo(() => Math.max(0, ...buckets().map((b) => b.tokens)));
@@ -209,8 +209,7 @@ export const CodexUsageDashboard: Component = () => {
 												window_seconds: item.window.limit_window_seconds,
 												window_name: item.label,
 												used_percent: item.window.used_percent,
-												resets_at:
-													item.window.reset_at == null ? null : new Date(item.window.reset_at * 1000).toISOString(),
+												resets_at: item.window.reset_at,
 											})}
 										</span>
 									</div>

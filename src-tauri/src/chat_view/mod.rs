@@ -16,7 +16,12 @@ mod adapter;
 pub(crate) mod claude;
 pub(crate) mod codex;
 pub(crate) mod ego;
+mod full_text;
 pub(crate) mod grok;
+mod questions;
+
+pub(crate) use full_text::{ChatFullText, chat_view_full_text_blocking};
+pub(crate) use questions::transcript_question;
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -265,12 +270,26 @@ pub struct ChatViewSnapshot {
 #[derive(Default)]
 pub(crate) struct ChatViews {
     views: Mutex<HashMap<String, Arc<Mutex<View>>>>,
+    /// Question ledgers (`agent_question`), read while a wait is live.
+    questions: Mutex<HashMap<String, Arc<Mutex<questions::QuestionTail>>>>,
 }
 
 impl ChatViews {
+    /// The binding changed or ended: drop the view and the question ledger.
     pub(crate) fn invalidate(&self, session_id: &str) {
         self.views.lock().remove(session_id);
+        self.forget_questions(session_id);
     }
+
+    /// The PTY closed: its question tail has no reader left.
+    pub(crate) fn forget_questions(&self, session_id: &str) {
+        self.questions.lock().remove(session_id);
+    }
+}
+
+/// Question text cleaned like every other transcript text.
+pub(crate) fn clean_question(text: &str) -> String {
+    claude::clean(text, claude::MAX_TEXT_CHARS)
 }
 
 fn not_bound(why: &str) -> String {

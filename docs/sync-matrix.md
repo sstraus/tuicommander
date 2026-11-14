@@ -78,7 +78,10 @@ When adding or changing Tauri commands:
 When adding a new `app.emit(event_name, payload)` call, document it here and listen in `useAppInit.ts`:
 
 | Event | Payload | Emitted from | Frontend listener |
+| `provider-quota-changed` | `QuotaView` | `provider_quota_transport.rs`, desktop emit and `/events` | `providerQuotaStore` |
+| `provider-quota-binding-changed` | `{session_id, key}`; null key retracts the binding | `provider_quota_transport.rs`, desktop emit and `/events` | `providerQuotaStore` |
 |-------|---------|-------------|-------------------|
+| `boss-attention-changed` | `{}` | Typed report, input and story mutations, and a changed Fabbrica read (`fabbrica_attention.rs` poller); desktop plus SSE. Remote authoritative reseeds retain origin ownership. | `waitingItemsStore` rereads while retained (App bell sync, Plans and Stories, Activity Dashboard health); reconnect and repository revisions also refresh |
 | `ideas-changed` | `{}` | Planner and UI notes mutations after persistence; desktop plus `/events` SSE | `ideasStore.hydrate()` reloads after local writes; reconnect also reloads |
 | `ai-chat-selection-changed` | `{}` | Config transaction after shared AI Chat selection changes; desktop plus `/events` SSE | `createAiChatSelectionSync` rereads the host selection on invalidation and reconnect; `useAcpChat` adopts without echo writes |
 | `open-markdown-tabs-changed` | `{}` | `open_markdown_tabs::publish`: desktop IPC and `/events` SSE after a changed metadata snapshot | `createOpenMarkdownTabs` refetches one session-owned list shared by the mobile menu and wide-screen dropdown |
@@ -103,7 +106,8 @@ When adding a new `app.emit(event_name, payload)` call, document it here and lis
 | `native-key-down` | `{ key: "F13".."F20", cmd, ctrl, alt, shift }` | `native_keys.rs` — macOS only, scoped to the `main` window; the event is passed through (nothing native to suppress) | `useNativeKeyCombo.ts`, attached only while a shortcut recorder is open |
 | `mcp-toast` | `{ title, message, level, sound, urgency, origin_repo_path?, origin_session_id?, __tuic_origin?: { connection, name } }` | `mcp_transport.rs` — `ui action=toast`; derives origin from the calling MCP session rather than accepting caller-supplied scope. `origin_session_id` is the caller's TUIC session, absent for an unbound caller | `useAppInit.ts` → repository-scoped Messages bell item, even when transient mirroring is disabled; `urgency=urgent` additionally shows a transient card (upper-right container, never over the composer), `normal` or an absent urgency also shows a card when an origin session is present and not being viewed (inactive terminal or unfocused document), controlled by the default-on per-client **Show cards from other terminals** setting; no origin stays bell only, and a mirrored urgent notice keeps its `[connection]` label on the card; consecutive identical notices from the same origin and connection id within five seconds deduplicate both the item and requested sound; mirrored titles/messages must be string/string-or-null or the notice is discarded with a content-free debug log. The explicit Open terminal action resolves `origin_session_id` at click time. `remote_mirror.rs` forwards connected remote toasts on both transports, adds the locally saved connection name to the origin marker, and resolves the remote peer to its PTY UUID. Mirrored notices are labelled with that name and navigate only within the owning connection; disconnected frames are dropped |
 | `progress-recorded` | `{ repo_path, payload: { entry: { id, project, ptyId?, type, text, ... } } }` | `mcp_transport.rs emit_progress_entry()` after the SQLite transaction commits; dual-emitted to the desktop window and `event_bus` → `/events` SSE | `progressStore` refreshes the selected PTY or aggregate and routes the toast to that source |
-| `workflow-run-changed` | `{ repo_path, payload: { runId, sequence } }` | `workflows/run/api.rs emit_run_changed()` after operator mutations (also wakes the daemon actor), daemon transitions and deadline expiry, MCP agent launch/report, and bound PTY exit; dual-emitted to the desktop window and `event_bus` → `/events` SSE. It is a cursor wake hint, not a replacement for event replay | `useAppInit.ts` → `workflowRunSignals` keeps the highest sequence per project/run; reconnect increments a resync revision so run views can replay from their cursor |
+| `workflow-run-changed` | `{ repo_path, payload: { runId, sequence } }` | `workflows/run/api.rs emit_run_cursor()` after neutral run progress; dual-emitted to the desktop window and `event_bus` → `/events` SSE. It is a cursor wake hint, not a replacement for event replay | `NeutralInspection.tsx` rereads the inspected neutral run |
+| `stories-changed` | `{ repo_path, payload: { rescan, ids, error? } }` | `story_adapter/binding.rs paths_changed()` when the repo watcher sees a change under a running external story adapter's `watch_paths` and `changes` answers; `event_bus` → `/events` SSE only (no desktop emit, no frontend consumer yet) | none yet |
 | `ui-tab` | `{id,title,html,url?,pinned,focus,origin_repo_path?,opener_tuic_session?}` | MCP UI tab handler; desktop emit plus SSE with the same optional stable caller identity | `useAppInit.ts` stores the opener on native Markdown tabs; desktop publication carries it to mobile Markdown menu metadata |
 | `mcp-confirm` | `{ request_id, title, message, origin_repo_path?, origin_session_id? }` | `mcp_transport.rs` — `ui action=confirm`, dual-emitted, plus a mobile push. It used to be a native OS dialog, which no remote human could answer; every client now gets the request and the first answer wins | `McpConfirmHost.tsx` (mounted by BOTH `ApplicationOverlays.tsx` and `MobileApp.tsx`) → `stores/mcpConfirm.ts` queue → `ConfirmDialog`; remote confirmations retain the origin connection, show its locally saved host name, route answers to that daemon, and clear on disconnect. Resolution is scoped by connection and request id |
 | `mcp-confirm-resolved` | `{ request_id, confirmed }` | `mcp_http/mod.rs` `resolve_mcp_confirm()` on an answer, and `mcp_transport.rs` when the 300 s wait expires | `McpConfirmHost.tsx` → drops that request from the queue, so the clients that lost the race take the dialog down |
@@ -121,6 +125,7 @@ When adding a new `app.emit(event_name, payload)` call, document it here and lis
 | `session-state-changed` | `{ session_id: string, state: SessionState }` — `state` is exactly the object `list_active_sessions` returns per session, snake_case, with serde skipping the zero-valued fields. Both transports build it from `state.rs session_state_payload()`, one function on purpose | `state.rs publish_session_state_change()`, called only from the session-state accumulator — the sole writer of `session_states` and therefore the only place that can see a transition. Deduped by `SessionState`'s `PartialEq` (which excludes `last_activity_ms`), so a repaint that changes nothing a client renders emits nothing. Dual-emitted on `event_bus` as `SessionStateChanged` (`session-state-changed` SSE on `/events`). Ignored by `apply_event_to_session_state` — it is the accumulator's output, never its input | `useAgentPolling.ts` → `subscribeEvents({"session-state-changed"})` → `applySessionState()` → tab awaiting/busy badges + Activity Dashboard. Replaced a 1 Hz `list_active_sessions` poll; the only remaining reads are a single mount-time catch-up, for sessions already idle and silent, and the same catch-up re-run from `subscribeEvents`' `onResync` when the SSE stream reconnects or reports `lagged` (browser only — Tauri `listen()` cannot drop) |
 | `acp-notice` | `{ connectionId, generation, sessionId?, requestId?, sequence, kind }` — `kind` is `ready` \| `settled` \| `interaction_pending` \| `interaction_settled` | `card`. camelCase, unlike the PTY rows above: it is the same object the `/acp` routes and the `acp_*` commands return, and a second spelling would be a second thing to keep in sync | `state.rs spawn_acp_notice_pump()`, fed by `acp/events.rs` `AcpEventJournal::append` — the one place every ACP event is stamped, so a notice cannot be forgotten by a new producer. Dual-emitted on `event_bus` as `AcpNotice` (`acp-notice` SSE on `/events`) | TBD — no ACP frontend yet. It is a wake signal: react by reading `acp_connection_snapshot`, `acp_pending_interactions`, or the stream from the `sequence` it names. The ordered turn frames stay on `acp_subscribe` / the `/acp/connections/:id/stream` WebSocket and never ride this bus |
 | `remote-connection-status` | `{ id, status, base_url?, token?, protocol_version?, build?, out_of_date?, live_sessions?, update_notice?, update_in_progress?, error? }` — `status` is `disconnected` \| `connecting` \| `connected` \| `unauthenticated` \| `error`. snake_case: it is the `RemoteConnectionStatus` struct as `/config/remote-connections/status` returns it, and the push is the whole client view rather than a delta, so a missed event cannot leave a client holding a route the backend has retracted. `base_url`, `token`, `live_sessions`, and `update_notice` are present only while connected; diagnostic `build` and `out_of_date` remain visible in retained failed/reconnecting states | `remote_runtime.rs publish()` — dual-emitted on every real change (dedup is on the snapshot, so a poll that keeps answering 200 emits nothing) | `stores/remoteConnections.ts` `applyStatus()` → store state + the SSE bridge, which exists exactly while the connection is connected |
+| `remote-repo-changed` | `{ repo_path: string, kind: "git-state" \| "working-tree", __tuic_origin: { connection } }` | `remote_mirror.rs apply_frame()` — derived from a connected daemon's mirrored `repo-changed`, `worktree-created` or `worktree-removed` frame (other `repo-changed` kinds are dropped). The raw frames still reach the bus and `/events`; only this owner-stamped hint is in `WINDOW_MIRRORABLE_EVENTS` | `services/remoteRepositorySync.ts` → `subscribeEvents({"remote-repo-changed"})` → debounced refresh through the owning connection only, plus `start_repo_watcher` re-registration on `remote-connection-status` connected and on resync. Local `repo-changed`/`worktree-*`/`session-worktree-declared` listeners ignore payloads with `__tuic_origin` |
 
 ### HTTP & MCP Server
 When adding routes or changing server behavior:
@@ -140,7 +145,7 @@ When modifying `cpu_watchdog.rs` or the `/diagnostics` HTTP endpoint:
 |------|----------------|
 | `src-tauri/src/cpu_watchdog.rs` | Watchdog logic, thresholds, snapshot fields |
 | `src-tauri/src/mcp_http/log_routes.rs` | `/diagnostics` GET/POST handlers |
-| `AGENTS.md` | Diagnostics section (usage, known failure patterns) |
+| `docs/backend/diagnostics.md` | Usage, snapshot fields, known failure patterns (`AGENTS.md` keeps the summary) |
 | `docs/FEATURES.md` | Section 20.11 (Runtime Diagnostics) |
 
 ### Agent state detection (working / idle / awaiting)
@@ -158,7 +163,7 @@ When changing an awaiting/idle/busy signal — a parser, the hook suppression, o
 | `src-tauri/src/pty.rs` tests | A case in the `Awaiting RETRACTION` block when the failure is a state that never clears — fixtures assert emitted events and cannot express a MISSING one |
 | `scripts/hooks/pre-commit` | The fixture gate's symbol/file lists — a new detection symbol or a new detection-carrying file must be added, or the gate silently stops covering it |
 
-| `AGENTS.md` | "Agent state detection" section (signal table, capture workflow, retraction) |
+| `docs/backend/agent-state-detection.md` | Signal table, capture workflow, retraction (`AGENTS.md` "Agent state detection" keeps the core rules) |
 
 The fixture gate compares the indexed and committed production scopes, excluding
 `#[cfg(test)]` modules and `#[test]`/`#[tokio::test]` functions. Test-only
@@ -194,7 +199,7 @@ When changing the tool list, tool handlers, `disabled_native_tools`, upstream al
 
 #### Agent tool actions added (swarm inbox)
 - `agent action=inbox` response now includes `missed_count` — number of unread messages evicted at capacity since last read. Same-child, same-kind lifecycle notice replacement does not increase it. Non-zero means the orchestrator missed messages and should increase polling frequency.
-- Reading `agent action=inbox` settles delivery for the returned messages, including queued terminal wakes. A queued generic wake is removed once no pending terminal-owned mail remains, so read mail can be reclaimed at the 100-message inbox limit.
+- Reading `agent action=inbox` settles delivery for the returned messages, including queued terminal wakes. A queued generic wake is removed once no pending terminal-owned mail remains, so read mail can be reclaimed at the 100-message inbox limit. Delayed terminal handoffs and queue retries check the same pending-mail ownership before injecting a generic notice, so an inbox read cannot be followed by a recreated stale wake. Older unread terminal-owned mail still keeps its wake when an explicit read cursor skips it.
 - `agent action=send` response includes **`delivered`** (bool) plus, when false, `warning` and `recipient_has_terminal`. `delivered` is false exactly when `delivery_path == "inbox_only"`: no waiter, channel, direct terminal delivery, or already-pending coalesced orchestrator wake will surface it, so it stays unread until the recipient polls. Registered orchestrators add `wake_notification_and_inbox`, `coalesced_wake_and_inbox` and `lifecycle_summary_and_inbox`; none of them exposes a peer payload — the last one is reachable only for a window made entirely of server-authored `tuic-auto-*` lifecycle notifications, which it prints inline and acknowledges itself. Canonical idle/completed state may claim the wake; derived `working` may also claim it only through the stricter composer gate (idle shell, confirmed readiness, no question, no partial input), so background work cannot strand a result while active work remains protected. Ordinary Claude recipients use that same gate before selecting their SSE channel: a ready composer held `working` by background work receives a PTY wake instead. A payload-free wake gets at most one retry after an uncertain PTY write per unread-mail group; coalesced mail does not reset that budget, and inbox/wait observation does. `delivered` plus `delivery_path` are the whole verdict: `ok`, `accepted`, `buffered_in_inbox` and `recipient_has_terminal` were removed because they answered "buffered" to a question about delivery. Keep these distinct in every client and in the tool descriptions — reporting `inbox_only` as success is how a reply to an agent with no PTY silently vanished.
 - `agent action=register` response includes **`terminal`** (bool): false means the identity resolves to no live PTY (`live_pty_for_peer` → `None`), so it can never be typed into or woken, and the peer must consume its own inbox via `wait`/`inbox`. Identities without a PTY arise from a bridge that sent no `x-tuic-session` header (agent launched outside a TUIC PTY) — the server then mints an MCP-scoped UUID.
 - `agent action=register` accepts **`orchestrator`** (bool) as the only role declaration seam; omission preserves the current role and child spawn never infers it. The `register` response surfaces `orchestrator` plus **`mail_wake`** (`managed_pty_lifecycle` or `none`); `list_peers` reports `orchestrator` but not `mail_wake`, which is a property of the caller's own identity rather than of every peer in a listing. External/headerless orchestrators are inbox/wait-only because MCP/SSE activity is not an authoritative idle or wake surface.
@@ -265,6 +270,7 @@ naming a server — see plan §4.5.
 | `src-tauri/src/mcp_http/acp_mcp.rs` | `AcpMcpHost` — one protocol session per MCP connection, the GET `/mcp` stream forwarded as notifications, `end_mcp_session` on disconnect; `install` at both startup sites |
 | `src-tauri/src/acp_commands.rs`, `src-tauri/src/config.rs` | Persist a root's ACP peer UUID beside its selected conversation and reuse it after reconnect or restart |
 | `src-tauri/src/mcp_http/mcp_transport.rs` | Bind bridge mail, child parentage and blocked progress to the ACP peer without a PTY |
+| `src-tauri/src/acp/activity.rs`, `connection.rs` (`publish`, `flush_activity`), `manager.rs` (`settle_connection`) | Derived chat activity: busy/awaiting/idle, tools, ego children, interrupted, revision. Wire shape pinned in `story785_event_wire_shapes.rs`; the store keeps the higher revision and never re-admits a settled request id (`src/stores/acp.ts`) |
 | `src/components/AIChatPanel/AIChatPanel.tsx` | The panel frame plus the banners: gap, refusal, "not receiving updates" |
 | `src/components/AIChatPanel/useAcpChat.ts` | One connection for the app, rooted at `~/Gits` and started by the first message or "+"; global tabs; the viewed repo sent per prompt; every action it offers |
 | `src-tauri/src/acp/manager.rs` (`prompt_with_context`, `shutdown_all`, peer adoption) | `_meta.tuicommander/viewedRepo` on `session/prompt`; one live connection per peer id; every ego ended on app exit |
@@ -305,7 +311,7 @@ Refresh.
 | `src/services/egoCli.ts` | The provider and perimeter calls the tab makes |
 | `src/components/SettingsPanel/tabs/AiChatTab.tsx` | What the page draws: the default-model picker, the per-provider credential badge, and each of the four failure states |
 | `src/components/SettingsPanel/tabs/EgoPerimeterSection.tsx` | Root/access/allowlist editors, separate network write, backend-derived exec badge and effective preview |
-| `src/components/SettingsPanel/tabs/GeneralTab.tsx` | The **ego** section: the ego executable field, shown also while Experimental Features is off |
+| `src/components/SettingsPanel/tabs/GeneralTab.tsx` | The **ego** section: the ego executable field and its **Install latest** button (`install_ego`, shared `release_install.rs` with `install_mdkb`), shown also while Experimental Features is off |
 | `src/components/SettingsPanel/SettingsPanel.tsx` | The nav entry (hidden while `isAiChatEnabled()` is false) and the tab body |
 | `src/components/SettingsPanel/settingsSearchIndex.ts` | Its rows in the settings search index — the drift test re-derives them from the JSX |
 | `docs/user-guide/settings.md` | The AI Chat page section |
@@ -478,12 +484,13 @@ that reach them:
 | `src-tauri/src/pty.rs` | Claim release on session teardown (`remove_live_session_state`) |
 | `src-tauri/src/lib.rs` | `story_action_command` (IPC) |
 | `src-tauri/src/mcp_http/mod.rs` | `POST /stories/action` and its auth guard |
-| `src-tauri/src/mcp_http/mcp_transport.rs` | The MCP `workflow action=story` entry (`handle_story`, bound caller only) |
+| `src-tauri/src/mcp_http/mcp_transport.rs` | The native `story` MCP tool (`handle_story`, bound caller only) |
 | `src-tauri/crates/tuic-cli/src/main.rs` | `tuic story` |
 | `src/transport.ts` + `src-tauri/src/mcp_http/command_table_paths.txt` | The `story_action_command` mapping; regenerate the paths file with `pnpm vitest run src/__tests__/transport.test.ts -u` |
 | `src/components/StoriesDialog/`, `src/stores/storiesUi.ts`, `src/components/Toolbar/Toolbar.tsx` | The dialog, its visibility store, and the toolbar entry point |
 | `docs/api/tauri-commands.md`, `docs/api/http-api.md`, `docs/backend/mcp-http.md` | The command, the route, and the MCP tool |
 | `docs/user-guide/native-stories.md`, `docs/FEATURES.md`, `SPEC.md` | The guide, the feature row, and the specification |
+| `src-tauri/src/story_adapter/`, `scripts/story-adapter-reference/adapter.mjs` | `docs/backend/story-backend-protocol.md` (methods, error codes, supervision); the reference adapter and the conformance tests change with the protocol version |
 
 ### Git & Worktree Integration
 When modifying git operations, worktree logic, or GitHub API:
@@ -513,7 +520,7 @@ When modifying `src-tauri/src/dictation/**`, `src-tauri/crates/tuic-dictation/**
 | `src/components/SettingsPanel/settingsSearchIndex.ts` | One row per new label, **in source order**: `extractSettings` reads the file, not the render tree |
 | `src/i18n/en.json` | Every `t("key", "double-quoted fallback")`, verbatim — `i18nKeyCollisions.test.ts` is the gate |
 | `docs/FEATURES.md` | Section 9 (Voice Dictation) |
-| `to-test.md` | Anything needing real audio, a real download or Boss's eye — a Rust change here never reaches his live `make dev` session |
+| `to-test/<area>*.md` (index `to-test.md`) | Anything needing real audio, a real download or Boss's eye — a Rust change here never reaches his live `make dev` session |
 
 ### Settings & Configuration
 When adding config fields or settings UI:
@@ -600,7 +607,7 @@ When changing which make target launches against which configuration directory:
 |------|----------------|
 | `Makefile` | The `dev` and `test` recipes. A `TUIC_APP_INSTANCE` default MUST be target-specific (`test: TUIC_APP_INSTANCE?=…`) — a line-start assignment is global whatever target follows it, and sends `make dev` to an empty instance |
 | `scripts/check-make-instance-scope.sh` | The expected value per target, and the structural check. It asks `make -n` what it expands rather than reading the line |
-| `scripts/hooks/pre-commit` | Gate 1 runs that script when `Makefile` is staged. Gate 2 is the agent-state fixture gate; `TUIC_SKIP_FIXTURE_GATE=1` deliberately skips only gate 2 |
+| `scripts/hooks/pre-commit` | Gate 1 runs that script when `Makefile` is staged. Gate F runs landing's `cargo fmt --check` (src-tauri) and `biome check` (staged `src/` TS) on the working tree, refuses the staged paths they report and prints the fix command; `TUIC_SKIP_FORMAT_GATE=1` skips only gate F. Gate 2 is the agent-state fixture gate; `TUIC_SKIP_FIXTURE_GATE=1` deliberately skips only gate 2; a skip is declared by a `Fixture-Gate-Skip:` commit trailer that `scripts/hooks/report-fixture-gate-skips.sh` lists |
 | `docs/backend/config.md` | The override forms and what each target defaults to |
 | `CHANGELOG.md` | Only when the behaviour a user sees changes |
 
@@ -620,9 +627,9 @@ When adding, renaming or moving a docs page:
 | **Root** | |
 | `SPEC.md` | Feature specification, architecture, version |
 | `CHANGELOG.md` | Release history (Keep a Changelog format) |
-| `AGENTS.md` | Project rules, compact reference |
+| `AGENTS.md` | Project rules, compact reference; must stay under 32,768 bytes (`~/Gits/.agent-tools/check-instruction-links.py`) — move detail to the pages below |
 | `CONTRIBUTING.md` | Contributor guide (test requirements, PR quality gates) |
-| `to-test.md` | Manual testing tracker |
+| `to-test.md`, `to-test/*.md` | Manual testing tracker (index plus area files) |
 | **docs/** | |
 | `docs/FEATURES.md` | Canonical feature inventory (single source of truth) |
 | `docs/plugins.md` | Plugin developer authoring guide |
@@ -640,6 +647,11 @@ When adding, renaming or moving a docs page:
 | `docs/backend/mcp-http.md` | MCP/HTTP server, lazy tool discovery, meta-tools |
 | `docs/backend/dictation.md` | Whisper voice dictation |
 | `docs/backend/error-classification.md` | Error types and backoff |
+| `docs/backend/agent-state-detection.md` | Agent working/idle/awaiting detection rules (moved from `AGENTS.md`) |
+| `docs/backend/agent-session-management.md` | Agent session discovery and resume rules (moved from `AGENTS.md`) |
+| `docs/backend/diagnostics.md` | Runtime diagnostics reference (moved from `AGENTS.md`) |
+| `docs/guides/agent-testing-rules.md` | Test skips, timing assertions, test instance, web-UI testing (moved from `AGENTS.md`) |
+| `docs/frontend/perf-debug.md` | `perfDebug` master flag (moved from `AGENTS.md`) |
 | `docs/frontend/STYLE_GUIDE.md` | Visual design rules |
 | `docs/frontend/components.md` | Component tree reference |
 | `docs/frontend/hooks.md` | Custom hooks |
@@ -667,6 +679,9 @@ Update desktop `TerminalChatView.tsx` and mobile `useSessionChatView.tsx` throug
 wakes must use the existing `useSessions` SSE subscription, not another stream.
 Host hints, file navigation and desktop search may differ; binding, cursor resets,
 visibility lifecycle and transcript scrolling must remain shared.
+A capped message (`… [truncated, N chars total]`) offers **Show full text** through
+`TruncatedTextAction` and `chat_view_full_text`; the backend re-reads that one message from the
+transcript, so the stream cap stays.
 
 ### Settings startup workflows
 

@@ -11,6 +11,7 @@ import { terminalsStore } from "../../stores/terminals";
 import { toastsStore } from "../../stores/toasts";
 import { themeGeneration } from "../../themes";
 import { writeClipboard } from "../../utils/clipboard";
+import { classifyFile } from "../../utils/filePreview";
 import { attachIframeKeyForwarder } from "../../utils/iframeKeyForwarder";
 import { IFRAME_SEARCH_SCRIPT } from "../../utils/iframeSearch";
 import { handleOpenUrl } from "../../utils/openUrl";
@@ -280,7 +281,12 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
 					appLogger.warn("plugin", `tuic:open cannot resolve path: ${path}`);
 					return;
 				}
-				const tabId = mdTabsStore.add(resolved.repoPath, resolved.relPath);
+				// Images and other media go to the preview tab: the markdown reader
+				// reads UTF-8 text and fails on binary files.
+				const tabId =
+					classifyFile(resolved.relPath) === "preview"
+						? mdTabsStore.addHtmlPreview(resolved.repoPath, resolved.relPath)
+						: mdTabsStore.add(resolved.repoPath, resolved.relPath);
 				if (data.pinned) mdTabsStore.setPinned(tabId, true);
 				return;
 			}
@@ -302,7 +308,12 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
 					return;
 				}
 				const line = typeof data.line === "number" ? data.line : 0;
-				editorTabsStore.add(resolved.repoPath, resolved.relPath, line || undefined);
+				editorTabsStore.add(
+					resolved.repoPath,
+					resolved.relPath,
+					line || undefined,
+					resolved.external ? { externalEditable: true } : undefined,
+				);
 				return;
 			}
 			case "tuic:terminal": {
@@ -353,7 +364,8 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
 					return;
 				}
 				const resolved = resolvePathForSdk(path);
-				if (!resolved) {
+				// fs_read_file is repo-scoped; external reads are not part of this surface.
+				if (!resolved || resolved.external) {
 					sendToIframe({ type: "tuic:get-file-result", requestId, error: `Cannot resolve path: ${path}` });
 					return;
 				}

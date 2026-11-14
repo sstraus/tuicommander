@@ -85,3 +85,19 @@ it("catches draft loss or editable input during a failed queue request", async (
 		true,
 	);
 });
+
+// Catches: Save reaching the PTY as XOFF or submitting rather than parking.
+it("parks and swaps mobile drafts without sending Enter or XOFF", async () => {
+	const view = render(() => <CommandInput sessionId="park-mobile" agentType="claude" chatMode />);
+	const input = view.container.querySelector("textarea")!;
+	fireEvent.input(input, { target: { value: "first draft" } });
+	fireEvent.keyDown(input, { key: "s", ctrlKey: true });
+	expect(input.value).toBe("");
+	fireEvent.input(input, { target: { value: "second draft" } });
+	fireEvent.keyDown(input, { key: "s", metaKey: true });
+	expect(input.value).toBe("first draft");
+	fireEvent.keyDown(input, { key: "s", ctrlKey: true, repeat: true });
+	expect(input.value).toBe("first draft");
+	await Promise.resolve();
+	expect(vi.mocked(rpc).mock.calls.some(([, args]) => args?.data === "\r" || args?.data === "\x13")).toBe(false);
+});

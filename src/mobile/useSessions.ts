@@ -18,17 +18,37 @@ export interface SessionState {
 	shell_state?: string;
 	agent_state?: string;
 	abandoned_since_ms?: number;
+	/** Rust SessionState.stalled: working agent silent past the stall threshold. */
+	stalled?: boolean;
 	last_activity_ms: number;
 	agent_type?: string;
 	last_error?: string;
 	agent_intent?: string;
 	current_task?: string;
+	/** Newest live native tool name (Rust SessionState.current_tool). */
+	current_tool?: string;
 	active_sub_tasks?: number;
 	last_prompt?: string;
 	progress?: number;
 	suggested_actions?: string[];
 	slash_menu_items?: SlashMenuItem[];
 	choice_prompt?: ChoicePrompt;
+	/** Structured payload of the live wait (Rust agent_hook_payload::QuestionCard).
+	 *  Present only while awaiting_input belongs to the same native request. */
+	question_card?: QuestionCard;
+}
+
+/** Matches Rust agent_hook_payload::QuestionCard. */
+export interface QuestionCard {
+	request_id: string;
+	kind: "questions" | "plan_approval";
+	questions: {
+		header?: string;
+		question: string;
+		options: { label: string; description?: string }[];
+		multi_select: boolean;
+		free_text: boolean;
+	}[];
 }
 
 /** A single slash command menu item (matches Rust output_parser::SlashMenuItem) */
@@ -47,6 +67,11 @@ export interface ChoicePrompt {
 	amend_key?: string;
 	/** How this agent's dialog accepts a selected option. */
 	selection_mode?: "navigate-only" | "navigate-enter" | "toggle-enter";
+	/** Header of the current question, from the native question payload. */
+	header?: string;
+	/** 1-based position of the current question in a multi-question payload. */
+	question_index?: number;
+	question_count?: number;
 }
 
 /** Single option in a ChoicePrompt. Matches Rust output_parser::ChoiceOption. */

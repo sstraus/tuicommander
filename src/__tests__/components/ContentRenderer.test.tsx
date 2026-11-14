@@ -10,7 +10,7 @@ import { handleOpenUrl } from "../../utils/openUrl";
 import { stripAnsi } from "../../utils/stripAnsi";
 import { findTweakCommentBlocks, insertTweakBlockComment } from "../../utils/tweakComments";
 
-vi.mock("../../utils/openUrl", () => ({ handleOpenUrl: vi.fn() }));
+vi.mock("../../utils/openUrl", () => ({ handleOpenUrl: vi.fn(), openConfirmedLink: vi.fn() }));
 
 describe("stripAnsi", () => {
 	it("strips ANSI escape codes", () => {
@@ -331,6 +331,25 @@ describe("ContentRenderer", () => {
 			container.querySelector("a")!.dispatchEvent(event);
 			expect(event.defaultPrevented).toBe(true);
 			expect(onLinkClick).toHaveBeenCalledWith(href);
+		},
+	);
+
+	// Catches: a custom-scheme link staying dead, or skipping the confirmed route for the file handler.
+	it.each(["editor://open?file=/repo/a.rs", "smb://nas/share/doc.pdf"])(
+		"sends custom-scheme link %s to the confirmed handler route on click only",
+		async (href) => {
+			const { openConfirmedLink } = await import("../../utils/openUrl");
+			vi.mocked(openConfirmedLink).mockClear();
+			const onLinkClick = vi.fn();
+			const { container } = render(() => <ContentRenderer content={`[link](${href})`} onLinkClick={onLinkClick} />);
+			const link = container.querySelector("a");
+			if (!link) throw new Error("link was sanitized away");
+			expect(openConfirmedLink).not.toHaveBeenCalled();
+			const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+			link.dispatchEvent(event);
+			expect(event.defaultPrevented).toBe(true);
+			expect(openConfirmedLink).toHaveBeenCalledExactlyOnceWith(href);
+			expect(onLinkClick).not.toHaveBeenCalled();
 		},
 	);
 

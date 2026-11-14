@@ -1,5 +1,9 @@
 # Native plans and stories
 
+## Story backend
+
+The header identifies **TUIC native** or **Wiz**, automatic detection or an explicit override, availability, version and selection reason. Expand the reason for installation and failure details. A detected Wiz project does not fall back to native when its connector is missing or broken. Select **Approve installed Wiz connector** only after you inspect the displayed installation path. This one approval applies to every Wiz project on that host; installation updates require new approval. Native plans must be completed or archived before an external backend can take over. Running or paused executions prevent a bound backend change. Refresh and project changes reload both identity and supported controls.
+
 Choose **All plans** in the Plans column to show stories from every non-archived plan together in List or Kanban. Each story row and card shows its plan title. Status, type and archived-story filters apply to the combined view. **Archived plans** switches the combined view to archived plans only, as it does for a single-plan view. Select a specific plan to filter back and enable plan editing or story creation. Story detail, status actions, workflow starts and run history use the selected story’s own plan; dependency choices stay inside that plan.
 
 New story and Edit plan keep the primary action, then Cancel, together at the bottom-left. New story has no permanent manual-prefix hint below acceptance criteria; `[MANUAL]` criteria remain supported. Story Edit stays in the story header. Disabled Add dependency exposes its reason as a native tooltip and accessible description.
@@ -67,7 +71,7 @@ To remove a cancelled prerequisite, any trusted caller, including a session-boun
 
 Caller identity does not restrict dependency removal. Managed MCP calls, the Plans and Stories dialog, and CLI or HTTP calls use the same state and revision rules within their project scope. A managed caller does not need to omit its session identity to remove a dependency.
 
-The same records are available through desktop IPC, guarded HTTP, and the `workflow action=story` MCP entry. `Done` records an approval with actor provenance. In a manual plan with no workflow run, approval immediately releases dependents whose other prerequisites are Done. Once a workflow run owns the plan, a dependent remains held until its accepted prerequisite has a current integration receipt: the checked source commit must be merged into the canonical branch and TUIC must pass the published checks on the merge result. A later unrecorded ref or tree change invalidates that proof. Import, export, and bidirectional external sync are not supported. The optional mdkb search projection below is read-only.
+The same records are available through desktop IPC, guarded HTTP, and the `story` MCP tool. `Done` records an approval with actor provenance. In a manual plan with no workflow run, approval immediately releases dependents whose other prerequisites are Done. Once a workflow run owns the plan, a dependent remains held until its accepted prerequisite has a current integration receipt: the checked source commit must be merged into the canonical branch and TUIC must pass the published checks on the merge result. A later unrecorded ref or tree change invalidates that proof. Import, export, and bidirectional external sync are not supported. The optional mdkb search projection below is read-only.
 
 API and CLI callers can filter `list_stories` by native `state` (including `qa`), `priority`, and `story_type`. Add `limit` (1–100) to page the results, then send the returned `next_cursor` as `cursor` with the same plan and filters. The `value` field stays an array; no cursor means the final page. Omitting `limit` preserves a complete filtered list. For example: `tuic story '{"action":"list_stories","plan_id":"<id>","state":"ready","priority":1,"story_type":"fix","limit":25}' --project /absolute/project`. Dispatch order is not affected.
 
@@ -89,15 +93,15 @@ QA is not Done: it keeps a plan Active and does not release dependent stories. S
 
 | Caller | Scope | Reads | Story actions (claim, check criteria, submit review, add dependency, create, approve) | Administrative actions (reject, block, unblock, won't fix, start manual, remove dependency) |
 |---|---|---|---|---|
-| `workflow action=story` MCP entry in a managed session | The session's own registered project only | Yes | Yes | Yes |
+| `story` MCP tool in a managed session | The session's own registered project only | Yes | Yes | Yes |
 | Plans and Stories dialog | The open project | Yes | Yes | Yes |
 | `tuic story ... --project /abs/path` (HTTP `POST /stories/action?path=...`, loopback or authenticated) | Any project named by `--project` | Yes | Yes | Yes (actor provenance follows the session or credentials) |
 
-An orchestrating session in another project cannot read or approve this repo's plan through its `workflow action=story` MCP entry: the tool resolves the project from the calling session, so a plan id of another project is refused with `plan does not belong to project`. It can do both from a shell with `tuic story '{"action":"plan_view","plan_id":"..."}' --project /abs/path/of/the/repo` and, for review, `{"action":"transition","story_id":"...","expected_revision":N,"command":"approve"}`. That path carries no session identity, so it records local API provenance unless credentials are supplied; as stated above, this is a workflow convention, not a security boundary. No cross-project MCP path exists, and none was added.
+An orchestrating session in another project cannot read or approve this repo's plan through its `story` MCP tool: the tool resolves the project from the calling session, so a plan id of another project is refused with `plan does not belong to project`. It can do both from a shell with `tuic story '{"action":"plan_view","plan_id":"..."}' --project /abs/path/of/the/repo` and, for review, `{"action":"transition","story_id":"...","expected_revision":N,"command":"approve"}`. That path carries no session identity, so it records local API provenance unless credentials are supplied; as stated above, this is a workflow convention, not a security boundary. No cross-project MCP path exists, and none was added.
 
 ## MCP tool schema
 
-Send the service action under `input`, for example `{"action":"story","input":{"action":"list_plans"}}`. The `workflow action=story` variant publishes the full `StoryAction` JSON Schema (actions, fields, types, enums, the `origin` tag shape, priority range 1 to 3) in its `inputSchema`. It is generated from the Rust types, so it follows the code. Inside `input` the story fields are camelCase (`planId`, `fileScope`) while the action fields are snake_case (`story_id`, `expected_revision`).
+Send the service action itself as the tool arguments, for example `{"action":"list_plans"}`. The `story` tool publishes the full `StoryAction` JSON Schema (actions, fields, types, enums, the `origin` tag shape, priority range 1 to 3) in its `inputSchema`. It is generated from the Rust types, so it follows the code. Story fields inside `input` and `patch` are camelCase (`planId`, `fileScope`) while the action fields are snake_case (`story_id`, `expected_revision`). The former `workflow action=story` envelope is refused; there is no alias.
 
 Actor identity is tracking only and never restricts an action. Localhost remains trusted, including local token exchange. Administrative story decisions use the same state and revision rules for human, local API and managed callers.
 
@@ -109,32 +113,21 @@ The daemon executor now owns recovery and duration timers under an OS run-databa
 
 ## Workflow graph rollout
 
-The internal daemon executor follows published serial Agent, Judge, Loop, Pause, Notify and exclusive Join nodes. Each Agent step uses a run profile: one named `sol` (implementation, coordination, planning) or `sonnet` (review, validation) when saved, otherwise your default run profile in Settings > Agents (or the only one saved). A default profile that passes a permission-skipping flag such as `--dangerously-bypass-approvals-and-sandbox` is refused: save a profile named `sol` or `sonnet` to choose it for workflows. The Start dialog names a missing profile before the run starts and disables Start. Failed effects pause the run with a repository progress notice; Run history shows the cause, and Resume run offers the pending activation once the cause is fixed. Manual pause time does not consume active duration. Resume resolves the pinned target without resetting repair limits.
+The internal daemon executor follows published serial Agent, Judge, Loop, Pause, Notify and exclusive Join nodes. Each Agent step uses a run profile: the workflow agent profile you choose in Settings > Agents; without that choice, one named `sol` (implementation, coordination, planning) or `sonnet` (review, validation) when saved, otherwise the only saved profile or the only agent default. A chosen name saved for two agents stops the run: rename one. The chosen profile is used also when it passes a permission-skipping flag such as `--dangerously-bypass-approvals-and-sandbox`. Before each such launch, a repository progress notice names the profile and its effective mode: the detected permission-skipping option, or the agent's own permission settings. When several agents have a default and no workflow agent profile is chosen, the run stops and asks you to choose one. The Start dialog names a missing profile before the run starts and disables Start. Failed effects pause the run with a repository progress notice; Run history shows the cause, and Resume run offers the pending activation once the cause is fixed. Manual pause time does not consume active duration. Resume resolves the pinned target without resetting repair limits.
 
 The Designer refuses new publications containing unsupported Gate or plan create/dispatch/coordinator nodes. Keep those graphs as drafts. Existing built-in publications remain readable; public graph start controls and full Resolve plan execution are still in development. A completed graph does not approve or merge a story by itself.
 
-### Designer actions without a UI control
+### Designer canvas and presets
 
-These actions exist in the backend and have no Designer or dialog control. Two surfaces reach them:
+The node palette uses one column with a separate handle slot and space beside the scrollbar. Run command and Decision load backend defaults and support click-add only; their handle slots stay empty. Drag other palette items by their six-dot handle and release them on the canvas: the node lands where you release it. The handle works with a mouse, a pen or touch. **Add <item>** is the click and keyboard path; it places the node below the graph. Move a node with its six-dot handle: drag it, or focus the handle and press the arrow keys (16 px; Shift moves 64 px). Positions are part of the saved draft (`layout`) and execution ignores them.
 
-- **HTTP and desktop IPC only:** `POST /workflows/definition/action` and `workflow_definition_action`. The MCP `workflow` tool has no definition action, so agents cannot call these.
-- **HTTP, desktop IPC and MCP:** `POST /workflows/run/action` and `workflow_run_action`. The MCP `workflow action=run` takes the same run actions.
+Author presets are Planner, Research, Prompt draft, Mockup, Implement and Validate. A preset is a role and a starting prompt on the Agent node. It never sets a profile, model or effort, so the pinned host role route stays the authority. **Author preset** in the inspector changes only the role and prompt of an existing Agent; its route and tools stay as they are. **For each** and **Splitter** add the For each or Fork node, read-only Validate bodies and the matching all-Join, already linked. Connect the all-Join outcomes yourself.
 
-| Action | Surface | Designer limit |
-|---|---|---|
-| Remove one edge | `update_draft` with the full new graph (HTTP/IPC only) | **Remove node** drops that node's edges. **Connect** replaces an edge with the same source and outcome. No control removes a single edge. |
-| Agent role and capabilities | `update_draft` (fields of an Agent node; HTTP/IPC only) | The palette preset sets both when you add the node. The inspector edits only the prompt template. |
-| Closure policy | `update_closure` (HTTP/IPC only) | No control. New drafts use `human`. |
-| Required checks | `update_checks` (HTTP/IPC only) | No control. |
-| `execute_check` | run action (HTTP, IPC, MCP) | No control. Runs one pinned check in the story worktree. |
-| `record_integration` | run action (HTTP, IPC, MCP) | No control. Records a completed merge. |
-| `recertify_canonical` | run action (HTTP, IPC, MCP) | No control. |
-
+The inspector lists the outgoing links of the selected node. Change the outcome of a link or remove it there. Two links from one node cannot share an outcome.
 
 ### Workflow story policy (slice D)
 
 The daemon runs pinned deterministic checks before accepting an independent reviewer approval. Native approval history preserves the reviewer actor and revision; the run retains the reviewed artifact and check receipts. A workflow implementer cannot approve its story after exit or claim release. Integration remains an explicit operator action.
-
 
 ### Workflow plan dispatch (slice E)
 
@@ -174,7 +167,7 @@ tuic story '{"action":"list_ideas"}' --project /absolute/project
 tuic story '{"action":"update_idea","idea_id":"note-ID","text":"Investigate the incremental build"}' --project /absolute/project
 ```
 
-The same inputs work under `workflow` with `action:"story"` and `input` set to the JSON action. MCP uses the calling session's project. CLI and HTTP use the named project. `add_idea` records the owning repository's registered UI key as `repoPath`. Canonical Windows paths and existing symlink aliases resolve to that same key. Existing Ideas with equivalent canonical paths also use the registered key when loaded; `list_ideas` includes that project's Ideas and global Ideas, just like the panel. `update_idea` can change only text on an Idea owned by that project. It preserves the id, timestamp, source, image list, used state and repository assignment. Global Ideas are visible but cannot be updated through a project-scoped action.
+The same inputs work as arguments of the `story` MCP tool. MCP uses the calling session's project. CLI and HTTP use the named project. `add_idea` records the owning repository's registered UI key as `repoPath`. Canonical Windows paths and existing symlink aliases resolve to that same key. Existing Ideas with equivalent canonical paths also use the registered key when loaded; `list_ideas` includes that project's Ideas and global Ideas, just like the panel. `update_idea` can change only text on an Idea owned by that project. It preserves the id, timestamp, source, image list, used state and repository assignment. Global Ideas are visible but cannot be updated through a project-scoped action.
 
 Text is trimmed and must contain 1–16000 characters. Optional `source` must contain 1–256 characters after trimming. Without it, the source is the bound session id, or `local-api` for a sessionless request. Replies are `{type:"idea",value:Idea}` for add/update and `{type:"ideas",value:Idea[]}` for list. Idea records have camelCase fields: `id`, `text`, `createdAt` (Unix milliseconds), `repoPath`, `repoDisplayName`, `usedAt`, `images` and `source`.
 
@@ -238,3 +231,36 @@ Story search synchronization retains its durable ledger when a project directory
 `available_transitions` takes `story_id` and `expected_revision` and returns `{type:"available_transitions",value:{revision,moves:[{status,command}]}}`. It does not change the story or transition history. The backend evaluates the same status, criterion, dependency, archival and workflow-start rules as a commit; each destination appears once. Actor-specific approval rules still apply. The reply is a snapshot, not a reservation: submit the chosen command through `transition` with that revision. A stale revision fails without a write; refresh before preparing a new move. This action shares the existing IPC, HTTP, CLI and MCP story envelope.
 
 The Plans and Stories toolbar pill shows active-plan, Ready and In progress counts with distinct glyphs and a tooltip line for each number. Ready comes from the Rust `summary` action, not a frontend subtraction; Done/total remains the progress bar tooltip. Ready-only work therefore remains visible when no story is running.
+
+The Workflow Designer places nodes without saved positions in downward flow layers by distance from Start. Wide layers and tall graphs scroll instead of reversing flow. Saved node positions stay unchanged. Orthogonal connectors avoid node rectangles and end with target arrows. Outcome labels sit on their own connector; a label on a vertical segment rotates with it. Back and self links follow visible return routes.
+
+In the Workflow Designer, open a saved draft, edit its review policy or Agent contract, then Save draft and Publish. Use Duplicate draft to create an independent unpublished workflow with template provenance. Discard draft restores the latest publication; an unpublished workflow discards only unsaved local edits. Published revisions and active runs stay unchanged. Inspect published revision opens a read-only snapshot; Call and Story Dispatch nodes also link to their exact pinned revision. Run timelines offer Inspect live pins and Inspect replay pins with separate review, reject, repair and check-attempt counts. If Start needs a host routing policy, review the exact saved profile/model/effort/tool/scope proposal and explicitly import it. Missing or ambiguous settings remain blocked; no alternate profile is chosen.
+
+### Inspect delivery and cost
+
+In **Run history**, select a run and expand **Inspect delivery and cost**. Expand a delivery to see its pinned definition, policy and branch activations. Reports, questions, partial integration, proof obligations and incident next actions retain their existing owners. Evidence buttons open HTTP links or absolute local assets; **Open owned session** selects a retained terminal and is disabled when that session is unavailable. ACP identity remains visible without inventing a terminal.
+
+Provider usage shows known tokens and exact recorded money with its currency and rate source. Missing receipts say **unknown**; subscription API equivalents stay estimates, so they cannot claim settled cost parity. Machine command time is separate. Expand **Usage attribution and sources** to inspect the direct requests and owners. A disconnected refresh retains the last committed status and displays a separate warning. **Next cursor page** reads retained events; **Refresh evidence and cost** reloads the committed view. The English/Italian digest can be recovered from the durable run after reconnect.
+
+### Backend continuity and approval identity
+
+Automatic detection retains native while native plans are open or pinned native
+executions are active. The header explains **Native retained while …**; this is
+not fallback after a failed Wiz connector. Expand backend details to choose
+**Use TUIC native** or **Use automatic selection**. Explicit Wiz cannot replace
+open native work, and selection changes cannot interrupt active executions.
+Registry scopes resolve local > project > user for the canonical owning project;
+remove duplicate winning-scope installations in the plugin manager if requested.
+Approval binds the displayed installation and entry/version identity. Dependencies
+are not fingerprinted. A changed entry/version between display and click requires
+refresh and a new approval. Active runs pin backend provenance in their existing
+snapshot. Runs started before this release keep the backend they used then: the
+legacy command binding if one exists, otherwise native. No native or external records are migrated.
+
+### Limited external editing
+
+A backend can offer title, priority and criterion addition without promising the
+full editor. Edit remains available for supported fields; unsupported metadata
+and editor dependencies are disabled. Save one title, one priority, or one new
+criterion at a time. Multiple simultaneous changes cannot be saved. Native and
+legacy full-edit backends retain their existing editor behavior.

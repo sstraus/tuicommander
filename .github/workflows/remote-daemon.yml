@@ -7,6 +7,10 @@ name: Remote daemon
 on:
   workflow_call:
     inputs:
+      ref:
+        description: Exact public snapshot to build (defaults to the caller ref).
+        type: string
+        default: ''
       nightly:
         description: >-
           Upload to the rolling `nightly` release and stamp the build with the
@@ -59,6 +63,7 @@ jobs:
           # src/plugins.rs embeds the bundled plugins with include_str!, and
           # they live in the `plugins` submodule. Without this the crate
           # cannot compile at all.
+          ref: ${{ inputs.ref || github.sha }}
           submodules: recursive
 
       - name: Check tag matches version

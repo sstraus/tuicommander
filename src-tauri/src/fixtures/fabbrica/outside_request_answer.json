@@ -1,0 +1,1 @@
+{"id":1,"jsonrpc":"2.0","result":{"content":[{"type":"text","text":"{\"answer\":\"accept\",\"id\":\"d1\",\"task\":\"outside-8b53639f152c8fc6ef30802fde462ba0be9cf085f7580dc69efd72e002abbb35\"}"}],"structuredContent":{"answer":"accept","id":"d1","task":"outside-8b53639f152c8fc6ef30802fde462ba0be9cf085f7580dc69efd72e002abbb35"},"isError":false}}

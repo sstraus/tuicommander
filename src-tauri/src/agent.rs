@@ -648,6 +648,10 @@ impl ScreenProbeTree {
         Ok(())
     }
 
+    pub(crate) fn assign_tokio(&self, _child: &tokio::process::Child) -> std::io::Result<()> {
+        Ok(())
+    }
+
     pub(crate) fn terminate(self, pid: u32) {
         // The probe owns this group: signal its grandchildren as well as the
         // direct child. The child is reaped separately below.
@@ -696,12 +700,27 @@ impl ScreenProbeTree {
 
     pub(crate) fn assign(&self, child: &std::process::Child) -> std::io::Result<()> {
         use std::os::windows::io::AsRawHandle;
+        self.assign_handle(child.as_raw_handle(), child.id())
+    }
+
+    pub(crate) fn assign_tokio(&self, child: &tokio::process::Child) -> std::io::Result<()> {
+        let (Some(handle), Some(pid)) = (child.raw_handle(), child.id()) else {
+            return Err(std::io::Error::other("child already exited"));
+        };
+        self.assign_handle(handle, pid)
+    }
+
+    fn assign_handle(
+        &self,
+        handle: std::os::windows::io::RawHandle,
+        pid: u32,
+    ) -> std::io::Result<()> {
         use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
 
-        if unsafe { AssignProcessToJobObject(self.0, child.as_raw_handle()) } == 0 {
+        if unsafe { AssignProcessToJobObject(self.0, handle) } == 0 {
             return Err(std::io::Error::last_os_error());
         }
-        Self::resume_primary_thread(child.id())
+        Self::resume_primary_thread(pid)
     }
 
     fn resume_primary_thread(pid: u32) -> std::io::Result<()> {
@@ -1407,6 +1426,12 @@ pub(crate) async fn spawn_agent(
     };
 
     let session_id = Uuid::new_v4().to_string();
+    if !pty_config.restored {
+        crate::agent_capabilities::save_root(
+            &state.data_dir,
+            pty_config.tuic_session.as_deref().unwrap_or(&session_id),
+        )?;
+    }
 
     let attachment_dir =
         crate::attachments::prepare_session_directory(&state.data_dir, "pty", &session_id)?;

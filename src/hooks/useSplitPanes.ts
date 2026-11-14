@@ -7,7 +7,7 @@ let refitTimer: ReturnType<typeof setTimeout> | null = null;
 let focusRaf = 0;
 
 /** Re-fit terminals in all pane groups after CSS flex layout settles (~150ms). */
-function refitPaneTerminals() {
+export function refitPaneTerminals(): void {
 	if (refitTimer) clearTimeout(refitTimer);
 	refitTimer = setTimeout(() => {
 		refitTimer = null;

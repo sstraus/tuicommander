@@ -1,9 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterEach, expect, it, vi } from "vitest";
 
-// @ts-expect-error plain MV3 module
-import { hasExplicitHostGrant } from "../../../browser-extension/design-mode/browserCommands.js";
-
 const DIR = "browser-extension/design-mode";
 const pick = (id: string, selector: string) => ({
 	id,
@@ -23,10 +20,7 @@ function mountPanel(snapshot: Record<string, unknown>) {
 			onMessage: { addListener: () => {} },
 		},
 	};
-	new Function("chrome", "hasExplicitHostGrant", readFileSync(`${DIR}/panel.js`, "utf8").replace(/^import .*;\n/, ""))(
-		chrome,
-		hasExplicitHostGrant,
-	);
+	new Function("chrome", readFileSync(`${DIR}/panel.js`, "utf8"))(chrome);
 	return chrome;
 }
 const base = {
@@ -105,40 +99,39 @@ it("starter_agent_is_first_and_labelled", async () => {
 	]);
 });
 
-// Catches: the capture option requesting ordinary host grants instead of optional capture consent.
-it("capture_option_requests_optional_all_urls", async () => {
+// Catches: the owner clicking separate capture and eval grants, or a remove-and-regrant cycle, to enable one host.
+it("one_host_consent_requests_chrome_capture_once_and_records_tuic_consent", async () => {
 	const chrome = mountPanel({ ...base, picks: [] });
-	const button = document.getElementById("grant-capture") as HTMLButtonElement;
-	expect(button.textContent).toBe("Let agents capture any site");
-	button.click();
-	await vi.waitFor(() => expect(chrome.permissions.request).toHaveBeenCalledWith({ origins: ["<all_urls>"] }));
-	expect(document.getElementById("grants")?.textContent).toContain("All-sites capture enabled");
+	const buttons = Array.from(document.querySelectorAll(".panel-section button"), (button) => button.textContent);
+	expect(buttons).toContain("Allow agents on this host");
+	expect(buttons).not.toContain("Let agents capture any site");
+	expect(buttons).not.toContain("Allow agents on all sites");
+	(document.getElementById("grant-host") as HTMLButtonElement).click();
+	await vi.waitFor(() => expect(document.getElementById("grants")?.textContent).toContain("example.com"));
+	expect(chrome.permissions.request).toHaveBeenCalledTimes(1);
+	expect(chrome.permissions.request).toHaveBeenCalledWith({ origins: ["<all_urls>"] });
+	expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ kind: "consent_host" });
+	expect(document.getElementById("grants")?.textContent).toBe(
+		"Agents in this Design Mode session may capture, inspect and run JavaScript on example.com.",
+	);
 });
 
-// Catches: declined capture consent being presented as enabled instead of retaining activeTab recovery.
-it("capture_option_decline_preserves_temporary_capture_guidance", async () => {
+// Catches: a declined Chrome prompt still recording TUIC consent and being presented as enabled.
+it("declined_chrome_prompt_records_no_consent", async () => {
 	const chrome = mountPanel({ ...base, picks: [] });
 	chrome.permissions.request.mockResolvedValue(false);
-	(document.getElementById("grant-capture") as HTMLButtonElement).click();
-	await vi.waitFor(() =>
-		expect(document.getElementById("grants")?.textContent).toContain("Capture permission declined"),
-	);
+	(document.getElementById("grant-host") as HTMLButtonElement).click();
+	await vi.waitFor(() => expect(document.getElementById("grants")?.textContent).toContain("declined"));
+	expect(chrome.runtime.sendMessage).not.toHaveBeenCalledWith({ kind: "consent_host" });
 	expect(document.getElementById("grants")?.textContent).toContain("browser action");
 });
 
-// Catches: Chrome request() returning true without adding eval consent being shown as a grant.
-it("host_buttons_do_not_claim_eval_consent_from_capture_only_permission", async () => {
+// Catches: localhost eval blocked because an unneeded all-sites Chrome prompt was declined before consent was recorded.
+it("localhost_consent_is_recorded_when_the_chrome_prompt_is_declined", async () => {
 	const chrome = mountPanel({ ...base, picks: [] });
-	for (const id of ["grant-host", "grant-all"]) {
-		(document.getElementById(id) as HTMLButtonElement).click();
-		await vi.waitFor(() =>
-			expect(document.getElementById("grants")?.textContent).toContain("Chrome did not add separate eval consent"),
-		);
-		document.getElementById("grants")!.textContent = "";
-	}
-	chrome.permissions.getAll.mockResolvedValue({ origins: ["*://example.com/*"] });
+	chrome.tabs.query.mockResolvedValue([{ url: "http://localhost:5173/" }]);
+	chrome.permissions.request.mockResolvedValue(false);
 	(document.getElementById("grant-host") as HTMLButtonElement).click();
-	await vi.waitFor(() =>
-		expect(document.getElementById("grants")?.textContent).toBe("Host granted for agent commands and eval."),
-	);
+	await vi.waitFor(() => expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ kind: "consent_host" }));
+	expect(document.getElementById("grants")?.textContent).toContain("localhost");
 });

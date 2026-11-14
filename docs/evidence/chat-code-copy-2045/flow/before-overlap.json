@@ -1,0 +1,222 @@
+[
+  {
+    "name": "mobile-dark",
+    "blocks": [
+      {
+        "pre": {
+          "left": 35,
+          "right": 358,
+          "top": 317.2890625,
+          "bottom": 352.1328125,
+          "height": 34.84375
+        },
+        "button": {
+          "left": 320.875,
+          "right": 354,
+          "top": 321.2890625,
+          "bottom": 338.7890625,
+          "height": 17.5
+        },
+        "label": {
+          "left": 321.875,
+          "right": 353,
+          "top": 322.2890625,
+          "bottom": 337.2890625,
+          "height": 15
+        },
+        "codeLines": [
+          {
+            "left": 45,
+            "right": 204.6640625,
+            "top": 328.2890625,
+            "bottom": 341.2890625
+          }
+        ],
+        "clientHeight": 35,
+        "scrollHeight": 35,
+        "buttonStyle": {
+          "font": "13.3333px Arial",
+          "lineHeight": "normal",
+          "padding": "0px",
+          "position": "absolute"
+        },
+        "documentWidth": 390,
+        "viewportWidth": 390
+      }
+    ]
+  },
+  {
+    "name": "mobile-light",
+    "blocks": [
+      {
+        "pre": {
+          "left": 35,
+          "right": 358,
+          "top": 317.2890625,
+          "bottom": 352.1328125,
+          "height": 34.84375
+        },
+        "button": {
+          "left": 320.875,
+          "right": 354,
+          "top": 321.2890625,
+          "bottom": 338.7890625,
+          "height": 17.5
+        },
+        "label": {
+          "left": 321.875,
+          "right": 353,
+          "top": 322.2890625,
+          "bottom": 337.2890625,
+          "height": 15
+        },
+        "codeLines": [
+          {
+            "left": 45,
+            "right": 204.6640625,
+            "top": 328.2890625,
+            "bottom": 341.2890625
+          }
+        ],
+        "clientHeight": 35,
+        "scrollHeight": 35,
+        "buttonStyle": {
+          "font": "13.3333px Arial",
+          "lineHeight": "normal",
+          "padding": "0px",
+          "position": "absolute"
+        },
+        "documentWidth": 390,
+        "viewportWidth": 390
+      }
+    ]
+  },
+  {
+    "name": "desktop-narrow-dark",
+    "blocks": [
+      {
+        "pre": {
+          "left": 35,
+          "right": 358,
+          "top": 317.2890625,
+          "bottom": 352.1328125,
+          "height": 34.84375
+        },
+        "button": {
+          "left": 320.875,
+          "right": 354,
+          "top": 321.2890625,
+          "bottom": 338.7890625,
+          "height": 17.5
+        },
+        "label": {
+          "left": 321.875,
+          "right": 353,
+          "top": 322.2890625,
+          "bottom": 337.2890625,
+          "height": 15
+        },
+        "codeLines": [
+          {
+            "left": 45,
+            "right": 207.484375,
+            "top": 327.2890625,
+            "bottom": 342.2890625
+          }
+        ],
+        "clientHeight": 35,
+        "scrollHeight": 35,
+        "buttonStyle": {
+          "font": "13.3333px Arial",
+          "lineHeight": "normal",
+          "padding": "0px",
+          "position": "absolute"
+        },
+        "documentWidth": 390,
+        "viewportWidth": 390
+      }
+    ]
+  },
+  {
+    "name": "mobile-long-code",
+    "blocks": [
+      {
+        "pre": {
+          "left": 35,
+          "right": 358,
+          "top": 317.2890625,
+          "bottom": 446.3515625,
+          "height": 129.0625
+        },
+        "button": {
+          "left": 320.875,
+          "right": 354,
+          "top": 321.2890625,
+          "bottom": 338.7890625,
+          "height": 17.5
+        },
+        "label": {
+          "left": 321.875,
+          "right": 353,
+          "top": 322.2890625,
+          "bottom": 337.2890625,
+          "height": 15
+        },
+        "codeLines": [
+          {
+            "left": 45,
+            "right": 344.375,
+            "top": 328.2890625,
+            "bottom": 341.2890625
+          },
+          {
+            "left": 45,
+            "right": 344.375,
+            "top": 347.1328125,
+            "bottom": 360.1328125
+          },
+          {
+            "left": 45,
+            "right": 344.375,
+            "top": 365.9765625,
+            "bottom": 378.9765625
+          },
+          {
+            "left": 45,
+            "right": 344.375,
+            "top": 384.8203125,
+            "bottom": 397.8203125
+          },
+          {
+            "left": 45,
+            "right": 164.75,
+            "top": 403.6640625,
+            "bottom": 416.6640625
+          },
+          {
+            "left": 164.75,
+            "right": 164.75,
+            "top": 403.6640625,
+            "bottom": 416.6640625
+          },
+          {
+            "left": 45,
+            "right": 178.0546875,
+            "top": 422.5078125,
+            "bottom": 435.5078125
+          }
+        ],
+        "clientHeight": 129,
+        "scrollHeight": 129,
+        "buttonStyle": {
+          "font": "13.3333px Arial",
+          "lineHeight": "normal",
+          "padding": "0px",
+          "position": "absolute"
+        },
+        "documentWidth": 390,
+        "viewportWidth": 390
+      }
+    ]
+  }
+]

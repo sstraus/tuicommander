@@ -16,7 +16,7 @@ use uuid::Uuid;
 use super::mcp_transport_ancillary::CONFIRM_TIMEOUT;
 #[cfg(test)]
 use super::mcp_transport_ancillary::SESSION_HTML_TAB_LIMIT;
-pub(crate) use super::mcp_transport_ancillary::create_daemon_workflow_worktree;
+pub(crate) use super::mcp_transport_ancillary::create_daemon_worktree;
 pub(crate) use super::mcp_transport_ancillary::emit_progress_entry;
 #[cfg(test)]
 use super::mcp_transport_ancillary::handle_confirm;
@@ -37,17 +37,7 @@ use super::mcp_transport_ancillary::handle_ui;
 use super::mcp_transport_ancillary::handle_ui_unified;
 use super::mcp_transport_ancillary::handle_voice;
 #[cfg(test)]
-use super::mcp_transport_ancillary::handle_workflow_launch;
-#[cfg(test)]
-use super::mcp_transport_ancillary::handle_workflow_report;
-#[cfg(all(test, unix))]
-use super::mcp_transport_ancillary::handle_workflow_run;
-#[cfg(test)]
-use super::mcp_transport_ancillary::handle_workflow_story_create;
-#[cfg(test)]
 use super::mcp_transport_ancillary::handle_worktree;
-#[cfg(test)]
-use super::mcp_transport_ancillary::queue_workflow_coordinator_wake;
 pub(crate) use super::mcp_transport_ancillary::report_progress;
 #[cfg(test)]
 use super::mcp_transport_ancillary::resolve_mcp_origin_pty;
@@ -58,9 +48,6 @@ use super::mcp_transport_ancillary::resolve_mcp_origin_session;
 use super::mcp_transport_ancillary::resolve_toast_sound;
 #[cfg(test)]
 use super::mcp_transport_ancillary::worktree_remove_success_response;
-pub(crate) use super::mcp_transport_ancillary::{
-    launch_daemon_workflow_agent, resume_daemon_workflow_delivery,
-};
 #[cfg(test)]
 use super::mcp_transport_catalogue::AGENT_ACTIONS;
 #[cfg(test)]
@@ -199,6 +186,8 @@ use super::mcp_transport_session_agent::resolve_run_config;
 use super::mcp_transport_session_agent::resolve_spawn_agent_type;
 #[cfg(test)]
 use super::mcp_transport_session_agent::resolve_spawn_pty_description;
+#[cfg(test)]
+use super::mcp_transport_session_agent::script_callback_command;
 pub(super) use super::mcp_transport_session_agent::session_output;
 #[cfg(test)]
 use super::mcp_transport_session_agent::session_wait_met;
@@ -429,7 +418,7 @@ pub(crate) async fn handle_mcp_tool_call(
     unmark_upstream_tool_result(
         Box::pin(handle_mcp_tool_call_with_context(
             state,
-            addr,
+            super::guards::CallerAuthority::from(addr),
             name,
             args,
             mcp_session_id,
@@ -480,16 +469,63 @@ fn agent_action_requires_blocking_pool(action: &str) -> bool {
     )
 }
 
-fn secret_inspection_tool(name: &str, args: &serde_json::Value) -> bool {
-    matches!(name, "ui" | "debug")
-        || name.contains("__")
-        || (name == "call_tool"
-            && secret_inspection_tool(args["tool_name"].as_str().unwrap_or(""), &args["arguments"]))
+/// Operation-level classification for the private-form gate (#2661-e740).
+/// Harmless UI, read-only diagnostics and remote upstreams stay available.
+/// Capture, app scripting, logs that can carry script output, and any upstream
+/// that may run on this machine are inspection. Unknown actions fail closed.
+fn secret_inspection_tool(state: &AppState, name: &str, args: &serde_json::Value) -> bool {
+    let action = args["action"].as_str().unwrap_or("");
+    match name {
+        "ui" => !matches!(action, "toast" | "confirm" | "help"),
+        "debug" => !matches!(action, "agent_detection" | "sessions" | "help"),
+        "call_tool" => secret_inspection_tool(
+            state,
+            args["tool_name"].as_str().unwrap_or(""),
+            &args["arguments"],
+        ),
+        _ => match name.split_once("__") {
+            Some((upstream, _)) => !remote_upstream(state, upstream),
+            None => false,
+        },
+    }
+}
+
+/// An HTTP upstream on a public host cannot capture this machine. Stdio,
+/// loopback, LAN and single-label or `.local` hosts may run here.
+fn remote_upstream(state: &AppState, upstream: &str) -> bool {
+    let Some(entry) = state.mcp.upstream_registry.entry(upstream) else {
+        return false;
+    };
+    let crate::mcp_upstream_config::UpstreamTransport::Http { url } = &entry.config.transport
+    else {
+        return false;
+    };
+    let ip = match url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host().map(|h| h.to_owned()))
+    {
+        Some(url::Host::Domain(host)) => {
+            let host = host.to_ascii_lowercase();
+            return host.contains('.')
+                && !host.ends_with('.')
+                && !host.ends_with(".local")
+                && !host.ends_with(".localhost");
+        }
+        Some(url::Host::Ipv4(ip)) => std::net::IpAddr::V4(ip),
+        Some(url::Host::Ipv6(ip)) => std::net::IpAddr::V6(ip),
+        None => return false,
+    };
+    // [::ffff:127.0.0.1] reaches the IPv4 address; classify the address it maps to.
+    let ip = ip.to_canonical();
+    !(ip.is_loopback()
+        || ip.is_unspecified()
+        || super::auth::is_private_ip(&ip)
+        || matches!(ip, std::net::IpAddr::V4(v4) if v4.is_link_local()))
 }
 
 pub(super) async fn handle_mcp_tool_call_with_context(
     state: &Arc<AppState>,
-    addr: SocketAddr,
+    caller: super::guards::CallerAuthority,
     name: &str,
     args: &serde_json::Value,
     mcp_session_id: Option<&str>,
@@ -501,7 +537,7 @@ pub(super) async fn handle_mcp_tool_call_with_context(
         args,
         dispatch_mcp_tool_call_with_context(
             state,
-            addr,
+            caller,
             name,
             args,
             mcp_session_id,
@@ -518,8 +554,7 @@ async fn guard_secret_inspection(
     args: &serde_json::Value,
     call: impl std::future::Future<Output = serde_json::Value>,
 ) -> serde_json::Value {
-    let inspection = secret_inspection_tool(name, args);
-    if inspection && state.secrets.tools_blocked() {
+    if state.secrets.tools_blocked() && secret_inspection_tool(state, name, args) {
         return serde_json::json!({
             "error": "Agent inspection is disabled while a private secret form is open",
             "effect": "not_started"
@@ -565,12 +600,14 @@ async fn handle_design_mode_with_caller(
 
 async fn dispatch_mcp_tool_call_with_context(
     state: &Arc<AppState>,
-    addr: SocketAddr,
+    caller: super::guards::CallerAuthority,
     name: &str,
     args: &serde_json::Value,
     mcp_session_id: Option<&str>,
     managed_parent_cwd: Option<&str>,
 ) -> serde_json::Value {
+    // `ui`, `debug` and `settings` keep their own loopback rules on the address.
+    let addr = caller.addr();
     if let Some(error) = super::mcp_transport_catalogue::native_action_unavailability(
         state,
         name,
@@ -586,8 +623,26 @@ async fn dispatch_mcp_tool_call_with_context(
     {
         return serde_json::json!({"error":"connection_id must be a nonempty connection qualifier"});
     }
+    // A type-notes tool has no `help` action in its contract, so its help is
+    // answered before validation; the tool is already known to be available.
+    if args["action"] == "help"
+        && super::mcp_input_contract::TYPE_NOTES_IN_HELP.contains(&name)
+        && let Some(help) = super::mcp_transport_catalogue::native_tool_help(name)
+    {
+        return help;
+    }
     if let Some(error) = super::mcp_input_contract::validate(name, args) {
         return error;
+    }
+    let role = super::caller_role::resolve(state, mcp_session_id);
+    if let Some(mut refusal) =
+        super::capability_gate::refuse_call(state, name, args, mcp_session_id)
+    {
+        super::caller_role::name_role(&mut refusal, role);
+        return refusal;
+    }
+    if let Some(refusal) = super::caller_role::refuse_call(role, name, args) {
+        return refusal;
     }
     if args["action"] == "help"
         && let Some(help) = super::mcp_transport_catalogue::native_tool_help(name)
@@ -628,9 +683,8 @@ async fn dispatch_mcp_tool_call_with_context(
             if action != "list"
                 && let Some(remote) = super::remote_mcp_sessions::resolve(state, args)
             {
-                if matches!(action, "submit" | "force_retry" | "close") && !addr.ip().is_loopback()
-                {
-                    return serde_json::json!({"error":"This session action is restricted to localhost connections"});
+                if matches!(action, "submit" | "force_retry" | "close") && !caller.is_owner() {
+                    return serde_json::json!({"error":"This session action is restricted to localhost or authenticated connections"});
                 }
                 return match remote {
                     Ok((host, id)) => {
@@ -656,30 +710,25 @@ async fn dispatch_mcp_tool_call_with_context(
                 local_args["session_id"] = serde_json::json!(reference);
             }
             let args = &local_args;
-            // Executing / destructive session actions carry the same loopback
-            // restriction as `agent spawn`: `submit` executes a managed-agent
-            // composer command, while `input` writes raw bytes to a PTY's stdin
-            // (arbitrary command execution on a shell session, unfiltered context
-            // injection on an agent session). `create`/`kill`/`close` spawn or
-            // destroy sessions, `resize`/`rename` change their presentation, and
-            // `pause`/`resume` halt/resume output buffering
-            // (a remote `pause` on any session is a DoS). A non-loopback MCP client
-            // (authenticated remote, or admitted via lan_auth_bypass) must not reach
-            // them — remote terminal control is served separately by the auth-gated
-            // POST /sessions/{id}/write route. Read-only actions (list/output/status/…)
-            // stay open for monitoring.
+            // Executing / destructive session actions need owner authority:
+            // a loopback caller, or a caller with verified credentials (Boss
+            // decision L03, 2026-11-01). `submit` executes a managed-agent
+            // composer command and `input` writes raw bytes to a PTY's stdin;
+            // `create`/`kill`/`close` spawn or destroy sessions, `resize`/`rename`
+            // change their presentation, and `pause`/`resume` halt/resume output
+            // buffering. Read-only actions (list/output/status/…) stay open.
             let action = args["action"].as_str().unwrap_or("");
             if action == "wait" {
                 // Read-only blocking wait — needs the async runtime for its poll
                 // loop, so it can't live in the sync handle_session.
                 handle_session_wait(state, args).await
-            } else if matches!(action, "submit" | "force_retry") && !addr.ip().is_loopback() {
+            } else if matches!(action, "submit" | "force_retry") && !caller.is_owner() {
                 serde_json::json!({
-                    "error": "This session action is restricted to localhost connections"
+                    "error": "This session action is restricted to localhost or authenticated connections"
                 })
             } else if action == "submit" {
                 handle_session_submit(state, args, false).await
-            } else if action == "suspend" && addr.ip().is_loopback() {
+            } else if action == "suspend" && caller.is_owner() {
                 handle_session_suspend(state, args, mcp_session_id).await
             } else if matches!(
                 action,
@@ -693,10 +742,10 @@ async fn dispatch_mcp_tool_call_with_context(
                     | "resize"
                     | "rename"
                     | "suspend"
-            ) && !addr.ip().is_loopback()
+            ) && !caller.is_owner()
             {
                 serde_json::json!({
-                    "error": "This session action is restricted to localhost connections"
+                    "error": "This session action is restricted to localhost or authenticated connections"
                 })
             } else if session_action_requires_blocking_pool(action) {
                 let state = state.clone();
@@ -719,19 +768,19 @@ async fn dispatch_mcp_tool_call_with_context(
         "agent" => {
             let action = args["action"].as_str().unwrap_or("");
             if matches!(action, "list_peers" | "send")
-                && addr.ip().is_loopback()
+                && caller.is_owner()
                 && let Some(result) =
                     super::remote_peer::dispatch(state, args, mcp_session_id).await
             {
                 return result;
             }
             if action == "launch" {
-                super::launch_transaction::execute(state, addr, args).await
+                super::launch_transaction::execute(state, caller, args).await
             } else if matches!(action, "wait" | "subscribe" | "ack" | "unsubscribe")
-                && !addr.ip().is_loopback()
+                && !caller.is_owner()
             {
                 serde_json::json!({
-                    "error": "Inter-agent messaging is restricted to localhost connections"
+                    "error": "Inter-agent messaging is restricted to localhost or authenticated connections"
                 })
             } else if action == "wait" {
                 handle_agent_wait(state, args, mcp_session_id).await
@@ -749,7 +798,7 @@ async fn dispatch_mcp_tool_call_with_context(
                     } else {
                         handle_agent_unified_with_parent_cwd(
                             &state,
-                            addr,
+                            caller,
                             &args,
                             sid.as_deref(),
                             parent_cwd.as_deref(),
@@ -760,7 +809,7 @@ async fn dispatch_mcp_tool_call_with_context(
             } else {
                 handle_agent_unified_with_parent_cwd(
                     state,
-                    addr,
+                    caller,
                     args,
                     mcp_session_id,
                     managed_parent_cwd,
@@ -771,12 +820,27 @@ async fn dispatch_mcp_tool_call_with_context(
         "repo" => handle_repo_with_caller(state, args, is_claude_code, mcp_session_id).await,
         "remote" => handle_remote_update(state, args).await,
 
+        "story" => {
+            let state = state.clone();
+            let args = args.clone();
+            let sid = mcp_session_id.map(str::to_owned);
+            run_blocking_handler(move || {
+                super::mcp_transport_ancillary::handle_story(&state, &args, sid.as_deref())
+            })
+            .await
+        }
+
         "workflow" => {
             let state = state.clone();
             let args = args.clone();
             let sid = mcp_session_id.map(str::to_owned);
             run_blocking_handler(move || {
-                super::mcp_transport_ancillary::handle_workflow(&state, addr, &args, sid.as_deref())
+                super::mcp_transport_ancillary::handle_workflow(
+                    &state,
+                    caller,
+                    &args,
+                    sid.as_deref(),
+                )
             })
             .await
         }
@@ -787,20 +851,14 @@ async fn dispatch_mcp_tool_call_with_context(
             serde_json::json!({"content": super::plugin_docs::PLUGIN_DOCS})
         }
         "settings" => {
-            let enabled = state.config.read().settings_mcp_enabled
-                && state
-                    .config
-                    .read()
-                    .mcp_capabilities
-                    .allows("settings", None);
+            let enabled = state.config.read().settings_mcp_enabled;
             let caller = crate::settings::policy::Caller::mcp(
-                addr,
                 mcp_session_id.unwrap_or("headerless").to_owned(),
                 enabled,
             );
             crate::settings::api::execute(state, args.clone(), caller).await
         }
-        "debug" => handle_debug_unified(state, addr, args),
+        "debug" => handle_debug_unified(state, args),
         // Blocking pool: `speak` builds nothing, but `status` reaps a finished
         // hands-free runtime, which joins a thread.
         "voice" => {
@@ -812,7 +870,7 @@ async fn dispatch_mcp_tool_call_with_context(
         "search_tools" => handle_search_tools_for_session(state, args, mcp_session_id),
         "get_tool_schema" => handle_get_tool_schema_for_session(state, args, mcp_session_id),
         "call_tool" => {
-            handle_call_tool(state, addr, args, mcp_session_id, managed_parent_cwd).await
+            handle_call_tool(state, caller, args, mcp_session_id, managed_parent_cwd).await
         }
         _ => serde_json::json!({"error": format!(
             "Unknown tool '{}'", name
@@ -866,6 +924,16 @@ const SERVER_INFO_META_KEY: &str = "io.modelcontextprotocol/serverInfo";
 /// every request that wants to know who is asking reads it from here.
 fn request_meta_client_name(body: &serde_json::Value) -> Option<&str> {
     body["params"]["_meta"][CLIENT_INFO_META_KEY]["name"].as_str()
+}
+
+/// Client kind for the usage rollup, from the client name or the user agent.
+fn usage_client_kind(headers: &HeaderMap, body: &serde_json::Value) -> &'static str {
+    super::mcp_usage_rollup::client_kind(
+        request_meta_client_name(body),
+        headers
+            .get(axum::http::header::USER_AGENT)
+            .and_then(|v| v.to_str().ok()),
+    )
 }
 
 /// Whether this one request is on the stateless 2026-07-28 lifecycle.
@@ -938,6 +1006,7 @@ pub(crate) fn registered_repo_for_path(path: &str, known: &[String]) -> Option<S
 pub(super) async fn mcp_post(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    user_auth: Option<axum::Extension<super::guards::UserAuthenticated>>,
     headers: HeaderMap,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
@@ -1174,6 +1243,13 @@ pub(super) async fn mcp_post(
                 .await;
             let tools =
                 merged_tool_definitions(&state, list_session_id, request_meta_client_name(&body));
+            if state.config.read().mcp_usage_rollup_enabled {
+                state.mcp.usage_rollup.record_catalogue(
+                    usage_client_kind(&headers, &body),
+                    super::caller_role::resolve(&state, list_session_id).as_str(),
+                    serde_json::to_string(&tools).map_or(0, |text| text.len() as u64),
+                );
+            }
             let mut result = serde_json::json!({ "tools": tools });
             // Withheld from the legacy revision, which has no such fields and
             // no reader for them.
@@ -1267,9 +1343,13 @@ pub(super) async fn mcp_post(
                 let is_error = tool_result_is_error(&result);
                 (result, is_error)
             } else {
+                let caller = super::guards::CallerAuthority::from_request(
+                    addr,
+                    user_auth.map(|axum::Extension(marker)| marker),
+                );
                 let result = Box::pin(handle_mcp_tool_call_with_context(
                     &state,
-                    addr,
+                    caller,
                     &tool_name,
                     &args,
                     session_id_str.as_deref(),
@@ -1280,6 +1360,23 @@ pub(super) async fn mcp_post(
                 (result, is_error)
             };
             let mut tool_result = format_tool_call_result(&result, is_error);
+            if state.config.read().mcp_usage_rollup_enabled {
+                let (name, call_args) = super::mcp_call_audit::call_target(&params);
+                state
+                    .mcp
+                    .usage_rollup
+                    .record_call(&super::mcp_usage_rollup::Observation {
+                        client: usage_client_kind(&headers, &body),
+                        role: super::caller_role::resolve(&state, session_id_str.as_deref())
+                            .as_str(),
+                        operation: super::mcp_call_audit::operation_of(&state, name, call_args),
+                        response_bytes: super::mcp_call_audit::response_text_bytes(&tool_result)
+                            as u64,
+                        application_error: is_error,
+                        invalid_arguments: result["code"] == "invalid_arguments",
+                    });
+                state.mcp.usage_rollup.flush_if_due();
+            }
             audit.finish(&result, &tool_result);
             if request_is_modern_lifecycle(&headers, &body) {
                 // A completed 2026-07-28 tool call has this discriminator,
@@ -1611,19 +1708,11 @@ mod critic_story_tool_text {
             .as_array()
             .expect("definitions")
             .iter()
-            .find(|tool| tool["name"] == "workflow")
-            .expect("workflow tool")
+            .find(|tool| tool["name"] == "story")
+            .expect("story tool")
             .clone();
         let description = definition["description"].as_str().unwrap_or_default();
-        let workflow_schema = super::super::mcp_transport_ancillary::workflow_action_schema();
-        let workflow_variants = workflow_schema["oneOf"]
-            .as_array()
-            .expect("workflow actions");
-        let story = workflow_variants
-            .iter()
-            .find(|variant| variant["properties"]["action"]["const"] == "story")
-            .expect("story action is published");
-        let variants = &story["properties"]["input"];
+        let variants = super::super::mcp_transport_ancillary::story_action_schema();
         let variants = variants["oneOf"]
             .as_array()
             .or_else(|| variants["anyOf"].as_array())
@@ -1653,13 +1742,17 @@ mod critic_story_tool_text {
             .as_array()
             .expect("definitions")
             .iter()
-            .find(|tool| tool["name"] == "workflow")
-            .expect("workflow tool")
+            .find(|tool| tool["name"] == "story")
+            .expect("story tool")
             .clone();
         let description = definition["description"].as_str().unwrap_or_default();
         assert!(description.contains("receipt"), "{description}");
     }
 }
+
+#[cfg(test)]
+#[path = "remote_mcp_authority_tests.rs"]
+mod remote_mcp_authority_tests;
 
 #[cfg(test)]
 mod session_placement_tests {

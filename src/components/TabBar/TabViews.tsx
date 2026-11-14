@@ -106,6 +106,7 @@ export const TerminalTabView: Component<TerminalTabViewProps> = (props) => {
 	const isActive = () => terminalsStore.state.activeId === props.id;
 	const isDetached = () => terminalsStore.isDetached(props.id);
 	const isBusy = () => terminalsStore.isBusy(props.id);
+	const isStalled = () => terminal()?.stalled === true;
 	const isIdle = () => !isBusy() && terminal()?.shellState === "idle";
 	const isExited = () => terminal()?.shellState === "exited";
 	const isUnseen = () => !isActive() && terminal()?.unseen;
@@ -134,7 +135,8 @@ export const TerminalTabView: Component<TerminalTabViewProps> = (props) => {
 					isDetached() && s.detached,
 					awaitingInput() && s.awaitingInput,
 					awaitingInput() && AWAITING_CLASSES[awaitingInput()!],
-					!awaitingInput() && !terminal()?.providerRecovery && isBusy() && s.shellBusy,
+					!awaitingInput() && !terminal()?.providerRecovery && isBusy() && !isStalled() && s.shellBusy,
+					!awaitingInput() && isStalled() && s.shellStalled,
 					!awaitingInput() && !isBusy() && isUnseen() && s.shellUnseen,
 					!awaitingInput() && isIdle() && !isUnseen() && s.shellIdle,
 					isExited() && s.shellExited,
@@ -154,7 +156,7 @@ export const TerminalTabView: Component<TerminalTabViewProps> = (props) => {
 					}
 				}}
 				onContextMenu={(event) => props.onContextMenu(event, props.id)}
-				title={`${terminal()?.alias ?? `Terminal ${props.index + 1}`}${props.index < 9 ? ` (${keyFor(`switch-tab-${props.index + 1}`)})` : ""}`}
+				title={`${terminal()?.alias ?? `Terminal ${props.index + 1}`}${props.index < 9 ? ` (${keyFor(`switch-tab-${props.index + 1}`)})` : ""}${terminal()?.lastError ? `\n${terminal()?.lastError}` : ""}`}
 				onPointerDown={(event) => !props.isEditing && props.onPointerDown(event, props.id)}
 				onMouseEnter={() => setHovered(true)}
 				onMouseLeave={() => setHovered(false)}
@@ -232,7 +234,10 @@ export const TerminalTabView: Component<TerminalTabViewProps> = (props) => {
 					/>
 				</Show>
 				{progress() !== null && progress() !== undefined && (
-					<div class={s.progress} style={{ transform: `scaleX(${progress()! / 100})` }} />
+					<div
+						class={s.progress}
+						style={{ transform: `scaleX(${progress() === "indeterminate" ? 1 : (progress() as number) / 100})` }}
+					/>
 				)}
 				<PanePositionIcon tabId={props.id} rects={props.paneRects} />
 				<Show when={props.showWorkspaceMetadata && isPromoted() && !globalWorkspaceStore.isActive()}>

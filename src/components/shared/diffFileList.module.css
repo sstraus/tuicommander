@@ -1,5 +1,5 @@
 /* Shared styles for DiffFileList — the per-file collapsible diff list used by
- * both PrDiffTab and BranchDiffScrollView. Lives under shared/ so the shared
+ * both PrDiffTab and AllChangesView. Lives under shared/ so the shared
  * component doesn't depend on a sibling feature's private CSS. */
 .container,
 .container * {

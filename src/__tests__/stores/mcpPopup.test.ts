@@ -765,4 +765,25 @@ describe("mcpPopupStore", () => {
 			});
 		});
 	});
+
+	// catches: setState with a new array remounts status rows
+	it("mcp_popup_identical_status_keeps_rows", async () => {
+		const fresh = () => structuredClone(MOCK_STATUS);
+		mockInvoke.mockImplementation((command: string) =>
+			Promise.resolve(command === "load_mcp_upstreams" ? MOCK_CONFIG : fresh()),
+		);
+		await store.loadConfig();
+		const before = [...store.state.status];
+
+		await store.refreshStatus();
+		expect(store.state.status[0]).toBe(before[0]);
+		expect(store.state.status[1]).toBe(before[1]);
+
+		const changed = fresh();
+		changed.upstreams[1].status = "ready";
+		mockInvoke.mockResolvedValue(changed);
+		await store.refreshStatus();
+		expect(store.state.status[0]).toBe(before[0]);
+		expect(store.state.status[1].status).toBe("ready");
+	});
 });

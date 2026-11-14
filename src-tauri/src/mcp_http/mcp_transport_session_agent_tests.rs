@@ -602,6 +602,122 @@ async fn prompt_receipt_records_final_managed_preamble_and_explicit_instruction_
     assert_eq!(receipt.sections[1].bytes, Some(6));
 }
 
+// Catches: the contract is read only from a parent PTY's cwd, so an AI Chat ego
+// coordinator (an ACP peer with a repository root and no terminal) still sends
+// its children thin briefs — the exact host story 2881-4e8c is about.
+#[cfg(unix)]
+#[tokio::test]
+async fn acp_ego_coordinator_children_get_the_root_child_contract() {
+    let state = test_state();
+    let config = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let _config = crate::config::set_config_dir_override(config.path().join("config"));
+    let peer = "acp-ego-coordinator-2881";
+    let _journal = state.acp.test_peer_journal(peer);
+    let root = state.acp.peer_root(peer).unwrap();
+    let contract = root.join(".tuic-child-contract.md");
+    struct Remove(std::path::PathBuf);
+    impl Drop for Remove {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+    std::fs::write(&contract, "Build route: build-slot for {{name}}.\n").unwrap();
+    let _remove = Remove(contract);
+    state
+        .mcp
+        .to_session
+        .insert("acp-ego-channel-2881".into(), peer.into());
+    let spawned = handle_agent(
+        &state,
+        "127.0.0.1:1".parse().unwrap(),
+        &serde_json::json!({
+            "action":"spawn", "agent_type":"claude", "binary_path":"/bin/sh",
+            "name":"acp-child", "prompt":"thin brief", "cwd":config.path(),
+            "args":["-c", "read contract_input", "{prompt}"]
+        }),
+        Some("acp-ego-channel-2881"),
+    );
+    let session_id = spawned["session_id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("spawn failed: {spawned}"));
+    let captured = crate::prompt_receipt::read_receipt(&state, session_id);
+    handle_session(
+        &state,
+        &serde_json::json!({"action":"kill", "session_id":session_id}),
+        None,
+    );
+    let packet = &captured.unwrap().sections[0].text;
+    assert!(
+        packet.contains("Build route: build-slot for acp-child."),
+        "ACP coordinator child lacks the contract: {packet}"
+    );
+}
+
+// Catches: a host that writes its own thin brief (ego coordinator, 2026-11-06:
+// 15 briefs of 322-559 chars) giving the child no build route, commit
+// authority or reporting rules. The parent repository's child contract must
+// reach every child, whatever agent the host launches.
+#[cfg(unix)]
+#[tokio::test]
+async fn launch_packet_carries_the_child_contract_for_every_host() {
+    let state = test_state();
+    let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let _config = crate::config::set_config_dir_override(root.path().join("config"));
+    let parent_repo = root.path().join("orchestrator");
+    let child_repo = root.path().join("child");
+    std::fs::create_dir_all(&parent_repo).unwrap();
+    std::fs::create_dir_all(&child_repo).unwrap();
+    std::fs::write(
+        parent_repo.join(".tuic-child-contract.md"),
+        "Rust tests run through build-slot.sh --remote.\n\
+         You may commit on your branch.\n\
+         {{name}} reports to {{parent}} from {{cwd}} as {{agent_type}}.",
+    )
+    .unwrap();
+    insert_managed_test_session(&state, TEST_UUID_B, parent_repo.to_str().unwrap());
+    state
+        .mcp
+        .to_session
+        .insert("contract-parent-protocol".into(), TEST_UUID_B.into());
+
+    for agent_type in ["claude", "ego"] {
+        let spawned = handle_agent(
+            &state,
+            "127.0.0.1:1".parse().unwrap(),
+            &serde_json::json!({
+                "action":"spawn", "agent_type":agent_type, "binary_path":"/bin/sh",
+                "name":format!("{agent_type}-child"), "prompt":"Fix story 1",
+                "cwd":child_repo, "args":["-c", "read contract_input", "{prompt}"]
+            }),
+            Some("contract-parent-protocol"),
+        );
+        let session_id = spawned["session_id"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{agent_type} spawn failed: {spawned}"));
+        let captured = crate::prompt_receipt::read_receipt(&state, session_id);
+        let _ = handle_session(
+            &state,
+            &serde_json::json!({"action":"kill", "session_id":session_id}),
+            None,
+        );
+        let prompt = captured.unwrap().sections[0].text.clone();
+        let contract = format!(
+            "Rust tests run through build-slot.sh --remote.\n\
+             You may commit on your branch.\n\
+             {agent_type}-child reports to {TEST_UUID_B} from {} as {agent_type}.",
+            child_repo.display()
+        );
+        let at = prompt
+            .find(&contract)
+            .unwrap_or_else(|| panic!("{agent_type} packet lacks the contract:\n{prompt}"));
+        assert!(
+            at < prompt.find("## Your Task").unwrap(),
+            "{agent_type}: the contract must precede the brief:\n{prompt}"
+        );
+        assert!(prompt.ends_with("Fix story 1"), "{agent_type}:\n{prompt}");
+    }
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn mobile_http_reply_answers_confident_question_with_automated_mail_queued() {
@@ -1210,7 +1326,7 @@ fn task_call(
 ) -> serde_json::Value {
     super::super::mcp_transport_session_agent::handle_task(
         state,
-        addr.parse().unwrap(),
+        addr.parse::<std::net::SocketAddr>().unwrap().into(),
         &args,
         mcp_sid,
     )
@@ -1557,7 +1673,7 @@ async fn call_tool_dispatches_to_native_handler_propagating_args() {
     let state = test_state();
     let r = handle_call_tool(
         &state,
-        loopback_addr(),
+        loopback_addr().into(),
         &serde_json::json!({ "tool_name": "session", "arguments": {} }),
         None,
         None,
@@ -2635,13 +2751,19 @@ fn unknown_session_id_returns_structured_error() {
 
 #[test]
 fn build_spawn_prompt_no_parent_returns_original() {
-    let result = build_spawn_prompt("do the task", None, "child-123", "worker");
+    let result = build_spawn_prompt("do the task", None, "child-123", "worker", None);
     assert_eq!(result, "do the task");
 }
 
 #[test]
 fn build_spawn_prompt_with_parent_prepends_preamble() {
-    let result = build_spawn_prompt("do the task", Some("parent-456"), "child-123", "worker");
+    let result = build_spawn_prompt(
+        "do the task",
+        Some("parent-456"),
+        "child-123",
+        "worker",
+        None,
+    );
     assert!(
         result.contains("parent-456"),
         "preamble must mention parent"
@@ -2661,7 +2783,7 @@ fn build_spawn_prompt_with_parent_prepends_preamble() {
 
 #[test]
 fn build_spawn_prompt_with_parent_includes_send_instruction() {
-    let result = build_spawn_prompt("my task", Some("orch-789"), "child-abc", "worker");
+    let result = build_spawn_prompt("my task", Some("orch-789"), "child-abc", "worker", None);
     assert!(
         result.contains("orch-789"),
         "preamble must include parent session for send target"
@@ -2670,6 +2792,45 @@ fn build_spawn_prompt_with_parent_includes_send_instruction() {
         result.contains("send"),
         "preamble must instruct send on completion"
     );
+}
+
+// Catches (#2810-97ed): a child reports through its client's built-in SendMessage,
+// which only reaches that client's own subagents and answers "No agent named
+// <tuic_session> is reachable", so the RESULT never enters the parent's inbox.
+#[test]
+fn build_spawn_prompt_forbids_the_client_builtin_send_for_parent_mail() {
+    let result = build_spawn_prompt("my task", Some("orch-789"), "child-abc", "worker", None);
+    assert!(
+        result.contains("SendMessage") && result.contains("TUICommander `agent` tool"),
+        "preamble must name the built-in SendMessage as the wrong route: {result}"
+    );
+}
+
+// Catches: the script-callback instruction addresses another identity than the
+// spawned child, so a script's result lands in a different inbox.
+#[test]
+fn build_spawn_prompt_callback_addresses_the_child_webhook() {
+    let result = build_spawn_prompt("my task", Some("orch-789"), "child-abc", "worker", None);
+    assert!(
+        result.contains(&format!(
+            "`{}`",
+            script_callback_command("child-abc", cfg!(unix))
+        )),
+        "{result}"
+    );
+}
+
+// Catches: a refused webhook request (400/413) exiting 0, so the script reports
+// success while nothing reached the inbox; or the Windows sentence naming a unix
+// socket that does not exist there.
+#[test]
+fn script_callback_command_fails_loudly_and_matches_the_platform() {
+    let unix = script_callback_command("child-abc", true);
+    assert!(unix.starts_with("curl -sS --fail-with-body --unix-socket \"$TUIC_SOCKET\" "));
+    assert!(unix.ends_with(" http://localhost/agent/webhook/child-abc"));
+    let windows = script_callback_command("child-abc", false);
+    assert_eq!(windows, "tuic agent send child-abc \"<result text>\"");
+    assert!(!windows.contains("TUIC_SOCKET"));
 }
 
 // --- spawn auto-registration + inbox pre-init ---
@@ -3412,6 +3573,7 @@ async fn parent_registration_after_spawn_links_existing_child() {
             from_name: "tuic".to_string(),
             content: r#"{"type":"state_change","state":"idle"}"#.to_string(),
             timestamp: 1,
+            report: None,
             delivered_via_channel: false,
         },
     );
@@ -4066,7 +4228,7 @@ async fn managed_claude_spawn_accepts_only_its_startup_trust_dialog() {
         &serde_json::json!({"action":"output", "session_id":sid, "format":"raw", "limit": 4096}),
         None,
     );
-    let armed = state.managed_trust_dialogs.contains(sid);
+    let armed = state.managed_first_run.get(sid).map(|managed| *managed);
     handle_session(
         &state,
         &serde_json::json!({"action":"kill", "session_id":sid}),
@@ -4074,7 +4236,7 @@ async fn managed_claude_spawn_accepts_only_its_startup_trust_dialog() {
     );
     assert!(
         !task.is_empty(),
-        "managed child must pass trust dialog without manual input: armed={armed}; keys={:?}; output={output}",
+        "managed child must pass trust dialog without manual input: armed={armed:?}; keys={:?}; output={output}",
         std::fs::read_to_string(&observed_keys)
     );
     assert!(
@@ -4957,6 +5119,7 @@ async fn lost_launch_reply_reuses_the_same_child() {
     let state = test_state();
     let parent = "550e8400-e29b-41d4-a716-446655440b01";
     register_peer(&state, parent, "orchestrator", "mcp-orch");
+    state.orchestrator_peers.insert(parent.into());
     let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap();
@@ -4969,7 +5132,10 @@ async fn lost_launch_reply_reuses_the_same_child() {
     });
     let first = crate::mcp_http::mcp_transport::handle_mcp_tool_call_with_context(
         &state,
-        "127.0.0.1:0".parse().unwrap(),
+        "127.0.0.1:0"
+            .parse::<std::net::SocketAddr>()
+            .unwrap()
+            .into(),
         "agent",
         &request,
         Some("mcp-orch"),
@@ -4979,7 +5145,10 @@ async fn lost_launch_reply_reuses_the_same_child() {
     assert!(first.get("error").is_none(), "launch failed: {first}");
     let second = crate::mcp_http::mcp_transport::handle_mcp_tool_call_with_context(
         &state,
-        "127.0.0.1:0".parse().unwrap(),
+        "127.0.0.1:0"
+            .parse::<std::net::SocketAddr>()
+            .unwrap()
+            .into(),
         "agent",
         &request,
         Some("mcp-orch"),

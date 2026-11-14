@@ -3,6 +3,7 @@
 //!
 //! The pairing bundle lives in the credential vault, never in the config file.
 
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,12 +19,13 @@ use crate::credentials::{self, Credential};
 const DAEMON_PAIRING_ID: &str = "daemon";
 const REGISTER_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// The vault holds a bundle only after `pair`.
+/// The vault holds a bundle only after `pair`. Read through the keyring, not the
+/// process cache: `pair` runs in another process.
 pub(crate) fn load_agent(
     upstream: SocketAddr,
     daemon_token: &str,
 ) -> Result<Option<Arc<DaemonAgent>>, String> {
-    let Some(text) = credentials::get(Credential::RelayPairing(DAEMON_PAIRING_ID))? else {
+    let Some(text) = credentials::get_fresh(Credential::RelayPairing(DAEMON_PAIRING_ID))? else {
         return Ok(None);
     };
     let text = Zeroizing::new(text);
@@ -34,6 +36,54 @@ pub(crate) fn load_agent(
         daemon_token: Zeroizing::new(daemon_token.to_owned()),
         mux: MuxConfig::default(),
     })))
+}
+
+/// Keep one agent running for the pairing that is stored now. The vault is
+/// re-read every `poll`: a pairing added later starts an agent, a replaced one
+/// restarts it, a deleted one stops it. Without this the daemon would honour
+/// the pairing it read at startup until the next restart. A vault read error
+/// is not a deletion: the running agent stays.
+pub(crate) async fn supervise<Fut: Future<Output = ()>>(
+    load: impl Fn() -> Result<Option<Arc<DaemonAgent>>, String>,
+    poll: Duration,
+    run_agent: impl Fn(Arc<DaemonAgent>) -> Fut,
+    shutdown: impl Future<Output = ()>,
+) {
+    tokio::pin!(shutdown);
+    loop {
+        let stored = match load() {
+            Ok(stored) => stored,
+            Err(error) => {
+                tracing::warn!(source = "relay_tunnel", %error, "relay pairing not loaded");
+                None
+            }
+        };
+        let Some(agent) = stored else {
+            tokio::select! {
+                _ = &mut shutdown => return,
+                _ = tokio::time::sleep(poll) => continue,
+            }
+        };
+        let running = run_agent(agent.clone());
+        tokio::pin!(running);
+        loop {
+            tokio::select! {
+                _ = &mut shutdown => return,
+                _ = &mut running => break,
+                _ = tokio::time::sleep(poll) => match load() {
+                    Ok(Some(now)) if now.bundle.pairing_id == agent.bundle.pairing_id => {}
+                    Ok(_) => break,
+                    Err(error) => {
+                        tracing::warn!(source = "relay_tunnel", %error, "relay pairing not re-read");
+                    }
+                },
+            }
+        }
+        tracing::info!(
+            source = "relay_tunnel",
+            "relay pairing changed, agent restarted"
+        );
+    }
 }
 
 /// Create a fresh pairing (new room, pairing id and secret), replace any stored
@@ -124,7 +174,7 @@ pub async fn relay_pair(options: RelayPairOptions) -> anyhow::Result<()> {
             );
         }
     }
-    eprintln!("Restart tuic-remote so it registers with the relay.");
+    eprintln!("A running tuic-remote picks the pairing up within seconds; no restart is needed.");
     Ok(())
 }
 

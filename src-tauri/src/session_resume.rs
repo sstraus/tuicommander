@@ -79,6 +79,26 @@ fn unquote(value: &str) -> String {
     result
 }
 
+/// Retained terminal commands contain shell words, while the launch builder
+/// consumes argv. Both resume and terminal preparation use this boundary.
+pub(crate) fn prepare_shell_launch_args(agent: &str, binary: &str, args: &[String]) -> Vec<String> {
+    if agent == "claude" {
+        let argv = args.iter().map(|arg| unquote(arg)).collect::<Vec<_>>();
+        let prepared = crate::agent_hook_launch::build_agent_launch_args(agent, binary, &argv);
+        // Claude augmentation only appends settings. Preserve the caller's shell
+        // words (including variable expansion); quote only the injected argv.
+        let mut result = args.to_vec();
+        result.extend(
+            prepared[args.len()..]
+                .iter()
+                .map(|arg| crate::prompt::shell_quote(arg)),
+        );
+        result
+    } else {
+        crate::agent_hook_launch::build_agent_launch_args(agent, binary, args)
+    }
+}
+
 pub(crate) fn resolve(request: &ResumeRequest) -> ResumeResolution {
     let agent = request.agent_type.as_str();
     let config = crate::config::load_agents_config();
@@ -207,7 +227,7 @@ pub(crate) fn resolve(request: &ResumeRequest) -> ResumeResolution {
     let mut args = flags;
     args.extend(argv.iter().skip(prefix + 1).cloned());
     let binary = unquote(&argv[prefix]);
-    let args = crate::agent_hook_launch::build_agent_launch_args(agent, &binary, &args);
+    let args = prepare_shell_launch_args(agent, &binary, &args);
     let mut command: Vec<String> = env
         .iter()
         .map(|(key, value)| format!("{key}={}", crate::prompt::shell_quote(value)))

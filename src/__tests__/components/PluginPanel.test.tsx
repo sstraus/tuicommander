@@ -49,10 +49,12 @@ vi.mock("solid-js", async (importOriginal) => {
 	};
 });
 
+import { invoke } from "@tauri-apps/api/core";
 import { createSignal, For } from "solid-js";
 import { injectThemeVars, PluginPanel } from "../../components/PluginPanel/PluginPanel";
 import { TUIC_SDK_SCRIPT } from "../../components/PluginPanel/tuicSdk";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
+import { editorTabsStore } from "../../stores/editorTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { repositoriesStore } from "../../stores/repositories";
 import { applyAppTheme } from "../../themes";
@@ -141,6 +143,129 @@ describe("PluginPanel", () => {
 		Object.defineProperty(request, "source", { get: () => iframe.contentWindow });
 		(handler as EventListener)(request);
 		expect(handleOpenUrl).not.toHaveBeenCalled();
+	});
+
+	describe("tuic:open of an image (#2715-62aa)", () => {
+		const REPO = "/Users/boss/Gits/fabbrica";
+
+		function sendOpen(path: string) {
+			const { container } = render(() => <PluginPanel tab={makeTab()} />);
+			const iframe = container.querySelector("iframe") as HTMLIFrameElement;
+			const [, handler] = addEventListenerSpy.mock.calls.find(([event]: [string]) => event === "message")!;
+			const msg = new MessageEvent("message", { data: { type: "tuic:open", path } });
+			Object.defineProperty(msg, "source", { get: () => iframe.contentWindow });
+			(handler as EventListener)(msg);
+		}
+
+		beforeEach(() => {
+			mdTabsStore.clearAll();
+			repositoriesStore.add({ path: REPO, displayName: "fabbrica" });
+		});
+
+		afterEach(() => {
+			mdTabsStore.clearAll();
+			repositoriesStore.remove(REPO);
+			repositoriesStore._testCancelPendingSave();
+		});
+
+		// Catches: binary file sent to the UTF-8 text reader ("Failed to read file:
+		// stream did not contain valid UTF-8").
+		it.each(["png", "jpg", "gif", "webp", "svg"])("open_png_path_renders_image_view (.%s)", (ext) => {
+			sendOpen(`${REPO}/evidence/header-dark.${ext}`);
+			const tabs = Object.values(mdTabsStore.state.tabs);
+			expect(tabs).toHaveLength(1);
+			expect(tabs[0]).toMatchObject({
+				type: "html-preview",
+				repoPath: REPO,
+				filePath: `evidence/header-dark.${ext}`,
+			});
+		});
+
+		// Catches: the image branch swallowing documents that the markdown reader owns.
+		it("keeps a markdown file in the markdown reader", () => {
+			sendOpen(`${REPO}/docs/readme.md`);
+			expect(Object.values(mdTabsStore.state.tabs)).toEqual([
+				expect.objectContaining({ type: "file", filePath: "docs/readme.md" }),
+			]);
+		});
+	});
+
+	describe("tuic:open and tuic:edit of an absolute path outside every repo (#2666-17b6)", () => {
+		const PANEL_REPO = "/Users/boss/Gits/panel-repo";
+		const FOCUSED = "/Users/boss/Gits/focused-repo";
+		const OUTSIDE = "/Users/boss/Reference";
+
+		function send(data: Record<string, unknown>) {
+			const { container } = render(() => <PluginPanel tab={makeTab({ repoPath: PANEL_REPO })} />);
+			const iframe = container.querySelector("iframe") as HTMLIFrameElement;
+			const [, handler] = addEventListenerSpy.mock.calls.find(([event]: [string]) => event === "message")!;
+			const msg = new MessageEvent("message", { data });
+			Object.defineProperty(msg, "source", { get: () => iframe.contentWindow });
+			(handler as EventListener)(msg);
+		}
+
+		beforeEach(() => {
+			mdTabsStore.clearAll();
+			editorTabsStore.clearAll();
+			repositoriesStore.add({ path: PANEL_REPO, displayName: "panel" });
+			repositoriesStore.add({ path: FOCUSED, displayName: "focused" });
+			repositoriesStore.setActive(FOCUSED);
+		});
+
+		afterEach(() => {
+			mdTabsStore.clearAll();
+			editorTabsStore.clearAll();
+			repositoriesStore.remove(PANEL_REPO);
+			repositoriesStore.remove(FOCUSED);
+			repositoriesStore._testCancelPendingSave();
+		});
+
+		// Catches: owner report cannot open an accessible external reference file.
+		it("plugin_panel_absolute_external_file_opens_and_edits: open", () => {
+			send({ type: "tuic:open", path: `${OUTSIDE}/notes.md` });
+			expect(Object.values(mdTabsStore.state.tabs)).toEqual([
+				expect.objectContaining({ type: "file", repoPath: PANEL_REPO, filePath: `${OUTSIDE}/notes.md` }),
+			]);
+		});
+
+		it("plugin_panel_absolute_external_file_opens_and_edits: open of an image goes to the preview tab", () => {
+			send({ type: "tuic:open", path: `${OUTSIDE}/shot.png` });
+			expect(Object.values(mdTabsStore.state.tabs)).toEqual([
+				expect.objectContaining({ type: "html-preview", repoPath: PANEL_REPO, filePath: `${OUTSIDE}/shot.png` }),
+			]);
+		});
+
+		it("plugin_panel_absolute_external_file_opens_and_edits: edit opens an editable external editor tab", () => {
+			send({ type: "tuic:edit", path: `${OUTSIDE}/notes.txt`, line: 7 });
+			expect(Object.values(editorTabsStore.state.tabs)).toEqual([
+				expect.objectContaining({
+					repoPath: PANEL_REPO,
+					filePath: `${OUTSIDE}/notes.txt`,
+					initialLine: 7,
+					externalEditable: true,
+				}),
+			]);
+		});
+
+		// Catches: panel-relative link resolved into the focused foreign repo.
+		it("panel_relative_link_cannot_follow_foreign_focused_repo: relative open stays in the panel repo", () => {
+			send({ type: "tuic:open", path: "docs/a.md" });
+			expect(Object.values(mdTabsStore.state.tabs)).toEqual([
+				expect.objectContaining({ repoPath: PANEL_REPO, filePath: "docs/a.md" }),
+			]);
+		});
+
+		it("a relative path that escapes the panel repo still opens nothing", () => {
+			send({ type: "tuic:open", path: "../../secret.md" });
+			expect(Object.values(mdTabsStore.state.tabs)).toHaveLength(0);
+		});
+
+		// Catches: tuic.getFile gaining external reads through the shared resolver (2644/2650 own that).
+		it("get-file does not read an external path through fs_read_file", () => {
+			vi.mocked(invoke).mockClear();
+			send({ type: "tuic:get-file", path: `${OUTSIDE}/notes.md`, requestId: 1 });
+			expect(invoke).not.toHaveBeenCalled();
+		});
 	});
 
 	it("removes message listener on unmount", () => {

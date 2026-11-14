@@ -18,7 +18,7 @@ The file browser opens in tree view by default. Use the toolbar buttons to switc
 - **`..` row** — Click to go up one level (appears when inside a subdirectory)
 - **Breadcrumb bar** — Click any path segment to jump directly to that directory; click the root `/` to return to the repo root
 
-Symbolic links show a link icon, target path and target kind (directory, file, or unavailable). The link text length is not shown as a file size. Opening a link outside the repository shows a target-specific refusal; it does not grant access to that target. Links inside the repository keep their existing open behavior.
+Symbolic links show a link icon, target path and target kind (directory, file, or unavailable). The link text length is not shown as a file size. Links are followed wherever they point, also to another volume: you can open, edit, create and delete files through a linked directory or file. Typed and requested paths stay relative to the repository: absolute paths, drive or network paths and a `..` that climbs above the repository root are refused. The `.tuic-start-work.md` Tasks template is the exception: its text goes to an agent without a click, so a link out of the repository is refused.
 
 Delete removes the selected symbolic link, including an unavailable link, without deleting its target or target contents. A failed deletion shows the backend error in a persistent error notification.
 
@@ -146,7 +146,7 @@ When the editor has no unsaved changes, files reload silently when they change o
 
 `.md` and `.mdx` files open in the Markdown viewer panel instead of the code editor. The viewer renders Markdown with syntax-highlighted code blocks.
 
-Links in rendered Markdown stay inside TUICommander: file links open a Markdown or media preview when supported, otherwise the code editor; directory links open the File Browser. `#heading` scrolls within a document, and `file.rs:42` or `file.rs#L42` opens the editor at that line. Relative paths resolve from the Markdown file, including percent-encoded spaces and local symlinks; direct UNC/network hrefs are refused. Missing files show a toast. Web and email links open with the system handler; other URL schemes are blocked.
+Links in rendered Markdown stay inside TUICommander: file links open a Markdown or media preview when supported, otherwise the code editor; directory links open the File Browser. `#heading` scrolls within a document, and `file.rs:42` or `file.rs#L42` opens the editor at that line. Relative paths resolve from the Markdown file, including percent-encoded spaces and local symlinks; a direct UNC/network href (`\\server\share\doc.md`, `//server/share/doc.md`) and a custom-scheme link (`editor://…`, `smb://…`) open with the system handler only after you click it and confirm the exact target in a dialog. TUICommander never probes the network host before that. Missing files show a toast. Web and email links open with the system handler; `javascript:`, `data:` and similar WebView schemes stay blocked.
 
 See [ai-agents.md](ai-agents.md) for how AI-generated plan files are detected and surfaced as a one-click shortcut to open in the viewer.
 

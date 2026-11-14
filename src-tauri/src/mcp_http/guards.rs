@@ -29,11 +29,54 @@ pub(super) struct Authenticated;
 #[derive(Clone, Copy)]
 pub(super) struct UserAuthenticated;
 
+/// Server-issued authority of one request that manages sessions, agents,
+/// launches and mail.
+///
+/// Boss decision L03 (2026-11-01): an authenticated caller equals a loopback
+/// caller. Loopback covers the local IPC transport, which presents itself as
+/// 127.0.0.1. `verified` comes only from the [`UserAuthenticated`] marker, so a
+/// transport admission without checked credentials is never owner evidence.
+/// Ownership of tasks, launches and mail stays with the caller identity.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CallerAuthority {
+    addr: SocketAddr,
+    verified: bool,
+}
+
+impl CallerAuthority {
+    /// Authority of a request; `user` is its `UserAuthenticated` marker, if any.
+    pub(super) fn from_request(addr: SocketAddr, user: Option<UserAuthenticated>) -> Self {
+        Self {
+            addr,
+            verified: user.is_some(),
+        }
+    }
+
+    pub(crate) fn addr(self) -> SocketAddr {
+        self.addr
+    }
+
+    /// True for loopback callers and for callers with verified credentials.
+    pub(crate) fn is_owner(self) -> bool {
+        self.verified || self.addr.ip().is_loopback()
+    }
+}
+
+/// A bare address carries no verified credentials: only loopback is owner.
+impl From<SocketAddr> for CallerAuthority {
+    fn from(addr: SocketAddr) -> Self {
+        Self {
+            addr,
+            verified: false,
+        }
+    }
+}
+
 /// Reject requests that did not originate on the loopback interface.
 ///
-/// Used by strict RCE/diagnostics surfaces (e.g. `/debug/invoke_js`) that must
-/// stay loopback-only even for authenticated remote callers. Returns `Err` with
-/// a ready-to-serialize 403 response tuple.
+/// Used by desktop-producer surfaces (e.g. desktop open-tab publication) that
+/// must stay loopback-only even for authenticated remote callers. Returns `Err`
+/// with a ready-to-serialize 403 response tuple.
 pub(super) fn localhost_only(
     addr: &SocketAddr,
 ) -> Result<(), (StatusCode, Json<serde_json::Value>)> {

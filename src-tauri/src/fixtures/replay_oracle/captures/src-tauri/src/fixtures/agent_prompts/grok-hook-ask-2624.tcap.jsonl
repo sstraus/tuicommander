@@ -1,0 +1,185 @@
+{"fixture":"src-tauri/src/fixtures/agent_prompts/grok-hook-ask-2624.tcap","agent":"grok","geometry":[35,120]}
+{"record":0,"state":{"shell":0,"agent":"starting","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":1,"state":{"shell":0,"agent":"starting","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":2,"state":{"shell":0,"agent":"starting","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":3,"state":{"shell":0,"agent":"starting","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":4,"state":{"shell":0,"agent":"starting","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":6,"state":{"shell":0,"agent":"starting","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":8,"state":{"shell":0,"agent":"starting","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":9,"state":{"shell":0,"agent":"starting","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":10,"state":{"shell":0,"agent":"starting","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":11,"state":{"shell":0,"agent":"starting","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":12,"state":{"shell":0,"agent":"starting","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":13,"state":{"shell":0,"agent":"starting","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":14,"state":{"shell":0,"agent":"starting","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":15,"state":{"shell":0,"agent":"starting","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":16,"state":{"shell":0,"agent":"starting","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":17,"event":{"type":"shell-state","state":"busy","agent_type":"grok"}}
+{"record":17,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":18,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":19,"event":{"type":"status-line","task_name":"Starting session","full_line":"⠋ Starting session… 0.0s","time_info":null,"token_info":null,"_turn_epoch":0}}
+{"record":19,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":20,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":21,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":22,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":23,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":24,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":25,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":26,"event":{"type":"status-line","task_name":"Waiting for response","full_line":"⠙ Waiting for response… 0.0s                                                                           0.0s [stop]","time_info":null,"token_info":null,"_turn_epoch":0}}
+{"record":26,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":27,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":28,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":29,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":30,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":31,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":32,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":33,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":34,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":35,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":36,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":37,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":38,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":39,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":40,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":41,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":42,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":43,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":44,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":45,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":46,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":47,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":48,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":49,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":50,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":51,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":52,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":53,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":54,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":55,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":56,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":57,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":58,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":59,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":60,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":61,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":62,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":63,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":64,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":65,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":66,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":67,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":68,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":69,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":70,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":71,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":72,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":73,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":74,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":75,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":76,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":77,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":78,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":79,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":80,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":81,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":82,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":83,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":84,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":85,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":86,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":87,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":88,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":89,"event":{"type":"status-line","task_name":"Preparing question","full_line":"⠋ Preparing question… 0.0s                                                                      6.9s ⇣1.31k [stop]","time_info":null,"token_info":null,"_turn_epoch":0}}
+{"record":89,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":90,"event":{"type":"status-line","task_name":"Running ask_user_question 0","full_line":"⠋ Running ask_user_question 0.0s                                                                6.9s ⇣20.7k [stop]","time_info":null,"token_info":null,"_turn_epoch":0}}
+{"record":90,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":91,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":92,"event":{"type":"status-line","task_name":"Waiting on answers for Which colour do you prefer?                                            6","full_line":"⠋ Waiting on answers for Which colour do you prefer?                                            6.9s ⇣20.7k [stop]","time_info":null,"token_info":null,"_turn_epoch":0}}
+{"record":92,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":93,"event":{"type":"status-line","task_name":"Waiting on answers for Which colour do you prefer?                                            7","full_line":"⠋ Waiting on answers for Which colour do you prefer?                                            7.0s ⇣20.7k [stop]","time_info":null,"token_info":null,"_turn_epoch":0}}
+{"record":93,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":94,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":95,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":96,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":97,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":98,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":99,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":true}}
+{"record":100,"event":{"type":"choice-prompt","title":"Which colour do you prefer?","options":[{"key":"1","label":"Red (Recommended)","highlighted":true,"destructive":false,"hint":"Red                                                                                    █"},{"key":"2","label":"Green","highlighted":false,"destructive":false,"hint":"Green                                                                                  █"},{"key":"3","label":"Blue","highlighted":false,"destructive":false,"hint":"Blue                                                                                   █"},{"key":"z","label":"Type your answer here","highlighted":false,"destructive":false}],"_turn_epoch":0}}
+{"record":100,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":101,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":102,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":103,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":104,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":105,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":106,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":107,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":108,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":109,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":110,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":111,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":112,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":113,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":114,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":115,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":116,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":117,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":118,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":119,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":120,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":121,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":122,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":123,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":124,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":125,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":null,"choice_sig":"Which colour do you prefer?|1,2,3,z","fullscreen":true}}
+{"record":127,"event":{"type":"choice-cleared","_turn_epoch":0}}
+{"record":127,"event":{"type":"question","prompt_text":"Which colour do you prefer?","confident":true,"_turn_epoch":0}}
+{"record":127,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":128,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":129,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":130,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":131,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":132,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":133,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":134,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":135,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":136,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":137,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":138,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":139,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":140,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":141,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":142,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":143,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":144,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":145,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":146,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":147,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":148,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":149,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":150,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":151,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":152,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":153,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":154,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":155,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":156,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":157,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":158,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":159,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":160,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":161,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":162,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":163,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":164,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":165,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":166,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":167,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":168,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":169,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":170,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":171,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":172,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":173,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":174,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"record":175,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Which colour do you prefer?","confident":true,"last_question":"Which colour do you prefer?","choice_sig":null,"fullscreen":true}}
+{"ring_len":33866}

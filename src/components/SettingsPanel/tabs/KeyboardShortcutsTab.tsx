@@ -570,6 +570,17 @@ export const KeyboardShortcutsTab: Component = () => {
 				breadcrumb="Workspace / Keyboard Shortcuts"
 			/>
 
+			<SectionCard title="Prompt composers">
+				<p>
+					Enter or Ctrl+Enter sends. Shift+Enter adds a newline. Cmd+S or Ctrl+S parks, restores or swaps the draft
+					without sending.
+				</p>
+				<p>
+					These keys apply in Compose, AI Chat and the mobile terminal composer. Terminal keys and ordinary text fields
+					keep their own behavior.
+				</p>
+			</SectionCard>
+
 			<Show when={isTauri()}>
 				<SectionCard title="Global Hotkey">
 					<SettingRow

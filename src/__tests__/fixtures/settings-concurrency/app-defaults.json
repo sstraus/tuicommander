@@ -43,7 +43,8 @@
     "push": {
       "enabled": false,
       "vapid_public_key": "",
-      "vapid_subject": "mailto:noreply@tuicommander.com"
+      "vapid_subject": "mailto:noreply@tuicommander.com",
+      "added_providers": []
     }
   },
   "confirm_before_quit": true,

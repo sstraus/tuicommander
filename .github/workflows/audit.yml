@@ -60,7 +60,7 @@ jobs:
         working-directory: src-tauri
         run: |
           set +e
-          OUTPUT=$(cargo audit 2>&1)
+          OUTPUT=$(cargo audit --color never 2>&1)
           EXIT_CODE=$?
           echo "$OUTPUT"
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"

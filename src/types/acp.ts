@@ -124,8 +124,11 @@ export interface AcpCapabilitySnapshot {
 	/** Present only when ego advertised `_ego/pause` and `_ego/resume` as one pair. */
 	egoHoldVersion: number | null;
 	egoSteerVersion?: number | null;
+	egoChildActivityVersion?: number | null;
 	/** Present only when ego advertised `_ego/compact`. */
 	egoCompactVersion: number | null;
+	/** Present only when ego announces automatic compaction with `_meta.ego.compacted`. */
+	egoCompactedVersion?: number | null;
 }
 
 /** ego's answer to `_ego/compact`: the compacted continuation is a new session. */
@@ -156,12 +159,42 @@ export interface AcpUsageSnapshot {
 }
 
 /** One session this connection is attached to. */
+export type AcpChatActivityState = "idle" | "busy" | "awaiting";
+
+export interface AcpHumanWait {
+	requestId: AcpHostRequestId;
+	kind: "permission" | "question";
+}
+
+export interface AcpActiveTool {
+	toolCallId: string;
+	title: string;
+}
+
+export interface AcpChildActivity {
+	turnId: string;
+	itemId: string;
+	child: unknown;
+}
+
+/** What one chat is doing, as the backend derived it. A higher revision is newer. */
+export interface AcpChatActivity {
+	state: AcpChatActivityState;
+	humanWaits: AcpHumanWait[];
+	tools: AcpActiveTool[];
+	children: AcpChildActivity[];
+	interrupted: boolean;
+	revision: number;
+}
+
 export interface AcpAttachmentSnapshot {
 	sessionId: AcpSessionId;
 	state: AcpAttachmentState;
 	cwd: string;
 	additionalDirectories: string[];
 	configOptions: AcpSessionConfigOption[];
+	/** Ego's reason when its latest config update reported a failed session setup. */
+	configFailure?: string;
 	/** Latest complete ACP command offer, retained across snapshot refreshes. */
 	availableCommands?: AcpAvailableCommand[];
 	/** Authoritative ego clamp notices returned when a repo selects a profile. */
@@ -171,6 +204,8 @@ export interface AcpAttachmentSnapshot {
 	queuedPrompts: AcpQueuedPrompt[];
 	pendingPermissionIds: AcpHostRequestId[];
 	pendingElicitationIds: AcpHostRequestId[];
+	/** Derived in Rust; absent only from a backend that predates it. */
+	activity?: AcpChatActivity;
 }
 
 /**
@@ -327,7 +362,8 @@ export type AcpClientEvent =
 	| { kind: "permissionRequested"; requestId: AcpHostRequestId; request: AcpRequestPermissionRequest }
 	| { kind: "permissionSettled"; requestId: AcpHostRequestId; outcome: AcpRequestPermissionOutcome }
 	| { kind: "elicitationRequested"; requestId: AcpHostRequestId; request: AcpCreateElicitationRequest }
-	| { kind: "elicitationSettled"; requestId: AcpHostRequestId; action: AcpElicitationAction };
+	| { kind: "elicitationSettled"; requestId: AcpHostRequestId; action: AcpElicitationAction }
+	| { kind: "activityChanged"; activity: AcpChatActivity };
 
 /**
  * Ego's own update, forwarded whole.

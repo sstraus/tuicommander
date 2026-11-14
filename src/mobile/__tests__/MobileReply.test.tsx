@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-li
 import { afterEach, describe, expect, it, vi } from "vitest";
 import codexQuestion from "../../../src-tauri/src/fixtures/choice_prompts/codex-request-user-input.json";
 import { HttpRpcError } from "../../transport";
+import { waitForAgentEnterGap } from "../../utils/sendCommand";
 import { CommandInput } from "../components/CommandInput";
 
 const { rpc } = vi.hoisted(() => ({
@@ -243,6 +244,7 @@ describe("mobile managed-agent reply", () => {
 		await fireEvent.input(container.querySelector("textarea")!, { target: { value: "Purple" } });
 		await fireEvent.click(screen.getByRole("button", { name: "Send" }));
 		await waitFor(() => expect(rpc.mock.calls.some(([, args]) => args.data === "\r")).toBe(true));
+		await waitForAgentEnterGap("codex");
 		expect(rpc.mock.calls.some(([command]) => command === "submit_agent_reply")).toBe(false);
 	});
 });

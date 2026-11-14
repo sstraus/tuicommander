@@ -32,8 +32,8 @@ open an OS WebView, or prove the installed app's registration and ACL state.
 Live desktop parity remains a separate check after a Boss-controlled restart.
 
 Tauri `settings_action`, HTTP `POST /settings/action`, and MCP `settings` use the
-same request DTOs and owner services. MCP mutation is loopback-only. HTTP keeps
-its local-or-authenticated caller policy; native IPC keeps host-issued trust.
+same request DTOs and owner services. MCP and HTTP accept local or
+authenticated callers; native IPC keeps host-issued trust.
 Do not treat these different caller policies as interchangeable credentials.
 
 ## GitHub
@@ -73,7 +73,7 @@ is a valid result; a failed owner read is not an empty list.
 
 Read `app.ego_executable`, `app.ego_profile` and `app.ai_chat_workspace` through
 the `app` store before using the Ego owner. The executable change is a trusted
-execution-authority edit and requires the existing human confirmation policy.
+execution-authority edit; an agent-written change that adds authority requires the existing human confirmation policy.
 Do not run a caller-selected candidate to probe it before acceptance.
 
 Describe `ego`; use targeted owner reads/choice refresh for model, roots, network

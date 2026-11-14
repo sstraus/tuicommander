@@ -203,3 +203,36 @@ async fn headless_tcp_router_unknown_automation_endpoint_returns_json_404() {
 async fn local_ipc_router_unknown_automation_endpoint_returns_json_404() {
     unknown_automation_json_404(build_router(state_with_token(), false, true)).await;
 }
+
+// Catches: a field the flat schema allows for another action (`count` on `list`) reaching the
+// typed parser and answering HTTP 500 / a bare string instead of the invalid_arguments contract.
+#[tokio::test]
+async fn schema_valid_field_foreign_to_the_action_is_a_contract_error_on_http_and_mcp() {
+    use crate::mcp_http::mcp_transport::handle_mcp_tool_call;
+    let state = test_state();
+    state.config.write().mcp_capabilities.denied.clear();
+    let input = json!({"action":"list","count":4});
+    let response = build_router(state.clone(), false, true)
+        .oneshot(
+            Request::post("/automations/action")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"input":input}).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let http: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap();
+    assert_eq!(http["code"], "invalid_arguments", "{http}");
+    assert_eq!(http["effect"], "not_started", "{http}");
+    let mcp = handle_mcp_tool_call(
+        &state,
+        "127.0.0.1:1234".parse().unwrap(),
+        "automations",
+        &input,
+        None,
+    )
+    .await;
+    assert_eq!(mcp, http);
+}
