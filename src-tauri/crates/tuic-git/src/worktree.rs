@@ -13907,7 +13907,15 @@ branch refs/heads/feat
         let listed = branch_integrations_with_pr(&repo, |_, _, _| {
             let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
             peak.fetch_max(now, Ordering::SeqCst);
-            std::thread::sleep(Duration::from_millis(100));
+            // Hold this lookup open until a second one overlaps it, instead of a fixed
+            // sleep: under a loaded full-suite run a 100 ms sleep can end before the next
+            // worker thread is even scheduled, and "ran one at a time" then reads as a
+            // sequential listing. The bound only matters when the listing really is
+            // sequential (then every lookup waits it out and the assertion below fails).
+            let deadline = std::time::Instant::now() + Duration::from_secs(3);
+            while peak.load(Ordering::SeqCst) < 2 && std::time::Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(5));
+            }
             in_flight.fetch_sub(1, Ordering::SeqCst);
             false
         })
