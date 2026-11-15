@@ -6,8 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-11-15
+
 ### Fixes
 
+- Windows release builds no longer fail on a compiler command line longer than the Windows limit.
 - Linux releases transcribe dictation on the GPU through Vulkan when a Vulkan driver is present, and on the CPU otherwise. The packages now require or carry the Vulkan loader.
 - Windows releases transcribe dictation on the GPU through Vulkan when a Vulkan driver is present, and on the CPU otherwise. The installer adds the Vulkan loader when Windows has none.
 - Dictation reports the backend it really uses (`cpu` or `gpu`), and CPU-only builds decode on 4 threads instead of 1.

@@ -93,6 +93,19 @@ jobs:
         shell: bash
         run: echo "CARGO_TARGET_DIR=C:/t" >> $GITHUB_ENV
 
+      # whisper-rs-sys adds every directory below its CMake build tree as a rustc
+      # -L path. The Visual Studio generator of CMake 4.5 (3.29 does not) makes
+      # Debug, MinSizeRel, RelWithDebInfo and Release folders for each target,
+      # also in the vulkan-shaders-gen sub-build. With --features vulkan, the rustc command
+      # for tuicommander_lib became 35,835 characters, and sccache 0.19 cannot
+      # spawn more than 32,767 on Windows (os error 206). Only Release is built,
+      # so CMake makes only Release folders: 60 fewer -L paths, 28,772 characters.
+      # CMake reads this variable from the environment, so the sub-build gets it too.
+      - name: Build only the Release CMake configuration (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: echo "CMAKE_CONFIGURATION_TYPES=Release" >> "$GITHUB_ENV"
+
       # The windows-latest image (mid windows-2025/2026 migration) ships VS 18
       # 2026, but the preinstalled CMake is too old to know that generator —
       # whisper-rs-sys's build fails with "CMake Error: generator: Visual

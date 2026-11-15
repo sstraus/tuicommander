@@ -129,7 +129,7 @@ Published story workflows can start in Plans and Stories through the owning daem
 
 Terminal workflow runs remove their own untouched checkouts and branches after verified agent closure. Changed or still-owned work is retained with a run incident and a base-cleanup refusal that names its run. Allocation receipts survive restart; caller-supplied checkouts keep their existing lifecycle. See [Run checkout lifecycle](docs/backend/workflows.md#run-checkout-lifecycle).
 
-**Version:** 2.1.0
+**Version:** 2.1.1
 **Last Updated:** 2026-09-16
 
 ## Shared form controls — Implemented (#1815-01c9)
