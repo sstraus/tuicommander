@@ -434,7 +434,8 @@ fn remember(project: &Path, backend: &Arc<ExternalBackend>, cursor: ChangeCursor
 mod selection_regressions {
     use super::*;
 
-    /// Catches: claiming native was retained for Wiz on an ordinary unmarked project.
+    /// Catches: claiming native was retained for Wiz on an ordinary unmarked project,
+    /// and the header naming internal tooling ("No Wiz project markers") to every user.
     #[test]
     fn plain_open_native_plan_has_no_markers_reason_until_markers_are_detected() {
         let config = tempfile::TempDir::new_in(crate::test_support::test_temp_root()).unwrap();
@@ -451,7 +452,11 @@ mod selection_regressions {
             .unwrap();
         let plain = status(&project);
         assert_eq!(plain.backend, "native");
-        assert_eq!(plain.reason, "No Wiz project markers");
+        assert!(!plain.reason.contains("Wiz"), "{}", plain.reason);
+        assert_eq!(
+            plain.reason,
+            "Plans and stories are stored in TUICommander. Create a plan to begin."
+        );
         std::fs::create_dir(project.join(".wiz")).unwrap();
         let marked = status(&project);
         assert_eq!(marked.backend, "native");

@@ -355,3 +355,199 @@ fn ego_native_compaction_session_start_keeps_background_wake_origin() {
     }
     assert_ne!(origin(&state), launched, "a user stop must revoke");
 }
+
+// --- Turn frames own ego's input readiness (#3064-3141) ---
+//
+// ego 0.4.11 writes its coarse `state=` frame and then the rich frame for the
+// same event (`interactive_driver.rs`, `[coarse, rich]`): `state=busy` before
+// `turn_start`, and before `turn_end` the coarse value of `native_activity`,
+// busy while it owns an unsettled detached exec or subagent. The recorded
+// owned-child capture (`ego-owned-child-2930.tcap`) has exactly this order;
+// a detached exec puts the same bytes on the wire.
+
+#[cfg(unix)]
+const EGO_SESSION: &str = "ego-sess";
+
+/// An ego PTY that has seen `session_start`, with a live (recording) PTY so
+/// the submit gate can be asked as `session action=submit` asks it.
+#[cfg(unix)]
+fn ego_turn_session(sid: &str) -> (AppState, Arc<Mutex<SilenceState>>, ChunkProcessor) {
+    let state = crate::state::tests_support::make_test_app_state();
+    crate::test_support::insert_recording_session(&state, sid);
+    agent_session(&state, sid, SHELL_IDLE);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("ego".to_owned());
+    state
+        .grid
+        .vt_log_buffers
+        .insert(sid.into(), Mutex::new(VtLogBuffer::new(24, 80, 2000)));
+    let silence = state.session_maps.silence_states.get(sid).unwrap().clone();
+    let mut processor = ChunkProcessor::new(None, None);
+    feed_ego(
+        &mut processor,
+        &state,
+        &silence,
+        sid,
+        &[(None, "session_start", None)],
+    );
+    (state, silence, processor)
+}
+
+/// One read per step: an optional coarse state, then an optional rich frame.
+#[cfg(unix)]
+fn feed_ego(
+    processor: &mut ChunkProcessor,
+    state: &AppState,
+    silence: &Arc<Mutex<SilenceState>>,
+    sid: &str,
+    steps: &[(Option<&str>, &str, Option<&str>)],
+) {
+    for (coarse, event, turn) in steps {
+        let mut read = coarse
+            .map(|value| format!("\x1b]7770;state={value}\x07"))
+            .unwrap_or_default();
+        if !event.is_empty() {
+            let data = if *event == "turn_end" {
+                serde_json::json!({"outcome": "completed", "reason": "Completed"})
+            } else {
+                serde_json::json!({})
+            };
+            let payload = ego_frame(EGO_SESSION, *turn, event, None, data);
+            read.push_str(&format!("\x1b]7770;agent-event={payload}\x07"));
+        }
+        processor.process_chunk(&read, silence, sid, state);
+    }
+}
+
+#[cfg(unix)]
+fn ego_readiness(state: &AppState, sid: &str) -> (String, String, bool) {
+    let snapshot = state.session_state_with_shell(sid).unwrap();
+    (
+        snapshot.shell_state.unwrap_or_default(),
+        snapshot.agent_state.unwrap_or_default(),
+        agent_submission_rejection(state, sid, false).is_none() && should_inject_now(state, sid),
+    )
+}
+
+/// Catches: a turn that ends while ego still owns a detached exec held busy,
+/// so `session submit` answers agent_not_ready and queued mail never drains
+/// (t-1065, 2026-11-14); a coarse busy outside a turn (composer re-entry)
+/// closing the composer again; the exec's settlement turn not returning idle.
+#[cfg(unix)]
+#[test]
+fn ego_turn_end_with_owned_exec_accepts_input_and_shows_working() {
+    let sid = "ego-owned-exec";
+    let (state, silence, mut processor) = ego_turn_session(sid);
+    let mut feed = |steps: &[(Option<&str>, &str, Option<&str>)]| {
+        feed_ego(&mut processor, &state, &silence, sid, steps)
+    };
+    feed(&[(Some("busy"), "turn_start", Some("t1"))]);
+    assert_eq!(
+        ego_readiness(&state, sid),
+        ("busy".into(), "working".into(), false),
+        "an open turn owns the composer"
+    );
+    feed(&[(Some("busy"), "turn_end", Some("t1"))]);
+    assert_eq!(
+        ego_readiness(&state, sid),
+        ("idle".into(), "working".into(), true),
+        "turn ended with an owned exec: working, but input is accepted"
+    );
+    assert!(state.session_state_with_shell(sid).unwrap().background_work);
+    feed(&[(Some("busy"), "", None)]);
+    assert_eq!(
+        ego_readiness(&state, sid),
+        ("idle".into(), "working".into(), true),
+        "composer re-entry repeats owned busy without a turn"
+    );
+    // The exec settles; its collection runs as an automatic turn.
+    feed(&[(Some("busy"), "turn_start", Some("t2"))]);
+    assert_eq!(
+        ego_readiness(&state, sid),
+        ("busy".into(), "working".into(), false)
+    );
+    feed(&[(Some("idle"), "turn_end", Some("t2"))]);
+    let (shell, agent, ready) = ego_readiness(&state, sid);
+    assert_eq!((shell.as_str(), ready), ("idle", true));
+    assert!(matches!(agent.as_str(), "idle" | "completed"), "{agent}");
+}
+
+/// Catches: work that settles after the turn without a new turn (ego repaints
+/// its composer with coarse idle) left showing working forever.
+#[cfg(unix)]
+#[test]
+fn ego_owned_work_settled_after_the_turn_returns_to_idle() {
+    let sid = "ego-owned-settles";
+    let (state, silence, mut processor) = ego_turn_session(sid);
+    feed_ego(
+        &mut processor,
+        &state,
+        &silence,
+        sid,
+        &[
+            (Some("busy"), "turn_start", Some("t1")),
+            (Some("busy"), "turn_end", Some("t1")),
+        ],
+    );
+    assert_eq!(ego_readiness(&state, sid).1, "working");
+    feed_ego(
+        &mut processor,
+        &state,
+        &silence,
+        sid,
+        &[(Some("idle"), "", None)],
+    );
+    let (shell, agent, ready) = ego_readiness(&state, sid);
+    assert_eq!((shell.as_str(), ready), ("idle", true));
+    assert!(matches!(agent.as_str(), "idle" | "completed"), "{agent}");
+}
+
+/// Catches: a turn that owned nothing shown as working after its `turn_end`,
+/// or that `turn_end` (after ego's coarse idle) closing the composer again.
+#[cfg(unix)]
+#[test]
+fn ego_turn_end_with_nothing_owned_is_idle_and_accepts_input() {
+    let sid = "ego-nothing-owned";
+    let (state, silence, mut processor) = ego_turn_session(sid);
+    feed_ego(
+        &mut processor,
+        &state,
+        &silence,
+        sid,
+        &[
+            (Some("busy"), "turn_start", Some("t1")),
+            (Some("idle"), "turn_end", Some("t1")),
+        ],
+    );
+    let (shell, agent, ready) = ego_readiness(&state, sid);
+    assert_eq!((shell.as_str(), ready), ("idle", true));
+    assert!(matches!(agent.as_str(), "idle" | "completed"), "{agent}");
+    assert!(!state.session_state_with_shell(sid).unwrap().background_work);
+}
+
+/// Catches: a compaction `session_start` inside an open turn read as the end
+/// of that turn, which would open the composer to mail mid-turn.
+#[cfg(unix)]
+#[test]
+fn ego_compaction_inside_a_turn_with_owned_work_stays_busy() {
+    let sid = "ego-compaction-owned";
+    let (state, silence, mut processor) = ego_turn_session(sid);
+    feed_ego(
+        &mut processor,
+        &state,
+        &silence,
+        sid,
+        &[
+            (Some("busy"), "turn_start", Some("t1")),
+            (None, "session_start", None),
+        ],
+    );
+    assert_eq!(
+        ego_readiness(&state, sid),
+        ("busy".into(), "working".into(), false)
+    );
+}

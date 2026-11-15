@@ -93,6 +93,7 @@ without clearing your draft. When Find is open, Escape closes Find first.
 | `Cmd+V` | Paste to terminal |
 | `Cmd+Home` | Scroll to top |
 | `Cmd+End` | Scroll to bottom |
+| `Down` (while scrolled back) | Scroll to bottom; the key is not sent to the terminal |
 | `Shift+PageUp` | Scroll page up |
 | `Shift+PageDown` | Scroll page down |
 | `Cmd+Shift+.` | Toggle block folding |

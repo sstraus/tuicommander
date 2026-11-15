@@ -6,11 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-11-15
+
 ### Fixes
 
+- Windows release builds no longer fail on a compiler command line longer than the Windows limit.
 - Linux releases transcribe dictation on the GPU through Vulkan when a Vulkan driver is present, and on the CPU otherwise. The packages now require or carry the Vulkan loader.
 - Windows releases transcribe dictation on the GPU through Vulkan when a Vulkan driver is present, and on the CPU otherwise. The installer adds the Vulkan loader when Windows has none.
 - Dictation reports the backend it really uses (`cpu` or `gpu`), and CPU-only builds decode on 4 threads instead of 1.
+- The status bar agent badge shows subscription usage again on Claude, Codex and ego tabs. An ego tab shows the usage of the subscription it is bound to. The badge shows the weekly percent, what is left before the monthly limit and the time to each reset (`7d: 78% -4d · mo: 99% left`), no longer repaints on unchanged refreshes, and no longer shows tool names (#3068-c03b).
 ### Fixed
 
 - Refresh remote repository worktrees after creation or removal on the owning daemon, and restore watchers after reconnection (#150).

@@ -154,6 +154,40 @@ it("rereads durable metadata when subscription configuration fails after a commi
 	expect(calls.some((action) => action.action === "enable_trigger_binding")).toBe(false);
 });
 
+// Catches: an enabled binding the backend holds without intake renders with no reason,
+// or a reason shown for a binding that has none.
+it("shows the refusal reason next to a held binding and nothing for a binding without one", async () => {
+	const draft = (id: string): TriggerBindingDraft => ({
+		id,
+		publication: { project: "/repo", id: "issue-workflow", revision: 3 },
+		source: "github",
+		kind: "issue",
+		resource_prefix: "github:octo-org/example/issue/",
+		events: ["opened"],
+		filters: {},
+		ignored_actors: [],
+		mapping: { inputs: {}, subject: {} },
+		limits: { max_activations: 1, max_concurrency: 1, max_duration_ms: 1000 },
+	});
+	saved = [
+		{
+			draft: draft("held"),
+			revision: 2,
+			enabled: true,
+			refusal_reason: "github repository octo-org/example is not registered",
+		},
+		{ draft: draft("live"), revision: 1, enabled: true },
+	];
+	render(() => <TriggerBindings project="/repo" publications={[publication]} />);
+	const held = await screen.findByRole("button", { name: "Load held · revision 2 · enabled" });
+	const reason = screen.getByText("No intake: github repository octo-org/example is not registered");
+	expect(reason).toBeVisible();
+	expect(held.parentElement).toContainElement(reason);
+	const live = screen.getByRole("button", { name: "Load live · revision 1 · enabled" });
+	expect(live.parentElement).not.toHaveTextContent("No intake");
+	expect(screen.getAllByText(/No intake:/)).toHaveLength(1);
+});
+
 // A slow preview must not restore acknowledgement after repository metadata changed.
 it("discards a preview response invalidated by a newer binding refresh", async () => {
 	await editBinding();

@@ -61,3 +61,20 @@ it("quota_push_wins_over_an_in_flight_refresh", async () => {
 	expect(providerQuotaStore.view("refresh")).toEqual(pushed);
 	providerQuotaStore.stop();
 });
+
+// Catches: a refresh response for another subscription being stored under the
+// requested account's key, even when both accounts use the same provider.
+it.each([
+	{ owner: "ego", provider: "openai-codex", credential: "/other" },
+	{ owner: "claude-code", provider: "anthropic", credential: "/other" },
+])("refresh_does_not_alias_a_different_subscription_$owner_$provider", async (otherKey) => {
+	const { providerQuotaStore } = await import("../../stores/providerQuota");
+	const key = { owner: "claude-code", provider: "anthropic", credential: "/requested" };
+	const initial = { key, session_ids: ["requested"], snapshot: null, state: "unavailable" };
+	invoke.mockResolvedValueOnce([initial]);
+	await providerQuotaStore.start();
+	invoke.mockResolvedValueOnce({ ...initial, key: otherKey, state: "fresh" });
+	await providerQuotaStore.refresh("requested");
+	expect(providerQuotaStore.view("requested")).toEqual(initial);
+	providerQuotaStore.stop();
+});

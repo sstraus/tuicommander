@@ -33,6 +33,7 @@
 pub(crate) mod adapters;
 mod binding;
 mod ego;
+mod grok;
 pub(crate) use ego::observe_usage_report as observe_ego_usage_report;
 pub(crate) mod pi;
 pub(crate) mod policy;
@@ -192,13 +193,17 @@ pub(crate) enum QuotaDetail {
         observed_at_ms: u64,
         response: crate::codex_usage::CodexUsageApiResponse,
     },
+    Grok {
+        observed_at_ms: u64,
+        response: crate::grok_usage::GrokUsageApiResponse,
+    },
 }
 impl QuotaDetail {
     pub(crate) fn observed_at_ms(&self) -> u64 {
         match self {
-            Self::Claude { observed_at_ms, .. } | Self::Codex { observed_at_ms, .. } => {
-                *observed_at_ms
-            }
+            Self::Claude { observed_at_ms, .. }
+            | Self::Codex { observed_at_ms, .. }
+            | Self::Grok { observed_at_ms, .. } => *observed_at_ms,
         }
     }
 }

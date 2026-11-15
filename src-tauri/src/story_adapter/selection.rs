@@ -45,7 +45,8 @@ impl BackendStatus {
             reason: if explicit {
                 "Native override"
             } else {
-                "No Wiz project markers"
+                // Shown to every user in the panel header: product terms only.
+                "Plans and stories are stored in TUICommander. Create a plan to begin."
             }
             .into(),
             availability: "available".into(),

@@ -146,7 +146,7 @@ export interface AppInitDeps {
 	};
 	setStatusInfo: (msg: string) => void;
 	handleBranchSelect: (repoPath: string, branchName: string) => Promise<void>;
-	refreshAllBranchStats: (scopeRepoPath?: string) => Promise<void> | void;
+	refreshAllBranchStats: (scopeRepoPath?: string, options?: { immediate?: boolean }) => Promise<void> | void;
 	getDefaultFontSize: () => number;
 	stores: {
 		hydrate: () => Promise<void>;

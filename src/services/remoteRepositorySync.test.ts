@@ -28,7 +28,7 @@ describe("remote repository synchronization", () => {
 	let start: typeof import("./remoteRepositorySync").startRemoteRepositorySync;
 	let rpc: typeof import("../transport").rpc;
 	let stop: () => void;
-	let refresh: Mock<(path: string) => Promise<void>>;
+	let refresh: Mock<(path: string, options: { immediate: boolean }) => Promise<void>>;
 	let fetch: ReturnType<typeof vi.fn>;
 
 	const settle = async () => {
@@ -76,7 +76,7 @@ describe("remote repository synchronization", () => {
 		await settle();
 		await vi.advanceTimersByTimeAsync(500);
 		await settle();
-		expect(refresh).toHaveBeenCalledExactlyOnceWith(REMOTE);
+		expect(refresh).toHaveBeenCalledExactlyOnceWith(REMOTE, { immediate: true });
 		fetch.mockClear();
 		invoke.mockClear();
 		refresh.mockClear();
@@ -101,7 +101,7 @@ describe("remote repository synchronization", () => {
 		change();
 		change();
 		await vi.advanceTimersByTimeAsync(500);
-		expect(refresh).toHaveBeenCalledExactlyOnceWith(REMOTE);
+		expect(refresh).toHaveBeenCalledExactlyOnceWith(REMOTE, { immediate: true });
 		expect(urls()).toHaveLength(1);
 		expect(urls()[0]).toBe(`${BASE}/repo/structure?path=${encodeURIComponent(REMOTE)}&token=test-token`);
 		expect(invoke).not.toHaveBeenCalledWith("get_repo_structure", expect.anything());
@@ -161,6 +161,66 @@ describe("remote repository synchronization", () => {
 		);
 	});
 
+	// Catches: a worktree created on the host while an earlier refresh ran less
+	// than 5 s ago waits out the coordinator's automatic spacing instead of
+	// appearing within about 1 s (#150 criterion 1).
+	it("shows a remote worktree created shortly after a previous refresh within about 1 s", async () => {
+		stop();
+		let featureExists = false;
+		fetch.mockImplementation(async (input: string) => {
+			const endpoint = new URL(input).pathname;
+			const response =
+				endpoint === "/repo/structure"
+					? {
+							worktree_paths: {
+								main: { branch: "main", path: REMOTE, kind: "worktree" },
+								...(featureExists
+									? { feature: { branch: "feature", path: `${REMOTE}/feature`, kind: "worktree" } }
+									: {}),
+							},
+							merged_branches: [],
+						}
+					: endpoint === "/repo/diff-stats/batch"
+						? { diff_stats: {}, last_commit_ts: {}, workspace_statuses: {} }
+						: [];
+			return new Response(JSON.stringify(response), { headers: { "content-type": "application/json" } });
+		});
+		const { useRepository } = await import("../hooks/useRepository");
+		const { createRepositoryRefreshCoordinator } = await import("../hooks/git/createRepositoryRefreshCoordinator");
+		const coordinator = createRepositoryRefreshCoordinator({
+			repo: useRepository(),
+			dialogs: {},
+			closeTerminal: vi.fn(),
+			closeTerminalsInWorktree: vi.fn(),
+			setStatusInfo: vi.fn(),
+		});
+		stop = start(coordinator.refreshAllBranchStats);
+		await settle();
+		await vi.advanceTimersByTimeAsync(500);
+		expect(Object.keys(repositories.get(REMOTE)?.workspaces ?? {})).toEqual(["main"]);
+		// The connect catch-up just refreshed; any earlier hint (an agent editing
+		// files on the host) leaves the same recent start behind.
+		await vi.advanceTimersByTimeAsync(1_000);
+		featureExists = true;
+		change(REMOTE, "host", "git-state");
+		await vi.advanceTimersByTimeAsync(1_500);
+		expect(repositories.get(REMOTE)?.workspaces.feature?.worktreePath).toBe(`${REMOTE}/feature`);
+	});
+
+	// Catches: every remote hint bypasses the coordinator's 5 s spacing, so an
+	// agent that edits files on the host keeps the remote daemon refreshing
+	// back to back; or a working-tree hint merged into a git-state one loses it.
+	it("skips the refresh spacing only for git-state hints", async () => {
+		change(REMOTE, "host", "working-tree");
+		await vi.advanceTimersByTimeAsync(500);
+		expect(refresh).toHaveBeenLastCalledWith(REMOTE, { immediate: false });
+		change(REMOTE, "host", "working-tree");
+		change(REMOTE, "host", "git-state");
+		await vi.advanceTimersByTimeAsync(500);
+		expect(refresh).toHaveBeenLastCalledWith(REMOTE, { immediate: true });
+		expect(refresh).toHaveBeenCalledTimes(2);
+	});
+
 	it.each([LOCAL, OTHER, "/work/unregistered"])("rejects a hint about %s from the wrong owner", async (path) => {
 		change(path);
 		await vi.advanceTimersByTimeAsync(500);
@@ -209,7 +269,7 @@ describe("remote repository synchronization", () => {
 		await settle();
 		await vi.advanceTimersByTimeAsync(500);
 		expect(urls().some((url) => url.startsWith(`${BASE}/watchers/repo?`))).toBe(true);
-		expect(refresh).toHaveBeenCalledExactlyOnceWith(REMOTE);
+		expect(refresh).toHaveBeenCalledExactlyOnceWith(REMOTE, { immediate: true });
 	});
 
 	it("registers the watcher on a replacement daemon that connects while an earlier registration is in flight", async () => {

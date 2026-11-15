@@ -1,9 +1,11 @@
 //! The open native modal of an ego terminal, from its `agent-event` frames.
 //!
 //! ego 0.4.3 (story 771-b309) writes `OSC 7770;agent-event=<base64 JSON>`. Its
-//! coarse `state=` frames stay the authority for busy, idle and awaiting; this
-//! owner only remembers which native modal is open, so its question payload
-//! can name the wait that coarse state already holds. It never changes state.
+//! coarse `state=` frames stay the authority for awaiting; this owner
+//! remembers which native modal is open, so its question payload can name the
+//! wait that coarse state already holds. `receive` reports the turn boundary a
+//! frame crosses: the PTY consumer makes the turn own busy and idle, because
+//! ego's coarse busy also covers work it still owns after the turn (#3064-3141).
 //!
 //! Open: `modal_open` of the current native session. Settle: `modal_end` of
 //! the same id, `turn_end` of its turn, `session_start` / `session_end`. A
@@ -47,6 +49,15 @@ struct Modal {
     card: Option<crate::agent_hook_payload::QuestionCard>,
 }
 
+/// A turn boundary of the current native session: `turn_start` with no turn
+/// open, or `turn_end` of the open turn. A new `session_start` (compaction)
+/// is not one: the turn it interrupts continues in the new epoch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TurnEdge {
+    Started,
+    Ended,
+}
+
 #[derive(Default)]
 pub(super) struct EgoEvents {
     session: Option<String>,
@@ -72,6 +83,11 @@ fn child_label(data: &serde_json::Value) -> String {
 }
 
 impl EgoEvents {
+    /// A native session is open: its turn frames carry ego's turn lifetime.
+    pub(super) fn session_active(&self) -> bool {
+        self.session.is_some()
+    }
+
     pub(super) fn stop_generation(&self) -> u64 {
         self.stop_generation
     }
@@ -137,35 +153,37 @@ impl EgoEvents {
     }
 
     /// Apply one frame payload. Unknown versions and events change nothing.
-    pub(super) fn receive(&mut self, payload: &str) {
+    /// Returns the turn boundary the frame crossed, if any.
+    pub(super) fn receive(&mut self, payload: &str) -> Option<TurnEdge> {
         if payload.len() > MAX_FRAME_BYTES * 2 {
-            return;
+            return None;
         }
-        let Some(frame) = base64::engine::general_purpose::STANDARD
+        let frame = base64::engine::general_purpose::STANDARD
             .decode(payload)
             .ok()
             .filter(|bytes| bytes.len() <= MAX_FRAME_BYTES)
-            .and_then(|bytes| serde_json::from_slice::<Frame>(&bytes).ok())
-        else {
-            return;
-        };
+            .and_then(|bytes| serde_json::from_slice::<Frame>(&bytes).ok())?;
         if frame.version != 1 || frame.agent != "ego" || frame.session.is_empty() {
-            return;
+            return None;
         }
         if frame.event == "session_start" {
             self.settle();
             self.tools.clear();
             self.end_session();
             self.session = Some(frame.session);
-            return;
+            return None;
         }
         if self.session.as_deref() != Some(frame.session.as_str()) {
-            return;
+            return None;
         }
+        let mut edge = None;
         match frame.event.as_str() {
             "turn_start" if frame.turn.is_some() => {
                 self.children.clear();
                 self.outcome = None;
+                if self.turn.is_none() {
+                    edge = Some(TurnEdge::Started);
+                }
                 self.turn = frame.turn;
             }
             "child_start" | "child_activity" | "child_end" => self.child(&frame),
@@ -183,11 +201,9 @@ impl EgoEvents {
                 }
             }
             "modal_open" => {
-                let Some(id) = frame.id.filter(|id| !id.is_empty() && id.len() <= 256) else {
-                    return;
-                };
+                let id = frame.id.filter(|id| !id.is_empty() && id.len() <= 256)?;
                 if self.settled.contains(&id) || self.wait_request() == Some(id.as_str()) {
-                    return;
+                    return None;
                 }
                 self.settle();
                 self.modal = Some(Modal {
@@ -217,6 +233,7 @@ impl EgoEvents {
                     }
                     self.turn = None;
                     self.children.clear();
+                    edge = Some(TurnEdge::Ended);
                 }
                 if self
                     .modal
@@ -234,6 +251,7 @@ impl EgoEvents {
             }
             _ => {}
         }
+        edge
     }
 
     pub(super) fn clear(&mut self) {
@@ -314,13 +332,15 @@ mod tests {
             let mut events = opened();
             match end {
                 "exit" => events.clear(),
-                _ => events.receive(&frame(
-                    "s1",
-                    Some("t1"),
-                    end,
-                    None,
-                    json!({"outcome": "interrupted"}),
-                )),
+                _ => {
+                    events.receive(&frame(
+                        "s1",
+                        Some("t1"),
+                        end,
+                        None,
+                        json!({"outcome": "interrupted"}),
+                    ));
+                }
             }
             assert_eq!(events.wait_request(), None, "{end}");
             events.receive(&frame("s1", None, "session_start", None, json!({})));

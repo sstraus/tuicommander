@@ -10,7 +10,7 @@ import {
 	watch,
 	writeFileSync,
 } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { join, relative } from "node:path";
 import { fireEvent, render, waitFor, within } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -198,9 +198,11 @@ describe("FileBrowserPanel external filesystem refresh", () => {
 				// Native delivery is setup, not the cache-refresh assertion. In a loaded
 				// suite fs.watch may deliver after waitFor's UI deadline has expired.
 				// A rendered row does not prove its watch is installed yet. Arm before
-				// mutating so fast delivery cannot be missed. Ancestor events also reload
-				// this subtree; native filenames are optional and are not required here.
-				// The test harness still catches a missing native notification.
+				// mutating so fast delivery cannot be missed. Native filenames are optional
+				// and are not required here. Only an event of this exact watch counts: a
+				// root event (a late FSEvents replay of the setup) reloads only the flat
+				// listing, not this cached subtree, so it would end the wait while the tree
+				// still shows the old children and leave the UI deadline to native timing.
 				await waitFor(() => expect(watchers.has(path)).toBe(true));
 				const notified = new Promise<void>((resolve) => notifications.set(path, resolve));
 				mutate();
@@ -229,12 +231,8 @@ describe("FileBrowserPanel external filesystem refresh", () => {
 							watcher: watch(path, { recursive: false }, () => {
 								observed.add(path);
 								emitEvent("dir-changed", { dir_path: path });
-								for (const [changedPath, notify] of notifications) {
-									if (changedPath === path || changedPath.startsWith(`${path}${sep}`)) {
-										notify();
-										notifications.delete(changedPath);
-									}
-								}
+								notifications.get(path)?.();
+								notifications.delete(path);
 							}),
 							subscribers: 1,
 						});

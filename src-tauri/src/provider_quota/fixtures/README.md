@@ -15,6 +15,14 @@ Code 2.1.318 sent after its first response in the S5 spike on 2026-11-12
 (`docs/backend/quota-source-spikes.md`). Paths, the transcript location and
 the session name were replaced; `rate_limits` is unchanged.
 
+The `grok-billing.json` field names and JSON types were recorded on
+2026-11-14 from one successful `_x.ai/billing` result of `grok agent stdio`
+(Grok 1.0.77) after a fresh `grok login` (story 2999-998f). Only the names and
+types were kept; every value, including the date format, is synthetic. The
+ACP result is the CLI's serialization of the billing body; the direct body
+that the adapter reads has not been recorded yet (ignored harness
+`record_grok_billing_shape`).
+
 The `ego-contract.json` document is the recorded ego quota contract example
 (ego story 1065-00ec, `crates/ego-ai/tests/fixtures/subscription_quota/contract.json`).
 Its values come from the two successful endpoint recordings; the credential

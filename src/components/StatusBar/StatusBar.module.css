@@ -135,10 +135,6 @@
   color: var(--fg-secondary);
 }
 
-.agentTool {
-  color: var(--fg-secondary);
-}
-
 .agentUsageWarning {
   color: var(--warning);
 }

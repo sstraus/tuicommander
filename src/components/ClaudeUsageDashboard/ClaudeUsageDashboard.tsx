@@ -446,7 +446,9 @@ const UsageChart: Component<{ timeline: TimelinePoint[]; days: number }> = (prop
 export const ClaudeUsageDashboard: Component<{ sessionId?: string | (() => string | undefined) }> = (props) => {
 	const selectedSessionId = () => (typeof props.sessionId === "function" ? props.sessionId() : props.sessionId);
 	const quota = () =>
-		selectedSessionId() ? providerQuotaStore.view(selectedSessionId()!) : providerQuotaStore.forOwner("claude-code");
+		selectedSessionId()
+			? providerQuotaStore.viewForAgent(selectedSessionId()!, "claude")
+			: providerQuotaStore.forOwner("claude-code");
 	const apiData = (): UsageApiResponse | null => {
 		const detail = quota()?.snapshot?.detail;
 		return detail?.provider === "claude" ? (detail.response as UsageApiResponse) : null;

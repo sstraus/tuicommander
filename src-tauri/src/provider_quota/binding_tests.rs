@@ -1,6 +1,55 @@
 use super::*;
 
-use super::binding::resolve;
+use super::binding::{resolve, scan_session};
+
+#[derive(Clone)]
+struct LogSink(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+impl std::io::Write for LogSink {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogSink {
+    type Writer = LogSink;
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+/// Catches: a quota agent left unbound in silence, or a log line per scan tick.
+#[test]
+fn unbindable_agent_session_logs_its_reason_once() {
+    let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(LogSink(log.clone()))
+        .with_ansi(false)
+        .finish();
+    tracing::subscriber::with_default(subscriber, || {
+        for _ in 0..3 {
+            assert_eq!(scan_session("codex-no-process", "codex", None), None);
+            // pid 0 is never a readable user process.
+            assert_eq!(scan_session("claude-unreadable", "claude", Some(0)), None);
+            assert_eq!(scan_session("shell-agent", "amp", None), None);
+        }
+    });
+    let log = String::from_utf8(log.lock().unwrap().clone()).unwrap();
+    assert_eq!(log.matches("Quota binding unavailable").count(), 2, "{log}");
+    assert!(
+        log.contains(
+            "session_id=\"codex-no-process\" agent=\"codex\" reason=\"no foreground process\""
+        ),
+        "{log}"
+    );
+    assert!(
+        log.contains("agent=\"claude\" reason=\"process environment unreadable\""),
+        "{log}"
+    );
+    assert!(!log.contains("shell-agent"), "{log}");
+}
 
 /// `resolve` accepts only host-absolute directories, and a Unix `/home/user`
 /// is merely rooted on Windows. The leak keeps the env slices `&str`.

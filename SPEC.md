@@ -129,7 +129,7 @@ Published story workflows can start in Plans and Stories through the owning daem
 
 Terminal workflow runs remove their own untouched checkouts and branches after verified agent closure. Changed or still-owned work is retained with a run incident and a base-cleanup refusal that names its run. Allocation receipts survive restart; caller-supplied checkouts keep their existing lifecycle. See [Run checkout lifecycle](docs/backend/workflows.md#run-checkout-lifecycle).
 
-**Version:** 2.1.0
+**Version:** 2.1.1
 **Last Updated:** 2026-09-16
 
 ## Shared form controls — Implemented (#1815-01c9)
@@ -1738,7 +1738,7 @@ A native question payload becomes one `question_card` in the session snapshot: C
 
 ### Tool-name readout (2636-5551)
 
-`SessionState.current_tool` is the newest live native tool name of an agent PTY. Sources: Claude, Codex (bound turn) and Grok hook receipts, ego `tool_start`/`tool_end` frames, and the managed Pi extension (`tool_execution_start`/`_end`) and OpenCode plugin (`session.tool.input.started`, `session.tool.success`/`failed`) through the `agent-tool` OSC 7770 verb. Only frames of the terminal's own TUIC session and native session count; subagent receipts do not. A tool end removes only its own native id, and an ended id never starts again. Turn end, cancellation, interrupt, session end, coarse idle/prompt, shell return and PTY exit clear all live tools; an idle shell shows none. Labels are cut to 64 characters without control characters, and arguments are never read. The readout is metadata: it never changes coarse state or an open modal. Desktop (status bar agent badge) and mobile (session card, details sheet) render the same snapshot. Gemini has no readout and gets no AfterTool hook. ego AI Chat (ACP) is unchanged; Step 16 owns it. Pi and OpenCode support rests on their API and schema sources (Pi 0.84.2 `types.d.ts`, OpenCode 2.2.3 session-event schema); no live tool event of theirs was recorded.
+`SessionState.current_tool` is the newest live native tool name of an agent PTY. Sources: Claude, Codex (bound turn) and Grok hook receipts, ego `tool_start`/`tool_end` frames, and the managed Pi extension (`tool_execution_start`/`_end`) and OpenCode plugin (`session.tool.input.started`, `session.tool.success`/`failed`) through the `agent-tool` OSC 7770 verb. Only frames of the terminal's own TUIC session and native session count; subagent receipts do not. A tool end removes only its own native id, and an ended id never starts again. Turn end, cancellation, interrupt, session end, coarse idle/prompt, shell return and PTY exit clear all live tools; an idle shell shows none. Labels are cut to 64 characters without control characters, and arguments are never read. The readout is metadata: it never changes coarse state or an open modal. Mobile (session card, details sheet) renders the snapshot; the desktop status bar agent badge shows no tool name (#3068-c03b). Gemini has no readout and gets no AfterTool hook. ego AI Chat (ACP) is unchanged; Step 16 owns it. Pi and OpenCode support rests on their API and schema sources (Pi 0.84.2 `types.d.ts`, OpenCode 2.2.3 session-event schema); no live tool event of theirs was recorded.
 
 ### Claude native permission attention (2627-110e)
 

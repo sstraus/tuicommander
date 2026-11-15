@@ -112,8 +112,12 @@ export function barHeightPercent(tokens: number, peak: number): number {
 // Component
 // ---------------------------------------------------------------------------
 
-export const CodexUsageDashboard: Component = () => {
-	const quota = () => providerQuotaStore.forOwner("codex-cli");
+export const CodexUsageDashboard: Component<{ sessionId?: string | (() => string | undefined) }> = (props) => {
+	const selectedSessionId = () => (typeof props.sessionId === "function" ? props.sessionId() : props.sessionId);
+	const quota = () =>
+		selectedSessionId()
+			? providerQuotaStore.viewForAgent(selectedSessionId()!, "codex")
+			: providerQuotaStore.forOwner("codex-cli");
 	const usage = (): CodexUsageApiResponse | null => {
 		const detail = quota()?.snapshot?.detail;
 		return detail?.provider === "codex" ? (detail.response as CodexUsageApiResponse) : null;

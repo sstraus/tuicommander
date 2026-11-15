@@ -10,6 +10,7 @@ import {
 	Switch,
 } from "solid-js";
 import { AGENT_DISPLAY } from "../../agents";
+import { usagePlacement } from "../../features/agentUsage";
 import { AGENT_USAGE_BLINK_THRESHOLD } from "../../features/usageThresholds";
 import { useGitHub } from "../../hooks/useGitHub";
 import { useOutsideDismiss } from "../../hooks/useOutsideDismiss";
@@ -318,27 +319,18 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 					{(agentType) => {
 						const badgeAgent = () => {
 							const label = usageTicker()?.label?.toLowerCase();
-							return agentType() === "ego" && (label === "codex" || label === "claude") ? label : agentType();
+							return agentType() === "ego" && (label === "codex" || label === "claude" || label === "grok")
+								? label
+								: agentType();
 						};
 						const display = () => AGENT_DISPLAY[badgeAgent()];
 						const ul = () => terminalsStore.getActive()?.usageLimit ?? null;
 						const rl = rateLimitWarning;
-						// The shared usage slot follows Claude, Codex or ego. Absorb it only when
-						// its provider label matches this tab; an async provider switch may
-						// briefly leave the previous provider's result in the store.
+						// The shared placement rule picks the usage of this tab's own session; the
+						// ticker pool excludes the same messages.
 						const usageTicker = () => {
-							const provider = agentType();
-							if (provider !== "claude" && provider !== "codex" && provider !== "ego") return null;
-							return statusBarTicker
-								.getAll()
-								.find(
-									(message) =>
-										message.pluginId === "claude-usage" &&
-										(provider === "ego"
-											? ["claude", "codex"].includes(message.label?.toLowerCase() ?? "") &&
-												message.sessionId === terminalsStore.getActive()?.sessionId
-											: message.label?.toLowerCase() === provider && !message.sessionId),
-								);
+							const active = terminalsStore.getActive();
+							return statusBarTicker.getAll().find((message) => usagePlacement(message, active) === "badge");
 						};
 						return (
 							<span
@@ -390,14 +382,6 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 										)}
 									</Match>
 								</Switch>
-								<Show when={terminalsStore.getActive()?.currentTool}>
-									{(tool) => (
-										<span class={s.agentTool} data-testid="agent-tool">
-											{" "}
-											· {tool()}
-										</span>
-									)}
-								</Show>
 							</span>
 						);
 					}}

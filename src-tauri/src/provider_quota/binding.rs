@@ -64,6 +64,83 @@ pub(super) fn resolve(
     }
 }
 
+/// Why one live agent session has no subscription key. Never holds
+/// environment values, only the step that failed.
+pub(super) fn agent_key(
+    session_id: &str,
+    agent: &str,
+    pid: Option<u32>,
+) -> Result<SubscriptionKey, String> {
+    let pid = pid.ok_or("no foreground process")?;
+    let env = crate::process_env::read_process_environment(pid)
+        .map_err(|_| "process environment unreadable")?;
+    let argv = if agent == "codex" || agent == "ego" {
+        Some(crate::process_env::read_process_argv(pid).ok_or("process argv unreadable")?)
+    } else {
+        None
+    };
+    let codex = match (agent, argv.as_ref()) {
+        ("codex", Some(argv)) => Some(crate::session_usage::codex_profile(&env, argv)?),
+        _ => None,
+    };
+    if agent == "ego"
+        && argv.as_ref().is_some_and(|argv| {
+            argv.iter()
+                .any(|arg| arg == "--session-dir" || arg.starts_with("--session-dir="))
+        })
+    {
+        return Err("ego explicit session dir is not bound".into());
+    }
+    let env: Vec<_> = env.iter().filter_map(|v| v.split_once('=')).collect();
+    let provider = if agent == "ego" {
+        let (home, session) =
+            crate::agent_session::ego_chat_session_for_pid(pid).ok_or("ego session unresolved")?;
+        crate::agent_session::ego_session_provider(&home.join("sessions"), &session)
+    } else if agent == "pi" {
+        super::pi::session_provider(session_id)
+    } else {
+        None
+    };
+    let profile = codex
+        .as_ref()
+        .and_then(|(_, _, profile)| profile.as_deref());
+    resolve(agent, &env, provider.as_deref(), profile)
+        .ok_or_else(|| "no subscription for this agent environment".into())
+}
+
+/// Agents `resolve` can bind; a failure of any other agent is not news.
+const QUOTA_AGENTS: [&str; 5] = ["claude", "codex", "grok", "ego", "pi"];
+
+/// Sessions whose binding failure was already logged; one line per session.
+static LOGGED_FAILURES: std::sync::LazyLock<parking_lot::Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// One session's key; the first failure of a quota agent logs its reason.
+pub(super) fn scan_session(
+    session_id: &str,
+    agent: &str,
+    pid: Option<u32>,
+) -> Option<SubscriptionKey> {
+    agent_key(session_id, agent, pid)
+        .inspect_err(|reason| {
+            if QUOTA_AGENTS.contains(&agent) && LOGGED_FAILURES.lock().insert(session_id.to_owned())
+            {
+                log_binding_failure(session_id, agent, reason);
+            }
+        })
+        .ok()
+}
+
+fn log_binding_failure(session_id: &str, agent: &str, reason: &str) {
+    tracing::warn!(
+        source = "provider_quota",
+        session_id,
+        agent,
+        reason,
+        "Quota binding unavailable"
+    );
+}
+
 /// Reconcile only live PTY agents. A missing process/environment is not a
 /// license to substitute the host's credentials.
 pub(super) async fn reconcile(state: Arc<crate::AppState>) {
@@ -73,48 +150,20 @@ pub(super) async fn reconcile(state: Arc<crate::AppState>) {
         .iter()
         .map(|entry| (entry.key().clone(), entry.value().agent_type.clone()))
         .collect();
-    super::pi::retain_sessions(&snapshot.iter().map(|(id, _)| id.as_str()).collect());
+    let live = snapshot.iter().map(|(id, _)| id.as_str()).collect();
+    super::pi::retain_sessions(&live);
+    LOGGED_FAILURES
+        .lock()
+        .retain(|id| live.contains(id.as_str()));
     let scan_state = state.clone();
     let result = tokio::task::spawn_blocking(move || {
         snapshot
             .into_iter()
             .map(|(id, agent)| {
                 let pid = crate::pty::session_leaf_pid(&scan_state, &id);
-                let key = agent.as_deref().and_then(|agent| {
-                    let pid = pid?;
-                    let env = crate::process_env::read_process_environment(pid).ok()?;
-                    let argv = if agent == "codex" || agent == "ego" {
-                        Some(crate::process_env::read_process_argv(pid)?)
-                    } else {
-                        None
-                    };
-                    let codex = if agent == "codex" {
-                        Some(crate::session_usage::codex_profile(&env, argv.as_ref()?).ok()?)
-                    } else {
-                        None
-                    };
-                    if agent == "ego"
-                        && argv
-                            .as_ref()?
-                            .iter()
-                            .any(|arg| arg == "--session-dir" || arg.starts_with("--session-dir="))
-                    {
-                        return None;
-                    }
-                    let env: Vec<_> = env.iter().filter_map(|v| v.split_once('=')).collect();
-                    let provider = if agent == "ego" {
-                        let (home, session) = crate::agent_session::ego_chat_session_for_pid(pid)?;
-                        crate::agent_session::ego_session_provider(&home.join("sessions"), &session)
-                    } else if agent == "pi" {
-                        super::pi::session_provider(&id)
-                    } else {
-                        None
-                    };
-                    let profile = codex
-                        .as_ref()
-                        .and_then(|(_, _, profile)| profile.as_deref());
-                    resolve(agent, &env, provider.as_deref(), profile)
-                });
+                let key = agent
+                    .as_deref()
+                    .and_then(|agent| scan_session(&id, agent, pid));
                 (id, agent, pid, key)
             })
             .collect::<Vec<_>>()

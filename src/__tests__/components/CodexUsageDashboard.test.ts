@@ -1,4 +1,5 @@
 import { render } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	barHeightPercent,
@@ -207,6 +208,56 @@ describe("CodexUsageDashboard refresh", () => {
 		expect(callsFor("get_codex_usage_api")).toBe(0);
 		expect(callsFor("get_provider_quotas")).toBe(1);
 		expect(callsFor("get_codex_usage_stats")).toBe(2);
+	});
+
+	// Catches: session-scoped quota selection falling back to owner-wide selection, or a reused tab retaining the previous session.
+	it("a_reused_session_dashboard_follows_its_bound_account", async () => {
+		mockInvoke.mockImplementation(async (command) =>
+			command === "get_provider_quotas"
+				? [21, 42].map((used, i) => ({
+						key: { owner: "codex-cli", provider: "openai-codex", credential: `/account-${i}` },
+						session_ids: [`session-${i}`],
+						state: "fresh",
+						snapshot: {
+							windows: [
+								{
+									kind: "weekly",
+									label: "7d",
+									used_percent: used,
+									resets_at: null,
+									window_seconds: 604800,
+									model: null,
+								},
+							],
+							plan: null,
+							credits: null,
+							account: null,
+							observed_at_ms: 1,
+							source: "passive",
+						},
+					}))
+				: emptyStats,
+		);
+		const [session, setSession] = createSignal("session-1");
+		const { container, unmount } = render(() => CodexUsageDashboard({ sessionId: session }));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(container.textContent).toContain("42%");
+		expect(container.textContent).not.toContain("21%");
+		setSession("session-0");
+		expect(container.textContent).toContain("21%");
+		expect(container.textContent).not.toContain("42%");
+		setSession("missing");
+		expect(container.textContent).not.toContain("21%");
+		unmount();
+	});
+
+	// Catches: a session dashboard choosing the only other account when its own binding is absent.
+	it("a_session_dashboard_never_borrows_the_global_codex_account", async () => {
+		const { container, unmount } = render(() => CodexUsageDashboard({ sessionId: "unbound-session" }));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(container.textContent).not.toContain("pro plan");
+		expect(container.textContent).toContain("No unambiguous bound subscription");
+		unmount();
 	});
 
 	it("stops refreshing once the tab is closed", async () => {

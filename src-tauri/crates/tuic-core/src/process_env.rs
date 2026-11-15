@@ -520,19 +520,22 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn read_windows_child_profile_argv() {
-        // Catches: losing a live child's named profile (including quoting and Unicode).
+        // Catches: quota binding resolving the default profile or failing closed on
+        // Windows because the live child's argv is unreadable, split wrongly, or
+        // loses the quotes, spaces, trailing backslash or non-ASCII of its profile.
         use std::process::{Command, Stdio};
         let profile = r#"work profile "quoted" 日本語\"#;
+        let args = [
+            "/D",
+            "/Q",
+            "/C",
+            "set /p TUIC_ARGV_WAIT=",
+            "--profile",
+            profile,
+            "",
+        ];
         let mut child = Command::new("cmd.exe")
-            .args([
-                "/D",
-                "/Q",
-                "/C",
-                "set /p TUIC_ARGV_WAIT=",
-                "--profile",
-                profile,
-                "",
-            ])
+            .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -543,7 +546,9 @@ mod tests {
         let _ = child.kill();
         child.wait().expect("reap child");
         let argv = result.expect("live child argv");
-        assert_eq!(&argv[argv.len() - 3..], ["--profile", profile, ""]);
+        // argv[0] is the program as the launcher spelled it; every argument after
+        // it must come back exactly as passed.
+        assert_eq!(&argv[1..], args);
     }
 
     #[test]

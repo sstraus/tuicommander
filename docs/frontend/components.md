@@ -631,7 +631,7 @@ The agent badge appears when the active terminal has a recognized agent type. It
 
 **Usage throttling:** Claude usage HTTP 429 is displayed immediately as `rate-limited, retry HH:MM` (host local time) over IPC and HTTP. The backend records a bounded account-profile cooldown instead of sleeping inside the request.
 
-**Ticker integration:** When the active agent is `claude` and the Claude Usage ticker is active, the ticker message is absorbed into the agent badge (priority 2) and hidden from the separate ticker area. Other ticker messages (from plugins, etc.) display normally.
+**Ticker integration:** `usagePlacement` in `features/agentUsage.ts` is the one rule for the shared usage message. When its `sessionId` is the active agent session, the badge shows it (priority 2); otherwise it shows nowhere. `TickerArea` excludes every message that rule does not place in the ticker. `formatAgentUsage` is the one text formatter (weekly percent, monthly remaining, " -4d" reset suffix), and the writer skips the store when the text, label and priority are unchanged. The badge shows no tool name. Other ticker messages (from plugins, etc.) display normally.
 
 **Pendulum ticker:** When the status info text overflows its container, a CSS pendulum animation scrolls the text back and forth at ~50px/s. Clicking the text dismisses the notification until the message changes.
 
@@ -721,7 +721,7 @@ Reusable in-app confirmation dialog that replaces native Tauri `ask()` dialogs (
 
 Native SolidJS component (not a plugin) showing Claude API usage data. Displayed as a tab in the markdown/editor area. Features rate bucket gauges, per-model token breakdown, daily usage chart, and project stats. Clicking the Claude Usage ticker opens it for that terminal session's credential profile. The rate-limit API follows `CLAUDE_CONFIG_DIR`; transcript statistics still use the default Claude projects directory.
 
-Quota presentation is fed by `providerQuotaStore`: the initial `get_provider_quotas` response includes each key's `session_ids`. The store subscribes to quota and binding events before it applies that response. Session changes select cached entries; they do not start a provider read. Claude plan and extra-usage sections use the optional typed `detail` response, while quota bars use the registry windows. The local session statistics and timeline still refresh separately.
+Quota presentation is fed by `providerQuotaStore`: the initial `get_provider_quotas` response includes each key's `session_ids`. The store subscribes to quota and binding events before it applies that response. Session changes select cached entries; they do not start a provider read. A native agent badge accepts only its own registry owner and provider; an ego badge accepts only the ego owner. A previous agent's binding on the same PTY cannot supply quota text or a dashboard action while reconciliation is pending. An explicit refresh cannot store a different subscription's response under the requested key. Claude plan and extra-usage sections use the optional typed `detail` response, while quota bars use the registry windows. The local session statistics and timeline still refresh separately.
 
 ### CodexUsageDashboard (`CodexUsageDashboard/`)
 
@@ -729,7 +729,7 @@ Native dashboard for the official Codex App Server account snapshot. Shows rate
 windows, reset times, daily token buckets, and the lifetime metrics that the
 documented surface actually supplies. Unsupported legacy metrics are omitted.
 
-Codex quota bars and typed provider detail come from the same registry store. Without a session-specific dashboard tab, the view selects an owner only when its bound subscription is unambiguous. Local usage statistics keep their separate refresh path. Grok retains its billing dashboard path until the recorded billing-response integration in story 2999-998f.
+Codex quota bars and typed provider detail come from the same registry store. Badge clicks pass the opening session to all three native usage dashboards. A reused dashboard tab updates that session, and an absent or mismatched binding never falls back to another account. Codex quota bars and Grok billing detail select the same session binding as the badge. A Codex dashboard opened without a session selects an owner only when its bound subscription is unambiguous; a Grok dashboard opened without a session retains the host billing path. Local usage statistics keep their separate refresh path.
 
 ### GrokUsageDashboard (`GrokUsageDashboard/`)
 

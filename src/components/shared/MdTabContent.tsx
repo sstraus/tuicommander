@@ -1,7 +1,9 @@
 import { type Component, lazy, Suspense } from "solid-js";
 import {
 	type ClaudeUsageTab as ClaudeUsageTabData,
+	type CodexUsageTab as CodexUsageTabData,
 	type GithubOpsTab as GithubOpsTabData,
+	type GrokUsageTab as GrokUsageTabData,
 	type MdTabData,
 	mdTabsStore,
 	type PrDiffTab as PrDiffTabData,
@@ -36,8 +38,10 @@ export const MdTabContent: Component<{ tab: MdTabData; onClose: () => void; visi
 			{(() => {
 				if (tab.type === "claude-usage")
 					return <ClaudeUsageDashboard sessionId={() => (props.tab as ClaudeUsageTabData).sessionId} />;
-				if (tab.type === "codex-usage") return <CodexUsageDashboard />;
-				if (tab.type === "grok-usage") return <GrokUsageDashboard />;
+				if (tab.type === "codex-usage")
+					return <CodexUsageDashboard sessionId={() => (props.tab as CodexUsageTabData).sessionId} />;
+				if (tab.type === "grok-usage")
+					return <GrokUsageDashboard sessionId={() => (props.tab as GrokUsageTabData).sessionId} />;
 				if (tab.type === "github-ops") return <GithubOpsDashboard repoPath={(tab as GithubOpsTabData).repoPath} />;
 				if (tab.type === "command-overview") return <CommandOverview />;
 				if (tab.type === "tasks") return <TasksShell visible={props.visible} />;

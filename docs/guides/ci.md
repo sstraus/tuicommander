@@ -224,6 +224,24 @@ That path reaches the CMake compiler probe as a source filename and fails the
 `whisper-rs-sys` build. The Tests step uses Git Bash through
 `scripts/with-test-tmp.sh`, so these flags must be safe in both shell paths.
 
+## Windows rustc command length
+
+Release and nightly set `CMAKE_CONFIGURATION_TYPES=Release` on Windows.
+`whisper-rs-sys` adds every directory below its CMake build tree as a rustc
+`-L` path, and every crate that depends on it gets these paths. The Visual
+Studio generator of CMake 4.5 makes `Debug`, `MinSizeRel`, `RelWithDebInfo`
+and `Release` folders for each target, also in the `vulkan-shaders-gen`
+sub-build (CMake 3.29 does not). With `--features vulkan`, the rustc command
+for `tuicommander_lib` in release run 43660914077 was 35,835 characters.
+Cargo passes a command that is too long through a response file, but sccache
+0.19 expands that file and starts rustc with the full command. Windows accepts
+at most 32,767 characters, so the build failed with os error 206 (sccache 0.16
+passed the response file through without caching). With only the `Release`
+configuration, CMake makes 60 fewer folders and the same command is 28,772
+characters. CMake also reads the variable from the environment, so the
+`vulkan-shaders-gen` sub-build gets it. A local build without sccache does not
+need it.
+
 ## Portable whisper.cpp CPU baseline
 
 Release and nightly set `GGML_NATIVE=OFF` on every desktop leg.

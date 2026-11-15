@@ -1320,6 +1320,10 @@ pub(crate) struct SilenceState {
     /// turn source. A legacy completion-only notifier cannot disable adapters.
     /// Foreground identity withdrawal retires this authority.
     pub(crate) native_state: NativeActivity,
+    /// ego's last coarse state was busy. Once ego's turn frames are seen, its
+    /// turn owns the shell state, and a busy outside a turn means work ego
+    /// still owns (a subagent or background exec): agent working, input ready.
+    pub(crate) native_owned_work: bool,
     /// Last screen classification and when it was computed, shared between the
     /// reader chunk path (which computes it fresh on every chunk) and the
     /// silence timer (which reuses this instead of re-classifying, so
@@ -1433,6 +1437,7 @@ impl SilenceState {
             completion_turn_epoch: 0,
             evidence: TurnEvidence::default(),
             native_state: NativeActivity::Unseen,
+            native_owned_work: false,
             cached_screen_activity: AgentScreenActivity::Unknown,
             last_ready_screen_offset: 0,
             last_working_screen_offset: 0,

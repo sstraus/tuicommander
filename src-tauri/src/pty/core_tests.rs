@@ -17587,10 +17587,11 @@ fn completion_only_notify_keeps_working_adapter_available() {
     );
 }
 
-// Catches: a completed parent or retained screen overrides native busy while
-// a real ego-owned child still runs, or final child settlement never returns idle.
+// Catches: a completed parent with a real ego-owned child still running is
+// held busy, so queued mail and submits wait for the child (#3064-3141); or
+// the child stops showing as working; or final settlement never returns idle.
 #[test]
-fn recorded_ego_owned_child_keeps_native_working_until_settlement() {
+fn recorded_ego_owned_child_shows_working_and_accepts_input_after_parent_turn() {
     use base64::Engine;
     let capture =
         crate::pty_capture::decode_capture(&agent_prompt_fixture("ego-owned-child-2930.tcap"))
@@ -17605,6 +17606,12 @@ fn recorded_ego_owned_child_keeps_native_working_until_settlement() {
         .unwrap()
         .agent_type = Some("ego".into());
     state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .spawn_root_role = crate::state::SpawnRootRole::DirectProgram;
+    state
         .grid
         .vt_log_buffers
         .insert(sid.into(), Mutex::new(VtLogBuffer::new(rows, cols, 2000)));
@@ -17615,7 +17622,7 @@ fn recorded_ego_owned_child_keeps_native_working_until_settlement() {
     let mut escapes = EscapeAwareBuffer::new();
     let mut children = 0;
     let mut parent_completed = false;
-    let mut busy_after_parent = false;
+    let mut working_after_parent = false;
     let mut collection_started = false;
     for (index, record) in capture.records.iter().enumerate() {
         if record.direction != crate::pty_capture::CaptureDirection::Output {
@@ -17652,19 +17659,23 @@ fn recorded_ego_owned_child_keeps_native_working_until_settlement() {
             let snapshot = state.session_state_with_shell(sid).unwrap();
             assert_eq!(
                 snapshot.shell_state.as_deref(),
-                Some("busy"),
-                "record {index}"
+                Some("idle"),
+                "record {index}: the parent turn ended, ego's composer takes input"
             );
             assert_eq!(
                 snapshot.agent_state.as_deref(),
                 Some("working"),
-                "record {index}"
+                "record {index}: the owned child still runs"
             );
-            busy_after_parent = true;
+            assert!(
+                should_inject_now(&state, sid),
+                "record {index}: queued mail and submits must reach the idle composer"
+            );
+            working_after_parent = true;
         }
     }
     assert!(
-        busy_after_parent,
+        working_after_parent,
         "capture must contain a completed parent with a live child"
     );
     assert!(
