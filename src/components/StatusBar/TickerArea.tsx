@@ -10,6 +10,7 @@ import {
 	onMount,
 	Show,
 } from "solid-js";
+import { usagePlacement } from "../../features/agentUsage";
 import { useOutsideDismiss } from "../../hooks/useOutsideDismiss";
 import { statusBarTicker, type TickerMessage, URGENT_PRIORITY } from "../../stores/statusBarTicker";
 import { terminalsStore } from "../../stores/terminals";
@@ -90,12 +91,12 @@ export const TickerArea: Component = () => {
 	onMount(() => document.addEventListener("keydown", handleKeyDown));
 	onCleanup(() => document.removeEventListener("keydown", handleKeyDown));
 
-	// On agent tabs the shared agent-usage slot is absorbed into the agent badge (a stale result
-	// for the other provider must stay hidden during the async switch), so it is excluded from
+	// Agent usage is placed by the shared rule (agent badge or nowhere), so it is excluded from
 	// the pool itself rather than hidden after selection.
-	const hidden = createMemo(() =>
-		terminalsStore.getActive()?.agentType ? (m: TickerMessage) => m.pluginId === "claude-usage" : undefined,
-	);
+	const hidden = createMemo(() => {
+		const active = terminalsStore.getActive();
+		return (m: TickerMessage) => usagePlacement(m, active) !== "ticker";
+	});
 	const pool = createMemo(() => statusBarTicker.getPool(hidden()));
 
 	// Layout: tickers sit side by side while the area has room; the ones that do not fit

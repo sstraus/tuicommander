@@ -1,6 +1,14 @@
 import { fireEvent, render, waitFor } from "@solidjs/testing-library";
+import { listen as tauriListen } from "@tauri-apps/api/event";
+import { createSignal } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockInvoke } from "../mocks/tauri";
+
+/** Deliver a backend event to every listener the code under test registered. */
+const mockEmit = (name: string, payload: unknown) => {
+	for (const [event, handler] of vi.mocked(tauriListen).mock.calls)
+		if (event === name) (handler as (e: { payload: unknown }) => void)({ payload });
+};
 
 // Use vi.hoisted so these are available to vi.mock factories (which are hoisted)
 const {
@@ -114,13 +122,17 @@ vi.mock("../../stores/userActivity", () => ({
 	},
 }));
 
+import type { AgentType } from "../../agents";
 import { StatusBar } from "../../components/StatusBar/StatusBar";
+import { destroyAgentUsage, initAgentUsage } from "../../features/agentUsage";
 import { getTickerPriority } from "../../features/claudeUsage";
 import { getCodexTickerPriority } from "../../features/codexUsage";
 import { acpStore } from "../../stores/acp";
 import { activityStore } from "../../stores/activityStore";
+import { providerQuotaStore, type QuotaView } from "../../stores/providerQuota";
 import { settingsStore } from "../../stores/settings";
 import { statusBarTicker } from "../../stores/statusBarTicker";
+import { terminalsStore } from "../../stores/terminals";
 import { uiStore } from "../../stores/ui";
 
 /** Build a mock BranchPrStatus for testing */
@@ -333,6 +345,7 @@ describe("StatusBar", () => {
 			for (const percentage of [69, 70, 90, 95, 95.9, 96, 100]) {
 				mockTerminalGetActive.mockReturnValue({
 					agentType: source === "pty" ? "grok" : source,
+					sessionId: "blink-session",
 					usageLimit: source === "pty" ? { percentage, limitType: "weekly" } : null,
 				});
 				if (source !== "pty") {
@@ -370,6 +383,7 @@ describe("StatusBar", () => {
 						id: "claude-usage:rate",
 						pluginId: "claude-usage",
 						label: source === "claude" ? "Claude" : "Codex",
+						sessionId: "blink-session",
 						text: `5h: ${percentage}%`,
 						priority,
 						ttlMs: 0,
@@ -388,26 +402,111 @@ describe("StatusBar", () => {
 		});
 	});
 
-	// Catches: the tool readout is not rendered in the agent badge, or a tab
-	// with no live tool shows a stale separator.
-	it("shows the current native tool in the agent badge only while one is live", () => {
-		mockTerminalGetActive.mockReturnValue({ agentType: "claude", usageLimit: null, currentTool: "Bash" });
-		const { container, unmount } = render(() => <StatusBar {...defaultProps} />);
-		expect(container.querySelector("[data-testid='agent-tool']")?.textContent).toBe(" · Bash");
-		unmount();
-		mockTerminalGetActive.mockReturnValue({ agentType: "claude", usageLimit: null, currentTool: null });
-		const idle = render(() => <StatusBar {...defaultProps} />);
-		expect(idle.container.querySelector(".agentBadge")).not.toBeNull();
-		expect(idle.container.querySelector("[data-testid='agent-tool']")).toBeNull();
+	// Catches: a tool name (Bash, call_tool, Read) rendered in the agent badge.
+	it.each(["Bash", "call_tool", "Read"])("renders no tool name in the agent badge (%s)", (tool) => {
+		mockTerminalGetActive.mockReturnValue({ agentType: "claude", sessionId: "s", usageLimit: null, currentTool: tool });
+		statusBarTicker.addMessage({
+			id: "claude-usage:rate",
+			pluginId: "claude-usage",
+			label: "Claude",
+			sessionId: "s",
+			text: "7d: 32%",
+			priority: 10,
+			ttlMs: 0,
+		});
+		const { container } = render(() => <StatusBar {...defaultProps} />);
+		expect(container.querySelector(".agentBadge")?.textContent?.trim()).toBe("7d: 32%");
+		expect(container.querySelector(".agentBadge")?.textContent).not.toContain(tool);
+	});
+
+	// End to end: registry views at the IPC boundary, the real quota store, the real usage writer
+	// and the real terminals store. Only `invoke` is faked, so a writer/reader drift fails here.
+	describe("registry-fed usage badge", () => {
+		const tabs: string[] = [];
+		const registryView = (sessionId: string, owner: string, provider: string, percent: number): QuotaView => ({
+			key: { owner, provider, credential: `/${owner}/${sessionId}` },
+			session_ids: [sessionId],
+			state: "fresh",
+			snapshot: {
+				windows: [
+					{ kind: "weekly", label: "7d", used_percent: percent, resets_at: null, window_seconds: 604800, model: null },
+				],
+				plan: null,
+				credits: null,
+				account: null,
+				observed_at_ms: 1,
+				source: "passive",
+			},
+		});
+		const open = async (views: QuotaView[], ...agents: [AgentType, string][]) => {
+			mockInvoke.mockImplementation(async (command: string) =>
+				command === "get_provider_quotas"
+					? views
+					: command === "get_working_tree_status"
+						? { staged: [], unstaged: [], untracked: [] }
+						: undefined,
+			);
+			const ids = agents.map(([agentType, sessionId]) => {
+				const id = terminalsStore.add({ sessionId, fontSize: 14, name: agentType, cwd: "/repo", awaitingInput: null });
+				terminalsStore.update(id, { agentType });
+				tabs.push(id);
+				return id;
+			});
+			terminalsStore.setActive(ids[0]);
+			mockTerminalGetActive.mockImplementation(() => {
+				const active = terminalsStore.state.activeId;
+				return active ? terminalsStore.state.terminals[active] : undefined;
+			});
+			initAgentUsage();
+			await providerQuotaStore.start();
+			return ids;
+		};
+		afterEach(() => {
+			destroyAgentUsage();
+			providerQuotaStore.stop();
+			terminalsStore.setActive(null);
+			for (const id of tabs.splice(0)) terminalsStore.remove(id);
+		});
+
+		// Catches: the badge filter and the registry writer disagree on the message shape.
+		it.each([
+			["claude", "claude-code", "anthropic"],
+			["codex", "codex-cli", "openai-codex"],
+			["ego", "ego", "anthropic"],
+			["ego", "ego", "openai-codex"],
+		] as const)("a %s tab bound to %s/%s shows its usage in the badge", async (agent, owner, provider) => {
+			await open([registryView("bound", owner, provider, 78)], [agent, "bound"]);
+			const { container } = render(() => <StatusBar {...defaultProps} />);
+			expect(container.querySelector(".agentBadge .agentUsage")?.textContent?.trim()).toBe("7d: 78%");
+			expect(container.querySelector(".tickerArea")?.textContent ?? "").not.toContain("78%");
+		});
+
+		// Catches: flicker on view refresh (a same-value republish repaints the badge).
+		it("a same-value snapshot republish causes no DOM change", async () => {
+			const view = registryView("s", "claude-code", "anthropic", 78);
+			await open([view], ["claude", "s"]);
+			const { container } = render(() => <StatusBar {...defaultProps} />);
+			const badge = container.querySelector(".agentBadge")!;
+			const mutations: MutationRecord[] = [];
+			const observer = new MutationObserver((records) => mutations.push(...records));
+			observer.observe(container, { subtree: true, childList: true, attributes: true, characterData: true });
+			for (let i = 0; i < 5; i++) mockEmit("provider-quota-changed", structuredClone(view));
+			await Promise.resolve();
+			mutations.push(...observer.takeRecords());
+			observer.disconnect();
+			expect(mutations).toEqual([]);
+			expect(container.querySelector(".agentBadge")).toBe(badge);
+		});
 	});
 
 	it("absorbs matching Codex usage into the active agent badge", () => {
 		const openDashboard = vi.fn();
-		mockTerminalGetActive.mockReturnValue({ agentType: "codex", usageLimit: null });
+		mockTerminalGetActive.mockReturnValue({ agentType: "codex", sessionId: "codex-pty", usageLimit: null });
 		statusBarTicker.addMessage({
 			id: "claude-usage:rate",
 			pluginId: "claude-usage",
 			label: "Codex",
+			sessionId: "codex-pty",
 			text: "5h: 42% · week: 18%",
 			priority: 42,
 			ttlMs: 0,
@@ -425,11 +524,12 @@ describe("StatusBar", () => {
 
 	// Catches: plugin usage is absorbed into a badge beside cwd, outside the right-hand ticker group.
 	it("groups plugin usage with tickers and controls, outside the cwd section", () => {
-		mockTerminalGetActive.mockReturnValue({ agentType: "claude", usageLimit: null });
+		mockTerminalGetActive.mockReturnValue({ agentType: "claude", sessionId: "claude-pty", usageLimit: null });
 		statusBarTicker.addMessage({
 			id: "usage",
 			pluginId: "claude-usage",
 			label: "Claude",
+			sessionId: "claude-pty",
 			text: "7d: 3% -6d",
 			priority: 42,
 			ttlMs: 0,
@@ -590,7 +690,7 @@ describe("StatusBar", () => {
 			ttlMs: 0,
 		};
 		mockTerminalGetActive.mockReturnValue({ agentType: "codex", sessionId: "codex-one", usageLimit: null });
-		statusBarTicker.addMessage(ticker);
+		statusBarTicker.addMessage({ ...ticker, sessionId: "codex-one" });
 		const native = render(() => <StatusBar {...defaultProps} />);
 		const expected = native.container.querySelector(".agentBadge")?.outerHTML;
 		native.unmount();
@@ -619,11 +719,12 @@ describe("StatusBar", () => {
 	});
 
 	it("does not show stale Claude usage in an active Codex badge", () => {
-		mockTerminalGetActive.mockReturnValue({ agentType: "codex", usageLimit: null });
+		mockTerminalGetActive.mockReturnValue({ agentType: "codex", sessionId: "codex-pty", usageLimit: null });
 		statusBarTicker.addMessage({
 			id: "claude-usage:rate",
 			pluginId: "claude-usage",
 			label: "Claude",
+			sessionId: "claude-pty",
 			text: "5h: 99% · 7d: 88%",
 			priority: 99,
 			ttlMs: 0,
@@ -634,6 +735,70 @@ describe("StatusBar", () => {
 
 		expect(badge?.textContent).toContain("codex");
 		expect(badge?.textContent).not.toContain("5h: 99%");
+	});
+
+	// The registry producer binds every usage message to its PTY session (agentUsage.ts).
+	it.each([
+		["claude", "Claude", "7d: 78%"],
+		["codex", "Codex", "5h: 42% · 7d: 18%"],
+	])(
+		"shows a %s session's registry usage in its agent badge — catches the badge requiring a message without sessionId",
+		(agentType, label, text) => {
+			mockTerminalGetActive.mockReturnValue({ agentType, sessionId: `${agentType}-pty`, usageLimit: null });
+			statusBarTicker.addMessage({
+				id: "claude-usage:rate",
+				pluginId: "claude-usage",
+				label,
+				sessionId: `${agentType}-pty`,
+				text,
+				priority: 10,
+				ttlMs: 0,
+			});
+			statusBarTicker.addMessage({
+				id: "stories",
+				pluginId: "stories",
+				text: "3 open stories",
+				priority: 42,
+				ttlMs: 0,
+			});
+			const { container } = render(() => <StatusBar {...defaultProps} />);
+			expect(container.querySelector(".agentBadge .agentUsage")?.textContent?.trim()).toBe(text);
+			expect(container.querySelector(".tickerArea")?.textContent).not.toContain(text);
+		},
+	);
+
+	it("never shows the previous tab's usage after a Claude to Codex switch — catches stale cross-provider result during the switch", () => {
+		const [active, setActive] = createSignal<Record<string, unknown>>({
+			agentType: "claude",
+			sessionId: "claude-pty",
+			usageLimit: null,
+		});
+		mockTerminalGetActive.mockImplementation(() => active());
+		statusBarTicker.addMessage({
+			id: "claude-usage:rate",
+			pluginId: "claude-usage",
+			label: "Claude",
+			sessionId: "claude-pty",
+			text: "7d: 78%",
+			priority: 50,
+			ttlMs: 0,
+		});
+		const { container } = render(() => <StatusBar {...defaultProps} />);
+		const usageText = () => container.querySelector(".agentBadge .agentUsage")?.textContent?.trim() ?? null;
+		expect(usageText()).toBe("7d: 78%");
+		setActive({ agentType: "codex", sessionId: "codex-pty", usageLimit: null });
+		expect(usageText()).toBeNull();
+		expect(container.textContent).not.toContain("7d: 78%");
+		statusBarTicker.addMessage({
+			id: "claude-usage:rate",
+			pluginId: "claude-usage",
+			label: "Codex",
+			sessionId: "codex-pty",
+			text: "5h: 12%",
+			priority: 10,
+			ttlMs: 0,
+		});
+		expect(usageText()).toBe("5h: 12%");
 	});
 
 	it("calls onToggleMarkdown when MD button clicked", () => {

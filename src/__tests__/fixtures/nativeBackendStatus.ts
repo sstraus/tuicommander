@@ -6,7 +6,7 @@ export const nativeBackendStatusReply = {
 		label: "TUIC native",
 		provenance: "automatic",
 		availability: "available",
-		reason: "No Wiz project markers",
+		reason: "Plans and stories are stored in TUICommander. Create a plan to begin.",
 		installation: null,
 		version: null,
 		error: null,

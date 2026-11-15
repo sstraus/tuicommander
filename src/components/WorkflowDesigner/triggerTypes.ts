@@ -35,6 +35,8 @@ export interface NeutralTriggerBinding {
 	draft: TriggerBindingDraft;
 	revision: number;
 	enabled: boolean;
+	/** Why an installed-source prerequisite holds this binding without intake. */
+	refusal_reason?: string;
 }
 export interface TriggerPreview {
 	inputs: Record<string, JsonValue>;

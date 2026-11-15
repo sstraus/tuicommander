@@ -19,7 +19,7 @@ export interface QuotaView {
 	key: SubscriptionKey;
 	session_ids?: string[];
 	snapshot: {
-		detail?: { provider: "claude" | "codex"; observed_at_ms: number; response: unknown };
+		detail?: { provider: "claude" | "codex" | "grok"; observed_at_ms: number; response: unknown };
 		windows: QuotaWindow[];
 		plan: string | null;
 		credits: string | null;

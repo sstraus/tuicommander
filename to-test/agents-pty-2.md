@@ -63,7 +63,7 @@
 - [ ] After a manual rebuild/restart, verify Claude and Codex session quota and dashboard views share a refresh without duplicate quota requests. Check Claude extra usage/plan fields and Codex credit/model flags. Codex token statistics must still load independently. Rust does not hot-reload; no running app was restarted.
 ## Windows process argv (3000-aa7f) — Windows runner required
 
-- [ ] On Windows, run `read_windows_child_profile_argv`: the live child profile must preserve spaces, quotes, Unicode and an empty argument. Then rebuild/restart when active sessions may be lost and verify ego/Codex named-profile sessions bind to the correct quota account. Cross-target compilation on macOS does not verify Windows runtime behavior. Rust does not hot-reload; no daily app was restarted.
+- [ ] On Windows, run `read_windows_child_profile_argv`: the live child profile must preserve spaces, quotes, Unicode and an empty argument. Then rebuild/restart when active sessions may be lost and verify ego/Codex named-profile sessions bind to the correct quota account. Cross-target compilation on macOS does not verify Windows runtime behavior. Rust does not hot-reload; no daily app was restarted. _(test part verified 2026-11-15 on the Windows lab VM: `read_windows_child_profile_argv` fails on the pre-implementation `None` stub and passes on the implementation; the app-level ego/Codex quota binding on Windows stays open.)_
 
 ## Provider quota bindings (2989-9fa6) — Rust rebuild/restart required
 
@@ -84,3 +84,10 @@
 ## One silence rule for every agent session (3050-589e) — Rust rebuild/restart required
 
 - [ ] After a rebuild, start `TUIC_AGENT_STALL_MINUTES=1 make agent-test ...`, open a Claude tab by hand (no parent) and leave its turn open on a hidden dialog (for example press ctrl+o while a permission dialog waits). After about 1 min `session action=status` shows `stage: stalled`, `stalled: true`; the tab icon and the sidebar dot turn the warning color (no busy pulse); Boss attention lists it as Stalled; no mail reaches any inbox. Any output or answer clears it at once. An idle tab never turns stalled.
+
+## ego input after a turn that leaves owned work running (3064-3141) — Rust rebuild/restart required
+
+- [ ] After a rebuild, in a throwaway ego tab start a background exec that keeps running (for example `sleep 600` in exec background) and let the turn end. `session action=list` shows `shell_state: idle`, `agent_state: working`, no `queue_blocker`; `session action=submit` and a normal `agent send` reach the composer at once. When the exec ends, ego's collection turn runs and the tab returns to idle.
+## Grok quota through the registry (2999-998f) — Rust rebuild/restart required
+
+- [ ] After a rebuild, open a Grok tab with a valid `grok login`: the status-bar quota shows one Grok window from the billing period, and the Grok dashboard shows the same billing data. Refresh the dashboard twice within a minute: no second `grok agent stdio` process starts. With an expired login the badge shows the login state and no new CLI process starts until `grok login` rewrites `~/.grok/auth.json`.

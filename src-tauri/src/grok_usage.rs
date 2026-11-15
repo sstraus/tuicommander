@@ -2,20 +2,20 @@
 //!
 //! The short-lived ACP process is telemetry-only. Normal Grok tabs remain PTY
 //! sessions; this module does not introduce ACP session routing or fallback.
+//! The quota registry owns caching, single-flight and failure cooldown
+//! (`provider_quota::grok`); the dashboard reads through it.
 
 use std::path::Path;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::cli_usage_rpc::{UsageCache, looks_like_auth_failure, looks_like_contract_failure};
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct GrokMoney {
     pub val: f64,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct GrokUsagePeriod {
     #[serde(alias = "type")]
     pub period_type: Option<String>,
@@ -23,7 +23,7 @@ pub struct GrokUsagePeriod {
     pub end: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct GrokBillingConfig {
     #[serde(alias = "creditUsagePercent")]
     pub credit_usage_percent: Option<f64>,
@@ -43,7 +43,7 @@ pub struct GrokBillingConfig {
     pub billing_period_end: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct GrokUsageApiResponse {
     pub config: GrokBillingConfig,
     #[serde(alias = "onDemandEnabled")]
@@ -52,14 +52,11 @@ pub struct GrokUsageApiResponse {
     pub subscription_tier: Option<String>,
 }
 
-static CACHE: UsageCache<GrokUsageApiResponse> = UsageCache::new();
-static FETCH_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
-async fn fetch_usage() -> Result<GrokUsageApiResponse, String> {
-    let detection = crate::agent::detect_agent_binary("grok".to_string()).await;
-    let binary = detection
-        .path
-        .ok_or_else(|| "Grok CLI not found".to_string())?;
+/// One `_x.ai/billing` request through `grok agent stdio`, bound to `grok_home`.
+pub(crate) async fn billing(
+    program: &Path,
+    grok_home: &Path,
+) -> Result<GrokUsageApiResponse, String> {
     let messages = [
         serde_json::json!({
             "jsonrpc": "2.0",
@@ -73,50 +70,77 @@ async fn fetch_usage() -> Result<GrokUsageApiResponse, String> {
         }),
         serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "_x.ai/billing", "params": {}}),
     ];
-    let responses = crate::cli_usage_rpc::request_jsonl(
-        Path::new(&binary),
+    let responses = crate::cli_usage_rpc::request_jsonl_with_env(
+        program,
         &["agent", "stdio"],
         &messages,
         &[1],
         Duration::from_secs(20),
+        &[("GROK_HOME".into(), grok_home.to_string_lossy().into_owned())],
     )
     .await?;
     crate::cli_usage_rpc::decode_result(&responses, 1, "Grok billing")
 }
 
-async fn cached_usage() -> Result<GrokUsageApiResponse, String> {
-    if let Some(value) = CACHE.fresh() {
-        return Ok(value);
-    }
-    let _guard = FETCH_LOCK.lock().await;
-    if let Some(value) = CACHE.fresh() {
-        return Ok(value);
-    }
-    match fetch_usage().await {
-        Ok(value) => {
-            CACHE.put(&value);
-            Ok(value)
+/// The GROK_HOME inherited by the global quota reader.
+fn host_identity() -> Option<String> {
+    let home = dirs::home_dir()?;
+    let grok_home = std::env::var_os("GROK_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| home.join(".grok"));
+    Some(grok_home.to_string_lossy().into_owned())
+}
+
+/// The dashboard read: the registry's last good billing detail, or the
+/// registry state as an error.
+async fn registry_usage(
+    registry: &crate::provider_quota::QuotaRegistry,
+    key: &crate::provider_quota::SubscriptionKey,
+) -> Result<GrokUsageApiResponse, String> {
+    use crate::provider_quota::{QuotaDetail, QuotaState};
+    let view = registry.ensure_detail(key).await;
+    let error = || match &view.state {
+        QuotaState::Backoff { until_ms } => {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            crate::claude_usage::usage_retry_message(
+                std::time::Instant::now() + Duration::from_millis(until_ms.saturating_sub(now)),
+                "Grok",
+            )
         }
-        Err(message)
-            if !looks_like_auth_failure(&message) && !looks_like_contract_failure(&message) =>
-        {
-            if let Some(value) = CACHE.stale() {
-                tracing::info!(
-                    source = "grok_usage",
-                    "Returning stale cache after error: {message}"
-                );
-                Ok(value)
-            } else {
-                Err(message)
-            }
-        }
-        Err(message) => Err(message),
+        QuotaState::AuthInvalid => "Grok login expired: run `grok login`".into(),
+        QuotaState::Unavailable { reason } => format!("Grok not logged in: {reason}"),
+        QuotaState::ContractError { message } => message.clone(),
+        _ => format!("Grok usage unavailable: {:?}", view.state),
+    };
+    if matches!(
+        view.state,
+        QuotaState::AuthInvalid | QuotaState::ContractError { .. }
+    ) {
+        return Err(error());
+    }
+    match view.snapshot.and_then(|snapshot| snapshot.detail) {
+        Some(QuotaDetail::Grok { response, .. }) => Ok(response),
+        _ => Err(error()),
     }
 }
 
-#[cfg_attr(feature = "desktop", tauri::command)]
-pub async fn get_grok_usage_api() -> Result<GrokUsageApiResponse, String> {
-    cached_usage().await
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn get_grok_usage_api(
+    state: tauri::State<'_, std::sync::Arc<crate::AppState>>,
+) -> Result<GrokUsageApiResponse, String> {
+    get_grok_usage_api_impl(&state).await
+}
+
+pub(crate) async fn get_grok_usage_api_impl(
+    state: &crate::AppState,
+) -> Result<GrokUsageApiResponse, String> {
+    let grok_home = host_identity().ok_or("Home not found")?;
+    let key = crate::provider_quota::SubscriptionKey::new("grok-cli", "xai", grok_home);
+    registry_usage(&state.provider_quota, &key).await
 }
 
 #[cfg(test)]
@@ -174,13 +198,5 @@ mod tests {
         .unwrap();
         assert!(parsed.config.credit_usage_percent.is_none());
         assert!(parsed.on_demand_enabled.is_none());
-    }
-
-    #[test]
-    fn schema_failures_are_not_hidden_by_stale_data() {
-        assert!(looks_like_contract_failure(
-            "Failed to parse Grok billing response: missing field"
-        ));
-        assert!(!looks_like_contract_failure("network connection reset"));
     }
 }

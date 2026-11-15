@@ -2029,7 +2029,8 @@ The agent silence rule (every agent session; parent mail and nudge for managed P
 
 ### Backend continuity and approval identity
 
-A project without Wiz markers reports **No Wiz project markers**. For a marked
+A project without Wiz markers reports **Plans and stories are stored in
+TUICommander. Create a plan to begin.** This text names no internal tool. For a marked
 project, automatic detection retains native while native plans are open or pinned
 native executions are active. The header explains **Native retained while …**;
 this is not fallback after a failed Wiz connector. Expand backend details to choose

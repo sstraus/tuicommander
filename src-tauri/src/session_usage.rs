@@ -271,6 +271,30 @@ fn env_value<'a>(environment: &'a [String], name: &str) -> Option<&'a str> {
     })
 }
 
+/// Top-level Codex config keys that choose the provider, the login or the profile.
+/// Any other `-c` override (TUIC's own `projects`, `check_for_update_on_startup` and
+/// `developer_instructions`, or a user's `model_reasoning_effort`) keeps the
+/// subscription of the process home and must not unbind the session.
+const CODEX_AUTH_CONFIG_KEYS: &[&str] = &[
+    "model_provider",
+    "model_providers",
+    "profile",
+    "profiles",
+    "forced_login_method",
+    "forced_chatgpt_workspace_id",
+    "preferred_auth_method",
+    "cli_auth_credentials_store",
+    "chatgpt_base_url",
+    "openai_base_url",
+];
+
+fn codex_override_changes_auth(override_: &str) -> bool {
+    let key = override_.split('=').next().unwrap_or_default();
+    let root = key.split('.').next().unwrap_or_default();
+    let root = root.trim().trim_matches(|c| c == '"' || c == '\'');
+    root.is_empty() || CODEX_AUTH_CONFIG_KEYS.contains(&root)
+}
+
 pub(crate) fn codex_profile(
     environment: &[String],
     argv: &[String],
@@ -287,15 +311,21 @@ pub(crate) fn codex_profile(
     let mut profile = None;
     let mut args = argv.iter().skip(1);
     while let Some(arg) = args.next() {
-        // Configuration overrides can select a different auth/provider context. Do not guess.
-        if arg == "-c"
-            || arg == "--config"
-            || arg.starts_with("--config=")
-            || arg.starts_with("-c")
+        // An override that selects a different auth/provider context is not bound. Do not guess.
+        let override_ = if arg == "-c" || arg == "--config" {
+            Some(args.next().map(String::as_str).unwrap_or_default())
+        } else {
+            arg.strip_prefix("--config=")
+                .or_else(|| arg.strip_prefix("-c").filter(|v| !v.starts_with('-')))
+        };
+        if override_.is_some_and(codex_override_changes_auth)
             || arg == "--oss"
             || arg.starts_with("--local-provider")
         {
             return Err("Codex configuration override is not bound".into());
+        }
+        if override_.is_some() {
+            continue;
         }
         if arg == "-p" || arg == "--profile" {
             profile = Some(
@@ -1130,6 +1160,45 @@ cat "$EGO_HOME/report.json""#,
             )
             .is_err()
         );
+    }
+
+    /// Catches: every TUIC-launched Codex tab losing its quota binding because TUIC's
+    /// own `-c` launch overrides were read as a provider change (story 3068-c03b), and
+    /// the reverse: an auth/provider override in any spelling being bound to the host home.
+    #[test]
+    fn codex_profile_binds_tuic_launch_overrides_and_rejects_auth_overrides() {
+        let home = crate::test_support::test_temp_root();
+        let env = vec![format!("HOME={}", home.display())];
+        let argv = |args: &[&str]| -> Vec<String> {
+            std::iter::once("codex")
+                .chain(args.iter().copied())
+                .map(str::to_owned)
+                .collect()
+        };
+        let tuic_launch = argv(&[
+            "-c",
+            "projects={\"/repo\"={trust_level=\"trusted\"}}",
+            "-c",
+            "check_for_update_on_startup=false",
+            "-c",
+            "developer_instructions=\"\"\"\n-c model_provider=x\n--profile y\n\"\"\"",
+            "-cmodel_reasoning_effort=high",
+            "--config=model=\"gpt\"",
+            "--profile",
+            "work",
+        ]);
+        let (_, _, profile) = codex_profile(&env, &tuic_launch).unwrap();
+        assert_eq!(profile.as_deref(), Some("work"));
+        for auth in [
+            &["-c", "model_provider=\"oss\""][..],
+            &["-cprofile=other"],
+            &["--config", "model_providers.x.base_url=\"u\""],
+            &["--config=forced_login_method=\"api\""],
+            &["-c", "\"chatgpt_base_url\"=\"u\""],
+            &["-c"],
+        ] {
+            assert!(codex_profile(&env, &argv(auth)).is_err(), "{auth:?}");
+        }
     }
 
     /// Catches: dropping plan/window identity or mixing timestamps into raw display lines.

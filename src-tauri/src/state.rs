@@ -4921,7 +4921,7 @@ impl AppState {
                 crate::pty::shell_state_wire(atom.load(std::sync::atomic::Ordering::Relaxed))
                     .map(str::to_string)
             });
-        let (native_activity, completion_declared) = self
+        let (native_activity, completion_declared, native_owned_work) = self
             .session_maps
             .silence_states
             .get(session_id)
@@ -4940,9 +4940,10 @@ impl AppState {
                     } else {
                         silence.completion_declared_for_epoch(state.turn_epoch)
                     },
+                    silence.native_owned_work,
                 )
             })
-            .unwrap_or((None, false));
+            .unwrap_or((None, false, false));
         let native_authority = native_activity.is_some();
         if let Some(activity) = native_activity {
             state.shell_state = crate::pty::shell_state_wire(activity).map(str::to_owned);
@@ -4959,11 +4960,15 @@ impl AppState {
         // Descendants remain stored for suspend safety, not native turn state.
         let ego_turn_idle = state.agent_type.as_deref() == Some("ego")
             && state.shell_state.as_deref() == Some("idle");
-        let background_work = !native_authority
-            && !ego_turn_idle
-            && (state.has_pending_background_probe() || state.background_work);
+        // ego's turn ended but it still owns a subagent or background exec:
+        // the agent works, while its composer takes input (#3064-3141).
+        let ego_owned_work = native_authority && ego_turn_idle && native_owned_work;
+        let background_work = ego_owned_work
+            || (!native_authority
+                && !ego_turn_idle
+                && (state.has_pending_background_probe() || state.background_work));
         if native_authority {
-            state.background_work = false;
+            state.background_work = ego_owned_work;
         }
         // A current-turn completion marker is stronger than a stale BUSY atom
         // (for example a completed Codex screen that still contains its last

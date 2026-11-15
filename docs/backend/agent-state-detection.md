@@ -128,7 +128,10 @@ Configuration alone does not select this rule. Agents without a delivered native
 busy keep the screen/process/silence fallback; a completion-only notifier does
 not establish a complete turn source. Foreground identity withdrawal
 retires native authority. Ego includes its owned children and background execs in
-its existing busy signal; no additional wire state is needed.
+its coarse busy signal, so for ego its `agent-event` turn frames own busy and idle
+once `session_start` is seen: `turn_start` is busy, `turn_end` is idle. A coarse
+busy outside a turn is owned work: `agent_state` working with `background_work`,
+while mail, submit and the queue reach the idle composer (#3064-3141).
 
 | Rank | What it knows | Recorded by |
 |---|---|---|

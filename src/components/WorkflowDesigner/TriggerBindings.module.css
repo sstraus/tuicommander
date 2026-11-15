@@ -3,6 +3,8 @@
 .header h4 { margin: 0; }
 .header p { color: var(--fg-secondary); font-size: var(--font-sm); }
 .bindingList { display: flex; flex-wrap: wrap; gap: 8px; }
+.binding { display: flex; flex-direction: column; gap: 4px; }
+.refusal { color: var(--warning); font-size: var(--font-sm); }
 .form { border: 0; padding: 0; margin: 16px 0 0; min-width: 0; }
 .columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
 .fields { display: flex; flex-direction: column; gap: 12px; min-width: 0; }

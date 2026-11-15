@@ -1075,6 +1075,37 @@ fn clean_action_required_title(title: &str) -> String {
     }
 }
 
+/// ego still owns a subagent or background exec after its turn (#3064-3141).
+fn ego_owns_work(state: &AppState, session_id: &str) -> bool {
+    state
+        .session_maps
+        .silence_states
+        .get(session_id)
+        .is_some_and(|silence| silence.lock().native_owned_work)
+}
+
+/// Record what ego's coarse `state=` frame says about its owned work: busy
+/// holds it, idle and error settle it. The snapshot reads it only after the
+/// turn ended, so republish when it changes.
+fn note_ego_owned_work(state: &AppState, session_id: &str, payload: &str) {
+    let owned = match payload {
+        "busy" => true,
+        "idle" | "error" => false,
+        _ => return,
+    };
+    let changed = state
+        .session_maps
+        .silence_states
+        .get(session_id)
+        .is_some_and(|silence| {
+            let mut silence = silence.lock();
+            std::mem::replace(&mut silence.native_owned_work, owned) != owned
+        });
+    if changed {
+        state.republish_session_state(session_id);
+    }
+}
+
 /// Map a TUIC `state=` verb to the awaiting-input `ParsedEvent` it implies.
 ///
 /// busy/idle shell transitions are handled by `handle_tuic_state`; this covers
@@ -1699,12 +1730,36 @@ impl ChunkProcessor {
         Some(ParsedEvent::ToolActivity { name: tool })
     }
 
-    fn receive_ego_background_event(&mut self, state: &AppState, session_id: &str, payload: &str) {
+    /// Apply one ego `agent-event` frame. Its turn frames own the shell state
+    /// (#3064-3141): `turn_start` is busy, `turn_end` is idle even when ego
+    /// still owns work, because ego's composer takes input again. Returns true
+    /// when the frame ended the turn here.
+    fn receive_ego_background_event(
+        &mut self,
+        state: &AppState,
+        session_id: &str,
+        payload: &str,
+    ) -> bool {
         let before = self.ego_events.stop_generation();
-        self.ego_events.receive(payload);
+        let edge = self.ego_events.receive(payload);
         if self.ego_events.stop_generation() != before {
             revoke_background_completion_origin(state, session_id);
         }
+        match edge {
+            Some(ego_events::TurnEdge::Started) => {
+                self.handle_tuic_state("busy", session_id, state)
+            }
+            // The coarse frame ego writes just before `turn_end` already
+            // closed a turn that owns nothing; closing it again here would
+            // drop an injection claim the idle edge just took.
+            Some(ego_events::TurnEdge::Ended) if ego_owns_work(state, session_id) => {
+                self.retire_tools();
+                self.handle_tuic_state("idle", session_id, state);
+                return true;
+            }
+            _ => {}
+        }
+        false
     }
 
     /// The native children in flight (ego and Codex, #2635-8052) and the last
@@ -2651,8 +2706,9 @@ impl ChunkProcessor {
                         // A plain shell tab learns `agent_type` only on the 1 s
                         // silence tick, so ego's first frames arrive before it.
                         "agent-event" if matches!(agent_type.as_deref(), None | Some("ego")) => {
-                            // Metadata only: ego's coarse state frames own the wait.
-                            self.receive_ego_background_event(state, session_id, &payload);
+                            // Turn frames own busy and idle; coarse frames own the wait.
+                            explicit_idle_in_chunk |=
+                                self.receive_ego_background_event(state, session_id, &payload);
                         }
                         "agent-tool"
                             if matches!(agent_type.as_deref(), Some("pi" | "opencode")) =>
@@ -2816,7 +2872,16 @@ impl ChunkProcessor {
                                 self.retire_tools();
                             }
                             explicit_idle_in_chunk |= matches!(payload.as_str(), "idle" | "error");
-                            self.handle_tuic_state(&payload, session_id, state);
+                            // ego's turn frames own its shell state; its coarse
+                            // busy outside a turn is owned background work.
+                            let ego_turns = matches!(agent_type.as_deref(), None | Some("ego"))
+                                && self.ego_events.session_active();
+                            if ego_turns {
+                                note_ego_owned_work(state, session_id, &payload);
+                            }
+                            if !(ego_turns && payload == "busy") {
+                                self.handle_tuic_state(&payload, session_id, state);
+                            }
                             if matches!(payload.as_str(), "busy" | "idle" | "error")
                                 && recovery_active
                             {

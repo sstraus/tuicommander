@@ -6,7 +6,9 @@ import { getRemoteBaseUrl } from "../transportRuntime";
 import { remoteEventOrigin } from "../utils/remoteEventOrigin";
 
 /** Follow remote repository hints without giving local handlers remote paths. */
-export function startRemoteRepositorySync(refresh: (path: string) => Promise<void> | void): () => void {
+export function startRemoteRepositorySync(
+	refresh: (path: string, options: { immediate: boolean }) => Promise<void> | void,
+): () => void {
 	let disposed = false;
 	let unsubscribe: (() => void) | undefined;
 	const timers = new Map<
@@ -44,7 +46,11 @@ export function startRemoteRepositorySync(refresh: (path: string) => Promise<voi
 				else repositoriesStore.bumpRevision(path);
 				void Promise.resolve()
 					.then(() => {
-						if (owns(path, owner)) return refresh(path);
+						// A git-state hint (worktree created or removed, commit, ref) skips the
+						// automatic refresh spacing: it is already coalesced here, and a new
+						// worktree must not wait up to 5 s. Working-tree hints keep the spacing
+						// because an agent that edits files sends them continuously.
+						if (owns(path, owner)) return refresh(path, { immediate: next.gitState });
 					})
 					.then(() => {
 						// Reconciliation protects newly discovered workspaces for 60s.

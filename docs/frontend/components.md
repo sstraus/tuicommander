@@ -631,7 +631,7 @@ The agent badge appears when the active terminal has a recognized agent type. It
 
 **Usage throttling:** Claude usage HTTP 429 is displayed immediately as `rate-limited, retry HH:MM` (host local time) over IPC and HTTP. The backend records a bounded account-profile cooldown instead of sleeping inside the request.
 
-**Ticker integration:** When the active agent is `claude` and the Claude Usage ticker is active, the ticker message is absorbed into the agent badge (priority 2) and hidden from the separate ticker area. Other ticker messages (from plugins, etc.) display normally.
+**Ticker integration:** `usagePlacement` in `features/agentUsage.ts` is the one rule for the shared usage message. When its `sessionId` is the active agent session, the badge shows it (priority 2); otherwise it shows nowhere. `TickerArea` excludes every message that rule does not place in the ticker. `formatAgentUsage` is the one text formatter (weekly percent, monthly remaining, " -4d" reset suffix), and the writer skips the store when the text, label and priority are unchanged. The badge shows no tool name. Other ticker messages (from plugins, etc.) display normally.
 
 **Pendulum ticker:** When the status info text overflows its container, a CSS pendulum animation scrolls the text back and forth at ~50px/s. Clicking the text dismisses the notification until the message changes.
 

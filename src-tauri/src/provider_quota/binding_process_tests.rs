@@ -130,6 +130,82 @@ async fn live_processes_with_different_config_dirs_get_distinct_bindings() {
     assert_eq!(state.provider_quota.bound_keys().len(), 2);
 }
 
+/// Catches: a Codex that TUIC launched (with its own `-c` overrides) never
+/// binding, so its tab shows no usage (3069).
+#[tokio::test]
+async fn codex_launched_by_tuic_binds_its_codex_home() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
+    let program = dir.path().join("codex");
+    std::fs::write(&program, "#!/bin/sh\nread input\n").unwrap();
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let codex_home = dir.path().join("codex-home");
+    let state = Arc::new(make_test_app_state());
+    let pair = native_pty_system()
+        .openpty(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .unwrap();
+    let mut command = CommandBuilder::new(&program);
+    command.args([
+        "-c",
+        r#"projects={"/work/repo"={trust_level="trusted"}}"#,
+        "-c",
+        "check_for_update_on_startup=false",
+        "-c",
+        "developer_instructions=\"\"\"\n## TUIC output markers\n\"\"\"",
+    ]);
+    command.env("CODEX_HOME", &codex_home);
+    let child = pair.slave.spawn_command(command).unwrap();
+    let master = pair.master;
+    let writer = master.take_writer().unwrap();
+    state.session_maps.sessions.insert(
+        "codex".into(),
+        Mutex::new(PtySession {
+            launch_receipt: None,
+            writer: Arc::new(Mutex::new(writer)),
+            master,
+            _child: child,
+            paused: Arc::new(AtomicBool::new(false)),
+            worktree: None,
+            initial_cwd: None,
+            cwd: None,
+            display_name: None,
+            display_name_is_custom: false,
+            display_name_from_spawn: false,
+            is_remote: true,
+            shell: program.to_string_lossy().into_owned(),
+        }),
+    );
+    state.session_maps.session_states.insert(
+        "codex".into(),
+        SessionState {
+            agent_type: Some("codex".into()),
+            ..Default::default()
+        },
+    );
+    wait_for_readable_environment(
+        &state,
+        "codex",
+        &format!("CODEX_HOME={}", codex_home.to_string_lossy()),
+    )
+    .await;
+    let result = bindings_after_first_pass(&state, &["codex"]).await;
+    if let Some((_, session)) = state.session_maps.sessions.remove("codex") {
+        let mut session = session.lock();
+        let _ = session._child.kill();
+        let _ = session._child.wait();
+    }
+    let key = result.unwrap_or_else(|e| panic!("{e}")).remove(0);
+    assert_eq!(
+        key,
+        SubscriptionKey::new("codex-cli", "openai-codex", codex_home.to_string_lossy())
+    );
+}
+
 /// Catches: an ego-shaped foreground process binds to an unrelated CLI login.
 #[tokio::test]
 async fn ego_process_never_binds_to_cli_credentials() {

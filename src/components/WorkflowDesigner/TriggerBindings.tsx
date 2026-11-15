@@ -40,9 +40,14 @@ export function TriggerBindings(props: { project: string; publications: NeutralP
 			<div class={s.bindingList}>
 				<For each={state.bindings()}>
 					{(binding) => (
-						<Button disabled={state.busy()} onClick={() => state.choose(binding)}>
-							Load {binding.draft.id} · revision {binding.revision} · {binding.enabled ? "enabled" : "disabled"}
-						</Button>
+						<div class={s.binding}>
+							<Button disabled={state.busy()} onClick={() => state.choose(binding)}>
+								Load {binding.draft.id} · revision {binding.revision} · {binding.enabled ? "enabled" : "disabled"}
+							</Button>
+							<Show when={binding.refusal_reason}>
+								{(reason) => <span class={s.refusal}>No intake: {reason()}</span>}
+							</Show>
+						</div>
 					)}
 				</For>
 			</div>
