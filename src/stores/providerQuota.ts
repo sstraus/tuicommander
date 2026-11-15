@@ -53,6 +53,23 @@ export const providerQuotaStore = {
 		const key = bindings()[sessionId];
 		return key ? (views()[keyId(key)] ?? null) : null;
 	},
+	/** A PTY can change agents before the registry's next reconciliation pass. */
+	viewForAgent(sessionId: string, agent: string): QuotaView | null {
+		const view = this.view(sessionId);
+		if (!view) return null;
+		const { owner, provider } = view.key;
+		const matches =
+			agent === "ego"
+				? owner === "ego"
+				: agent === "claude"
+					? owner === "claude-code" && provider === "anthropic"
+					: agent === "codex"
+						? owner === "codex-cli" && provider === "openai-codex"
+						: agent === "grok"
+							? owner === "grok-cli" && provider === "xai"
+							: false;
+		return matches ? view : null;
+	},
 	forOwner(owner: string): QuotaView | null {
 		const keys = new Map(
 			Object.values(bindings())
@@ -70,7 +87,8 @@ export const providerQuotaStore = {
 		const id = keyId(key);
 		const before = views()[id];
 		const view = await invoke<QuotaView>("refresh_provider_quota", { key });
-		if (epoch === current && views()[id] === before) setViews((previous) => ({ ...previous, [id]: view }));
+		if (epoch === current && keyId(view.key) === id && views()[id] === before)
+			setViews((previous) => ({ ...previous, [id]: view }));
 	},
 	start(): Promise<void> {
 		if (starting) return starting;

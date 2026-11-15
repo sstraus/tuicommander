@@ -193,7 +193,11 @@ it.each([
 	["codex", "openai-codex", "Codex"],
 ])("%s_session_bound_to_%s_reaches_the_agent_badge_as_%s", async (agentType, provider, label) => {
 	const bound = view("pty", 33);
-	bound.key = { owner: agentType === "ego" ? "ego" : "cli", provider, credential: "/home" };
+	bound.key = {
+		owner: agentType === "ego" ? "ego" : agentType === "claude" ? "claude-code" : "codex-cli",
+		provider,
+		credential: "/home",
+	};
 	invoke.mockResolvedValue([bound]);
 	const active = { agentType, sessionId: "pty" };
 	setTerminals({ activeId: "a", terminals: { a: active } });
@@ -315,7 +319,9 @@ it("same_value_refreshes_do_not_write_the_ticker_store", async () => {
 
 // Catches: an empty flash (remove then add) when switching to a session that already has a view.
 it("switching_between_bound_sessions_never_removes_the_message", async () => {
-	invoke.mockResolvedValue([view("first", 21), view("second", 42)]);
+	const codex = view("second", 42);
+	codex.key = { owner: "codex-cli", provider: "openai-codex", credential: "/second" };
+	invoke.mockResolvedValue([view("first", 21), codex]);
 	setTerminals({
 		activeId: "a",
 		terminals: { a: { agentType: "claude", sessionId: "first" }, b: { agentType: "codex", sessionId: "second" } },
@@ -341,4 +347,64 @@ it("backoff_without_snapshot_keeps_the_last_good_text", async () => {
 		payload: { ...view("first", 21), state: "auth_invalid", snapshot: null },
 	});
 	expect(statusBarTicker.getAll()[0]?.text).toBe("auth invalid");
+});
+
+// Catches: a session still bound to the previous agent's account combining Codex text
+// with a Claude icon and dashboard action (the registry reconciles independently).
+it.each([
+	["claude", "ego", "openai-codex"],
+	["claude", "claude-code", "openai-codex"],
+	["codex", "claude-code", "anthropic"],
+	["ego", "codex-cli", "openai-codex"],
+])("%s_rejects_mismatched_binding_%s_%s", async (agentType, owner, provider) => {
+	const mismatched = view("pty", 33);
+	mismatched.key = { owner, provider, credential: "/wrong-account" };
+	mismatched.snapshot!.credits = "8418.4673090000";
+	invoke.mockResolvedValue([mismatched]);
+	setTerminals({ activeId: "a", terminals: { a: { agentType, sessionId: "pty" } } });
+	initAgentUsage();
+	await settle();
+	expect(statusBarTicker.getAll()).toEqual([]);
+});
+
+// Catches: an agent transition on the same PTY retaining the previous account until
+// the asynchronous binding event arrives, including last-good backoff text.
+it("agent_transition_retracts_previous_account_until_matching_binding_arrives", async () => {
+	const previous = view("pty", 33);
+	previous.key = { owner: "ego", provider: "openai-codex", credential: "/ego" };
+	previous.snapshot!.credits = "8418.4673090000";
+	invoke.mockResolvedValue([previous]);
+	setTerminals({ activeId: "a", terminals: { a: { agentType: "ego", sessionId: "pty" } } });
+	initAgentUsage();
+	await settle();
+	expect(statusBarTicker.getAll()[0]?.text).toContain("8418 left");
+	setTerminals("terminals", "a", "agentType", "claude");
+	expect(statusBarTicker.getAll()).toEqual([]);
+	handlers.get("provider-quota-changed")?.({ payload: { ...previous, state: "backoff", snapshot: null } });
+	expect(statusBarTicker.getAll()).toEqual([]);
+	const current = view("pty", 79);
+	handlers.get("provider-quota-changed")?.({ payload: current });
+	handlers.get("provider-quota-binding-changed")?.({ payload: { session_id: "pty", key: current.key } });
+	expect(statusBarTicker.getAll()[0]).toMatchObject({ label: "Claude", sessionId: "pty", text: "7d: 79%" });
+	const { mdTabsStore } = await import("../../stores/mdTabs");
+	statusBarTicker.getAll()[0]?.onClick?.();
+	expect(mdTabsStore.addClaudeUsage).toHaveBeenCalledWith("pty");
+});
+
+// Catches: native dashboard clicks dropping the session that supplied the badge.
+it.each([
+	["claude", "claude-code", "anthropic", "addClaudeUsage"],
+	["codex", "codex-cli", "openai-codex", "addCodexUsage"],
+	["grok", "grok-cli", "xai", "addGrokUsage"],
+] as const)("%s_dashboard_click_keeps_the_bound_session", async (agentType, owner, provider, action) => {
+	const bound = view("private-session", 42);
+	bound.key = { owner, provider, credential: "/private" };
+	invoke.mockResolvedValue([bound]);
+	setTerminals({ activeId: "a", terminals: { a: { agentType, sessionId: "private-session" } } });
+	initAgentUsage();
+	await settle();
+	const { mdTabsStore } = await import("../../stores/mdTabs");
+	vi.mocked(mdTabsStore[action]).mockClear();
+	statusBarTicker.getAll()[0]?.onClick?.();
+	expect(mdTabsStore[action]).toHaveBeenCalledWith("private-session");
 });

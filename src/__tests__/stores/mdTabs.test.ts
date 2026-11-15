@@ -358,14 +358,24 @@ describe("mdTabsStore", () => {
 			});
 		});
 
-		it("updates the singleton Claude dashboard when opened from another session", () => {
-			testInScope(() => {
-				const id = store.addClaudeUsage("private-session");
-				expect(store.get(id)).toMatchObject({ type: "claude-usage", sessionId: "private-session" });
-				expect(store.addClaudeUsage("default-session")).toBe(id);
-				expect(store.get(id)).toMatchObject({ type: "claude-usage", sessionId: "default-session" });
-			});
-		});
+		// Catches: reopening a provider dashboard retaining the first session's account.
+		it.each(["claude", "codex", "grok"] as const)(
+			"updates the singleton %s dashboard when opened from another session",
+			(provider) => {
+				testInScope(() => {
+					const add =
+						provider === "claude"
+							? store.addClaudeUsage
+							: provider === "codex"
+								? store.addCodexUsage
+								: store.addGrokUsage;
+					const id = add("private-session");
+					expect(store.get(id)).toMatchObject({ type: `${provider}-usage`, sessionId: "private-session" });
+					expect(add("default-session")).toBe(id);
+					expect(store.get(id)).toMatchObject({ type: `${provider}-usage`, sessionId: "default-session" });
+				});
+			},
+		);
 	});
 
 	describe("openUiTab()", () => {

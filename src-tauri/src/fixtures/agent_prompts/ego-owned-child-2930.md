@@ -50,6 +50,32 @@ its ego PTY row and `Agents · 1 working · 0 idle`; the unregistered scratch
 folder is parked outside the repository list, so the terminal canvas is not
 shown. It is evidence of the host activity badge, not a terminal-layout check.
 
+## Replay contract after input-readiness separation
+
+Commit `15619b4a2f` (#3064-3141) separates composer readiness from owned-work
+activity. The original live host snapshots above describe the older behavior;
+they do not require the composer to remain busy after the parent turn ends.
+The recorded bytes and ownership journal remain unchanged.
+
+The replay golden follows these recorded boundaries (#3073-bad7):
+
+- Record 31 (10.580 s) contains coarse `state=busy`, then native `turn_end`.
+  The coarse frame retains owned-work activity; the turn end emits shell idle
+  before the existing input-clear event. Snapshots 31–90 therefore have
+  `shell=2` (idle), while `agent=working` remains unchanged. The composer can
+  accept queued mail without reporting the child as finished.
+- Record 91 (60.341 s) contains coarse `state=busy`, then native `turn_start`
+  for automatic collection. The turn start emits shell busy before the existing
+  input-clear event. Snapshots from this record remain busy/working.
+- Record 101 (65.390 s) contains coarse `state=idle`, then native `turn_end`.
+  Its existing idle edge and final idle snapshots are unchanged.
+
+These two added shell-state events raise the corpus entry from 123 to 125.
+No event is removed, no child/outcome/input assertion changes, and terminal
+bytes and ring length stay unchanged. The focused recorded-capture test checks
+input readiness plus continued working activity; the native event tests cover
+owned exec settlement, no owned work, compaction, and foreign/stale frames.
+
 ## Harness correction and evidence limits
 
 The live harness initially required rich `child_end` before accepting final

@@ -2,6 +2,7 @@ import { type Component, createSignal, onCleanup, onMount, Show } from "solid-js
 import { type GrokUsageApiResponse, grokPeriodLabel } from "../../features/grokUsage";
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
+import { providerQuotaStore } from "../../stores/providerQuota";
 import s from "../ClaudeUsageDashboard/ClaudeUsageDashboard.module.css";
 
 function rateClass(usedPercent: number): string {
@@ -20,13 +21,24 @@ export function formatPeriodEnd(value: string | null | undefined): string {
 	return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
 }
 
-export const GrokUsageDashboard: Component = () => {
-	const [usage, setUsage] = createSignal<GrokUsageApiResponse | null>(null);
+export const GrokUsageDashboard: Component<{ sessionId?: string | (() => string | undefined) }> = (props) => {
+	const selectedSessionId = () => (typeof props.sessionId === "function" ? props.sessionId() : props.sessionId);
+	const [hostUsage, setUsage] = createSignal<GrokUsageApiResponse | null>(null);
 	const [error, setError] = createSignal<string | null>(null);
 	const [loading, setLoading] = createSignal(true);
 
+	const usage = () => {
+		const sessionId = selectedSessionId();
+		if (!sessionId) return hostUsage();
+		const detail = providerQuotaStore.viewForAgent(sessionId, "grok")?.snapshot?.detail;
+		return detail?.provider === "grok" ? (detail.response as GrokUsageApiResponse) : null;
+	};
 	const refresh = async () => {
 		try {
+			if (selectedSessionId()) {
+				await providerQuotaStore.start();
+				return;
+			}
 			setUsage(await invoke<GrokUsageApiResponse>("get_grok_usage_api"));
 			setError(null);
 		} catch (reason) {

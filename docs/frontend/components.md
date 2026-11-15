@@ -721,7 +721,7 @@ Reusable in-app confirmation dialog that replaces native Tauri `ask()` dialogs (
 
 Native SolidJS component (not a plugin) showing Claude API usage data. Displayed as a tab in the markdown/editor area. Features rate bucket gauges, per-model token breakdown, daily usage chart, and project stats. Clicking the Claude Usage ticker opens it for that terminal session's credential profile. The rate-limit API follows `CLAUDE_CONFIG_DIR`; transcript statistics still use the default Claude projects directory.
 
-Quota presentation is fed by `providerQuotaStore`: the initial `get_provider_quotas` response includes each key's `session_ids`. The store subscribes to quota and binding events before it applies that response. Session changes select cached entries; they do not start a provider read. Claude plan and extra-usage sections use the optional typed `detail` response, while quota bars use the registry windows. The local session statistics and timeline still refresh separately.
+Quota presentation is fed by `providerQuotaStore`: the initial `get_provider_quotas` response includes each key's `session_ids`. The store subscribes to quota and binding events before it applies that response. Session changes select cached entries; they do not start a provider read. A native agent badge accepts only its own registry owner and provider; an ego badge accepts only the ego owner. A previous agent's binding on the same PTY cannot supply quota text or a dashboard action while reconciliation is pending. An explicit refresh cannot store a different subscription's response under the requested key. Claude plan and extra-usage sections use the optional typed `detail` response, while quota bars use the registry windows. The local session statistics and timeline still refresh separately.
 
 ### CodexUsageDashboard (`CodexUsageDashboard/`)
 
@@ -729,7 +729,7 @@ Native dashboard for the official Codex App Server account snapshot. Shows rate
 windows, reset times, daily token buckets, and the lifetime metrics that the
 documented surface actually supplies. Unsupported legacy metrics are omitted.
 
-Codex quota bars and typed provider detail come from the same registry store. Without a session-specific dashboard tab, the view selects an owner only when its bound subscription is unambiguous. Local usage statistics keep their separate refresh path. Grok retains its billing dashboard path until the recorded billing-response integration in story 2999-998f.
+Codex quota bars and typed provider detail come from the same registry store. Badge clicks pass the opening session to all three native usage dashboards. A reused dashboard tab updates that session, and an absent or mismatched binding never falls back to another account. Codex quota bars and Grok billing detail select the same session binding as the badge. A Codex dashboard opened without a session selects an owner only when its bound subscription is unambiguous; a Grok dashboard opened without a session retains the host billing path. Local usage statistics keep their separate refresh path.
 
 ### GrokUsageDashboard (`GrokUsageDashboard/`)
 

@@ -137,7 +137,7 @@ export function initAgentUsage(): void {
 			const terminal = id ? terminalsStore.state.terminals[id] : null;
 			const agent = toUsageAgent(terminal?.agentType);
 			const sessionId = terminal?.sessionId;
-			const view = agent && sessionId ? providerQuotaStore.view(sessionId) : null;
+			const view = agent && sessionId ? providerQuotaStore.viewForAgent(sessionId, agent) : null;
 			untrack(() => {
 				if (!agent || !sessionId || !view) return retract();
 				const account = keyId(view.key);
@@ -168,9 +168,9 @@ export function initAgentUsage(): void {
 						agent === "claude"
 							? () => mdTabsStore.addClaudeUsage(sessionId)
 							: agent === "codex"
-								? () => mdTabsStore.addCodexUsage()
+								? () => mdTabsStore.addCodexUsage(sessionId)
 								: agent === "grok"
-									? () => mdTabsStore.addGrokUsage()
+									? () => mdTabsStore.addGrokUsage(sessionId)
 									: undefined,
 				});
 			});

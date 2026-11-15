@@ -129,6 +129,7 @@ import { getTickerPriority } from "../../features/claudeUsage";
 import { getCodexTickerPriority } from "../../features/codexUsage";
 import { acpStore } from "../../stores/acp";
 import { activityStore } from "../../stores/activityStore";
+import { appLogger } from "../../stores/appLogger";
 import { providerQuotaStore, type QuotaView } from "../../stores/providerQuota";
 import { settingsStore } from "../../stores/settings";
 import { statusBarTicker } from "../../stores/statusBarTicker";
@@ -465,7 +466,13 @@ describe("StatusBar", () => {
 			destroyAgentUsage();
 			providerQuotaStore.stop();
 			terminalsStore.setActive(null);
-			for (const id of tabs.splice(0)) terminalsStore.remove(id);
+			const removed = tabs.splice(0);
+			const info = vi.spyOn(appLogger, "info").mockImplementation(() => {});
+			for (const id of removed) terminalsStore.remove(id);
+			expect(info.mock.calls.map(([source, message]) => [source, message])).toEqual(
+				removed.map((id) => ["terminal", `TermStore.remove(${id})`]),
+			);
+			info.mockRestore();
 		});
 
 		// Catches: the badge filter and the registry writer disagree on the message shape.
@@ -479,6 +486,36 @@ describe("StatusBar", () => {
 			const { container } = render(() => <StatusBar {...defaultProps} />);
 			expect(container.querySelector(".agentBadge .agentUsage")?.textContent?.trim()).toBe("7d: 78%");
 			expect(container.querySelector(".tickerArea")?.textContent ?? "").not.toContain("78%");
+		});
+
+		// Catches: a Claude/Codex tab switch retaining the other provider's text or icon.
+		it("switching_native_providers_keeps_icon_and_text_on_the_active_session", async () => {
+			const ids = await open(
+				[
+					registryView("claude", "claude-code", "anthropic", 79),
+					registryView("codex", "codex-cli", "openai-codex", 33),
+				],
+				["claude", "claude"],
+				["codex", "codex"],
+			);
+			const { container } = render(() => <StatusBar {...defaultProps} />);
+			const claudeIcon = container.querySelector(".agentBadge svg")?.innerHTML;
+			expect(container.querySelector(".agentUsage")?.textContent?.trim()).toBe("7d: 79%");
+			terminalsStore.setActive(ids[1]);
+			expect(container.querySelector(".agentUsage")?.textContent?.trim()).toBe("7d: 33%");
+			expect(container.querySelector(".agentBadge svg")?.innerHTML).not.toBe(claudeIcon);
+			terminalsStore.setActive(ids[0]);
+			expect(container.querySelector(".agentUsage")?.textContent?.trim()).toBe("7d: 79%");
+			expect(container.querySelector(".agentBadge svg")?.innerHTML).toBe(claudeIcon);
+		});
+
+		// Catches: stale Codex binding text displayed beside the native Claude icon.
+		it("mismatched_native_binding_renders_no_account_quota_or_click", async () => {
+			await open([registryView("claude", "ego", "openai-codex", 33)], ["claude", "claude"]);
+			const { container } = render(() => <StatusBar {...defaultProps} />);
+			expect(container.querySelector(".agentUsage")).toBeNull();
+			expect(container.querySelector(".agentBadge")?.classList.contains("tickerClickable")).toBe(false);
+			expect(container.querySelector(".tickerArea")?.textContent ?? "").not.toContain("33%");
 		});
 
 		// Catches: flicker on view refresh (a same-value republish repaints the badge).
