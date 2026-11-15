@@ -9,7 +9,6 @@ function branch(overrides: Partial<BranchDetail> = {}): BranchDetail {
 		is_current: true,
 		is_remote: false,
 		is_main: true,
-		is_merged: false,
 		ahead: 0,
 		behind: 0,
 		upstream: "origin/main",

@@ -27,7 +27,7 @@ export const UpdateProgressDialog: Component = () => {
 						<h4>{error() ? "Update failed" : `Updating to v${version()}`}</h4>
 					</div>
 					<div class={d.body}>
-						<Show when={!error()} fallback={<p class={d.error}>{error()}</p>}>
+						<Show when={!error()} fallback={<p class={`${d.error} ${s.errorMessage}`}>{error()}</p>}>
 							<div class={s.progressContainer}>
 								<div class={s.progressBar}>
 									<div class={s.progressFill} style={{ transform: `scaleX(${pct() / 100})` }} />

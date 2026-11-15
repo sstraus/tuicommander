@@ -580,7 +580,7 @@ button.filterToggle.filterToggleActive:hover {
   height: 3px;
   margin-left: 3px;
   border-radius: 2px;
-  background: var(--bg-tertiary);
+  background: var(--fg-muted);
   overflow: hidden;
 }
 

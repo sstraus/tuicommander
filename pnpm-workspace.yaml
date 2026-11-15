@@ -1,11 +1,8 @@
+# Delay every direct and transitive release by seven days. No exclusions.
+minimumReleaseAge: 10080
+
 allowBuilds:
   esbuild: true
-
-# Boss-approved 2026-10-04; expires 2026-11-04 (pnpm does not enforce expiry).
-# No npm patch exists for build-only braces 3.0.3; see development-setup.md.
-auditConfig:
-  ignoreGhsas:
-    - GHSA-vfj7-8cjw-p6xm
 
 # pnpm 11 no longer reads the "pnpm.overrides" field from package.json — overrides
 # live here. These pin transitive deps for security and to dedupe versions.
@@ -37,3 +34,8 @@ overrides:
   # only consumer is postcss, which imports the CJS `nanoid/non-secure`, and
   # a bare ">=" resolves to the ESM-only 6.x.
   nanoid: "^3.3.18"
+  # zod < 4.6.6 (dev-only, via @stryker-mutator) — GHSA-mrhx-c7xc-m3w5.
+  zod: "^4.6.6"
+  # undici < 8.12.2 (test-only, via jsdom) — GHSA-xjj6-f33q-929c,
+  # GHSA-4w7w-5xrc-9h26, GHSA-2m5v-pch6-74hx, GHSA-qrxm-fqhp-jwvm.
+  undici: "^8.12.2"

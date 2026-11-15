@@ -1,0 +1,53 @@
+$ ['http://127.0.0.1:15970/src/__tests__/browser/sessionChatAppearance.html?mobile']
+[ab-stealth] session=nw-mobile-1792360530 Chrome=28778 CDP=65203 tab=CC14848303DFF30C46890C69E90E471E
+
+exit=0
+$ ['--', 'eval', "new Promise((resolve,reject)=>{if(document.querySelector('header'))return resolve('ready');const observer=new MutationObserver(()=>{if(document.querySelector('header')){observer.disconnect();resolve('ready')}});observer.observe(document.documentElement,{childList:true,subtree:true});setTimeout(()=>{observer.disconnect();reject(new Error('fixture did not mount in 45s'))},45000)})"]
+"ready"
+[ab-stealth] session=nw-mobile-1792360530 Chrome=28778 CDP=65203 tab=pinned
+
+exit=0
+$ ['--', 'set', 'viewport', '390', '844']
+✓ Done
+[ab-stealth] session=nw-mobile-1792360530 Chrome=28778 CDP=65203 tab=pinned
+
+exit=0
+$ ['--', 'eval', 'JSON.stringify({width:innerWidth,height:innerHeight,text:document.body.innerText,overflow:document.documentElement.scrollWidth})']
+"{\"width\":390,\"height\":844,\"text\":\"Claude session Chat\\nCLI\\nChat\\nCheck the session Chat layout on a narrow screen.\\nCopy\\n\\nInspecting the shared styles.\\n\\nCopy\\n1 tool call ›\\nRead: shared presentation\\nCompleted\\n\\nThe answer uses the same reading layout.\\n\\nA genuine quotation.\\n\\nShared user prompt tint\\nShared folded tool activity\\nconst screen = \\\"mobile\\\";\\nCopy\\nCopy\",\"overflow\":390}"
+[ab-stealth] session=nw-mobile-1792360530 Chrome=28778 CDP=65203 tab=pinned
+
+exit=0
+$ ['--', 'screenshot', '/Users/stefano.straus/Gits/.tmp/results/nw-mobile-visual-r2-1792360645/mobile-dark.png']
+✓ Screenshot saved to /Users/stefano.straus/Gits/.tmp/results/nw-mobile-visual-r2-1792360645/mobile-dark.png
+[ab-stealth] session=nw-mobile-1792360530 Chrome=28778 CDP=65203 tab=pinned
+
+exit=0
+$ ['http://127.0.0.1:15970/src/__tests__/browser/sessionChatAppearance.html?mobile&theme=light']
+[ab-stealth] session=nw-mobile-1792360530 Chrome=28778 CDP=65203 tab=CC14848303DFF30C46890C69E90E471E
+
+exit=0
+$ ['--', 'screenshot', '/Users/stefano.straus/Gits/.tmp/results/nw-mobile-visual-r2-1792360645/mobile-light.png']
+✓ Screenshot saved to /Users/stefano.straus/Gits/.tmp/results/nw-mobile-visual-r2-1792360645/mobile-light.png
+[ab-stealth] session=nw-mobile-1792360530 Chrome=28778 CDP=65203 tab=pinned
+
+exit=0
+$ ['http://127.0.0.1:15970/src/__tests__/browser/sessionChatAppearance.html']
+[ab-stealth] session=nw-mobile-1792360530 Chrome=28778 CDP=65203 tab=CC14848303DFF30C46890C69E90E471E
+
+exit=0
+$ ['--', 'screenshot', '/Users/stefano.straus/Gits/.tmp/results/nw-mobile-visual-r2-1792360645/desktop-narrow-dark.png']
+✓ Screenshot saved to /Users/stefano.straus/Gits/.tmp/results/nw-mobile-visual-r2-1792360645/desktop-narrow-dark.png
+[ab-stealth] session=nw-mobile-1792360530 Chrome=28778 CDP=65203 tab=pinned
+
+exit=0
+$ ['--', 'eval', 'JSON.stringify({width:innerWidth,height:innerHeight,text:document.body.innerText,overflow:document.documentElement.scrollWidth})']
+"{\"width\":390,\"height\":844,\"text\":\"Claude session Chat\\nCLI\\nChat\\nCheck the session Chat layout on a narrow screen.\\nCopy\\n\\nInspecting the shared styles.\\n\\nCopy\\n1 tool call ›\\nRead: shared presentation\\nCompleted\\n\\nThe answer uses the same reading layout.\\n\\nA genuine quotation.\\n\\nShared user prompt tint\\nShared folded tool activity\\nconst screen = \\\"mobile\\\";\\nCopy\\nCopy\\n\\n\\nctrl ↵\\nsend\\nesc\\nterminal\",\"overflow\":390}"
+[ab-stealth] session=nw-mobile-1792360530 Chrome=28778 CDP=65203 tab=pinned
+
+exit=0
+$ ['--', 'tab', 'close']
+✓ Tab [t4] closed
+[ab-stealth] session=nw-mobile-1792360530 Chrome=28778 CDP=65203 tab=pinned
+
+exit=0
+daemon cleanup ✓ Browser closed

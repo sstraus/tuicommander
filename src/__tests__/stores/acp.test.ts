@@ -333,6 +333,69 @@ describe("acpStore: pending interactions", () => {
 
 		expect(acpStore.interactions(CONNECTION)).toHaveLength(1);
 	});
+
+	// acp_settled_question_does_not_survive_reconnect — catches: a re-adopt
+	// (openConversation on a held connection) applies the snapshot and pending
+	// list it fetched before the old stream delivered the settlement, so the
+	// answered question and its awaiting state come back and nothing retracts
+	// them again: the new stream resumes after the settlement frame.
+	it("acp_settled_question_does_not_survive_reconnect", () => {
+		const awaiting = {
+			state: "awaiting" as const,
+			humanWaits: [{ requestId: "req-9", kind: "permission" as const }],
+			tools: [],
+			children: [],
+			interrupted: false,
+			revision: 2,
+		};
+		const stale = snapshot({ attachments: [attachment({ state: "prompting", activity: awaiting })] });
+		acpStore.applySnapshot(stale);
+		acpStore.applyInteractions(CONNECTION, [permission("req-9")]);
+
+		acpStore.applyFrame(
+			CONNECTION,
+			frame(
+				10,
+				{ kind: "permissionSettled", requestId: "req-9", outcome: { outcome: "selected", optionId: "allow" } },
+				SESSION,
+			),
+		);
+		acpStore.applyFrame(
+			CONNECTION,
+			frame(
+				11,
+				{ kind: "activityChanged", activity: { ...awaiting, state: "busy", humanWaits: [], revision: 3 } },
+				SESSION,
+			),
+		);
+
+		// The reconnect commits what it fetched before the settlement arrived.
+		acpStore.applySnapshot(stale);
+		acpStore.applyInteractions(CONNECTION, [permission("req-9")]);
+
+		expect(acpStore.interactions(CONNECTION)).toEqual([]);
+		expect(acpStore.attachment(CONNECTION, SESSION)?.activity).toMatchObject({
+			state: "busy",
+			humanWaits: [],
+			revision: 3,
+		});
+	});
+});
+
+describe("acpStore: activity across a reattach", () => {
+	// catches: a client that never refreshes keeping the old attachment's
+	// revision, so every frame of the reattached session (revision from 0)
+	// is refused and the chat shows stale activity for good.
+	it("takes the reattached session's activity after a detach", () => {
+		const busy = { state: "busy" as const, humanWaits: [], tools: [], children: [], interrupted: false, revision: 5 };
+		acpStore.applySnapshot(snapshot({ attachments: [attachment({ state: "prompting", activity: busy })] }));
+
+		acpStore.applyFrame(CONNECTION, frame(2, { kind: "attachmentState", state: "detached" }, SESSION));
+		acpStore.applyFrame(CONNECTION, frame(3, { kind: "attachmentState", state: "idle" }, SESSION));
+		acpStore.applyFrame(CONNECTION, frame(4, { kind: "activityChanged", activity: { ...busy, revision: 1 } }, SESSION));
+
+		expect(acpStore.attachment(CONNECTION, SESSION)?.activity?.revision).toBe(1);
+	});
 });
 
 describe("acpStore: a gap is a state, not a dropped frame", () => {

@@ -77,6 +77,14 @@ describe("SmartButtonStrip shared controls preserve actions", () => {
 		expect(getByRole("button", { name: "Second" })).toBeInTheDocument();
 	});
 
+	it("explains why the main action is disabled instead of showing its description", () => {
+		prompt("Unavailable");
+		const { getByRole } = mount();
+		const action = getByRole("button", { name: "Unavailable" });
+		expect(action).toBeDisabled();
+		expect(action).toHaveAttribute("title", "Missing context");
+	});
+
 	it("keeps busy and unavailable actions disabled rather than executing twice", async () => {
 		const active = prompt("Active");
 		prompt("Unavailable");

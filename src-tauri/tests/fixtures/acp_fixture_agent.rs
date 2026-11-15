@@ -52,6 +52,13 @@ fn main() {
     assert_eq!(args.next().as_deref(), Some("acp"), "production argv");
     assert_eq!(args.next().as_deref(), Some("-C"), "production argv");
     let root = PathBuf::from(args.next().expect("production argv carries a root"));
+    let expected_triage = root.join("expected-triage-policy.txt");
+    if expected_triage.exists() {
+        assert_eq!(args.next().as_deref(), Some("--exclusive-read-only"));
+        assert_eq!(args.next().as_deref(), Some("--env-allow"));
+        let provider = fs::read_to_string(expected_triage).unwrap();
+        assert_eq!(args.next().as_deref(), Some(provider.as_str()));
+    }
     let expected_profile = root.join("expected-profile.txt");
     if expected_profile.exists() {
         let expected = fs::read_to_string(expected_profile).expect("expected profile name");
@@ -75,6 +82,19 @@ fn main() {
             Some(expected.as_str()),
             "production prompt argv"
         );
+    }
+    if let Ok(extra) = fs::read_to_string(root.join("expected-mediated")) {
+        // Each nonblank line of the file is one more expected argument.
+        for flag in ["--no-tools", "--no-hooks", "--bare"]
+            .into_iter()
+            .chain(extra.lines().filter(|line| !line.is_empty()))
+        {
+            assert_eq!(
+                args.next().as_deref(),
+                Some(flag),
+                "mediated production argv"
+            );
+        }
     }
     assert!(
         args.next().is_none(),
@@ -143,6 +163,13 @@ impl Agent {
                 let name = required_str(step, "name", line);
                 let expected = step.get("value").and_then(Value::as_str);
                 assert_eq!(std::env::var(name).ok().as_deref(), expected, "scenario line {line}: {name}");
+            }
+            Some("await_file") => {
+                let path = self.root.join(required_str(step, "path", line));
+                fs::write(self.root.join("waiting-for-offer"), b"").expect("barrier marker");
+                while !path.exists() {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
             }
             Some("expect") => self.expect(step, line),
             Some("expect_response") => self.expect_response(step, line),

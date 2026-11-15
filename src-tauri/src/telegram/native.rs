@@ -214,7 +214,7 @@ async fn wait(
                 let Some(command) = command else { return; };
                 let reply = match command {
                     Command::Automation { .. } => continue,
-                    Command::Tool { reply, .. } | Command::Deliver { reply, .. } | Command::Update { reply, .. } | Command::SetupReply { reply, .. } => reply,
+                    Command::Workflow { reply, .. } | Command::Tool { reply, .. } | Command::Deliver { reply, .. } | Command::Update { reply, .. } | Command::SetupReply { reply, .. } => reply,
                 };
                 let _ = reply.send(Err(error));
             }

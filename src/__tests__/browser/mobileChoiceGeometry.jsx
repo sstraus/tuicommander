@@ -3,7 +3,7 @@ import { ChoicePromptOverlay } from '../../mobile/components/ChoicePromptOverlay
 import { Select } from '../../components/ui';
 import '../../mobile/mobile.css';
 const answers=[];
-const prompt={title:'Choose an answer',selection_mode:'toggle-enter',options:[{key:'1',label:'A long answer that may wrap when the viewport is narrow',highlighted:true},{key:'2',label:'No',destructive:true,hint:'Escape'}]};
+const prompt={title:'Choose an answer',header:'Sizes',question_index:2,question_count:2,selection_mode:'toggle-enter',options:[{key:'1',label:'A long answer that may wrap when the viewport is narrow',highlighted:true},{key:'2',label:'No',destructive:true,hint:'Escape'}]};
 render(() => <section id="geometry" style="padding:16px;background:var(--bg-secondary)">
   <ChoicePromptOverlay embedded prompt={prompt} onSelect={key=>answers.push(key)}/>
   <Select aria-label="Reference status"><option>Ready</option></Select>

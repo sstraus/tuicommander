@@ -436,6 +436,31 @@ describe("RemoteMachinesPanel", () => {
 		expect((container.querySelector('input[type="number"]') as HTMLInputElement).value).toBe("2222");
 	});
 
+	it("renders discovered hosts without an own scroll box and caps at 5 until expanded or filtered", async () => {
+		const hosts = Array.from({ length: 8 }, (_, i) => ({
+			host: `h${i}`,
+			target: `Box${i}.example`,
+			user: null,
+			port: null,
+			source: "config" as const,
+		}));
+		actions.discoverSshHosts.mockResolvedValueOnce({ hosts, hashed_count: 0 });
+		const { findByText, getByText, getByPlaceholderText, queryByText, container } = render(() => (
+			<RemoteMachinesPanel />
+		));
+		await findByText("h0");
+		// A max-height/overflow box would trap the mouse wheel inside the Settings page.
+		expect(container.querySelector('[style*="max-height"], [style*="overflow-y"]')).toBeNull();
+		expect(queryByText("h5")).toBeNull();
+		fireEvent.input(getByPlaceholderText("Filter hosts"), { target: { value: "box7" } });
+		expect(getByText("h7")).toBeTruthy();
+		expect(queryByText("h0")).toBeNull();
+		fireEvent.input(getByPlaceholderText("Filter hosts"), { target: { value: "" } });
+		fireEvent.click(getByText("Show all (8)"));
+		expect(getByText("h7")).toBeTruthy();
+		expect(getByText("Show fewer")).toBeTruthy();
+	});
+
 	it("warns when the SSH agent holds no identities", async () => {
 		actions.sshAgentInfo.mockResolvedValueOnce({ keys: [], agent_type: "Not available" });
 		const { findByRole } = render(() => <RemoteMachinesPanel />);

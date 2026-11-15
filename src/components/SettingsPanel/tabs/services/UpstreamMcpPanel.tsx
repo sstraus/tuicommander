@@ -12,6 +12,7 @@ import {
 } from "../../../../transport";
 import { mergeSettingsSnapshot } from "../../../../utils/mergeSettingsSnapshot";
 import { handleOpenUrl } from "../../../../utils/openUrl";
+import { reconcileById } from "../../../../utils/reconcileById";
 import { ConfirmDialog } from "../../../ConfirmDialog";
 import { Button } from "../../../ui/Button";
 import { Input } from "../../../ui/Input";
@@ -279,7 +280,7 @@ export const UpstreamMcpPanel: Component = () => {
 	const refreshStatus = async () => {
 		try {
 			const snapshot = await rpc<{ upstreams: UpstreamStatusEntry[] }>("get_mcp_upstream_status", {}, machine());
-			setUpstreamStatus(snapshot.upstreams ?? []);
+			setUpstreamStatus((prev) => reconcileById(snapshot.upstreams ?? [], prev, (u) => u.name));
 		} catch {
 			// Upstream status not available (e.g. server not running)
 		}
@@ -311,7 +312,7 @@ export const UpstreamMcpPanel: Component = () => {
 							setEditForm(merged.value);
 							reportSettingsConflicts(merged.conflicts);
 						}
-						setUpstreams(config.servers ?? []);
+						setUpstreams((prev) => reconcileById(config.servers ?? [], prev, (server) => server.id));
 					},
 				}),
 			);

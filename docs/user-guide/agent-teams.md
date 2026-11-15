@@ -98,7 +98,7 @@ Every PTY session gets a stable `TUIC_SESSION` UUID injected as an environment v
 
 Managed workers receive a payload-free terminal notice that tells them to read their inbox. If a worker is busy, TUICommander waits for a safe idle composer before submitting the notice. This includes Claude Code workers with an SSE stream: a channel notification during one turn cannot start a later turn for unread mail. External Claude Code clients without a managed terminal can receive MCP channel notifications (`notifications/claude/channel`). Every message also lands in a buffered inbox.
 
-A peer explicitly registered as an orchestrator keeps peer results and lifecycle payloads in its inbox. An idle/completed orchestrator receives only one coalesced notice that a message is available and should be read with `agent action=inbox` (`[TUIC] message available …`). The same safe notice may start a turn while background work keeps the task state `working`, but only when the shell is idle, the composer is confirmed ready and empty, and no question is active. A genuinely busy or non-quiescent orchestrator is never injected or steered. When that notice would cover nothing but child lifecycle events, it prints them instead (`[TUIC] child agent 8c261794 is now idle; child agent 8c261794 exited (exit 0)`) and no inbox read is needed — a peer message anywhere in the batch sends you back to the generic notice. An active `agent wait` receives the mail directly and suppresses that notice.
+A peer explicitly registered as an orchestrator keeps peer results and lifecycle payloads in its inbox. An idle/completed orchestrator receives only one coalesced notice that a message is available and should be read with `agent action=inbox` (`[TUIC] message available …`). The same safe notice may start a turn while background work keeps the task state `working`, but only when the shell is idle, the composer is confirmed ready and empty, and no question is active. Normal mail never injects or steers a genuinely busy or non-quiescent orchestrator. Explicit urgent mail uses the forced-steer flow described below. When that notice would cover nothing but child lifecycle events, it prints them instead (`[TUIC] child agent 8c261794 is now idle; child agent 8c261794 exited (exit 0)`) and no inbox read is needed — a peer message anywhere in the batch sends you back to the generic notice. An active `agent wait` receives the mail directly and suppresses that notice.
 
 If writing that payload-free notice has an uncertain outcome, TUICommander retries it at most once after five seconds. A second uncertain result exhausts the wake budget for the whole unread-mail group; later and newly coalesced mail stays inbox-only until a successful `agent action=inbox` or `agent action=wait` observation clears the group. Later mail then receives a fresh initial wake and one-retry budget.
 
@@ -111,6 +111,26 @@ TUICommander injects these into every Claude Code PTY session — no manual conf
 | `TUIC_SESSION` | Stable UUID per tab | Agent identity for messaging |
 | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | `1` | Unlocks TeamCreate/TaskCreate/SendMessage |
 | `--dangerously-load-development-channels server:tuicommander` | *(CLI flag, agent spawn only)* | Enables Claude's channel capability; managed peer mail still uses the PTY wake |
+
+### Script callbacks and the inbound webhook
+
+A managed agent's launch instructions include this sentence: a script you start can
+call you back with its data when it ends, through the inbound webhook. The last step of
+the script posts its result to the agent's own identity:
+
+```bash
+curl -sS --fail-with-body --unix-socket "$TUIC_SOCKET" --data-binary @result.txt \
+  "http://localhost/agent/webhook/$TUIC_SESSION"
+```
+
+On Windows, which has no `$TUIC_SOCKET`, the sentence names
+`tuic agent send <session> "<result text>"` instead.
+
+Any process can address any agent the same way: the path takes a peer id, registered
+name, PTY id or terminal alias. The body arrives as mail from sender `webhook` and wakes
+the agent like other mail, with a payload-free inbox notice; it is never typed into the
+terminal. An unknown recipient or a body over 64 KB is refused, and nothing is filed.
+See the [HTTP API reference](../api/http-api.md#inbound-agent-webhook) for the format.
 
 ### Messaging Flow
 
@@ -153,17 +173,11 @@ TUICommander injects these into every Claude Code PTY session — no manual conf
 
    `normal` is the default and follows the existing inbox, channel and idle-wake paths.
    Use `urgent` when the recipient must change course before its next step.
-   The message body stays in the inbox; a working Claude Code or Codex recipient
-   receives only a notice telling it to read `agent action=inbox`. The CLI
-   queues that notice behind its current tool call. A long tool call therefore
-   delays the notice until it ends. The notice identifies the sender by UUID;
-   its display name and message body stay in the inbox. The sender receives
-   `urgent_delivered=true` for a notice write, coalesced unread notice, active
-   waiter, or already observed inbox. Otherwise `urgent_fallback_reason`
-   explains the queued fallback. This receipt does not prove the agent acted.
-   A question, a draft in the composer, an unknown agent type or an exited
-   recipient prevents the busy-turn notice. One unread notice covers further
-   urgent messages from the same sender until the recipient reads its inbox.
+   Urgent mail keeps an inbox copy but also forces a safe working Claude Code,
+   Codex or ego to stop its turn, then submits the full message after confirmed
+   idle. `interrupt` is an alias. A draft, native dialog, unknown owner or timeout
+   leaves the body inbox-only and returns the failure reason. It never falls back
+   to an ordinary queued notice. The receipt proves input delivery, not model action.
 
 4. **Wait for and receive messages** — one blocking call returns the message bodies:
    ```
@@ -195,18 +209,12 @@ not send that report.
 | **Channel push** | External Claude client has an SSE stream and no managed PTY | Real-time | `--dangerously-load-development-channels server:tuicommander` on the recipient's CC process |
 | **Managed wake** | Ordinary managed peer has a safe idle composer | Immediate or next idle transition | Managed PTY |
 | **Orchestrator wake** | Registered parent is idle/completed and not waiting | Real-time, coalesced | Managed PTY + authoritative lifecycle |
-| **Urgent notice** | Managed Claude Code or Codex recipient is working and the composer is safe | At the next tool boundary | `urgency="urgent"`; body remains in inbox |
+| **Forced steer** | Managed Claude Code, Codex or ego has a safe composer | Interrupt, confirmed idle, then full message | `urgency="urgent"` (`interrupt` is an alias) |
 | **Inbox buffer** | Always | Poll-based | Registration only |
 
-The 2026-09-27 live CLI probes recorded in
-`src-tauri/src/fixtures/agent_mail/urgent_cli_probe_2026_09_27.json` used Claude
-Code 2.1.280 and Codex CLI 0.157.1. Enter alone queued the notice in both.
-The immediate-send gestures were also probed for a possible future interrupt
-mode: Claude's Ctrl+Enter interrupted the Bash call, and Codex's Escape
-submitted steer instructions while the shell process continued. Urgent mail
-does not use either gesture. A CLI update may change these key semantics;
-the receipt reports the path TUICommander took, not proof that the model obeyed
-the notice.
+Urgent mail uses the same forced-steer flow as Chat Send now and Compose Steer. It sends Escape, waits up to ten seconds for confirmed idle, then submits the full message, including to an orchestrator. A running Stop hook does not make urgent mail an ordinary busy-queue entry. A draft, native question, unsupported agent or idle timeout leaves the message in the inbox only and returns `delivered=false` with the reason. There is no fallback Enter or queued wake. An active waiter may already own delivery and needs no interruption. `interrupt_payload_and_inbox` reports a written input, not proof the model obeyed it. Interrupted tools may leave partial work, and child processes may continue.
+
+Historical native-key probes are retained in `src-tauri/src/fixtures/agent_mail/urgent_cli_probe_2026_09_27.json`. They show why ordinary busy Enter is not steering: Claude and Codex deferred that input to a tool boundary. Those probes predate the forced-steer contract.
 
 Messages are always buffered in the inbox regardless of whether another delivery path succeeds. The inbox holds up to 100 messages per agent: it evicts safe lifecycle notices before peer mail, and rejects a peer send when only protected peer mail remains. Individual messages are capped at 64 KB.
 
@@ -241,7 +249,6 @@ If you run Claude Code outside TUICommander but still want to use TUIC messaging
    ```bash
    claude --dangerously-load-development-channels server:tuicommander
    ```
-
 
 ### Messaging vs Claude Code Native SendMessage
 
@@ -286,3 +293,180 @@ An ACP consumer can subscribe to `tuic://inbox/subscriptions/pump` for filtered
 resource updates and idle wakes without a model wait loop. See the complete
 [mail contract](../backend/mcp-http.md#durable-independent-mail-subscriptions)
 for acknowledgement, retention, reader limits and HTTP transport details.
+
+### Typed reports and agent stages
+
+Claude, Codex and ego use the same MCP `agent` call (including ego over ACP).
+The server binds the sender identity. `message` remains required:
+
+```json
+{"action":"send","to":"orchestrator","message":"Implementation ready","report":{"state":"ready"}}
+```
+
+`report.state` is `ready`, `waiting`, `blocked`, `failed`, `dropped` or `progress`.
+`waiting` requires `wait_for`: `boss`, `review` or `dependency`. Other states must
+omit it. An optional `question` is allowed only with `waiting` on `boss`:
+
+```json
+{"action":"send","to":"orchestrator","message":"Choose scope","report":{"state":"waiting","wait_for":"boss","question":{"id":"scope","text":"Which scope?","options":[{"id":"small","label":"Small"},{"id":"full","label":"Full"}],"recommended_option_id":"small"}}}
+```
+
+Question id/text and option id/label must be nonblank; option ids must be unique.
+A recommendation must name an option. Invalid reports are rejected before mail
+insertion. The combined message UTF-8 bytes and serialized report JSON must fit 64 KiB.
+Inbox, wait and durable subscriptions return `report` as an object. Remote mail
+preserves it. Free-text mail remains valid, has no `report` field and does not
+change the latest typed report. Text prefixes are not a typed report protocol.
+
+Session rows (`GET /sessions`, desktop IPC `list_active_sessions`, MCP session
+list/status and peer inventories) expose `report`, `report_at` (host acceptance
+Unix milliseconds), `report_message_id`, `stage` and `stage_reason`. Compact
+inventories retain these fields. The latest accepted report is retained outside
+the bounded inbox, independently of reads, ACK and eviction, for this daemon
+lifetime. Historical acceptance time/id remain available after new input;
+the report's stage effect ends when its PTY assignment or submitted-input turn
+generation changes. A stage is not a claim that output passed review.
+
+One backend table selects the first matching fact:
+
+| Order | Fact | Stage |
+|---|---|---|
+| 0 | Closed/exited PTY or no live peer binding | `null` |
+| 1 | Pending initial prompt, failed or uncertain input write | `undelivered_input` |
+| 2 | Current report waits on Boss, or a native question is active | `waiting_on_boss` |
+| 3 | Current report is ready or waits on review | `waiting_on_review` |
+| 4 | Current report is blocked/failed/dropped or waits on a dependency | `blocked` |
+| 5 | Commands are queued | `queued` |
+| 6 | Agent is idle/completed without background work | `idle` |
+| 7 | Agent is working or owns background work | `working` |
+| otherwise | Lifecycle is unknown | `null` |
+
+`progress` never selects a stage by itself: native facts select working/idle or
+another matching rule. `ready` means available for review, not approved. An ACP
+peer without a PTY receives mail without a fabricated terminal row. No separate
+stage mutation action exists.
+
+### Agent capabilities
+
+A spawn fixes what the new agent may do. `agent action=spawn` (and
+`spawn.capabilities` on `agent action=launch`) takes `capabilities`, a list of
+`land`, `push`, `tag`, `children`, `progress` and `operator`. The `operator` capability permits the automation cutover, rollback and reconciliation actions. Uncapped roots have it; automation and workflow agents do not. TUIC saves an agent’s fixed set before launch and restores it with the session identity after restart. A legacy session without a record must be relaunched to use `operator`; desktop actions are unchanged. The local user can edit these files, so they are not a security boundary. A child, that is a spawn with a
+parent, gets none of them unless the list names them. A spawn without a parent
+and without the list stays uncapped, so hand-opened tabs keep their rights.
+
+- `children` covers `agent action=spawn`, `agent action=launch` and
+  `workflow action=launch`. Plain terminal sessions are not children.
+- `progress` covers the `progress` tool.
+- `land`, `push` and `tag` have no MCP call. TUIC exports the set as
+  `TUIC_CAPABILITIES` (comma-separated, empty for none) and the repository
+  `pre-push` hook refuses a branch push without `push` and a tag push without
+  `tag`. For a capped agent TUIC also sets `core.hooksPath` (through
+  `GIT_CONFIG_COUNT`/`KEY`/`VALUE`) to a TUIC hooks directory, so a push is
+  refused in a repository that has no such hook, also from a login shell such
+  as the Claude Code Bash tool. Each hook there runs the repository's own hook
+  of the same name. A `git` shim first on `PATH` adds the `--no-verify` case,
+  but a login shell can move it behind `/usr/bin`. Enforcement is advisory and
+  holds only where TUIC starts the agent on macOS or Linux: `git push
+  --no-verify` in a login shell, an absolute path to git, `git -c
+  core.hooksPath=...`, `env -u GIT_CONFIG_COUNT`, a resumed tab (story 2757)
+  and Windows (repository hook only) are not covered.
+
+TUIC refuses a call outside the set with `code: "capability_denied"`, the
+`capability` it needs and `effect: "not_started"`. The parent gets one
+`capability_denied` mail per refused capability, however often the child
+retries. A capped agent can grant a child only capabilities it holds. The set is
+written only by the spawn and removed with the PTY: mail, prompts and the
+caller's `env` (which cannot set `TUIC_CAPABILITIES`) cannot widen it.
+
+### Silent managed workers
+
+One silence rule covers every agent session, managed or opened by hand: an
+agent whose stage is `working` or `queued`, with no new output, submitted
+input, agent hook event or accepted typed report for 30 awake minutes, is
+stalled. Session and peer inventories then report `stalled: true` and
+`stage: "stalled"` (`stage_reason: "silent_past_threshold"`), the session state
+pushed to clients carries `stalled: true`, and the tab and sidebar dots show it
+in the warning color instead of busy. An idle agent never stalls: it waits for
+its user, and the stop of a managed child is a child report (below). Any new
+activity clears the stall at once.
+
+Only a managed PTY (one with a parent) also gets recovery: one
+`state_change` parent mail with `state: "stalled"`, `recovery: "nudged_worker"`
+and `stop`, the command that stops the worker. The worker gets one nudge in its
+inbox and terminal that asks for a progress, BLOCKED or RESULT report. Recovery
+never stops the PTY: silence is not proof of a hang, so the stop is the parent's
+decision.
+
+Activity before the threshold starts a new silence window. Declared waits for
+Boss, review or a dependency do not count as silence; neither does a BLOCKED
+mail to the parent (until the parent answers). Running background work does not
+exempt a worker, since the command can hang; the notice carries `background_work: true`.
+A worker whose latest mail to its parent starts with `RESULT` gets no nudge; its
+parent notice says `recovery: "parent_decides"`. `keep_open` does not exempt
+a worker from stall recovery. An unknown or unbound peer is never a target.
+The five-second maintenance sweep evaluates silence; sleep and daemon restarts
+do not count toward the window. Exited workers and current terminal reports
+remain excluded. Existing idle-close policy still applies to eligible workers.
+
+Set `TUIC_AGENT_STALL_MINUTES` in the daemon environment to change the threshold;
+`0` disables alarms and recovery. An absent or invalid value uses 30 minutes. This covers local
+managed PTYs; an ACP conversation without a PTY has no silence alarm here.
+
+### Child reports at a silent stop
+
+Each parent mail or terminal submission to a managed child opens one report
+obligation (the spawn task opens the first). A mail from the child to its parent
+that starts with `RESULT` or `BLOCKED`, or any typed report except `progress`,
+closes it. When the child stops while the obligation is open, TUIC closes it and
+sends the parent one mail with `type: "child_report"` and subscription kind
+`report`. The same sweep handles Claude, Codex, ego and every other agent:
+
+| `state` | Stop | Delay |
+|---|---|---|
+| `ended_without_result` | agent idle or completed, no background work, no queued input, no live `tuic bg` runner and no background command under the agent (one started in the agent's first minute is not seen) | 15 s without input |
+| `error` | the agent refused its turn (`agent_state: "error"`); `detail.reason` | 15 s |
+| `blocked_dialog` | a question or dialog owns the composer; `detail.on` is its text | 5 s without input |
+| `dead` | the agent exited by itself; `detail.exit_code` | at exit |
+
+The mail also carries `obligation` (the opening message or submission id, or
+`spawn`), `obligation_open`, `last_text` (the screen above the input box, at
+most 2 KB) and `resume` (`agent`, the discovered `id` when known, and
+`tuic_session`). A consecutive turn, a background wake or a queued input inside
+the delay sends nothing. An exit that TUIC caused (kill, close, idle close,
+suspend) sends no report. Subscribe with `filter=report` to read only these.
+The report shares the maintenance sweep with the stall alarm, so
+`TUIC_AGENT_STALL_MINUTES=0` does not disable it.
+
+Before that report, TUIC takes one automatic recovery step for each
+obligation. At the first `ended_without_result` stop it reprompts the child to
+continue or to send its report. At the first `error` stop it waits 60 s, then
+types one `continue` into the refused turn when the composer is idle and empty.
+The parent gets a `child_report` notice of the step with `recovery: "reprompt"`
+or `"retry"`, and the obligation stays open. A second stop for the same
+obligation sends the report with `recovery: "exhausted"` and takes no further
+step. A report without a step carries `recovery: "none"`. A new parent task
+opens a new obligation with its own step.
+
+### Mail delivery to an idle child
+
+A parent mail to its idle managed child counts as delivered only when the child
+starts a turn: TUIC types the wake and then sees the agent's own busy edge (a
+native busy hook or a Working screen), or the child reads its inbox. The send
+result then has `turn_check: "pending"`. When neither happens within 20 s, the
+parent gets one mail with `type: "delivery_failed"` (subscription kind
+`failure`): `reason` is `agent_not_ready` or `awaiting_input` (the wake is still
+queued), `composer_not_confirmed`, `no_turn_started` or `exited`; `message_id`,
+`pending` (unread mails of the child), `session_id`, `tuic_session` and `name`.
+The mail stays in the child's inbox. The failure closes the report obligation
+that mail opened, so no `child_report` and no recovery step follow for it. A child that was busy
+when the mail arrived is not checked.
+
+## Waiting on you
+
+Plans and Stories shows **Waiting on you** above the plans: native stories waiting for manual checks and unanswered workflow questions of the open project. Select an entry to open its story, or the Run history of the question's run, where you answer it. Answered, superseded and cancelled workflow questions disappear through the workflow engine's inbox projection.
+
+The activity bell notifies each waiting item once, in **WAITING ON YOU**, for every registered local project. The entry opens the same story or run. It leaves the bell when the story leaves manual checks or the question is answered; a dismissed entry stays dismissed while the item waits. Terminal questions are not waiting items: the terminal's awaiting badge and the Activity Dashboard row report them.
+
+## Agent health
+
+Activity Dashboard shows reported failures, blocked agents, undelivered input and the owning host's explicit stalled flag. The view does not run its own silence timer. Missing live stage data is shown as unknown. Refresh health retries a failed read. Connected remote sessions supply their host-owned stages.

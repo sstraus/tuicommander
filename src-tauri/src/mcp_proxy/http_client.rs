@@ -79,7 +79,7 @@ impl From<&str> for UpstreamError {
 // ---------------------------------------------------------------------------
 
 /// A tool definition returned by an upstream server.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct UpstreamToolDef {
     /// Original tool name from the upstream server.
     pub(crate) original_name: String,

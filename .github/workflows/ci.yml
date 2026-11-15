@@ -276,8 +276,8 @@ jobs:
           CMAKE_C_FLAGS: '-fPIC'
           CMAKE_CXX_FLAGS: '-fPIC'
           RUSTFLAGS: '-C link-arg=-fuse-ld=mold'
-          TUIC_FIXTURE_FEATURES: dictation
-        run: bash ../scripts/with-test-tmp.sh cargo nextest run --workspace --features dictation --profile ci
+          TUIC_FIXTURE_FEATURES: dictation,test-fixtures
+        run: bash ../scripts/with-test-tmp.sh cargo nextest run --workspace --features dictation,test-fixtures --profile ci
 
 
       # This check invokes nextest and compiled Rust tests. Keep it out of the
@@ -377,8 +377,7 @@ jobs:
   # Push to main only: verify build on macOS and Windows.
   # GPU notes:
   # - macOS: whisper-rs compiled with Metal (target-specific dep) — always GPU.
-  # - Windows: whisper-rs is CPU-only. The Vulkan backend's vulkan-shaders-gen
-  #   sub-build is chronically broken on the runner, so dictation runs on CPU.
+  # - Windows: this compile check is CPU-only; releases add --features vulkan.
   #   CUDA support is optional (add Jimver/cuda-toolkit + --features cuda if needed).
   rust-cross:
     timeout-minutes: 90
@@ -505,6 +504,11 @@ jobs:
         shell: bash
         run: bash scripts/check-desktop-embedding.sh
 
+      - name: Windows library compile check
+        if: matrix.platform == 'windows-latest'
+        # Reject platform-only source errors before building test targets.
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml --lib --target x86_64-pc-windows-msvc
+
       - name: Clippy
         working-directory: src-tauri
         env:
@@ -532,10 +536,10 @@ jobs:
           # harnesses; Cargo.toml keeps dependencies and tuic-terminal at O1.
           CARGO_PROFILE_TEST_OPT_LEVEL: "0"
           # The setup build must share nextest's profile and feature graph.
-          TUIC_FIXTURE_FEATURES: dictation
+          TUIC_FIXTURE_FEATURES: dictation,test-fixtures
           CMAKE_C_COMPILER_LAUNCHER: "sccache"
           CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
           # Use -Z7: Git Bash converts /Z7 into a Windows path before native Cargo.
           CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Windows-x64' && '-Z7' || '' }}
           CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Windows-x64' && '-Z7' || '' }}
-        run: bash ../scripts/with-test-tmp.sh cargo nextest run --workspace --features dictation --profile ci
+        run: bash ../scripts/with-test-tmp.sh cargo nextest run --workspace --features dictation,test-fixtures --profile ci

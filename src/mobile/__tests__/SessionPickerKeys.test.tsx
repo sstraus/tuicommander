@@ -1,9 +1,9 @@
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import capturedSessions from "../../../docs/evidence/mobile-pickers-1972/session-state.json";
 import { rpc } from "../../transport";
 import { SessionDetailScreen } from "../screens/SessionDetailScreen";
 import type { SessionInfo } from "../useSessions";
+import capturedSessions from "./fixtures/session-state.json";
 
 vi.mock("../../transport", () => ({
 	subscribeEvents: vi.fn(async () => () => {}),

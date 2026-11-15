@@ -476,6 +476,8 @@ function createPluginRegistry() {
 			},
 
 			getSettings(repoPath: string): RepoSettingsSnapshot | null {
+				// Unknown repo means unregistered: a settings entry is optional.
+				if (!repositoriesStore.get(repoPath)) return null;
 				const effective = repoSettingsStore.getEffective(repoPath);
 				if (!effective) return null;
 				return {
@@ -709,6 +711,23 @@ function createPluginRegistry() {
 				});
 			},
 
+			async fileSize(absolutePath: string): Promise<number> {
+				requireCapability(pluginId, capabilities, "fs:read");
+				return invoke<number>("plugin_file_size", { path: absolutePath, pluginId });
+			},
+			async readFileRange(absolutePath: string, offset: number, length: number): Promise<string> {
+				requireCapability(pluginId, capabilities, "fs:read");
+				if (
+					!Number.isSafeInteger(offset) ||
+					offset < 0 ||
+					!Number.isSafeInteger(length) ||
+					length < 0 ||
+					length > 8 * 1024 * 1024
+				) {
+					throw new Error("Invalid binary range: non-negative safe integers, length at most 8 MiB required");
+				}
+				return invoke<string>("plugin_read_file_range", { path: absolutePath, offset, length, pluginId });
+			},
 			async readFileTail(absolutePath: string, maxBytes: number): Promise<string> {
 				requireCapability(pluginId, capabilities, "fs:read");
 				return invoke<string>("plugin_read_file_tail", { path: absolutePath, maxBytes, pluginId });
@@ -870,31 +889,6 @@ function createPluginRegistry() {
 			async readCredential(serviceName: string): Promise<string | null> {
 				requireCapability(pluginId, capabilities, "credentials:read");
 
-				// First-use consent check for external plugins
-				if (capabilities !== null) {
-					const consentKey = `credential-consent-${serviceName}`;
-					const existing = await invoke<string | null>("read_plugin_data", {
-						pluginId,
-						path: consentKey,
-					});
-					if (!existing) {
-						// Show consent dialog
-						const { confirm } = await import("@tauri-apps/plugin-dialog");
-						const allowed = await confirm(
-							`Plugin "${pluginId}" wants to read your credentials for "${serviceName}". Allow?`,
-							{ title: "Credential Access", kind: "warning" },
-						);
-						if (!allowed) {
-							throw new Error(`User denied credential access for "${serviceName}"`);
-						}
-						await invoke("write_plugin_data", {
-							pluginId,
-							path: consentKey,
-							content: "allowed",
-						});
-					}
-				}
-
 				return invoke<string | null>("plugin_read_credential", {
 					serviceName,
 					pluginId,
@@ -959,13 +953,18 @@ function createPluginRegistry() {
 
 			// -- Tier 3g: CLI execution --
 
-			async execCli(binary: string, args: string[], cwd?: string): Promise<string> {
+			async execCli(binary: string, args: string[], cwd?: string, options?: { timeoutMs?: number }): Promise<string> {
 				requireCapability(pluginId, capabilities, "exec:cli");
+				const timeoutMs = options?.timeoutMs;
+				// JSON turns NaN and Infinity into null, which the backend reads as "use the default".
+				if (timeoutMs !== undefined && !Number.isSafeInteger(timeoutMs))
+					throw new Error(`execCli timeoutMs must be a whole number of milliseconds, got ${timeoutMs}`);
 				return invoke<string>("plugin_exec_cli", {
 					binary,
 					args,
 					cwd: cwd ?? null,
 					pluginId,
+					timeoutMs: timeoutMs ?? null,
 				});
 			},
 

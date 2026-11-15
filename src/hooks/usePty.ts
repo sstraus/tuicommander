@@ -66,7 +66,14 @@ export interface QueuedCommand {
 	 * diagnosis; the mobile prompt panel shows only operator user_command entries.
 	 */
 	kind: "user_command" | "notice" | "initial_prompt";
+	/**
+	 * Steer stops the current request before submitting the selected prompt.
+	 * Absent: this harness does not support forced steering.
+	 */
+	send_now?: SendNowMode;
 }
+
+export type SendNowMode = "interrupt";
 
 /** Active session info returned by list_active_sessions */
 export interface ActiveSessionInfo {

@@ -371,7 +371,7 @@ Periodic `git fetch` for all repositories at a configurable interval.
 
 **File:** `src/hooks/useAutoDeleteBranch.ts`
 
-Automatically deletes local branches after their PR is merged (configurable per-repo).
+Automatically deletes local branches after their PR is merged (configurable per-repo). A Keep answer is published to `keptCheckoutsStore`; the sidebar branch row shows **Reset Keep** for it, which calls `resetKeep`.
 
 ---
 

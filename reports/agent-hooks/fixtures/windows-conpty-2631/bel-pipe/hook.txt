@@ -1,0 +1,3 @@
+hook_pid=9328 terminator=bel
+console_mode_ok=1 console_mode=0x7 error=None
+write_ok=1 requested=116 written=116 error=None elapsed_us=692

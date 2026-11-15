@@ -37,6 +37,8 @@ export interface UsageApiResponse {
 	extra_usage: ExtraUsage | null;
 	plan: unknown;
 	meta: unknown;
+	/** Age in seconds of the last known reading served while the endpoint is rate-limited. */
+	stale_age_secs?: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +57,15 @@ export function formatResetCompact(isoStr: string | null, now: number = Date.now
 	const diffHrs = Math.floor(diffMin / 60);
 	if (diffHrs < 24) return `${diffHrs}h`;
 	return `${Math.floor(diffHrs / 24)}d`;
+}
+
+/** Compact age of a stale reading, e.g. "<1m", "6m", "2h", "1d". */
+function formatAgeCompact(secs: number): string {
+	const minutes = Math.floor(secs / 60);
+	if (minutes < 1) return "<1m";
+	if (minutes < 60) return `${minutes}m`;
+	const hours = Math.floor(minutes / 60);
+	return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
 }
 
 /** True when any windowed rate-limit bucket (shown in the ticker text or not) has data.
@@ -97,7 +108,9 @@ export function buildTickerText(api: UsageApiResponse, now: number = Date.now())
 		const suffix = reset ? ` -${reset}` : "";
 		parts.push(`usage: ${Math.round(api.extra_usage.utilization)}%${suffix}`);
 	}
-	return parts.length > 0 ? parts.join(" · ") : "no data";
+	if (parts.length === 0) return "no data";
+	const text = parts.join(" · ");
+	return api.stale_age_secs != null ? `${text} (${formatAgeCompact(api.stale_age_secs)} ago)` : text;
 }
 
 /** Determine ticker priority from usage levels.

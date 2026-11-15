@@ -49,11 +49,16 @@ ideas
 benchmarks
 .mdkb
 scripts/*
+!scripts/workflow-e2e.sh
+!scripts/workflow-e2e/
 !scripts/test-headless-github.py
 !scripts/backend-build-identity.mjs
 !scripts/backend-build-identity.test.mjs
+!scripts/generate-macos-icon.sh
+!scripts/test-macos-icon.sh
 !scripts/agent-test.py
 !scripts/agent-test-visible.py
+!scripts/workflow-palette-layout.py
 !scripts/agent-test-tests.py
 !scripts/test-agent-test.sh
 !scripts/check-desktop-embedding.sh
@@ -76,6 +81,8 @@ scripts/fixtures/*
 !scripts/fixtures/mobile-jump-layout.html
 !scripts/generate-story-types.py
 !scripts/stall-workload/
+!scripts/story-adapter-reference/
+!scripts/story-adapter-conformance/
 !scripts/chat-simulator/
 !scripts/agent_capture/
 !scripts/replay-oracle.sh
@@ -100,6 +107,11 @@ scripts/fixtures/*
 !scripts/generate-release-notes.sh
 !scripts/third-party-notices.mjs
 !scripts/check-release-tag.sh
+!scripts/check-ggml-x86-baseline.sh
+!scripts/check-appimage-vulkan-loader.sh
+!scripts/fetch-vulkan-loader.py
+!scripts/publish-snapshot.py
+!scripts/test_release_targets.py
 !scripts/release-flags.sh
 !scripts/test-release-flags.sh
 !scripts/publish-beta-feed.sh
@@ -125,6 +137,7 @@ scripts/fixtures/*
 !scripts/test-append-only-merge.sh
 !scripts/test-with-test-tmp-prune.sh
 !scripts/test-with-test-tmp-worktree-target.sh
+!scripts/test-with-test-tmp-socket-path.sh
 !scripts/test-install-sh-tmpdir.sh
 !scripts/hooks/
 !scripts/speech-assets/
@@ -141,6 +154,7 @@ src-tauri/target-clippy/
 
 # Sidecar binaries (built during cargo tauri build)
 src-tauri/binaries/tuic-bridge-*
+src-tauri/binaries/tuic-*
 docs/research/
 docs/solutions/
 docs/book
@@ -189,3 +203,8 @@ ORCHESTRATOR.md
 # Website: film is a release asset fetched at deploy; review screenshots stay local
 website/public/video/
 website/.review/
+
+# Keep only the linked workflow rework plan trackable.
+!/plans/
+/plans/*
+!/plans/workflow-engine-rework.md

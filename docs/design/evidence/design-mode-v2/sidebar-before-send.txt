@@ -1,0 +1,43 @@
+Design Mode
+
+/Users/stefano.straus/Gits/personal/tuicommander__wt/feat-design-mode-v2-1672
+
+Connected
+
+Pick element
+Multi-pick
+Stop
+Dev servers
+http://localhost:1421/ · listener · pid 15046
+http://localhost:58390/ · listener · pid 23308
+http://localhost:9876/ · listener · pid 34064
+http://localhost:54706/ · listener · pid 34260
+http://localhost:9895/ · listener · pid 35112
+http://localhost:55331/ · listener · pid 40558
+http://localhost:61920/ · listener · pid 62641
+http://localhost:61946/ · listener · pid 63009
+http://localhost:19342/ · listener · pid 67263
+http://localhost:19343/ · listener · pid 67265
+http://localhost:59977/ · listener · pid 74258
+http://localhost:19340/ · listener · pid 83008
+http://localhost:19341/ · listener · pid 83009
+Refresh servers and agents
+button · Pick this target
+#target
+
+Screenshot unavailable: Either the '<all_urls>' or 'activeTab' permission is required.
+
+Element evidence
+Delete pick
+h1 · Strict CSP fixture
+h1:nth-of-type(1)
+
+Screenshot unavailable: Either the '<all_urls>' or 'activeTab' permission is required.
+
+Element evidence
+Delete pick
+Send feedback to
+Design Mode test agent (PTY receiver)
+Send to agent
+
+Click one element. Escape cancels.

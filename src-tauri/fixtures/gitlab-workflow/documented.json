@@ -1,0 +1,780 @@
+{
+  "_provenance": {
+    "source": "Official GitLab documentation JSON examples; not live service recordings",
+    "api": "REST v4; diff flags documented since GitLab 18.4",
+    "retrieved": "2026-11-11",
+    "urls": [
+      "https://docs.gitlab.com/api/merge_requests/",
+      "https://docs.gitlab.com/user/project/integrations/webhook_events/",
+      "https://docs.gitlab.com/api/notes/"
+    ]
+  },
+  "diff_version": {
+    "id": 110,
+    "head_commit_sha": "33e2ee8579fda5bc36accc9c6fbd0b4fefda9e30",
+    "base_commit_sha": "eeb57dffe83deb686a60a71c16c32f71046868fd",
+    "start_commit_sha": "eeb57dffe83deb686a60a71c16c32f71046868fd",
+    "created_at": "2016-07-26T14:44:48.926Z",
+    "merge_request_id": 105,
+    "state": "collected",
+    "real_size": "1",
+    "patch_id_sha": "d504412d5b6e6739647e752aff8e468dde093f2f",
+    "commits": [
+      {
+        "id": "33e2ee8579fda5bc36accc9c6fbd0b4fefda9e30",
+        "short_id": "33e2ee85",
+        "parent_ids": [],
+        "title": "Change year to 2018",
+        "author_name": "Administrator",
+        "author_email": "admin@example.com",
+        "authored_date": "2016-07-26T17:44:29.000+03:00",
+        "committer_name": "Administrator",
+        "committer_email": "admin@example.com",
+        "committed_date": "2016-07-26T17:44:29.000+03:00",
+        "created_at": "2016-07-26T17:44:29.000+03:00",
+        "message": "Change year to 2018",
+        "trailers": {},
+        "extended_trailers": {},
+        "web_url": "https://gitlab.example.com/project/-/commit/33e2ee8579fda5bc36accc9c6fbd0b4fefda9e30"
+      },
+      {
+        "id": "aa24655de48b36335556ac8a3cd8bb521f977cbd",
+        "short_id": "aa24655d",
+        "parent_ids": [],
+        "title": "Update LICENSE",
+        "author_name": "Administrator",
+        "author_email": "admin@example.com",
+        "authored_date": "2016-07-25T17:21:53.000+03:00",
+        "committer_name": "Administrator",
+        "committer_email": "admin@example.com",
+        "committed_date": "2016-07-25T17:21:53.000+03:00",
+        "created_at": "2016-07-25T17:21:53.000+03:00",
+        "message": "Update LICENSE",
+        "trailers": {},
+        "extended_trailers": {},
+        "web_url": "https://gitlab.example.com/project/-/commit/aa24655de48b36335556ac8a3cd8bb521f977cbd"
+      },
+      {
+        "id": "3eed087b29835c48015768f839d76e5ea8f07a24",
+        "short_id": "3eed087b",
+        "parent_ids": [],
+        "title": "Add license",
+        "author_name": "Administrator",
+        "author_email": "admin@example.com",
+        "authored_date": "2016-07-25T17:21:20.000+03:00",
+        "committer_name": "Administrator",
+        "committer_email": "admin@example.com",
+        "committed_date": "2016-07-25T17:21:20.000+03:00",
+        "created_at": "2016-07-25T17:21:20.000+03:00",
+        "message": "Add license",
+        "trailers": {},
+        "extended_trailers": {},
+        "web_url": "https://gitlab.example.com/project/-/commit/3eed087b29835c48015768f839d76e5ea8f07a24"
+      }
+    ],
+    "diffs": [
+      {
+        "old_path": "LICENSE",
+        "new_path": "LICENSE",
+        "a_mode": "0",
+        "b_mode": "100644",
+        "diff": "@@ -0,0 +1,21 @@\n+The MIT License (MIT)\n+\n+Copyright (c) 2018 Administrator\n+\n+Permission is hereby granted, free of charge, to any person obtaining a copy\n+of this software and associated documentation files (the \"Software\"), to deal\n+in the Software without restriction, including without limitation the rights\n+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell\n+copies of the Software, and to permit persons to whom the Software is\n+furnished to do so, subject to the following conditions:\n+\n+The above copyright notice and this permission notice shall be included in all\n+copies or substantial portions of the Software.\n+\n+THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n+SOFTWARE.\n",
+        "collapsed": false,
+        "too_large": false,
+        "new_file": true,
+        "renamed_file": false,
+        "deleted_file": false,
+        "generated_file": false
+      }
+    ]
+  },
+  "issue_event": {
+    "object_kind": "issue",
+    "event_type": "issue",
+    "user": {
+      "id": 1,
+      "name": "Administrator",
+      "username": "root",
+      "avatar_url": "http://www.gravatar.com/avatar/e64c7d89f26bd1972efa854d13d7dd61?s=40&d=identicon",
+      "email": "admin@example.com"
+    },
+    "project": {
+      "id": 1,
+      "name": "Gitlab Test",
+      "description": "Aut reprehenderit ut est.",
+      "web_url": "http://example.com/gitlabhq/gitlab-test",
+      "avatar_url": null,
+      "git_ssh_url": "git@example.com:gitlabhq/gitlab-test.git",
+      "git_http_url": "http://example.com/gitlabhq/gitlab-test.git",
+      "namespace": "GitlabHQ",
+      "visibility_level": 20,
+      "path_with_namespace": "gitlabhq/gitlab-test",
+      "default_branch": "master",
+      "ci_config_path": null,
+      "homepage": "http://example.com/gitlabhq/gitlab-test",
+      "url": "http://example.com/gitlabhq/gitlab-test.git",
+      "ssh_url": "git@example.com:gitlabhq/gitlab-test.git",
+      "http_url": "http://example.com/gitlabhq/gitlab-test.git"
+    },
+    "object_attributes": {
+      "id": 301,
+      "title": "New API: create/update/delete file",
+      "assignee_ids": [
+        51
+      ],
+      "assignee_id": 51,
+      "author_id": 51,
+      "project_id": 14,
+      "created_at": "2013-12-03T17:15:43.000Z",
+      "updated_at": "2013-12-03T17:15:43.000Z",
+      "updated_by_id": 1,
+      "last_edited_at": null,
+      "last_edited_by_id": null,
+      "relative_position": 0,
+      "description": "Create new API for manipulations with repository",
+      "milestone_id": null,
+      "state_id": 1,
+      "confidential": false,
+      "discussion_locked": true,
+      "due_date": null,
+      "start_date": null,
+      "moved_to_id": null,
+      "duplicated_to_id": null,
+      "time_estimate": 0,
+      "total_time_spent": 0,
+      "time_change": 0,
+      "human_total_time_spent": null,
+      "human_time_estimate": null,
+      "human_time_change": null,
+      "weight": null,
+      "health_status": "at_risk",
+      "type": "Issue",
+      "iid": 23,
+      "url": "http://example.com/diaspora/issues/23",
+      "state": "opened",
+      "action": "open",
+      "severity": "high",
+      "escalation_status": "triggered",
+      "escalation_policy": {
+        "id": 18,
+        "name": "Engineering On-call"
+      },
+      "labels": [
+        {
+          "id": 206,
+          "title": "API",
+          "color": "#ffffff",
+          "project_id": 14,
+          "created_at": "2013-12-03T17:15:43.000Z",
+          "updated_at": "2013-12-03T17:15:43.000Z",
+          "template": false,
+          "description": "API related issues",
+          "type": "ProjectLabel",
+          "group_id": 41
+        }
+      ]
+    },
+    "repository": {
+      "name": "Gitlab Test",
+      "url": "http://example.com/gitlabhq/gitlab-test.git",
+      "description": "Aut reprehenderit ut est.",
+      "homepage": "http://example.com/gitlabhq/gitlab-test"
+    },
+    "assignees": [
+      {
+        "name": "User1",
+        "username": "user1",
+        "avatar_url": "http://www.gravatar.com/avatar/e64c7d89f26bd1972efa854d13d7dd61?s=40&d=identicon"
+      }
+    ],
+    "assignee": {
+      "name": "User1",
+      "username": "user1",
+      "avatar_url": "http://www.gravatar.com/avatar/e64c7d89f26bd1972efa854d13d7dd61?s=40&d=identicon"
+    },
+    "labels": [
+      {
+        "id": 206,
+        "title": "API",
+        "color": "#ffffff",
+        "project_id": 14,
+        "created_at": "2013-12-03T17:15:43.000Z",
+        "updated_at": "2013-12-03T17:15:43.000Z",
+        "template": false,
+        "description": "API related issues",
+        "type": "ProjectLabel",
+        "group_id": 41
+      }
+    ],
+    "changes": {
+      "updated_by_id": {
+        "previous": null,
+        "current": 1
+      },
+      "updated_at": {
+        "previous": "2017-09-15T16:50:55.000Z",
+        "current": "2017-09-15T16:52:00.000Z"
+      },
+      "labels": {
+        "previous": [
+          {
+            "id": 206,
+            "title": "API",
+            "color": "#ffffff",
+            "project_id": 14,
+            "created_at": "2013-12-03T17:15:43.000Z",
+            "updated_at": "2013-12-03T17:15:43.000Z",
+            "template": false,
+            "description": "API related issues",
+            "type": "ProjectLabel",
+            "group_id": 41
+          }
+        ],
+        "current": [
+          {
+            "id": 205,
+            "title": "Platform",
+            "color": "#123123",
+            "project_id": 14,
+            "created_at": "2013-12-03T17:15:43.000Z",
+            "updated_at": "2013-12-03T17:15:43.000Z",
+            "template": false,
+            "description": "Platform related issues",
+            "type": "ProjectLabel",
+            "group_id": 41
+          }
+        ]
+      }
+    }
+  },
+  "merge_request_event": {
+    "object_kind": "merge_request",
+    "event_type": "merge_request",
+    "user": {
+      "id": 1,
+      "name": "Alex Garcia",
+      "username": "agarcia",
+      "avatar_url": "https://www.gravatar.com/avatar/1a29da0ccd099482194440fac762f5ccb4ec53227761d1859979367644a889a5?s=80&d=identicon",
+      "email": "agarcia@example.com"
+    },
+    "project": {
+      "id": 2,
+      "name": "Flight Management",
+      "description": "Flight management application for tracking aircraft status.",
+      "web_url": "http://gitlab.example.com/flightjs/flight-management",
+      "avatar_url": null,
+      "git_ssh_url": "ssh://git@gitlab.example.com:flightjs/flight-management.git",
+      "git_http_url": "http://gitlab.example.com/flightjs/flight-management.git",
+      "namespace": "Flightjs",
+      "visibility_level": 0,
+      "path_with_namespace": "flightjs/flight-management",
+      "default_branch": "main",
+      "ci_config_path": null
+    },
+    "object_attributes": {
+      "author_id": 1,
+      "created_at": "2026-01-16T05:56:22.000Z",
+      "description": "This merge request adds input validation to the booking form.",
+      "draft": false,
+      "head_pipeline_id": null,
+      "id": 93,
+      "iid": 16,
+      "last_edited_at": null,
+      "last_edited_by_id": null,
+      "merge_commit_sha": null,
+      "merged_at": null,
+      "merge_error": null,
+      "merge_params": {
+        "force_remove_source_branch": "1"
+      },
+      "merge_status": "checking",
+      "merge_user_id": null,
+      "merge_when_pipeline_succeeds": false,
+      "milestone_id": 8,
+      "source_branch": "feature/booking-validation",
+      "source_project_id": 2,
+      "squash_commit_sha": null,
+      "state_id": 1,
+      "target_branch": "main",
+      "target_branch_protected": true,
+      "target_project_id": 2,
+      "time_estimate": 0,
+      "title": "Add input validation to booking form",
+      "updated_at": "2026-01-16T05:56:25.000Z",
+      "updated_by_id": null,
+      "prepared_at": "2026-01-16T05:56:25.000Z",
+      "assignee_ids": [
+        1
+      ],
+      "blocking_discussions_resolved": true,
+      "detailed_merge_status": "checking",
+      "first_contribution": true,
+      "human_time_change": null,
+      "human_time_estimate": null,
+      "human_total_time_spent": null,
+      "labels": [
+        {
+          "id": 19,
+          "title": "enhancement",
+          "color": "#adb21a",
+          "project_id": null,
+          "created_at": "2026-01-07T00:03:52.000Z",
+          "updated_at": "2026-01-07T00:03:52.000Z",
+          "template": false,
+          "description": null,
+          "type": "GroupLabel",
+          "group_id": 24
+        }
+      ],
+      "last_commit": {
+        "id": "e59094b8de0f2f91abbe4760a52d9137260252d8",
+        "message": "Add email format validation",
+        "title": "Add email format validation",
+        "timestamp": "2026-01-16T05:01:10+00:00",
+        "url": "http://gitlab.example.com/flightjs/flight-management/-/commit/e59094b8de0f2f91abbe4760a52d9137260252d8",
+        "author": {
+          "name": "Alex Garcia",
+          "email": "agarcia@example.com"
+        }
+      },
+      "reviewer_ids": [
+        25
+      ],
+      "source": {
+        "id": 2,
+        "name": "Flight Management",
+        "description": "Flight management application for tracking aircraft status.",
+        "web_url": "http://gitlab.example.com/flightjs/flight-management",
+        "avatar_url": null,
+        "git_ssh_url": "ssh://git@gitlab.example.com:flightjs/flight-management.git",
+        "git_http_url": "http://gitlab.example.com/flightjs/flight-management.git",
+        "namespace": "Flightjs",
+        "visibility_level": 0,
+        "path_with_namespace": "flightjs/flight-management",
+        "default_branch": "main",
+        "ci_config_path": null
+      },
+      "state": "opened",
+      "system": false,
+      "target": {
+        "id": 2,
+        "name": "Flight Management",
+        "description": "Flight management application for tracking aircraft status.",
+        "web_url": "http://gitlab.example.com/flightjs/flight-management",
+        "avatar_url": null,
+        "git_ssh_url": "ssh://git@gitlab.example.com:flightjs/flight-management.git",
+        "git_http_url": "http://gitlab.example.com/flightjs/flight-management.git",
+        "namespace": "Flightjs",
+        "visibility_level": 0,
+        "path_with_namespace": "flightjs/flight-management",
+        "default_branch": "main",
+        "ci_config_path": null
+      },
+      "time_change": 0,
+      "total_time_spent": 0,
+      "url": "http://gitlab.example.com/flightjs/flight-management/-/merge_requests/16",
+      "approval_rules": [
+        {
+          "id": 4,
+          "approvals_required": 0,
+          "name": "All Members",
+          "rule_type": "any_approver",
+          "report_type": null,
+          "merge_request_id": 93,
+          "section": null,
+          "modified_from_project_rule": false,
+          "orchestration_policy_idx": null,
+          "vulnerabilities_allowed": 0,
+          "scanners": [],
+          "severity_levels": [],
+          "vulnerability_states": [
+            "new_needs_triage",
+            "new_dismissed"
+          ],
+          "security_orchestration_policy_configuration_id": null,
+          "scan_result_policy_id": null,
+          "applicable_post_merge": null,
+          "project_id": 2,
+          "approval_policy_rule_id": null,
+          "updated_at": "2026-01-16T05:56:22.000Z",
+          "created_at": "2026-01-16T05:56:22.000Z"
+        }
+      ],
+      "action": "open",
+      "actioned_at": "2026-01-16T05:56:26.000Z"
+    },
+    "labels": [
+      {
+        "id": 19,
+        "title": "enhancement",
+        "color": "#adb21a",
+        "project_id": null,
+        "created_at": "2026-01-07T00:03:52.000Z",
+        "updated_at": "2026-01-07T00:03:52.000Z",
+        "template": false,
+        "description": null,
+        "type": "GroupLabel",
+        "group_id": 24
+      }
+    ],
+    "changes": {
+      "merge_status": {
+        "previous": "preparing",
+        "current": "checking"
+      },
+      "updated_at": {
+        "previous": "2026-01-16T05:56:22.000Z",
+        "current": "2026-01-16T05:56:25.000Z"
+      },
+      "prepared_at": {
+        "previous": null,
+        "current": "2026-01-16T05:56:25.000Z"
+      }
+    },
+    "assignees": [
+      {
+        "id": 1,
+        "name": "Alex Garcia",
+        "username": "agarcia",
+        "avatar_url": "https://www.gravatar.com/avatar/1a29da0ccd099482194440fac762f5ccb4ec53227761d1859979367644a889a5?s=80&d=identicon",
+        "email": "[REDACTED]"
+      }
+    ],
+    "reviewers": [
+      {
+        "id": 25,
+        "name": "Sidney Jones",
+        "username": "sjones",
+        "avatar_url": "https://www.gravatar.com/avatar/1be419860e7f852e20ca2691e6b55949f7809177e7765181da42e4448491e367?s=80&d=identicon",
+        "email": "[REDACTED]",
+        "state": "unreviewed",
+        "re_requested": false
+      }
+    ]
+  },
+  "pipeline_event": {
+    "object_kind": "pipeline",
+    "object_attributes": {
+      "id": 31,
+      "iid": 3,
+      "name": "Pipeline for branch: master",
+      "ref": "master",
+      "tag": false,
+      "sha": "bcbb5ec396a2c0f828686f14fac9b80b780504f2",
+      "before_sha": "bcbb5ec396a2c0f828686f14fac9b80b780504f2",
+      "source": "merge_request_event",
+      "status": "success",
+      "detailed_status": "passed",
+      "stages": [
+        "build",
+        "test",
+        "deploy"
+      ],
+      "created_at": "2016-08-12T15:23:28.000Z",
+      "finished_at": "2016-08-12T15:26:29.000Z",
+      "duration": 63,
+      "queued_duration": 10,
+      "protected_ref": false,
+      "default_branch": true,
+      "variables": [
+        {
+          "key": "NESTOR_PROD_ENVIRONMENT",
+          "value": "us-west-1"
+        }
+      ],
+      "url": "http://example.com/gitlab-org/gitlab-test/-/pipelines/31",
+      "root_pipeline_id": 31
+    },
+    "merge_request": {
+      "id": 1,
+      "iid": 1,
+      "title": "Test",
+      "source_branch": "test",
+      "source_project_id": 1,
+      "target_branch": "master",
+      "target_project_id": 1,
+      "state": "opened",
+      "merge_status": "can_be_merged",
+      "detailed_merge_status": "mergeable",
+      "url": "http://192.168.64.1:3005/gitlab-org/gitlab-test/merge_requests/1"
+    },
+    "user": {
+      "id": 1,
+      "name": "Administrator",
+      "username": "root",
+      "avatar_url": "http://www.gravatar.com/avatar/e32bd13e2add097461cb96824b7a829c?s=80&d=identicon",
+      "email": "user_email@gitlab.com"
+    },
+    "project": {
+      "id": 1,
+      "name": "Gitlab Test",
+      "description": "Atque in sunt eos similique dolores voluptatem.",
+      "web_url": "http://192.168.64.1:3005/gitlab-org/gitlab-test",
+      "avatar_url": null,
+      "git_ssh_url": "git@192.168.64.1:gitlab-org/gitlab-test.git",
+      "git_http_url": "http://192.168.64.1:3005/gitlab-org/gitlab-test.git",
+      "namespace": "Gitlab Org",
+      "visibility_level": 20,
+      "path_with_namespace": "gitlab-org/gitlab-test",
+      "default_branch": "master",
+      "ci_config_path": null
+    },
+    "commit": {
+      "id": "bcbb5ec396a2c0f828686f14fac9b80b780504f2",
+      "message": "test\n",
+      "title": "test",
+      "timestamp": "2016-08-12T17:23:21+02:00",
+      "url": "http://example.com/gitlab-org/gitlab-test/commit/bcbb5ec396a2c0f828686f14fac9b80b780504f2",
+      "author": {
+        "name": "User",
+        "email": "user@gitlab.com"
+      }
+    },
+    "builds": [
+      {
+        "id": 380,
+        "stage": "deploy",
+        "name": "production",
+        "status": "skipped",
+        "created_at": "2016-08-12 15:23:28 UTC",
+        "started_at": null,
+        "finished_at": null,
+        "duration": null,
+        "queued_duration": null,
+        "failure_reason": null,
+        "exit_code": null,
+        "when": "manual",
+        "manual": true,
+        "allow_failure": false,
+        "user": {
+          "id": 1,
+          "name": "Administrator",
+          "username": "root",
+          "avatar_url": "http://www.gravatar.com/avatar/e32bd13e2add097461cb96824b7a829c?s=80&d=identicon",
+          "email": "admin@example.com"
+        },
+        "runner": null,
+        "artifacts_file": {
+          "filename": null,
+          "size": null
+        },
+        "environment": {
+          "name": "production",
+          "action": "start",
+          "deployment_tier": "production"
+        }
+      },
+      {
+        "id": 377,
+        "stage": "test",
+        "name": "test-image",
+        "status": "success",
+        "created_at": "2016-08-12 15:23:28 UTC",
+        "started_at": "2016-08-12 15:26:12 UTC",
+        "finished_at": "2016-08-12 15:26:29 UTC",
+        "duration": 17.0,
+        "queued_duration": 196.0,
+        "failure_reason": null,
+        "exit_code": null,
+        "when": "on_success",
+        "manual": false,
+        "allow_failure": false,
+        "user": {
+          "id": 1,
+          "name": "Administrator",
+          "username": "root",
+          "avatar_url": "http://www.gravatar.com/avatar/e32bd13e2add097461cb96824b7a829c?s=80&d=identicon",
+          "email": "admin@example.com"
+        },
+        "runner": {
+          "id": 380987,
+          "description": "shared-runners-manager-6.gitlab.com",
+          "runner_type": "instance_type",
+          "active": true,
+          "is_shared": true,
+          "tags": [
+            "linux",
+            "docker",
+            "shared-runner"
+          ]
+        },
+        "artifacts_file": {
+          "filename": null,
+          "size": null
+        },
+        "environment": null
+      },
+      {
+        "id": 378,
+        "stage": "test",
+        "name": "test-build",
+        "status": "failed",
+        "created_at": "2016-08-12 15:23:28 UTC",
+        "started_at": "2016-08-12 15:26:12 UTC",
+        "finished_at": "2016-08-12 15:26:29 UTC",
+        "duration": 17.0,
+        "queued_duration": 196.0,
+        "failure_reason": "script_failure",
+        "exit_code": 137,
+        "when": "on_success",
+        "manual": false,
+        "allow_failure": false,
+        "user": {
+          "id": 1,
+          "name": "Administrator",
+          "username": "root",
+          "avatar_url": "http://www.gravatar.com/avatar/e32bd13e2add097461cb96824b7a829c?s=80&d=identicon",
+          "email": "admin@example.com"
+        },
+        "runner": {
+          "id": 380987,
+          "description": "shared-runners-manager-6.gitlab.com",
+          "runner_type": "instance_type",
+          "active": true,
+          "is_shared": true,
+          "tags": [
+            "linux",
+            "docker"
+          ]
+        },
+        "artifacts_file": {
+          "filename": null,
+          "size": null
+        },
+        "environment": null
+      },
+      {
+        "id": 376,
+        "stage": "build",
+        "name": "build-image",
+        "status": "success",
+        "created_at": "2016-08-12 15:23:28 UTC",
+        "started_at": "2016-08-12 15:24:56 UTC",
+        "finished_at": "2016-08-12 15:25:26 UTC",
+        "duration": 17.0,
+        "queued_duration": 196.0,
+        "failure_reason": null,
+        "exit_code": null,
+        "when": "on_success",
+        "manual": false,
+        "allow_failure": false,
+        "user": {
+          "id": 1,
+          "name": "Administrator",
+          "username": "root",
+          "avatar_url": "http://www.gravatar.com/avatar/e32bd13e2add097461cb96824b7a829c?s=80&d=identicon",
+          "email": "admin@example.com"
+        },
+        "runner": {
+          "id": 380987,
+          "description": "shared-runners-manager-6.gitlab.com",
+          "runner_type": "instance_type",
+          "active": true,
+          "is_shared": true,
+          "tags": [
+            "linux",
+            "docker"
+          ]
+        },
+        "artifacts_file": {
+          "filename": null,
+          "size": null
+        },
+        "environment": null
+      },
+      {
+        "id": 379,
+        "stage": "deploy",
+        "name": "staging",
+        "status": "created",
+        "created_at": "2016-08-12 15:23:28 UTC",
+        "started_at": null,
+        "finished_at": null,
+        "duration": null,
+        "queued_duration": null,
+        "failure_reason": null,
+        "exit_code": null,
+        "when": "on_success",
+        "manual": false,
+        "allow_failure": false,
+        "user": {
+          "id": 1,
+          "name": "Administrator",
+          "username": "root",
+          "avatar_url": "http://www.gravatar.com/avatar/e32bd13e2add097461cb96824b7a829c?s=80&d=identicon",
+          "email": "admin@example.com"
+        },
+        "runner": null,
+        "artifacts_file": {
+          "filename": null,
+          "size": null
+        },
+        "environment": {
+          "name": "staging",
+          "action": "start",
+          "deployment_tier": "staging"
+        }
+      }
+    ],
+    "bridges": [
+      {
+        "id": 381,
+        "stage": "deploy",
+        "name": "trigger-downstream",
+        "status": "success",
+        "created_at": "2016-08-12 15:23:28 UTC",
+        "started_at": "2016-08-12 15:26:30 UTC",
+        "finished_at": "2016-08-12 15:28:10 UTC",
+        "duration": 100.0,
+        "queued_duration": 1.0,
+        "failure_reason": null,
+        "exit_code": null,
+        "when": "on_success",
+        "manual": false,
+        "allow_failure": false,
+        "user": {
+          "id": 1,
+          "name": "Administrator",
+          "username": "root",
+          "avatar_url": "http://www.gravatar.com/avatar/e32bd13e2add097461cb96824b7a829c?s=80&d=identicon",
+          "email": "admin@example.com"
+        },
+        "runner": null,
+        "environment": null,
+        "bridge": true
+      }
+    ],
+    "source_pipeline": {
+      "project": {
+        "id": 41,
+        "web_url": "https://gitlab.example.com/gitlab-org/upstream-project",
+        "path_with_namespace": "gitlab-org/upstream-project"
+      },
+      "pipeline_id": 30,
+      "job_id": 3401,
+      "bridge_id": 3401
+    }
+  },
+  "note": {
+    "id": 301,
+    "body": "Comment for MR",
+    "author": {
+      "id": 1,
+      "username": "pipin",
+      "email": "admin@example.com",
+      "name": "Pip",
+      "state": "active",
+      "created_at": "2013-09-30T13:46:01Z"
+    },
+    "created_at": "2013-10-02T08:57:14Z",
+    "updated_at": "2013-10-02T08:57:14Z",
+    "system": false,
+    "noteable_id": 2,
+    "noteable_type": "MergeRequest",
+    "project_id": 5,
+    "noteable_iid": 2,
+    "resolvable": false,
+    "confidential": false,
+    "internal": false
+  }
+}

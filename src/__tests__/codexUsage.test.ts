@@ -7,6 +7,7 @@ import {
 	getCodexTickerPriority,
 	windowLabel,
 } from "../features/codexUsage";
+import { HttpRpcError } from "../transport";
 
 const empty: CodexUsageApiResponse = {
 	plan_type: null,
@@ -190,6 +191,17 @@ describe("toUsageAgent", () => {
 });
 
 describe("describeUsageError", () => {
+	// Catches: Codex registry cooldown errors falling through to offline.
+	it("shows the Codex retry time across native and HTTP errors", () => {
+		for (const error of [
+			"Codex usage rate-limited, retry 20:56",
+			new Error("Codex usage rate-limited, retry 20:56"),
+			new HttpRpcError("get_codex_usage_api", 500, JSON.stringify({ error: "Codex usage rate-limited, retry 20:56" })),
+		]) {
+			expect(describeUsageError(error, "not logged in")).toBe("rate-limited, retry 20:56");
+		}
+	});
+
 	it("separates a missing token from an expired one", () => {
 		expect(describeUsageError("No Codex credentials at /x: nope", "No Codex OAuth token")).toBe("no token");
 		expect(describeUsageError("Codex usage returned 401: {}", "No Codex OAuth token")).toBe("token expired");

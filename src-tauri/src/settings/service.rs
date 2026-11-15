@@ -78,10 +78,7 @@ impl<S: Store> Service<S> {
         caller: &super::policy::Caller,
         approval: Option<&str>,
     ) -> Result<Reply, Failure> {
-        caller.check(!matches!(
-            request,
-            Request::Get { .. } | Request::Describe { .. }
-        ))?;
+        caller.check()?;
         if let Request::Describe {
             target,
             store,

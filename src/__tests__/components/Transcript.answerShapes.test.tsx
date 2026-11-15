@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
 import { cleanup, render } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { Transcript } from "../../components/AIChatPanel/Transcript";
 import recordedCodex from "../../components/Terminal/__tests__/fixtures/codex-answer-paragraphs-1872.json";
 import type { AcpTranscriptEntry } from "../../stores/acpTranscript";
 
+// Isolated renders do not run App startup, which settles the persisted-store promise.
+beforeAll(async () => {
+	const { activityStore } = await import("../../stores/activityStore");
+	await activityStore.hydrate();
+});
 afterEach(cleanup);
 
 async function show(text: string) {

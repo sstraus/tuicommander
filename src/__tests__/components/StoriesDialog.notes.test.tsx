@@ -1,3 +1,4 @@
+import "../fixtures/dialogActivityHydration";
 import { cleanup, fireEvent, render, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { StoriesDialog } from "../../components/StoriesDialog/StoriesDialog";
@@ -5,6 +6,7 @@ import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { storiesUi } from "../../stores/storiesUi";
 import { HttpRpcError } from "../../transport";
+import { nativeBackendStatusReply } from "../fixtures/nativeBackendStatus";
 
 vi.mock("../../invoke", () => ({ invoke: vi.fn() }));
 vi.mock("../../stores/modalStack", () => ({ registerModal: vi.fn() }));
@@ -50,7 +52,14 @@ beforeEach(() => {
 	vi.mocked(invoke).mockReset();
 	vi.mocked(appLogger.warn).mockClear();
 	vi.mocked(invoke).mockImplementation(async (command, args) => {
-		if (command === "story_capabilities") return true;
+		if (command === "boss_attention") return { items: [], health: [], warnings: [] };
+		if (command === "story_capabilities") return { backend: "native", operations: {} };
+		if (command === "workflow_neutral_action") return { type: "delivery_runs", value: [] };
+		if (
+			command === "story_action_command" &&
+			(args as { action?: { action?: string } })?.action?.action === "backend_status"
+		)
+			return nativeBackendStatusReply;
 		const action = (args as { action: Record<string, unknown> }).action;
 		if (action.action === "list_plans")
 			return { type: "plans", value: [{ id: "plan", title: "Plan", project: "/notes", source: "plan.md" }] };

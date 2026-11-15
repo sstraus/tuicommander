@@ -39,6 +39,17 @@ pub(super) async fn list_failing_checks_with(
     repo: &str,
     head_sha: &str,
 ) -> Result<Vec<FailingCheck>, String> {
+    let nodes = commit_check_nodes(api, owner, repo, head_sha).await?;
+    Ok(failing_checks_from_rollup(&Value::Array(nodes)))
+}
+
+/// Every check context of one commit, all pages, deduplicated to the latest run.
+pub(crate) async fn commit_check_nodes(
+    api: &impl PrApi,
+    owner: &str,
+    repo: &str,
+    head_sha: &str,
+) -> Result<Vec<Value>, String> {
     let pages = graphql_pages(
         &CommitChecksApi(api),
         CHECKS_QUERY,
@@ -56,7 +67,7 @@ pub(super) async fn list_failing_checks_with(
         nodes.extend(page_nodes.iter().cloned());
     }
     // Deduplicate after combining pages: a newer rerun can be on a later page.
-    Ok(failing_checks_from_rollup(&Value::Array(nodes)))
+    Ok(dedup_rollup_nodes(&json!({"nodes": nodes})))
 }
 
 pub(super) fn failing_checks_from_rollup(nodes: &Value) -> Vec<FailingCheck> {

@@ -1,7 +1,6 @@
 //! Typed, source-bound review policy. Legacy prose never supplies a passing gate.
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -34,7 +33,8 @@ impl Default for EvidencePolicy {
 impl EvidencePolicy {
     pub fn validate(&self) -> Result<(), String> {
         if self.max_reviews == 0
-            || self.max_reviews > 16
+            // Boss Q8=A (2026-11-12): the per-run review cap is 32.
+            || self.max_reviews > 32
             || self.max_repairs >= self.max_reviews
             || self.max_story_proposals > 100
             || self.consumer_scope.len() > 100
@@ -178,19 +178,6 @@ pub struct ReviewEvidence {
     /// IDs of FIX findings resolved by this review, retained across repair generations.
     pub resolved_fixes: Vec<String>,
     pub proof: ProofEvidence,
-}
-
-pub fn requirements_digest(story: &crate::stories::Story) -> String {
-    // Approval/check ticks are not requirements. Approval increments the revision.
-    let bytes = serde_json::to_vec(&(
-        &story.id,
-        &story.title,
-        &story.problem,
-        &story.criteria,
-        &story.file_scope,
-    ))
-    .expect("story requirement serialization");
-    hex::encode(Sha256::digest(bytes))
 }
 
 fn nonempty(value: &str) -> bool {
@@ -429,132 +416,9 @@ impl ReviewEvidence {
     }
 }
 
-/// Independent counters reconstructed from the event-backed projection on every read.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ReviewCounters {
-    pub reviews: usize,
-    pub rejects: usize,
-    pub repairs: usize,
-    pub check_attempts: usize,
-}
-
-pub fn review_counters(
-    run: &super::RunSnapshot,
-    graph: &super::graph::GraphExecution,
-) -> ReviewCounters {
-    let mut counters = ReviewCounters::default();
-    let mut implementations = 0_usize;
-    for attempt in run
-        .attempts
-        .iter()
-        .filter(|a| a.story_id == graph.target_id)
-    {
-        let role = graph.definition.graph.nodes.iter().find_map(|node| {
-            if node.id != attempt.node_id {
-                return None;
-            }
-            match node.kind {
-                crate::workflows::NodeKind::Agent { role, .. } => Some(role),
-                _ => None,
-            }
-        });
-        match role {
-            Some(crate::workflows::AgentRole::Implementer) => implementations += 1,
-            Some(crate::workflows::AgentRole::Reviewer) => {
-                counters.reviews += 1;
-                if attempt
-                    .report
-                    .as_ref()
-                    .and_then(|r| r.review.as_ref())
-                    .is_some_and(|r| {
-                        r.evidence.as_ref().map_or(
-                            r.decision == super::ReviewDecision::ChangesRequested,
-                            |e| {
-                                e.findings
-                                    .iter()
-                                    .any(|f| f.decision() == TriageDecision::Fix)
-                            },
-                        )
-                    })
-                {
-                    counters.rejects += 1;
-                }
-            }
-            _ => {}
-        }
-    }
-    counters.repairs = implementations.saturating_sub(1);
-    counters.check_attempts = run
-        .stories
-        .iter()
-        .find(|s| s.story_id == graph.target_id)
-        .map_or(0, |s| s.check_receipts.len());
-    counters
-}
-
-/// Replacement sessions and new implementation epochs never reset the pinned budget.
-pub(super) fn check_attempt_budget(
-    run: &super::RunSnapshot,
-    graph: &super::graph::GraphExecution,
-    node_id: &str,
-) -> Result<(), String> {
-    let Some(policy) = &graph.definition.graph.evidence_policy else {
-        return Ok(());
-    };
-    let counters = review_counters(run, graph);
-    let role = graph.definition.graph.nodes.iter().find_map(|node| {
-        if node.id != node_id {
-            return None;
-        }
-        match node.kind {
-            crate::workflows::NodeKind::Agent { role, .. } => Some(role),
-            _ => None,
-        }
-    });
-    match role {
-        Some(crate::workflows::AgentRole::Reviewer) if counters.reviews >= usize::from(policy.max_reviews) =>
-            Err("Total review budget exhausted; choose smallest fix, explicit accepted risk or abandonment".into()),
-        Some(crate::workflows::AgentRole::Implementer) if run.attempts.iter().any(|a| a.story_id == graph.target_id)
-            && counters.repairs >= usize::from(policy.max_repairs) =>
-            Err("Repair traversal budget exhausted; explicit decision required".into()),
-        _ => Ok(()),
-    }
-}
-
-/// Boundary adapter for retained story notes. It returns notes, never a proof verdict.
-#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct LegacyProofNotes {
-    pub reality: Vec<String>,
-    pub symptom: Vec<String>,
-    pub test_changes: Vec<String>,
-    pub omissions: Vec<String>,
-}
-
-impl LegacyProofNotes {
-    pub fn parse(text: &str) -> Self {
-        let mut notes = Self::default();
-        for line in text.lines() {
-            for (tag, values) in [
-                ("REALITY:", &mut notes.reality),
-                ("SYMPTOM:", &mut notes.symptom),
-                ("TEST-CHANGE:", &mut notes.test_changes),
-                ("OMISSION:", &mut notes.omissions),
-            ] {
-                if let Some(value) = line.trim().strip_prefix(tag) {
-                    values.push(value.trim().to_owned());
-                }
-            }
-        }
-        notes
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn triage_first_match_oracle_catches_rule_order_and_score_boundaries() {
@@ -796,19 +660,5 @@ mod tests {
             }
             assert!(broken.validate(&subject(), &policy).is_err(), "{case}");
         }
-    }
-
-    #[test]
-    fn legacy_notes_never_deserialize_as_typed_success() {
-        // catches: accepting a prose verdict instead of a typed, subject-bound proof.
-        let notes = LegacyProofNotes::parse(
-            "Judge: YES\nREALITY: source\nSYMPTOM: old bug\nTEST-CHANGE: old expectation was wrong\nOMISSION: native check unavailable",
-        );
-        assert_eq!(notes.reality, ["source"]);
-        assert_eq!(notes.omissions, ["native check unavailable"]);
-        assert!(
-            serde_json::from_value::<ReviewEvidence>(json!({"summary":"YES; all checks passed"}))
-                .is_err()
-        );
     }
 }

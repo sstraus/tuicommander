@@ -118,6 +118,7 @@ import { StatusBar } from "../../components/StatusBar/StatusBar";
 import { getTickerPriority } from "../../features/claudeUsage";
 import { getCodexTickerPriority } from "../../features/codexUsage";
 import { acpStore } from "../../stores/acp";
+import { activityStore } from "../../stores/activityStore";
 import { settingsStore } from "../../stores/settings";
 import { statusBarTicker } from "../../stores/statusBarTicker";
 import { uiStore } from "../../stores/ui";
@@ -183,6 +184,7 @@ describe("StatusBar", () => {
 			command === "get_working_tree_status" ? { staged: [], unstaged: [], untracked: [] } : undefined,
 		);
 		await uiStore.hydrate();
+		await activityStore.hydrate();
 		mockGitHubStatus.mockReturnValue(null);
 		mockGetActive.mockReturnValue(null);
 		mockTerminalGetActive.mockReturnValue(null);
@@ -386,6 +388,19 @@ describe("StatusBar", () => {
 		});
 	});
 
+	// Catches: the tool readout is not rendered in the agent badge, or a tab
+	// with no live tool shows a stale separator.
+	it("shows the current native tool in the agent badge only while one is live", () => {
+		mockTerminalGetActive.mockReturnValue({ agentType: "claude", usageLimit: null, currentTool: "Bash" });
+		const { container, unmount } = render(() => <StatusBar {...defaultProps} />);
+		expect(container.querySelector("[data-testid='agent-tool']")?.textContent).toBe(" · Bash");
+		unmount();
+		mockTerminalGetActive.mockReturnValue({ agentType: "claude", usageLimit: null, currentTool: null });
+		const idle = render(() => <StatusBar {...defaultProps} />);
+		expect(idle.container.querySelector(".agentBadge")).not.toBeNull();
+		expect(idle.container.querySelector("[data-testid='agent-tool']")).toBeNull();
+	});
+
 	it("absorbs matching Codex usage into the active agent badge", () => {
 		const openDashboard = vi.fn();
 		mockTerminalGetActive.mockReturnValue({ agentType: "codex", usageLimit: null });
@@ -408,26 +423,182 @@ describe("StatusBar", () => {
 		expect(openDashboard).toHaveBeenCalledOnce();
 	});
 
-	it("absorbs matching ego usage into the active agent badge — catches ego allow-list omission and dropped limit provenance", () => {
-		mockTerminalGetActive.mockReturnValue({ agentType: "ego", sessionId: "ego-one", usageLimit: null });
+	// Catches: plugin usage is absorbed into a badge beside cwd, outside the right-hand ticker group.
+	it("groups plugin usage with tickers and controls, outside the cwd section", () => {
+		mockTerminalGetActive.mockReturnValue({ agentType: "claude", usageLimit: null });
+		statusBarTicker.addMessage({
+			id: "usage",
+			pluginId: "claude-usage",
+			label: "Claude",
+			text: "7d: 3% -6d",
+			priority: 42,
+			ttlMs: 0,
+		});
+		statusBarTicker.addMessage({ id: "agents", pluginId: "agents", text: "2 working", priority: 44, ttlMs: 0 });
+		const { container } = render(() => <StatusBar {...defaultProps} cwd="/repo/path" />);
+		const right = container.querySelector(".rightGroup");
+		expect(right).not.toBeNull();
+		expect(right?.querySelector(".agentBadge")?.textContent).toContain("7d: 3% -6d");
+		expect(right?.querySelector(".tickerArea")).not.toBeNull();
+		expect(right?.querySelector(".controls")).not.toBeNull();
+		expect(container.querySelector(".section")?.querySelector(".agentBadge")).toBeNull();
+		expect(right?.querySelector(".cwd")).toBeNull();
+		expect(Array.from(right!.children, (element) => element.className)).toEqual([
+			"agentBadge",
+			"tickerArea",
+			"section controls",
+		]);
+	});
+
+	it("renders the ticker area in the right-hand group, after the left section — catches the ticker rendered in the left group again", () => {
+		statusBarTicker.addMessage({ id: "r", pluginId: "p", text: "right", priority: 44, ttlMs: 0 });
+		const { container } = render(() => <StatusBar {...defaultProps} />);
+		const area = container.querySelector(".tickerArea")!;
+		const left = container.querySelector(".section")!;
+		expect(left.contains(area)).toBe(false);
+		expect(area.parentElement?.classList.contains("rightGroup")).toBe(true);
+		expect(left.compareDocumentPosition(area) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	});
+
+	describe("ticker layout", () => {
+		let areaWidth = 0;
+		let resizeCallback: (() => void) | null = null;
+		const widthDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+
+		beforeEach(() => {
+			// No layout engine: a probe is 10px per character, the area is whatever the test sets.
+			Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
+				configurable: true,
+				get(this: HTMLElement) {
+					if (this.classList.contains("tickerArea")) return areaWidth;
+					if (this.parentElement?.classList.contains("tickerProbe")) return (this.textContent ?? "").length * 10;
+					return 0;
+				},
+			});
+			vi.stubGlobal(
+				"ResizeObserver",
+				class {
+					constructor(cb: () => void) {
+						resizeCallback = cb;
+					}
+					observe(): void {}
+					unobserve(): void {}
+					disconnect(): void {}
+				},
+			);
+		});
+		afterEach(() => {
+			if (widthDescriptor) Object.defineProperty(HTMLElement.prototype, "offsetWidth", widthDescriptor);
+			vi.unstubAllGlobals();
+			resizeCallback = null;
+		});
+
+		const addThree = () => {
+			for (const [id, priority] of [
+				["a", 44],
+				["b", 43],
+				["c", 42],
+			] as const) {
+				statusBarTicker.addMessage({ id, pluginId: "p", text: id.repeat(10), priority, ttlMs: 0 });
+			}
+		};
+		const shown = (container: HTMLElement) =>
+			Array.from(container.querySelectorAll(".tickerArea > .tickerMessage"), (el) => el.textContent ?? "");
+
+		it("shows every ticker side by side, without a badge, when the area has room — catches rotation while space is free", () => {
+			areaWidth = 300;
+			addThree();
+			const { container } = render(() => <StatusBar {...defaultProps} />);
+			expect(shown(container)).toEqual(["a".repeat(10), "b".repeat(10), "c".repeat(10)]);
+			expect(container.querySelector(".tickerBadge")).toBeNull();
+		});
+
+		it("pins what fits and rotates the rest in the last slot — catches a pinned ticker also rotating", () => {
+			areaWidth = 299; // one pixel short of fitting all three
+			addThree();
+			const { container } = render(() => <StatusBar {...defaultProps} />);
+			expect(shown(container)[0]).toBe("a".repeat(10));
+			expect(shown(container)).toHaveLength(2);
+			expect(container.querySelector(".tickerBadge")?.textContent).toContain("1/");
+			const seen = new Set<string>();
+			for (let step = 0; step < 4; step++) {
+				seen.add(shown(container)[1].replace(/\d+\/\d+ \u25B8/, ""));
+				statusBarTicker._rotate();
+			}
+			expect([...seen].sort()).toEqual(["b".repeat(10), "c".repeat(10)]);
+		});
+
+		// Catches: content-sized flex layout uses the clipped rotating message as its
+		// preferred width, so a wider parent never restores the complete pool.
+		it("keeps the natural pool width through shrink and regrowth", () => {
+			areaWidth = 300;
+			addThree();
+			const { container } = render(() => <StatusBar {...defaultProps} />);
+			const area = container.querySelector<HTMLElement>(".tickerArea")!;
+			expect(area.style.width).toBe("300px");
+			areaWidth = 150;
+			resizeCallback?.();
+			expect(shown(container)).toHaveLength(1);
+			expect(area.style.width).toBe("300px");
+			areaWidth = 300;
+			resizeCallback?.();
+			expect(shown(container)).toHaveLength(3);
+			expect(area.style.width).toBe("300px");
+			expect(container.querySelector(".tickerBadge")).toBeNull();
+		});
+
+		it("re-lays out when the area widens, with no leftover badge", () => {
+			areaWidth = 150;
+			addThree();
+			const { container } = render(() => <StatusBar {...defaultProps} />);
+			expect(container.querySelector(".tickerBadge")).not.toBeNull();
+			areaWidth = 400;
+			resizeCallback?.();
+			expect(shown(container)).toHaveLength(3);
+			expect(container.querySelector(".tickerBadge")).toBeNull();
+		});
+	});
+
+	it("never rotates onto an empty slot on an agent tab — catches hidden usage message still occupying a rotation slot", () => {
+		mockTerminalGetActive.mockReturnValue({ agentType: "codex", usageLimit: null });
+		statusBarTicker.addMessage({ id: "stories", pluginId: "stories", text: "3 open stories", priority: 42, ttlMs: 0 });
 		statusBarTicker.addMessage({
 			id: "claude-usage:rate",
 			pluginId: "claude-usage",
-			label: "ego",
-			sessionId: "ego-one",
-			text: "ctx: 14/128000 · openrouter key: USD 195.970819484 left",
-			tooltip: "openrouter key: observed 2026-10-27T17:53:47.635+00:00; source: openrouter_key:data.limit_remaining",
-			priority: 0,
+			label: "Codex",
+			text: "5h: 42% · week: 18%",
+			priority: 42,
 			ttlMs: 0,
 		});
+
 		const { container } = render(() => <StatusBar {...defaultProps} />);
-		expect(container.querySelector(".agentBadge")?.textContent).toContain(
-			"ctx: 14/128000 · openrouter key: USD 195.970819484 left",
-		);
-		expect(container.querySelector(".agentBadge")?.getAttribute("title")).toContain(
-			"source: openrouter_key:data.limit_remaining",
-		);
-		expect(container.querySelector(".tickerMessage")).toBeNull();
+		for (let step = 0; step < 4; step++) {
+			expect(container.querySelector(".tickerMessage")?.textContent).toContain("3 open stories");
+			statusBarTicker._rotate();
+		}
+	});
+
+	// Catches ego using a different icon, color, text, tooltip or severity for the same provider result.
+	it("renders the same Codex badge for an ego session", () => {
+		const ticker = {
+			id: "claude-usage:rate",
+			pluginId: "claude-usage",
+			label: "Codex",
+			text: "7d: 58% -1d",
+			tooltip: "7d: 58% -1d",
+			priority: 58,
+			ttlMs: 0,
+		};
+		mockTerminalGetActive.mockReturnValue({ agentType: "codex", sessionId: "codex-one", usageLimit: null });
+		statusBarTicker.addMessage(ticker);
+		const native = render(() => <StatusBar {...defaultProps} />);
+		const expected = native.container.querySelector(".agentBadge")?.outerHTML;
+		native.unmount();
+		statusBarTicker.clear();
+		mockTerminalGetActive.mockReturnValue({ agentType: "ego", sessionId: "ego-one", usageLimit: null });
+		statusBarTicker.addMessage({ ...ticker, sessionId: "ego-one" });
+		const ego = render(() => <StatusBar {...defaultProps} />);
+		expect(ego.container.querySelector(".agentBadge")?.outerHTML).toBe(expected);
 	});
 
 	it("hides absent and wrong-session ego data — catches stale usage leaking across ego tabs", () => {
@@ -435,9 +606,9 @@ describe("StatusBar", () => {
 		statusBarTicker.addMessage({
 			id: "claude-usage:rate",
 			pluginId: "claude-usage",
-			label: "ego",
+			label: "Codex",
 			sessionId: "ego-one",
-			text: "ctx: 32768 · USD 1.25",
+			text: "7d: 58% -1d",
 			priority: 0,
 			ttlMs: 0,
 		});
@@ -776,5 +947,25 @@ describe("StatusBar", () => {
 		});
 		const { container } = render(() => <StatusBar {...defaultProps} />);
 		expect(container.textContent).not.toContain("lab-linux");
+	});
+
+	// Catches: the recovery status renders in the left group (mid-bar after the repository path)
+	// instead of beside the right-aligned ticker area.
+	it("renders the provider recovery status inside the right group, outside the cwd section", () => {
+		mockTerminalGetActive.mockReturnValue({
+			sessionId: "s1",
+			agentType: "claude",
+			providerRecovery: { phase: "waiting", attempt: 1, next_attempt_ms: null },
+		});
+		const { container } = render(() => <StatusBar {...defaultProps} cwd="/repo/path" />);
+		const status = Array.from(container.querySelectorAll('[role="status"]')).find((e) =>
+			e.textContent?.includes("Force retry"),
+		);
+		expect(status).toBeTruthy();
+		const right = status!.parentElement!;
+		expect(right.classList.contains("rightGroup")).toBe(true);
+		const bar = right.parentElement!;
+		expect(bar.firstElementChild!.contains(status!)).toBe(false);
+		expect(bar.firstElementChild!.textContent).toContain("/repo/path");
 	});
 });

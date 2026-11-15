@@ -24,34 +24,19 @@ fn build(repo_path: String, input: PromptInput) -> Result<String, String> {
     let title = item_text(&input.title);
     let url = item_text(input.url.as_deref().unwrap_or_default());
     let body = item_text(&input.body);
-    let path = std::path::Path::new(&repo_path).join(TEMPLATE_FILE);
-    match std::fs::symlink_metadata(&path) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(format!("{key}: {title}\n\n{body}").trim_end().to_owned());
-        }
-        Err(error) => return Err(format!("Cannot inspect start-work template: {error}")),
-        Ok(_) => {}
-    }
-    // Reuse the repo reader's canonical containment, UTF-8 and size guards.
-    let template = crate::read_file_impl(repo_path, TEMPLATE_FILE.to_owned())?;
+    let Some(template) = crate::repo_template::read(&repo_path, TEMPLATE_FILE)? else {
+        return Ok(format!("{key}: {title}\n\n{body}").trim_end().to_owned());
+    };
     // Scan the template once: item text containing another placeholder remains literal.
-    let mut result = String::new();
-    let mut rest = template.as_str();
-    while let Some(index) = rest.find("{{") {
-        result.push_str(&rest[..index]);
-        rest = &rest[index..];
-        let Some(end) = rest.find("}}") else { break };
-        let token = &rest[..end + 2];
-        result.push_str(match token {
-            "{{key}}" => &key,
-            "{{url}}" => &url,
-            "{{title}}" => &title,
-            _ => token,
-        });
-        rest = &rest[end + 2..];
-    }
-    result.push_str(rest);
-    Ok(result)
+    Ok(crate::repo_template::substitute(&template, |token| {
+        match token {
+            "key" => Some(&key),
+            "url" => Some(&url),
+            "title" => Some(&title),
+            _ => None,
+        }
+        .cloned()
+    }))
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]

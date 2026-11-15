@@ -1216,9 +1216,9 @@ mod tests {
     }
 }
 
-/// Adversarial cases from the critic of 1357-7d37 (round 1).
+/// Synthesis against a scripted fake service: cancel, deadline, framing and voice cases (1357-7d37).
 #[cfg(test)]
-mod critic_round1 {
+mod fake_service_tests {
     use super::*;
     use std::collections::VecDeque;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1649,10 +1649,10 @@ mod critic_round1 {
     }
 }
 
-/// Adversarial cases from the critic of 1357-7d37 (round 2: dial thread, escaped split).
+/// Dial thread and escaped text split cases (1357-7d37).
 #[cfg(test)]
-mod critic_round2 {
-    use super::critic_round1::{VOICE, audio_frame, dial_with, recorded_mp3, synth, turn_end};
+mod dial_and_split_tests {
+    use super::fake_service_tests::{VOICE, audio_frame, dial_with, recorded_mp3, synth, turn_end};
     use super::*;
     use std::sync::atomic::Ordering;
 

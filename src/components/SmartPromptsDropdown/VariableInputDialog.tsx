@@ -1,4 +1,4 @@
-import { type Component, createSignal, For, onMount } from "solid-js";
+import { type Component, createSignal, For, onCleanup, onMount } from "solid-js";
 import { VARIABLE_DESCRIPTIONS } from "../../data/smartPromptsBuiltIn";
 import { registerModal } from "../../stores/modalStack";
 import { Button, Input } from "../ui";
@@ -27,7 +27,8 @@ export const VariableInputDialog: Component<VariableInputDialogProps> = (props) 
 		}
 		setValues(initial);
 		// Focus first input
-		requestAnimationFrame(() => firstInputRef?.focus());
+		const focusFrame = requestAnimationFrame(() => firstInputRef?.focus());
+		onCleanup(() => cancelAnimationFrame(focusFrame));
 	});
 
 	const updateValue = (name: string, value: string) => {
@@ -69,7 +70,9 @@ export const VariableInputDialog: Component<VariableInputDialogProps> = (props) 
 								<label class={s.field}>
 									<span class={s.fieldName}>{`{${varName}}`}</span>
 									<Input
-										ref={i() === 0 ? (el) => (firstInputRef = el) : undefined}
+										ref={(el) => {
+											if (i() === 0) firstInputRef = el;
+										}}
 										type="text"
 										placeholder={desc}
 										value={values()[varName] ?? ""}

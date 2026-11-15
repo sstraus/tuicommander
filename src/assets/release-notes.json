@@ -295,5 +295,19 @@
       "File tree refresh, parallel worktree renames, relay pairing and Windows agent resume paths are more reliable."
     ],
     "date": "2026-10-29"
+  },
+  "2.1.0": {
+    "highlights": [
+      "Breaking: the legacy workflow engine is removed, including the automations for PR review, issue intake and triage. Its data is backed up on the first start; prompt schedules and neutral workflows stay.",
+      "Breaking: story and plan actions moved from workflow action=story to a dedicated story MCP tool.",
+      "The All Changes view now covers the whole branch, with Uncommitted, Branch vs base and Commit/range scopes.",
+      "Drag a tab onto any pane edge to split the terminal area, with a highlight showing where it will land.",
+      "AI Chat can fork earlier turns, react to messages and show working, waiting or idle state on every device.",
+      "Send now and Steer now interrupt Claude Code, Codex and ego immediately instead of queuing behind active work.",
+      "The status bar shows which tool each agent is running, and agent hooks no longer print over agent screens.",
+      "Neutral workflows gain a catalog authoring view, scheduled text workflows, GitHub triggers and new adapters; the Designer routes links around nodes.",
+      "The tab-bar + opens the agent launch menu, ranked by branch usage; Cmd/Ctrl+T still opens a plain terminal."
+    ],
+    "date": "2026-11-14"
   }
 }

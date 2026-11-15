@@ -1,0 +1,38 @@
+[1;35m⠀⢀⡴⠋⠉⠉[36m⠀⣴⠋⠉⣷⠀⢠⡞⠉⢳⡄[0m
+[1;35m⠀⢴⡋⠉⠁⠀[36m⠀⠻⣄⣀⣿⠀⠸⣇⠀⣸⠇[0m
+[1;35m⠀⠀⠉⠉⠉⠀[36m⠀⠲⣄⣠⠟⠀⠀⠈⠉⠁⠀[0m
+εgo: ego 0.4.3
+[?u[cεgo: sandbox is off; commands can access any file your user account can access
+
+εgo: model ollama/fixture
+mode yolo (flags) · sandbox off (flags)
+     Ctrl+B backgrounds · Esc interrupts · Enter queues · Up recalls · Ctrl+Enter steers · Ctrl+S draft
+     Option+P models · Shift+Tab mode · /help
+]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1kNzg1LTczMWUtYWFmYy04YmEwNzI3ZTA5YmUiLCJ0dXJuIjpudWxsLCJldmVudCI6InNlc3Npb25fc3RhcnQiLCJpZCI6bnVsbCwiZGF0YSI6e319\[?2004h[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1kNzg1LTczMWUtYWFmYy04YmEwNzI3ZTA5YmUiLCJ0dXJuIjoiMDFhMTk3MjYtZDdkMy03N2U0LTk2MjctYTQwYTQ1NTQ1MTZlIiwiZXZlbnQiOiJ0dXJuX3N0YXJ0IiwiaWQiOm51bGwsImRhdGEiOnt9fQ==\]0;ɛ । Capture native tool evidence.]7770;intent=Capture native tool evidence. (εgo)]9;4;0;0]7770;state=busy]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1kNzg1LTczMWUtYWFmYy04YmEwNzI3ZTA5YmUiLCJ0dXJuIjoiMDFhMTk3MjYtZDdkMy03N2U0LTk2MjctYTQwYTQ1NTQ1MTZlIiwiZXZlbnQiOiJ0b29sX3N0YXJ0IiwiaWQiOiIwMWExOTcyNi1kODBiLTcyMjMtYTBlNS1lNGI2MjczOGRhZDAiLCJkYXRhIjp7ImxhYmVsIjoicmVhZCJ9fQ==\]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1kNzg1LTczMWUtYWFmYy04YmEwNzI3ZTA5YmUiLCJ0dXJuIjoiMDFhMTk3MjYtZDdkMy03N2U0LTk2MjctYTQwYTQ1NTQ1MTZlIiwiZXZlbnQiOiJ0b29sX2VuZCIsImlkIjoiMDFhMTk3MjYtZDgwYi03MjIzLWEwZTUtZTRiNjI3MzhkYWQwIiwiZGF0YSI6eyJvdXRjb21lIjoiY29tcGxldGVkIn19\[0m[?25l[1;1H[2K[96m◐ Working 0s · ↓ ~7 tokens [2m· Esc to interrupt[22m[0m8[?25h[1;2H[J[1;1H[K
+[K[38;5;115m✓[0m read /Users/stefano.straus/Gits/.tmp/ego-771live-native/v043/tool/input.txt[38;5;246m · 1 line · 0ms[0m
+[K[38;5;246m  … 1 more line · Option+O or /expand[0m
+[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s · ↓ ~7 tokens [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h]7770;state=idle]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1kNzg1LTczMWUtYWFmYy04YmEwNzI3ZTA5YmUiLCJ0dXJuIjoiMDFhMTk3MjYtZDdkMy03N2U0LTk2MjctYTQwYTQ1NTQ1MTZlIiwiZXZlbnQiOiJ0dXJuX2VuZCIsImlkIjpudWxsLCJkYXRhIjp7Im91dGNvbWUiOiJjb21wbGV0ZWQiLCJyZWFzb24iOiJDb21wbGV0ZWQifX0=\[1;2H[J[1;1H[K
+[KNative evidence completed.
+[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s · ↓ ~7 tokens [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h[?2004l[?2004h[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s · ↓ ~7 tokens [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h[1;2H[J[1;1H[K
+[Kεgo: Turn elapsed 106ms · done 1:47 PM
+[6n[0m[?25l[1;2H[J[1;1H[92m[96m◐ Working 0s · ↓ ~7 tokens [2m· Esc to interrupt[22m
+> [35m[0m[0m7[37m[0m
+ 8[?25h]7770;agent-event=eyJ2ZXJzaW9uIjoxLCJhZ2VudCI6ImVnbyIsInNlc3Npb24iOiIwMWExOTcyNi1kNzg1LTczMWUtYWFmYy04YmEwNzI3ZTA5YmUiLCJ0dXJuIjpudWxsLCJldmVudCI6InNlc3Npb25fZW5kIiwiaWQiOm51bGwsImRhdGEiOnsib3V0Y29tZSI6ImNvbXBsZXRlZCJ9fQ==\]9;4;0;0]7770;state=idle]0;ɛ । ]133;D;0[0m[?25l[1;2H[J[1;1H[92m[96mfixture · off · yolo [38;5;115m▱▱▱▱▱▱▱▱▱▱ 14/32.8k[0m unpriced ~ trust=untrusted
+> [35m[0m[0m7[37m[0m
+ 8[?25h[1;2H[J[1;1H[K
+[Kεgo: 0 unsent drafts discarded; 0 prompts waiting to run.
+[6n[0m[?25l[1;2H[J[1;1H[92m[96mfixture · off · yolo [38;5;115m▱▱▱▱▱▱▱▱▱▱ 14/32.8k[0m unpriced ~ trust=untrusted
+> [35m[0m[0m7[37m[0m
+ 8[?25h[1;2H[J[1;1H[K
+[Kεgo: To resume: 'ego resume 01a19726-d785-731e-aafc-8ba0727e09be'
+[6n[0m[?25l[1;2H[J[1;1H[92m[96mfixture · off · yolo [38;5;115m▱▱▱▱▱▱▱▱▱▱ 14/32.8k[0m unpriced ~ trust=untrusted
+> [35m[0m[0m7[37m[0m
+ 8[?25h[?2004l

@@ -6,8 +6,8 @@
 # process per test (ten nested `cargo build`s competing for the same lock).
 #
 # The headless default still exercises the exact binaries lib tests spawn:
-# neither fixture is feature-gated. It avoids desktop permission validation
-# for local lib-only runs. CI supplies TUIC_FIXTURE_FEATURES and has already
+# both fixtures require the test-only feature. This avoids desktop permission
+# validation for local lib-only runs. CI supplies TUIC_FIXTURE_FEATURES and has already
 # built workspace tests. Select that same test graph, including dev-dependency
 # feature unification: cargo build --profile test alone does not include it.
 # Integration targets build the normal fixture executables, not test harnesses.
@@ -23,5 +23,5 @@ fi
 if [ -n "${TUIC_FIXTURE_FEATURES:-}" ]; then
     cargo test --workspace --no-run --features "$TUIC_FIXTURE_FEATURES" "$@"
 else
-    cargo build --profile test --no-default-features --bin tuic-acp-fixture-agent --bin tuic-mcp-fixture-server "$@"
+    cargo build --profile test --no-default-features --features test-fixtures --bin tuic-acp-fixture-agent --bin tuic-mcp-fixture-server "$@"
 fi

@@ -33,9 +33,8 @@ describe.skipIf(!url)("browser-rendered Chat readability", () => {
 			expect(parseFloat(appearance.unmarkedBorder)).toBe(0);
 			for (const list of appearance.lists) {
 				expect(list.border).toBe(3);
-				// The outside marker needs the normal Markdown 2em gutter in addition
-				// to the answer's 13px text inset; measured item/text bounds must agree.
-				expect.soft(list.padding, JSON.stringify(appearance)).toBeGreaterThanOrEqual(13 + 2 * list.font);
+				// The list keeps its normal 2em gutter inside the outer rail's 13px inset.
+				expect.soft(list.padding, JSON.stringify(appearance)).toBeGreaterThanOrEqual(2 * list.font);
 				expect.soft(list.itemLeft - list.ruleRight).toBeGreaterThanOrEqual(13 + 2 * list.font);
 				expect(list.textLeft).toBeGreaterThanOrEqual(list.itemLeft);
 			}
@@ -45,7 +44,8 @@ describe.skipIf(!url)("browser-rendered Chat readability", () => {
 		for (const appearance of appearances) {
 			expect(appearance.answerLists).toHaveLength(3);
 			for (const list of appearance.answerLists.slice(0, 2)) {
-				expect.soft(list.listBorder, JSON.stringify(appearance)).toBe(3);
+				expect.soft(list.listBorder, JSON.stringify(appearance)).toBe(0);
+				expect.soft(list.railBorder, JSON.stringify(appearance)).toBe(3);
 				expect.soft(list.ruleLeft).toBe(appearance.paragraphRuleLeft);
 				for (const item of list.items) {
 					expect.soft(item.border).toBe(0);
@@ -55,11 +55,14 @@ describe.skipIf(!url)("browser-rendered Chat readability", () => {
 		}
 	});
 
-	it("leaves unmarked mixed-list siblings unruled — catches whole-list answer promotion", () => {
+	it("wraps mixed-list context without promoting unmarked siblings — catches item-owned rails or lost semantic scope", () => {
 		for (const appearance of appearances) {
 			const mixed = appearance.answerLists[2];
 			expect(mixed.listBorder).toBe(0);
-			expect(mixed.items.map((item) => item.border)).toEqual([3, 0]);
+			expect(mixed.railBorder).toBe(3);
+			expect(mixed.ruleLeft).toBe(appearance.paragraphRuleLeft);
+			expect(mixed.items.map((item) => item.border)).toEqual([0, 0]);
+			expect(mixed.items.map((item) => item.answer)).toEqual([true, false]);
 		}
 	});
 });

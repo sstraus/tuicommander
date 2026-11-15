@@ -134,7 +134,7 @@ export function captureDictationTarget(fallbackInput?: HTMLTextAreaElement | nul
 				};
 				if (autoSend) {
 					const shellFamily = await getShellFamily(sessionId);
-					await sendCommand(writeFn, text, agentType, shellFamily, true, sessionId);
+					await sendCommand(writeFn, text, agentType, shellFamily, true, sessionId, false);
 				} else await writeFn(agentInputPayload(text, agentType));
 				requestAnimationFrame(() => {
 					if (terminalId && terminalsStore.getActive()?.id === terminalId) terminalsStore.get(terminalId)?.ref?.focus();

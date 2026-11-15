@@ -24,7 +24,6 @@ const FEATURE: BranchDetail = {
 	is_current: false,
 	is_remote: false,
 	is_main: false,
-	is_merged: true,
 	ahead: 2,
 	behind: 1,
 	upstream: null,

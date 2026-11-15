@@ -100,7 +100,7 @@ it("pixel scrolling repaints changed retained rows rather than copying stale tex
 	);
 	expect(ctx.fillText.mock.calls.map((call) => call[0]).join("")).toBe("BXBBDDDD");
 });
-it.each([0, 3, -1])("non-overlapping or non-forward scroll %s never copies unrelated pixels (2040)", (top) => {
+it.each([0, 3, -3])("non-overlapping scroll %s never copies unrelated pixels (2040)", (top) => {
 	const { ctx, renderer } = setup();
 	const rows = new Map([
 		[0, row(0, "AAAA")],
@@ -110,6 +110,36 @@ it.each([0, 3, -1])("non-overlapping or non-forward scroll %s never copies unrel
 	renderer.paintGrid(rows, metrics, options(0, true));
 	renderer.paintGrid(rows, metrics, options(top));
 	expect(ctx.drawImage).not.toHaveBeenCalled();
+});
+// Catches: a wheel gesture back into history repaints every glyph of the viewport on each
+// frame, so its main-thread cost scales with rows x columns instead of the rows it exposes (2778).
+it("scrolling back into history copies retained pixels and paints only the exposed row (2778)", () => {
+	const { ctx, renderer } = setup();
+	renderer.paintGrid(
+		new Map([
+			[0, row(0, "BBBB")],
+			[1, row(1, "CCCC")],
+			[2, row(2, "DDDD")],
+		]),
+		metrics,
+		options(1, true),
+	);
+	ctx.fillText.mockClear();
+	ctx.fillRect.mockClear();
+	renderer.paintGrid(
+		new Map([
+			[0, row(0, "AAAA")],
+			[1, row(1, "BBBB")],
+			[2, row(2, "CCCC")],
+		]),
+		metrics,
+		options(0),
+	);
+	expect(ctx.drawImage).toHaveBeenCalledTimes(1);
+	// Rows 0-1 of the old paint land on slots 1-2: source from the top, target one row down.
+	expect(ctx.drawImage).toHaveBeenCalledWith(ctx.canvas, 0, 0, 120, 80, -6, 20, 60, 40);
+	expect(ctx.fillText.mock.calls.map((call) => call[0])).toEqual(["A", "A", "A", "A"]);
+	expect(ctx.fillRect).toHaveBeenCalledWith(-6, 0, 60, 20);
 });
 it("explicit invalidation prevents history pixels crossing a theme or screen boundary (2040)", () => {
 	const { ctx, renderer } = setup();

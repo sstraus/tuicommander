@@ -34,9 +34,11 @@ import { locateFile, repositoriesStore } from "../../stores/repositories";
 import { settingsStore } from "../../stores/settings";
 import { toastsStore } from "../../stores/toasts";
 import { uiStore } from "../../stores/ui";
+import { isTauri } from "../../transport";
 import { copyPathToClipboard } from "../../utils/clipboard";
 import { openFileAction } from "../../utils/filePreview";
 import { handleOpenUrl } from "../../utils/openUrl";
+import { type FilePage, PagedReadCancelled, readTextInPages } from "../../utils/pagedTextRead";
 import { isAbsolutePath, joinPath, pathDirname } from "../../utils/pathUtils";
 import { markPerf } from "../../utils/perfTrace";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
@@ -124,6 +126,9 @@ export function installDocument(view: EditorView, value: string): void {
  *  above which the read is refused entirely. Compared against the content's
  *  string length as a byte proxy — same approximation as LARGE_FILE_BYTES. */
 const WARN_FILE_BYTES = 100 * 1024 * 1024;
+
+/** The backend's MAX_EDITOR_LARGE_FILE_SIZE: pages are refused above it too. */
+const MAX_EDITOR_FILE_BYTES = 250 * 1024 * 1024;
 
 /** On-disk (mtime, size) of an open file, as last seen. */
 export interface DiskStat {
@@ -316,61 +321,95 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 		editorTabsStore.setDirty(props.id, dirty());
 	});
 
+	/** Bumped by every load and on unmount; a paged read stops once its generation is stale. */
+	let loadGeneration = 0;
+	onCleanup(() => loadGeneration++);
+	/** True after the user loaded this file in pages; later re-reads use pages as well. */
+	let pagedMode = false;
+	/** Browser clients hit a whole-read cap below the editor ceiling; they may ask for pages. */
+	const [pagesOffered, setPagesOffered] = createSignal(false);
+
+	/** Read the file one bounded page at a time (explicit request from a browser client). */
+	const readContentInPages = (generation: number): Promise<string> =>
+		readTextInPages(
+			(offset) =>
+				isExternal()
+					? invoke<FilePage>("read_editor_file_external_page", { path: props.filePath, offset })
+					: invoke<FilePage>("read_editor_file_page", { repoPath: fsRoot(), file: props.filePath, offset }),
+			{ isCancelled: () => generation !== loadGeneration },
+		);
+
+	/** Re-read in the mode the document was opened with. */
+	const readCurrentContent = (): Promise<string> => (pagedMode ? readContentInPages(loadGeneration) : readContent());
+
+	const loadFile = async (filePath: string, paged: boolean) => {
+		const generation = ++loadGeneration;
+		pagedMode = paged;
+		// Drop the previous file's baseline until the new one is read below.
+		lastStat = null;
+		setLoading(true);
+		setError(null);
+		setNotDisplayable(false);
+		setTooLarge(false);
+		setPagesOffered(false);
+		setLargeFile(false);
+		if (isExternal() && !props.externalEditable) setIsReadOnly(true);
+
+		try {
+			// Baseline the disk stat BEFORE the read: a write landing between the
+			// two makes the content newer than the stat, so the next poll re-reads
+			// and finds it equal. The other order would miss that write, and no
+			// baseline at all re-read the whole file on the first 5s poll.
+			lastStat = await readStat();
+			const content = paged ? await readContentInPages(generation) : await readContent();
+			if (generation !== loadGeneration) return;
+			markPerf("editor.load", { file: filePath, length: content.length });
+			currentCode = content;
+			setCode(content);
+			setSavedContent(content);
+			setDirty(false);
+			// Large but under the hard cap: open as normal, warn it may be slow.
+			setLargeFile(content.length > WARN_FILE_BYTES);
+
+			// Select the requested position on the very first load only.
+			if (props.initialLine !== undefined && !didScrollToInitialLine) {
+				didScrollToInitialLine = true;
+				const targetLine = props.initialLine;
+				requestAnimationFrame(() => {
+					const view = editorView();
+					if (!view) return;
+					navigateEditorTo(view, targetLine, props.initialCol);
+				});
+			}
+		} catch (err) {
+			if (err instanceof PagedReadCancelled || generation !== loadGeneration) return;
+			const msg = String(err);
+			// A non-UTF-8 read means the file is binary or otherwise not text.
+			setNotDisplayable(/valid UTF-8/i.test(msg));
+			// The backend refused an oversized file before reading (size guard).
+			const refused = /too large/i.test(msg);
+			setTooLarge(refused);
+			// Desktop already reads up to the editor ceiling in one call; only a
+			// browser client's whole read stops below it, so only it gets pages.
+			// Above the editor ceiling pages are refused as well, so do not offer them.
+			const pageable = lastStat === null || lastStat.size <= MAX_EDITOR_FILE_BYTES;
+			setPagesOffered(refused && !paged && !isTauri() && pageable);
+			setError(msg);
+			currentCode = "";
+			setCode("");
+			setSavedContent("");
+			setDirty(false);
+		} finally {
+			if (generation === loadGeneration) setLoading(false);
+		}
+	};
+
 	// Load file content
 	createEffect(
 		on(
 			() => [fsRoot(), props.filePath] as const,
-			async ([_fsRoot, filePath]) => {
-				if (!filePath) return;
-
-				// Drop the previous file's baseline until the new one is read below.
-				lastStat = null;
-				setLoading(true);
-				setError(null);
-				setNotDisplayable(false);
-				setTooLarge(false);
-				setLargeFile(false);
-				if (isExternal() && !props.externalEditable) setIsReadOnly(true);
-
-				try {
-					// Baseline the disk stat BEFORE the read: a write landing between the
-					// two makes the content newer than the stat, so the next poll re-reads
-					// and finds it equal. The other order would miss that write, and no
-					// baseline at all re-read the whole file on the first 5s poll.
-					lastStat = await readStat();
-					const content = await readContent();
-					markPerf("editor.load", { file: filePath, length: content.length });
-					currentCode = content;
-					setCode(content);
-					setSavedContent(content);
-					setDirty(false);
-					// Large but under the hard cap: open as normal, warn it may be slow.
-					setLargeFile(content.length > WARN_FILE_BYTES);
-
-					// Select the requested position on the very first load only.
-					if (props.initialLine !== undefined && !didScrollToInitialLine) {
-						didScrollToInitialLine = true;
-						const targetLine = props.initialLine;
-						requestAnimationFrame(() => {
-							const view = editorView();
-							if (!view) return;
-							navigateEditorTo(view, targetLine, props.initialCol);
-						});
-					}
-				} catch (err) {
-					const msg = String(err);
-					// A non-UTF-8 read means the file is binary or otherwise not text.
-					setNotDisplayable(/valid UTF-8/i.test(msg));
-					// The backend refused an oversized file before reading (size guard).
-					setTooLarge(/too large/i.test(msg));
-					setError(msg);
-					currentCode = "";
-					setCode("");
-					setSavedContent("");
-					setDirty(false);
-				} finally {
-					setLoading(false);
-				}
+			([_fsRoot, filePath]) => {
+				if (filePath) void loadFile(filePath, false);
 			},
 		),
 	);
@@ -414,7 +453,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 				lastStat = stat;
 			}
 
-			const diskContent = await readContent();
+			const diskContent = await readCurrentContent();
 			if (diskContent === savedContent()) return;
 
 			if (currentCode !== savedContent()) {
@@ -454,7 +493,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	/** Reload content from disk, discarding local changes */
 	const handleReloadFromDisk = async () => {
 		try {
-			const diskContent = await readContent();
+			const diskContent = await readCurrentContent();
 			currentCode = diskContent;
 			setCode(diskContent);
 			setSavedContent(diskContent);
@@ -988,6 +1027,11 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 							</svg>
 							<div class={s.noticeTitle}>{t("codeEditor.tooLargeTitle", "File too large to open")}</div>
 							<div class={s.noticeSub}>{error()}</div>
+							<Show when={pagesOffered()}>
+								<Button class={e.btn} onClick={() => void loadFile(props.filePath, true)}>
+									{t("codeEditor.loadInPages", "Load in pages")}
+								</Button>
+							</Show>
 						</div>
 					</Match>
 					<Match when={notDisplayable()}>

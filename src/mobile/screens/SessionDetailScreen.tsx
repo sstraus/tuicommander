@@ -112,6 +112,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
 		agentType,
 		sessionExists: () => props.sessionExists,
 		subscribeWake: props.subscribeChatWake,
+		onQuote: (text) => insertComposerText?.(text),
 		busy: () => sessionState()?.shell_state === "busy",
 		awaitingInput: () => !!sessionState()?.awaiting_input || !!sessionState()?.last_error,
 		activityRevision: () => `${sessionState()?.shell_state}:${sessionState()?.last_activity_ms}`,
@@ -130,6 +131,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
 			busy: "Working",
 			"sub-tasks": "Sub-tasks",
 			question: "Input",
+			stalled: "Stalled",
 			error: "Error",
 			"rate-limited": "Rate limited",
 			unseen: "Finished",
@@ -621,7 +623,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
 					</div>
 				</Show>
 				<MobileJumpBottom
-					visible={chat.active() ? !chat.atBottom() : !cliAtBottom()}
+					visible={chat.active() ? chat.showJump() : !cliAtBottom()}
 					onScrollToBottom={() => (chat.active() ? chat.scrollToBottom() : jumpCli?.())}
 				/>
 			</div>
@@ -632,7 +634,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
 					agentType={sessionState()?.agent_type as string | null | undefined}
 				/>
 			</Show>
-			<Show when={props.sessionExists && props.session.session_id} keyed>
+			<Show when={!chat.active() && props.sessionExists && props.session.session_id} keyed>
 				{(sessionId) => (
 					<QueuedPrompts
 						sessionId={sessionId}
@@ -692,6 +694,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
 				<IdeasOverlay
 					sessionId={props.session.session_id}
 					repoPath={props.session.cwd}
+					agentType={agentType()}
 					microphoneBlocked={voice.recording() || browserDictating()}
 					onDismiss={() => setIdeasOpen(false)}
 				/>

@@ -1,6 +1,7 @@
 import { fireEvent, render } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { providerQuotaStore } from "../../stores/providerQuota";
 
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: vi.fn().mockResolvedValue(undefined),
@@ -64,11 +65,45 @@ const mockProjectList = [
 
 const mockTimeline: unknown[] = [];
 
+const quotaView = (response: unknown, session = "private-session") => {
+	const fiveHour = (response as { five_hour?: { utilization: number } })?.five_hour;
+	return {
+		key: { owner: "claude-code", provider: "anthropic", credential: `/${session}` },
+		session_ids: [session],
+		state: "fresh",
+		snapshot: {
+			windows: fiveHour
+				? [
+						{
+							kind: "five_hour",
+							label: "5h",
+							used_percent: fiveHour.utilization,
+							window_seconds: 18000,
+							resets_at: null,
+							model: null,
+						},
+					]
+				: [],
+			detail: { provider: "claude", observed_at_ms: 1, response },
+			plan: null,
+			credits: null,
+			account: null,
+			observed_at_ms: 1,
+			source: "active",
+		},
+	};
+};
+const mockBackend = (handler: (cmd: string, args?: unknown) => Promise<unknown>) => {
+	vi.mocked(invoke).mockImplementation(async (cmd, args) =>
+		cmd === "get_provider_quotas" ? [quotaView(await handler("quota_detail_fixture"))] : handler(cmd, args),
+	);
+};
+afterEach(() => providerQuotaStore.stop());
 describe("ClaudeUsageDashboard", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-			if (cmd === "get_claude_usage_api") return mockUsageApiResponse;
+		mockBackend(async (cmd: string) => {
+			if (cmd === "quota_detail_fixture") return mockUsageApiResponse;
 			if (cmd === "get_claude_session_stats") return mockSessionStats;
 			if (cmd === "get_claude_project_list") return mockProjectList;
 			if (cmd === "get_claude_usage_timeline") return mockTimeline;
@@ -76,66 +111,66 @@ describe("ClaudeUsageDashboard", () => {
 		});
 	});
 
-	it("requests API usage for the session that opened the dashboard", async () => {
-		render(() => <ClaudeUsageDashboard sessionId="private-session" />);
-		await vi.waitFor(() => {
-			expect(invoke).toHaveBeenCalledWith("get_claude_usage_api", { sessionId: "private-session" });
-		});
+	it("renders the session that opened the dashboard without a provider read", async () => {
+		mockBackend(async (cmd) =>
+			cmd === "quota_detail_fixture"
+				? { ...mockUsageApiResponse, five_hour: { utilization: 21 } }
+				: cmd === "get_claude_session_stats"
+					? mockSessionStats
+					: [],
+		);
+		const result = render(() => <ClaudeUsageDashboard sessionId="private-session" />);
+		await vi.waitFor(() => expect(result.getByText("21%")).toBeTruthy());
+		expect(invoke).not.toHaveBeenCalledWith("get_claude_usage_api", expect.anything());
 	});
-
-	it("passes the Claude tab's session through the shared panel renderer", async () => {
+	it("passes the Claude tab session through the shared panel renderer", async () => {
+		mockBackend(async (cmd) =>
+			cmd === "quota_detail_fixture"
+				? { ...mockUsageApiResponse, five_hour: { utilization: 21 } }
+				: cmd === "get_claude_session_stats"
+					? mockSessionStats
+					: [],
+		);
 		const tab = { type: "claude-usage", sessionId: "private-session" } as ClaudeUsageTab;
-		render(() => <MdTabContent tab={tab} onClose={() => {}} />);
-		await vi.waitFor(() => {
-			expect(invoke).toHaveBeenCalledWith("get_claude_usage_api", { sessionId: "private-session" });
-		});
+		const result = render(() => <MdTabContent tab={tab} onClose={() => {}} />);
+		await vi.waitFor(() => expect(result.getByText("21%")).toBeTruthy());
 	});
-
-	it("clears the previous account quota when the next profile has no credentials", async () => {
-		vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
-			if (cmd === "get_claude_usage_api") {
-				if ((args as { sessionId?: string } | undefined)?.sessionId === "missing")
-					throw new Error("No Claude OAuth token found");
-				return { ...mockUsageApiResponse, five_hour: { utilization: 21, resets_at: null } };
-			}
-			if (cmd === "get_claude_session_stats") return mockSessionStats;
-			if (cmd === "get_claude_project_list") return mockProjectList;
-			if (cmd === "get_claude_usage_timeline") return mockTimeline;
-			return undefined;
-		});
-		const [sessionId, setSessionId] = createSignal("first");
-		const view = render(() => <ClaudeUsageDashboard sessionId={sessionId} />);
-		await vi.waitFor(() => expect(view.getByText("21%")).toBeTruthy());
+	it("clears the previous account quota when the next session is unbound", async () => {
+		mockBackend(async (cmd) =>
+			cmd === "quota_detail_fixture"
+				? { ...mockUsageApiResponse, five_hour: { utilization: 21 } }
+				: cmd === "get_claude_session_stats"
+					? mockSessionStats
+					: [],
+		);
+		const [sessionId, setSessionId] = createSignal("private-session");
+		const result = render(() => <ClaudeUsageDashboard sessionId={sessionId} />);
+		await vi.waitFor(() => expect(result.getByText("21%")).toBeTruthy());
 		setSessionId("missing");
-		await vi.waitFor(() => expect(view.getByText("Rate limit data unavailable")).toBeTruthy());
-		expect(view.queryByText("21%")).toBeNull();
+		await vi.waitFor(() => expect(result.getByText("Rate limit data unavailable")).toBeTruthy());
+		expect(result.queryByText("21%")).toBeNull();
 	});
-
-	it("ignores a late response from the previous profile", async () => {
-		let resolveFirst: ((value: unknown) => void) | undefined;
-		vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
-			if (cmd === "get_claude_usage_api") {
-				const sessionId = (args as { sessionId?: string } | undefined)?.sessionId;
-				if (sessionId === "first")
-					return new Promise((resolve) => {
-						resolveFirst = resolve;
-					});
-				return { ...mockUsageApiResponse, five_hour: { utilization: 42, resets_at: null } };
-			}
-			if (cmd === "get_claude_session_stats") return mockSessionStats;
-			if (cmd === "get_claude_project_list") return mockProjectList;
-			if (cmd === "get_claude_usage_timeline") return mockTimeline;
-			return undefined;
-		});
+	it("a late initial inventory uses the currently selected session", async () => {
+		let resolve!: (value: unknown) => void;
+		vi.mocked(invoke).mockImplementation(async (cmd) =>
+			cmd === "get_provider_quotas"
+				? new Promise((done) => {
+						resolve = done;
+					})
+				: cmd === "get_claude_session_stats"
+					? mockSessionStats
+					: [],
+		);
 		const [sessionId, setSessionId] = createSignal("first");
-		const view = render(() => <ClaudeUsageDashboard sessionId={sessionId} />);
-		await vi.waitFor(() => expect(resolveFirst).toBeDefined());
+		const result = render(() => <ClaudeUsageDashboard sessionId={sessionId} />);
+		await vi.waitFor(() => expect(resolve).toBeDefined());
 		setSessionId("second");
-		await vi.waitFor(() => expect(view.getByText("42%")).toBeTruthy());
-		resolveFirst?.({ ...mockUsageApiResponse, five_hour: { utilization: 21, resets_at: null } });
-		await Promise.resolve();
-		expect(view.queryByText("21%")).toBeNull();
-		expect(view.getByText("42%")).toBeTruthy();
+		resolve([
+			quotaView({ five_hour: { utilization: 21 } }, "first"),
+			quotaView({ five_hour: { utilization: 42 } }, "second"),
+		]);
+		await vi.waitFor(() => expect(result.getByText("42%")).toBeTruthy());
+		expect(result.queryByText("21%")).toBeNull();
 	});
 
 	describe("scope change — single fetch cycle", () => {
@@ -193,15 +228,15 @@ describe("ClaudeUsageDashboard", () => {
 			});
 		});
 
-		it("does not call get_claude_usage_api again when scope changes", async () => {
+		it("does not reload the quota registry when scope changes", async () => {
 			const { getByRole } = render(() => <ClaudeUsageDashboard />);
 
 			await vi.waitFor(() => {
-				const calls = vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === "get_claude_usage_api");
+				const calls = vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === "get_provider_quotas");
 				expect(calls).toHaveLength(1);
 			});
 
-			const apiCallsBefore = vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === "get_claude_usage_api").length;
+			const apiCallsBefore = vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === "get_provider_quotas").length;
 
 			const select = getByRole("combobox");
 			fireEvent.change(select, { target: { value: "project-a" } });
@@ -209,7 +244,7 @@ describe("ClaudeUsageDashboard", () => {
 			// Allow time for any erroneous extra calls to appear
 			await new Promise((resolve) => setTimeout(resolve, 50));
 
-			const apiCallsAfter = vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === "get_claude_usage_api").length;
+			const apiCallsAfter = vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === "get_provider_quotas").length;
 			expect(apiCallsAfter).toBe(apiCallsBefore);
 		});
 	});
@@ -239,8 +274,8 @@ describe("ClaudeUsageDashboard", () => {
 		};
 
 		beforeEach(() => {
-			vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-				if (cmd === "get_claude_usage_api") return enterpriseUsageResponse;
+			mockBackend(async (cmd: string) => {
+				if (cmd === "quota_detail_fixture") return enterpriseUsageResponse;
 				if (cmd === "get_claude_session_stats") return mockSessionStats;
 				if (cmd === "get_claude_project_list") return mockProjectList;
 				if (cmd === "get_claude_usage_timeline") return mockTimeline;
@@ -266,8 +301,8 @@ describe("ClaudeUsageDashboard", () => {
 		});
 
 		it.each([true, false])("keeps real zero utilization visible with credit detail=%s", async (withCredits) => {
-			vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-				if (cmd === "get_claude_usage_api") {
+			mockBackend(async (cmd: string) => {
+				if (cmd === "quota_detail_fixture") {
 					return {
 						...enterpriseUsageResponse,
 						extra_usage: {
@@ -291,8 +326,8 @@ describe("ClaudeUsageDashboard", () => {
 		});
 
 		it("shows an unavailable value, not 0%, when extra_usage.utilization is null", async () => {
-			vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-				if (cmd === "get_claude_usage_api") {
+			mockBackend(async (cmd: string) => {
+				if (cmd === "quota_detail_fixture") {
 					return {
 						...enterpriseUsageResponse,
 						extra_usage: { ...enterpriseUsageResponse.extra_usage, utilization: null },
@@ -312,8 +347,8 @@ describe("ClaudeUsageDashboard", () => {
 		});
 
 		it("shows an unavailable value, not 0%, when utilization and credit detail are both missing", async () => {
-			vi.mocked(invoke).mockImplementation(async (cmd: string) => {
-				if (cmd === "get_claude_usage_api") {
+			mockBackend(async (cmd: string) => {
+				if (cmd === "quota_detail_fixture") {
 					return {
 						...enterpriseUsageResponse,
 						extra_usage: {

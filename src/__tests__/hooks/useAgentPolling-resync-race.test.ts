@@ -14,6 +14,9 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
+// The dynamic imports below load the whole hook graph after vi.resetModules(); measured 2-4 s
+// cold, which is setup and not the behaviour under test, so it gets its own bound (the
+// assertions run in ~35 ms).
 // Catches: resync reuses a pre-gap snapshot and leaves a drained queue visible indefinitely.
 it("refreshes a drained queue when reconnect races an in-flight pre-gap snapshot", async () => {
 	const transport = await import("../../transport");
@@ -48,4 +51,4 @@ it("refreshes a drained queue when reconnect races an in-flight pre-gap snapshot
 		await vi.advanceTimersByTimeAsync(0);
 		expect(store.get(id)?.queuedCommands).toBe(0);
 	});
-});
+}, 30_000);

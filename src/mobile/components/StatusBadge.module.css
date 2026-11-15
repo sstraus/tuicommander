@@ -33,6 +33,15 @@
   animation: none;
 }
 
+.stalled {
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  color: var(--warning);
+}
+
+:global(html[data-theme="vscode-light"]) .stalled {
+  color: var(--fg-primary);
+}
+
 .error {
   background: rgba(244, 135, 113, 0.15);
   color: var(--error);

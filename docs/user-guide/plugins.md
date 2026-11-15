@@ -23,7 +23,7 @@ Registry plugins include file viewers such as **DOCX Preview**, which opens Word
 
 ### Via Deep Link
 
-Click a link like `tuic://install-plugin?url=https://example.com/plugin.zip` — TUICommander shows a confirmation dialog, then downloads and installs the plugin. Only HTTPS URLs are accepted.
+Click a link like `tuic://install-plugin?url=https://example.com/plugin.zip` — TUICommander shows a confirmation dialog, then downloads and installs the plugin. Only HTTPS URLs are accepted, plus plain `http://` from `localhost` or a loopback address (for a ZIP you serve yourself); redirects to any other plaintext host are refused.
 
 ### Manual Installation
 
@@ -273,6 +273,8 @@ GitHub Tasks boards (#1846-55d7): the optional provider `listBoards(signal)` por
 Async plugin startup completes before the plugin is marked as loaded. Startup failures appear in the plugin error state and its log. Disabling or reloading a plugin cancels its startup lifetime and prevents late registrations from the old host.
 
 Cancelling Jira URL resolution stops its in-flight HTTP requests. Plugins can also cancel their own HTTP requests; unloading a plugin cancels its active requests.
+
+To let a plugin call a development service on your machine or LAN that its manifest does not list, add a URL pattern to `plugin_http_destinations` in `config.json`, for example `["http://192.168.1.20:3000/*"]`. Use the same syntax as manifest `allowedUrls`. Every `net:http` plugin can then reach that service without an account. Only `http` and `https` work. Account credentials are never sent to these destinations unless they are under the account host. Edit the file with the app stopped, or use the configuration save API; a settings API write from an agent that adds a pattern needs your confirmation.
 
 Jira and GitLab expose a default project in their schema-driven plugin settings page. Jira uses a project ID; GitLab accepts a project path or ID. A project saved for an account in Tasks setup takes precedence. The default applies after the plugin reloads; empty means no fallback project. Account bindings remain in `data/work-items.json`, while these defaults use the settings service in `data/config.json`.
 

@@ -1,0 +1,12 @@
+// A resumed chat whose durable child is still running. Ego delivers the
+// childActivity roster snapshot for the loaded session; it can be read before
+// the session/load reply (ego replays before it answers, and the supervisor
+// takes updates before answers in flight). The durable child shape is the
+// ChildIdentity documented in ego docs/integrations/acp-extensions.md; the
+// recording has no durable child.
+{"step":"expect","method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"_meta":{"ego":{"childActivity":{"version":1}}}}},"capture":"init"}
+{"step":"respond","to":"init","result":{"protocolVersion":1,"agentInfo":{"name":"ego","version":"fixture"},"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true,"audio":false,"embeddedContext":false},"mcpCapabilities":{"http":true,"sse":false,"acp":true},"sessionCapabilities":{"list":{},"delete":{},"fork":{},"resume":{},"close":{}},"auth":{},"_meta":{"ego":{"compact":{"version":1,"method":"_ego/compact"},"hold":{"version":1,"pause":"_ego/pause","resume":"_ego/resume"},"childActivity":{"version":1,"update":"session_info_update","field":"_meta.ego.childActivity"}}}}}}
+{"step":"expect","method":"session/load","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa"},"capture":"load"}
+{"step":"notify","method":"session/update","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa","update":{"sessionUpdate":"session_info_update","_meta":{"ego":{"childActivity":{"version":1,"kind":"snapshot","children":[{"turnId":"01a19689-1baf-7077-af31-86a014d6656d","itemId":"01a19689-1bf0-7072-9288-09a374ab2a64","child":{"kind":"durable","invocation":"01a19689-1bf0-7072-9288-09a9378835d2","run":{"session_id":"01a19689-1bf0-7072-9288-09a9378835d3","nonce":"01a19689-1bf0-7072-9288-09a9378835d4"}}}]}}}}}}
+{"step":"respond","to":"load","result":{"configOptions":[]}}
+{"step":"await_stdin_eof"}

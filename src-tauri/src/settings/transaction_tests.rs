@@ -80,11 +80,7 @@ async fn queued_approval_revoked_before_commit(expire: bool) {
         .await
         .unwrap()
         .revision;
-    let caller = Caller::mcp(
-        "127.0.0.1:12345".parse().unwrap(),
-        "queued-connection".into(),
-        true,
-    );
+    let caller = Caller::mcp("queued-connection".into(), true);
     let request = Request::Set {
         target: Target::Machine,
         store: "app".into(),

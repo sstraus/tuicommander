@@ -5,11 +5,8 @@ use super::{
     request::*,
 };
 use serde_json::{Value, json};
-use std::{net::SocketAddr, sync::Arc};
+use std::sync::Arc;
 
-fn local() -> SocketAddr {
-    "127.0.0.1:4321".parse().unwrap()
-}
 fn edit(rev: String, username: &str) -> Request {
     Request::Set {
         target: Target::Machine,
@@ -44,16 +41,12 @@ pub(super) async fn answer(
     task.await.unwrap()
 }
 
-// Catches: a remote MCP connection committing a patch through the internal service.
+// Catches: an authenticated remote MCP connection still refused a write that loopback may commit.
 #[tokio::test]
 #[serial_test::serial]
-async fn remote_patch_denied() {
+async fn mcp_patch_commits_like_loopback() {
     let (dir, _guard, _state, service) = fixture();
-    let caller = Caller::mcp(
-        "192.0.2.10:4321".parse().unwrap(),
-        "remote-connection".into(),
-        true,
-    );
+    let caller = Caller::mcp("remote-connection".into(), true);
     let req = Request::Set {
         target: Target::Machine,
         store: "app".into(),
@@ -61,9 +54,17 @@ async fn remote_patch_denied() {
         value: json!(21),
         expected_revision: revision(&service).await,
     };
-    let error = service.execute_as(req, &caller, None).await.unwrap_err();
-    assert_eq!(error.code, "forbidden_origin");
-    assert!(!dir.path().join("config.json").exists());
+    let reply = service.execute_as(req, &caller, None).await.unwrap();
+    assert!(matches!(
+        reply,
+        Reply::Commit(CommitReply {
+            persisted: true,
+            ..
+        })
+    ));
+    let disk: Value =
+        serde_json::from_slice(&std::fs::read(dir.path().join("config.json")).unwrap()).unwrap();
+    assert_eq!(disk["font_size"], json!(21));
 }
 
 // Catches: secret input entering error, confirm broadcast or bounded audit text.
@@ -166,10 +167,7 @@ async fn approval_not_replayable() {
         bytes
     );
     // A valid grant for one revision cannot authorize content substitution or another caller.
-    for substituted_caller in [
-        caller.clone(),
-        Caller::http("another-connection".into(), true),
-    ] {
+    for substituted_caller in [caller.clone(), Caller::http("another-connection".into())] {
         let request = edit(revision(&service).await, "next-user");
         let id = service
             .execute_as(request.clone(), &caller, None)
@@ -206,7 +204,7 @@ async fn approval_not_replayable() {
 #[serial_test::serial]
 async fn expired_confirm_no_write() {
     let (dir, _guard, state, service) = fixture();
-    let caller = Caller::mcp(local(), "expiry-connection".into(), true);
+    let caller = Caller::mcp("expiry-connection".into(), true);
     for cause in ["refusal", "expiry", "disconnect"] {
         let request = edit(revision(&service).await, "verification-user");
         let id = service

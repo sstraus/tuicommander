@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# These snippets exercise the fixture gate only; formatting has its own test.
+export TUIC_SKIP_FORMAT_GATE=1
 
 project_root="$(git rev-parse --show-toplevel)"
 test_tmp="${TUIC_TEST_TMP_ROOT:-$project_root/.tmp/tuic-tests}"
@@ -55,6 +57,28 @@ capture='src-tauri/src/fixtures/agent_prompts/claude-askuser-esc-20260929'
 cp "$project_root/$capture.tcap" "$repo/$capture.tcap"
 cp "$project_root/$capture.md" "$repo/$capture.md"
 git -C "$repo" add "$capture.tcap" "$capture.md"
+
+# Catches a .tcap landing without its replay-oracle capture: the all-committed
+# oracle test then fails on the landing box (3018-a4fd).
+if (cd "$repo" && bash "$project_root/scripts/hooks/pre-commit") > "$scratch/no-oracle" 2>&1; then
+  echo '.tcap without its replay-oracle capture unexpectedly passed' >&2
+  exit 1
+fi
+grep -Fq 'scripts/replay-oracle.sh regenerate' "$scratch/no-oracle"
+grep -Fq "$capture.tcap" "$scratch/no-oracle"
+
+oracle="src-tauri/src/fixtures/replay_oracle/captures/$capture.tcap.jsonl"
+corpus='src-tauri/src/fixtures/replay_oracle/corpus.jsonl'
+mkdir -p "$(dirname "$repo/$oracle")"
+cp "$project_root/$oracle" "$repo/$oracle"
+git -C "$repo" add "$oracle"
+# Catches a capture staged without its corpus manifest entry: corpus.jsonl drifts.
+if (cd "$repo" && bash "$project_root/scripts/hooks/pre-commit") > "$scratch/no-corpus" 2>&1; then
+  echo '.tcap without its corpus.jsonl entry unexpectedly passed' >&2
+  exit 1
+fi
+cp "$project_root/$corpus" "$repo/$corpus"
+git -C "$repo" add "$corpus"
 (cd "$repo" && bash "$project_root/scripts/hooks/pre-commit")
 git -C "$repo" -c user.name=Test -c user.email=test@example.com commit -qm recorded-baseline
 

@@ -124,7 +124,13 @@ export async function subscribePty(
 						const lines = frame.lines as LogLine[] | undefined;
 						if (lines && lines.length > 0) {
 							if (opts.onLogLines) {
-								opts.onLogLines(lines);
+								const start = (frame as Record<string, unknown>).offset;
+								opts.onLogLines(
+									lines,
+									typeof start === "number" && typeof logCursor === "number"
+										? { offset: start, total: logCursor }
+										: undefined,
+								);
 							} else {
 								// Backward compat: join span texts as plain string
 								const texts = lines.map((l) => {

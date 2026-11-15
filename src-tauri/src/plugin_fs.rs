@@ -1,8 +1,12 @@
 //! Filesystem API for plugins.
 //!
-//! Provides sandboxed read, list, and watch operations restricted to paths
-//! within the user's home directory. Plugins declare `fs:read`, `fs:list`,
-//! or `fs:watch` capabilities in their manifest to use these commands.
+//! Provides read, list, and watch operations on any absolute path the user can
+//! access; writes, renames and build-artifact operations stay within the user's
+//! home directory. Plugins declare `fs:read`, `fs:list`, or `fs:watch`
+//! capabilities in their manifest to use these commands.
+
+pub(crate) mod range;
+pub(crate) use range::{plugin_file_size_impl, plugin_read_file_range_impl};
 
 use crate::AppState;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
@@ -80,9 +84,10 @@ fn effective_home_dir() -> Result<PathBuf, String> {
         .map_err(|e| format!("Failed to resolve home directory: {e}"))
 }
 
-/// Resolve and validate that a path is within $HOME.
-/// Returns the canonicalized path on success.
-fn validate_within_home(raw: &str) -> Result<PathBuf, String> {
+/// Resolve an absolute path to its canonical form. Read-only operations use
+/// this alone: a plugin reads wherever the user can, and the OS reports any
+/// access error.
+fn resolve_absolute(raw: &str) -> Result<PathBuf, String> {
     if raw.is_empty() {
         return Err("Path is empty".into());
     }
@@ -93,10 +98,14 @@ fn validate_within_home(raw: &str) -> Result<PathBuf, String> {
     }
 
     // Canonicalize resolves symlinks and .. components
-    let canonical = path
-        .canonicalize()
-        .map_err(|e| format!("Failed to resolve path: {e}"))?;
+    path.canonicalize()
+        .map_err(|e| format!("Failed to resolve path: {e}"))
+}
 
+/// Resolve and validate that a path is within $HOME.
+/// Returns the canonicalized path on success.
+fn validate_within_home(raw: &str) -> Result<PathBuf, String> {
+    let canonical = resolve_absolute(raw)?;
     let home = effective_home_dir()?;
 
     if !canonical.starts_with(&home) {
@@ -111,7 +120,7 @@ fn validate_within_home(raw: &str) -> Result<PathBuf, String> {
 // ---------------------------------------------------------------------------
 
 /// Read a file's content as UTF-8 text.
-/// Validates the path is within $HOME, enforces a 10 MB size limit.
+/// Requires an absolute path, enforces a 10 MB size limit.
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn plugin_read_file(
@@ -135,7 +144,7 @@ pub async fn plugin_read_files(
 }
 
 /// Read a file's raw bytes as base64.
-/// Validates the path is within $HOME, enforces the same 10 MB size limit as
+/// Requires an absolute path, enforces the same 10 MB size limit as
 /// plugin_read_file.
 #[cfg(feature = "desktop")]
 #[tauri::command]
@@ -174,10 +183,10 @@ where
         .map_err(|e| format!("fs task failed: {e}"))?
 }
 
-/// Read one file as UTF-8 text, confined to $HOME and capped at `max_bytes`.
+/// Read one file as UTF-8 text from an absolute path, capped at `max_bytes`.
 /// Blocking: call it from inside `spawn_blocking_fs`.
 fn read_text_capped(path: &str, max_bytes: u64) -> Result<String, String> {
-    let canonical = validate_within_home(path)?;
+    let canonical = resolve_absolute(path)?;
 
     // Check file size before reading
     let metadata =
@@ -198,9 +207,9 @@ fn read_text_capped(path: &str, max_bytes: u64) -> Result<String, String> {
     std::fs::read_to_string(&canonical).map_err(|e| format!("Failed to read file: {e}"))
 }
 
-/// Read one file as UTF-8 text, confined to $HOME and capped at `MAX_FILE_SIZE`.
+/// Read one file as UTF-8 text from an absolute path, capped at `MAX_FILE_SIZE`.
 /// Blocking: call it from inside `spawn_blocking_fs`.
-fn read_text_within_home(path: &str) -> Result<String, String> {
+fn read_text_file(path: &str) -> Result<String, String> {
     read_text_capped(path, MAX_FILE_SIZE)
 }
 
@@ -234,7 +243,7 @@ fn read_files_within_budget(
         .collect())
 }
 
-fn read_files_within_home(paths: Vec<String>) -> Result<Vec<Option<String>>, String> {
+fn read_files_batch(paths: Vec<String>) -> Result<Vec<Option<String>>, String> {
     read_files_within_budget(paths, MAX_BATCH_BYTES)
 }
 
@@ -244,7 +253,7 @@ pub(crate) async fn plugin_read_file_impl(
     plugin_id: String,
 ) -> Result<String, String> {
     crate::plugins::check_plugin_capability(state, &plugin_id, "fs:read")?;
-    spawn_blocking_fs(move || read_text_within_home(&path)).await
+    spawn_blocking_fs(move || read_text_file(&path)).await
 }
 
 pub(crate) async fn plugin_read_files_impl(
@@ -253,7 +262,7 @@ pub(crate) async fn plugin_read_files_impl(
     plugin_id: String,
 ) -> Result<Vec<Option<String>>, String> {
     crate::plugins::check_plugin_capability(state, &plugin_id, "fs:read")?;
-    spawn_blocking_fs(move || read_files_within_home(paths)).await
+    spawn_blocking_fs(move || read_files_batch(paths)).await
 }
 
 pub(crate) async fn plugin_read_file_base64_impl(
@@ -278,7 +287,7 @@ fn binary_read_limit(requested: Option<u64>) -> Result<u64, String> {
 fn read_binary_base64_capped(path: &str, max_bytes: u64) -> Result<String, String> {
     use base64::Engine;
 
-    let canonical = validate_within_home(path)?;
+    let canonical = resolve_absolute(path)?;
     let metadata =
         std::fs::metadata(&canonical).map_err(|e| format!("Failed to stat file: {e}"))?;
 
@@ -335,7 +344,7 @@ fn write_binary_base64_capped(path: &str, content: &str, max_bytes: u64) -> Resu
 }
 
 /// List filenames in a directory, optionally filtered by a glob pattern.
-/// Returns filenames only (not full paths). Validates path is within $HOME.
+/// Returns filenames only (not full paths). Requires an absolute path.
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn plugin_list_directory(
@@ -365,7 +374,7 @@ async fn plugin_list_directory_inner(
     sort_by: Option<String>,
 ) -> Result<Vec<String>, String> {
     spawn_blocking_fs(move || {
-        let canonical = validate_within_home(&path)?;
+        let canonical = resolve_absolute(&path)?;
 
         if !canonical.is_dir() {
             return Err("Path is not a directory".into());
@@ -414,7 +423,7 @@ async fn plugin_list_directory_inner(
 /// Read the last `max_bytes` of a file as UTF-8 text.
 /// Seeks to `file_size - max_bytes`, then skips to the next newline to avoid
 /// partial lines. If the file is smaller than `max_bytes`, reads the entire file.
-/// Validates path is within $HOME, same as plugin_read_file.
+/// Requires an absolute path, same as plugin_read_file.
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn plugin_read_file_tail(
@@ -446,7 +455,7 @@ async fn plugin_read_file_tail_inner(path: String, max_bytes: u64) -> Result<Str
     spawn_blocking_fs(move || {
         use std::io::{Read, Seek, SeekFrom};
 
-        let canonical = validate_within_home(&path)?;
+        let canonical = resolve_absolute(&path)?;
 
         let metadata =
             std::fs::metadata(&canonical).map_err(|e| format!("Failed to stat file: {e}"))?;
@@ -529,7 +538,7 @@ pub async fn plugin_watch_path(
 ) -> Result<String, String> {
     crate::plugins::check_plugin_capability(&state, &plugin_id, "fs:watch")?;
     check_watcher_cap(&state, &plugin_id)?;
-    let canonical = validate_within_home(&path)?;
+    let canonical = resolve_absolute(&path)?;
 
     let watch_id = uuid::Uuid::new_v4().to_string();
     let event_name = format!("plugin-fs-change-{watch_id}");
@@ -1827,15 +1836,15 @@ mod tests {
         assert!(validate_within_home("").is_err());
     }
 
-    /// A directory under $HOME, because every plugin read is confined to it.
-    fn temp_dir_in_home() -> tempfile::TempDir {
-        tempfile::tempdir_in(dirs::home_dir().unwrap()).unwrap()
+    /// A test-local directory. Plugin reads are not confined to $HOME.
+    fn temp_dir() -> tempfile::TempDir {
+        tempfile::tempdir().unwrap()
     }
 
     #[test]
     fn batch_read_returns_contents_in_request_order() {
         let _guard = FS_TEST_LOCK.lock().unwrap();
-        let dir = temp_dir_in_home();
+        let dir = temp_dir();
         let paths: Vec<String> = (0..3)
             .map(|i| {
                 let p = dir.path().join(format!("{i}.md"));
@@ -1844,7 +1853,7 @@ mod tests {
             })
             .collect();
 
-        let read = read_files_within_home(paths).unwrap();
+        let read = read_files_batch(paths).unwrap();
 
         assert_eq!(
             read,
@@ -1859,17 +1868,17 @@ mod tests {
     #[test]
     fn batch_read_reports_unreadable_entries_as_none() {
         let _guard = FS_TEST_LOCK.lock().unwrap();
-        let dir = temp_dir_in_home();
+        let dir = temp_dir();
         let good = dir.path().join("good.md");
         std::fs::write(&good, "here").unwrap();
 
-        // A missing file, a directory, and a path outside $HOME must each cost
+        // A missing file, a directory, and a relative path must each cost
         // the caller one None — not the whole batch.
-        let read = read_files_within_home(vec![
+        let read = read_files_batch(vec![
             good.to_str().unwrap().to_string(),
             dir.path().join("missing.md").to_str().unwrap().to_string(),
             dir.path().to_str().unwrap().to_string(),
-            "/etc/hosts".to_string(),
+            "relative/notes.md".to_string(),
         ])
         .unwrap();
 
@@ -1879,7 +1888,7 @@ mod tests {
     #[test]
     fn batch_read_rejects_an_oversized_request() {
         let paths = vec!["/unused".to_string(); MAX_BATCH_FILES + 1];
-        assert!(read_files_within_home(paths).is_err());
+        assert!(read_files_batch(paths).is_err());
     }
 
     #[test]
@@ -1887,16 +1896,13 @@ mod tests {
         // The boundary, not just past it: an off-by-one here would refuse a
         // request the plugin was told it may make.
         let paths = vec!["/unused".to_string(); MAX_BATCH_FILES];
-        assert_eq!(
-            read_files_within_home(paths).unwrap().len(),
-            MAX_BATCH_FILES
-        );
+        assert_eq!(read_files_batch(paths).unwrap().len(), MAX_BATCH_FILES);
     }
 
     #[test]
     fn batch_read_still_enforces_the_per_file_cap() {
         let _guard = FS_TEST_LOCK.lock().unwrap();
-        let dir = temp_dir_in_home();
+        let dir = temp_dir();
         let big = dir.path().join("big.md");
         std::fs::write(&big, vec![b'x'; MAX_FILE_SIZE as usize + 1]).unwrap();
 
@@ -1912,7 +1918,7 @@ mod tests {
     #[test]
     fn batch_read_stops_spending_at_the_byte_budget() {
         let _guard = FS_TEST_LOCK.lock().unwrap();
-        let dir = temp_dir_in_home();
+        let dir = temp_dir();
 
         // The per-file cap cannot bound a batch: MAX_BATCH_FILES files just
         // under it would retain three orders of magnitude more than any single
@@ -1958,7 +1964,7 @@ mod tests {
     #[test]
     fn binary_read_uses_the_requested_budget() {
         let _guard = FS_TEST_LOCK.lock().unwrap();
-        let dir = temp_dir_in_home();
+        let dir = temp_dir();
         let file = dir.path().join("database.sqlite");
         std::fs::write(&file, b"SQLite format 3\0payload").unwrap();
 
@@ -2031,6 +2037,113 @@ mod tests {
         let home = dirs::home_dir().unwrap();
         let traversal = format!("{}/../../../etc/passwd", home.display());
         assert!(validate_within_home(&traversal).is_err());
+    }
+
+    /// A simulated HOME and a sibling directory outside it, like a repository
+    /// on `/Volumes/Work`. Both are test-local, never real external hardware.
+    fn home_and_external_dirs() -> (tempfile::TempDir, tempfile::TempDir) {
+        let home = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        let home_canonical = home.path().canonicalize().unwrap();
+        let external_canonical = external.path().canonicalize().unwrap();
+        assert!(!external_canonical.starts_with(&home_canonical));
+        (home, external)
+    }
+
+    #[test]
+    fn plugin_reads_external_file_and_symlink() {
+        let (home, external) = home_and_external_dirs();
+        let _guard = set_home_dir_override(home.path().to_path_buf());
+        let file = external.path().join("notes.md");
+        std::fs::write(&file, "line1\nline2\n").unwrap();
+        let file_str = file.to_str().unwrap().to_string();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+
+        assert_eq!(read_text_file(&file_str).unwrap(), "line1\nline2\n");
+        assert_eq!(
+            read_files_batch(vec![file_str.clone()]).unwrap(),
+            vec![Some("line1\nline2\n".to_string())]
+        );
+        assert_eq!(
+            read_binary_base64_capped(&file_str, MAX_FILE_SIZE).unwrap(),
+            "bGluZTEKbGluZTIK"
+        );
+        assert_eq!(
+            rt.block_on(plugin_read_file_tail_inner(file_str.clone(), 1024))
+                .unwrap(),
+            "line1\nline2\n"
+        );
+        assert_eq!(
+            rt.block_on(plugin_list_directory_inner(
+                external.path().to_str().unwrap().to_string(),
+                None,
+                None,
+            ))
+            .unwrap(),
+            vec!["notes.md".to_string()]
+        );
+
+        // A HOME symlink to the external volume resolves to its real target.
+        #[cfg(unix)]
+        {
+            let link = home.path().join("work");
+            std::os::unix::fs::symlink(external.path(), &link).unwrap();
+            let via_link = link.join("notes.md");
+            assert_eq!(
+                read_text_file(via_link.to_str().unwrap()).unwrap(),
+                "line1\nline2\n"
+            );
+            assert_eq!(
+                rt.block_on(plugin_list_directory_inner(
+                    link.to_str().unwrap().to_string(),
+                    None,
+                    None,
+                ))
+                .unwrap(),
+                vec!["notes.md".to_string()]
+            );
+        }
+    }
+
+    #[test]
+    fn plugin_external_file_and_batch_limits_remain() {
+        let (home, external) = home_and_external_dirs();
+        let _guard = set_home_dir_override(home.path().to_path_buf());
+        let write = |name: &str, body: &[u8]| {
+            let p = external.path().join(name);
+            std::fs::write(&p, body).unwrap();
+            p.to_str().unwrap().to_string()
+        };
+        let big = write("big.md", &vec![b'x'; MAX_FILE_SIZE as usize + 1]);
+
+        // The per-file cap still applies outside HOME. The binary cap and the
+        // batch budget and file-count bounds are proven by
+        // binary_read_uses_the_requested_budget and the batch_read_* tests,
+        // which also run in a tempdir outside HOME.
+        let error = read_text_file(&big).unwrap_err();
+        assert!(error.contains("File exceeds maximum size"), "got: {error}");
+
+        // OS access and type results still reach the plugin.
+        let missing = external.path().join("missing.md");
+        let error = read_text_file(missing.to_str().unwrap()).unwrap_err();
+        assert!(error.starts_with("Failed to resolve path"), "got: {error}");
+        let error = read_text_file(external.path().to_str().unwrap()).unwrap_err();
+        assert_eq!(error, "Path is not a file");
+        assert_eq!(
+            read_text_file("relative/notes.md").unwrap_err(),
+            "Path must be absolute"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let locked = write("locked.md", b"secret");
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+            // The OS is the oracle: a root runner can still open the file.
+            if std::fs::File::open(&locked).is_err() {
+                let error = read_text_file(&locked).unwrap_err();
+                assert!(error.contains("Permission denied"), "got: {error}");
+            }
+        }
     }
 
     #[test]

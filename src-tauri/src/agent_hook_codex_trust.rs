@@ -66,7 +66,7 @@ fn owned_hooks(list: Listing, settings: &Path, map: &[HookEntry]) -> Result<Vec<
                 && hook.matcher.as_deref().unwrap_or("") == *matcher
                 && !hook.asynchronous
                 && hook.timeout_sec == 600
-                && hook.status_message.is_none()
+                && hook.status_message.as_deref() == Some(crate::agent_hook::CODEX_HOOK_LABEL)
                 && hook.additional_context_limit.is_none()
                 && hook.enabled
                 && !hook.key.is_empty()
@@ -192,48 +192,121 @@ pub(crate) async fn verify(settings: &Path, trust: bool) -> Result<(), String> {
 
 async fn verify_with_binary(binary: &Path, settings: &Path, trust: bool) -> Result<(), String> {
     let home = settings.parent().ok_or(REVIEW_REQUIRED)?;
+    transact(
+        &Native { binary, home },
+        settings,
+        &crate::agent_hook::codex_hook_map(),
+        trust,
+    )
+    .await
+}
+
+type Responses = std::collections::HashMap<u64, Value>;
+
+/// One `codex app-server` process per call; a seam so tests can script the server.
+trait Codex {
+    fn call(
+        &self,
+        requests: &[(u64, &str, Value)],
+    ) -> impl Future<Output = Result<Responses, String>> + Send;
+}
+
+struct Native<'a> {
+    binary: &'a Path,
+    home: &'a Path,
+}
+
+impl Codex for Native<'_> {
+    fn call(
+        &self,
+        requests: &[(u64, &str, Value)],
+    ) -> impl Future<Output = Result<Responses, String>> + Send {
+        rpc(self.binary, self.home, requests)
+    }
+}
+
+/// Prior trust for each edited key, read from the pre-write config: restoring
+/// replaces a known hash and removes a key that had none (`null`).
+fn restore_edits(edits: &[Value], config: &Value) -> Vec<Value> {
+    edits
+        .iter()
+        .map(|edit| {
+            let key = edit["keyPath"].as_str().unwrap_or_default();
+            let prior = key
+                .strip_prefix("hooks.state.")
+                .and_then(|rest| rest.strip_suffix(".trusted_hash"))
+                .and_then(|quoted| serde_json::from_str::<String>(quoted).ok())
+                .and_then(|name| {
+                    config
+                        .pointer("/config/hooks/state")?
+                        .get(name)?
+                        .get("trusted_hash")
+                        .cloned()
+                })
+                .unwrap_or(Value::Null);
+            json!({"keyPath": key, "value": prior, "mergeStrategy": "replace"})
+        })
+        .collect()
+}
+
+async fn transact(
+    codex: &impl Codex,
+    settings: &Path,
+    map: &[HookEntry],
+    trust: bool,
+) -> Result<(), String> {
+    let home = settings.parent().ok_or(REVIEW_REQUIRED)?;
     let config_path = home.join("config.toml");
     let params = json!({"cwds":[home]});
-    let map = crate::agent_hook::codex_hook_map();
-    let responses = rpc(
-        binary,
-        home,
-        &[
+    let responses = codex
+        .call(&[
             (1, "hooks/list", params.clone()),
             (2, "config/read", json!({"includeLayers":true})),
-        ],
-    )
-    .await?;
-    let hooks = owned_hooks(result(&responses, 1)?, settings, &map)?;
+        ])
+        .await?;
+    let hooks = owned_hooks(result(&responses, 1)?, settings, map)?;
     let config: Value = result(&responses, 2)?;
     let version = config_version(&config, &config_path)?;
     if !trust {
         return verify_readback(&hooks, &hooks);
     }
     let edits = trust_edits(&hooks);
+    let mut written_version = None;
     if !edits.is_empty() {
-        let responses = rpc(
-            binary,
-            home,
-            &[(
+        let responses = codex
+            .call(&[(
                 1,
                 "config/batchWrite",
-                json!({
-                    "filePath": config_path, "expectedVersion":version, "edits":edits,
-                }),
-            )],
-        )
-        .await?;
+                json!({"filePath": config_path, "expectedVersion":version, "edits":edits}),
+            )])
+            .await?;
         let written: Value = result(&responses, 1)?;
         if written["status"] != "ok"
             || written["filePath"].as_str().map(Path::new) != Some(config_path.as_path())
         {
             return Err(REVIEW_REQUIRED.into());
         }
+        written_version = written["version"].as_str().map(str::to_owned);
     }
-    let responses = rpc(binary, home, &[(1, "hooks/list", params)]).await?;
-    let readback = owned_hooks(result(&responses, 1)?, settings, &map)?;
-    verify_readback(&hooks, &readback)
+    let verified = async {
+        let responses = codex.call(&[(1, "hooks/list", params)]).await?;
+        let readback = owned_hooks(result(&responses, 1)?, settings, map)?;
+        verify_readback(&hooks, &readback)
+    }
+    .await;
+    if verified.is_err() && !edits.is_empty() {
+        // Best effort, guarded by the write's own version: a concurrent config
+        // edit makes the native CAS reject the restore instead of being overwritten.
+        let _ = codex
+            .call(&[(
+                1,
+                "config/batchWrite",
+                json!({"filePath": config_path, "expectedVersion":written_version,
+                "edits":restore_edits(&edits, &config)}),
+            )])
+            .await;
+    }
+    verified
 }
 
 #[cfg(test)]
@@ -247,6 +320,21 @@ mod tests {
             .find_map(|row| {
                 let response = row.get("received")?;
                 (response["id"] == id).then(|| response.clone())
+            })
+            .map(|mut response| {
+                // The capture predates the label (#2622-6809): stamp it on the
+                // TUIC-owned entry, as the installer now writes it.
+                if let Some(hooks) = response.pointer_mut("/result/data/0/hooks") {
+                    for hook in hooks.as_array_mut().into_iter().flatten() {
+                        if hook["command"]
+                            .as_str()
+                            .is_some_and(|c| c.contains("tuic-managed-hook"))
+                        {
+                            hook["statusMessage"] = json!("TUICommander session");
+                        }
+                    }
+                }
+                response
             })
             .unwrap()
     }
@@ -442,6 +530,138 @@ mod tests {
             crate::agent_hook_commands::state_at("codex", &hooks),
             crate::agent_hook_installer::InstallState::Installed,
             "file presence cannot establish current native hook trust"
+        );
+    }
+
+    /// In-process stand-in for `codex app-server`: a config with per-key trust
+    /// and a native version that every accepted write replaces.
+    struct FakeCodex {
+        state: std::sync::Mutex<(u32, std::collections::BTreeMap<String, String>)>,
+        fail_readback: bool,
+    }
+
+    impl FakeCodex {
+        fn new(fail_readback: bool) -> Self {
+            let prior = [("unrelated".to_string(), "sha256:keep".to_string())];
+            Self {
+                state: std::sync::Mutex::new((0, prior.into())),
+                fail_readback,
+            }
+        }
+
+        fn snapshot(&self) -> std::collections::BTreeMap<String, String> {
+            self.state.lock().unwrap().1.clone()
+        }
+
+        fn handle(&self, id: u64, method: &str, params: &Value) -> Result<Responses, String> {
+            let mut state = self.state.lock().unwrap();
+            let key = selected(1)[0].key.clone();
+            let version = |n: u32| format!("sha256:v{n}");
+            let reply = match method {
+                "hooks/list" => {
+                    if state.1.contains_key(&key) && self.fail_readback {
+                        return Err(REVIEW_REQUIRED.into());
+                    }
+                    captured(if state.1.contains_key(&key) { 4 } else { 1 })
+                }
+                "config/read" => {
+                    let mut config = captured(2);
+                    config["result"]["layers"][0]["version"] = json!(version(state.0));
+                    let trust: serde_json::Map<String, Value> = state
+                        .1
+                        .iter()
+                        .map(|(k, v)| (k.clone(), json!({"trusted_hash": v})))
+                        .collect();
+                    config["result"]["config"]["hooks"] = json!({"state": trust});
+                    config
+                }
+                _ => {
+                    if params["expectedVersion"] != json!(version(state.0)) {
+                        return Ok(Responses::from([(id, captured(6))]));
+                    }
+                    for edit in params["edits"].as_array().unwrap() {
+                        let quoted = edit["keyPath"]
+                            .as_str()
+                            .unwrap()
+                            .strip_prefix("hooks.state.")
+                            .unwrap()
+                            .strip_suffix(".trusted_hash")
+                            .unwrap();
+                        let name = serde_json::from_str::<String>(quoted).unwrap();
+                        match edit["value"].as_str() {
+                            Some(hash) => state.1.insert(name, hash.to_string()),
+                            None => state.1.remove(&name),
+                        };
+                    }
+                    state.0 += 1;
+                    json!({"id": id, "result": {"status": "ok", "version": version(state.0),
+                        "filePath": params["filePath"]}})
+                }
+            };
+            Ok(Responses::from([(id, reply)]))
+        }
+    }
+
+    impl Codex for FakeCodex {
+        // The trait returns a future; the scripted fake has nothing to await.
+        #[allow(clippy::unused_async_trait_impl)]
+        async fn call(&self, requests: &[(u64, &str, Value)]) -> Result<Responses, String> {
+            let mut all = Responses::new();
+            for (id, method, params) in requests {
+                all.extend(self.handle(*id, method, params)?);
+            }
+            Ok(all)
+        }
+    }
+
+    async fn run_transaction(fake: &FakeCodex) -> Result<(), String> {
+        transact(fake, fixture_path(), &fixture_map(), true).await
+    }
+
+    #[tokio::test]
+    async fn codex_trust_readback_failure_leaves_file_unchanged() {
+        // Bug caught: trusted_hash stays persisted after batchWrite succeeds and readback fails.
+        let fake = FakeCodex::new(true);
+        let before = fake.snapshot();
+        assert!(run_transaction(&fake).await.is_err());
+        assert_eq!(fake.snapshot(), before);
+    }
+
+    #[tokio::test]
+    async fn codex_trust_success_keeps_the_persisted_hash() {
+        // Bug caught: restoration runs on success and discards the requested trust.
+        let fake = FakeCodex::new(false);
+        run_transaction(&fake).await.unwrap();
+        assert!(fake.snapshot().contains_key(&selected(1)[0].key));
+    }
+
+    #[test]
+    fn codex_trust_restore_puts_back_a_prior_hash() {
+        // Bug caught: restoring a modified hook deletes its previous trust record.
+        let hook = selected(1);
+        let edits = trust_edits(&hook);
+        let mut config = captured(2)["result"].clone();
+        config["config"]["hooks"] =
+            json!({"state": {hook[0].key.clone(): {"trusted_hash": "sha256:old"}}});
+        assert_eq!(
+            restore_edits(&edits, &json!(config))[0]["value"],
+            "sha256:old"
+        );
+    }
+
+    #[test]
+    fn codex_native_listing_without_our_label_is_not_ours() {
+        // Bug caught: label-less (pre-2622) entries stay "owned" and never get re-trusted
+        // after the reinstall changes their hash.
+        let mut listing = captured(1)["result"].clone();
+        listing["data"][0]["hooks"][0]["statusMessage"] = Value::Null;
+        assert!(
+            owned_hooks(
+                serde_json::from_value(listing).unwrap(),
+                fixture_path(),
+                &fixture_map()
+            )
+            .is_err()
         );
     }
 }

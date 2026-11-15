@@ -124,7 +124,9 @@ On a phone, Progress defaults to Started (intent), Done, and Blocked entries. Th
 
 **List | Flow** in the dialog header switches to a sequence diagram of the same
 journal. Each terminal is a column, and so is each Claude subagent of an open
-terminal. Rows run from oldest at the top to newest at the bottom; there is no
+terminal. A Codex or ego terminal adds a Running column for each native child
+it reports live; that column has no arrows and goes away when the child stops
+or the lead's turn is cleared. Rows run from oldest at the top to newest at the bottom; there is no
 time scale.
 
 - A delegation is an arrow from the parent to the child, labelled with the task.

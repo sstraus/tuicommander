@@ -200,6 +200,12 @@ pub trait Output: Send + Sync {
     }
 }
 
+/// Admit a rendered reply without blocking the capture loop. `None` means
+/// input still owns the turn; the renderer waits with its queue lock released.
+pub trait StartPlayback: Send + Sync {
+    fn try_play(&self, output: &dyn Output, audio: &SpeechAudio) -> Option<Result<(), String>>;
+}
+
 /// What the UI and the status endpoints need to know.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpeakerStatus {
@@ -324,6 +330,7 @@ struct Shared {
     /// a field of [`State`]: the stage runs with `state` released, and a
     /// settings save must not wait for a render to finish.
     loudness: Mutex<Option<Loudness>>,
+    playback_gate: std::sync::OnceLock<Arc<dyn StartPlayback>>,
 }
 
 impl Shared {
@@ -417,6 +424,7 @@ impl Speaker {
             wake: Condvar::new(),
             observer: std::sync::OnceLock::new(),
             loudness: Mutex::new(None),
+            playback_gate: std::sync::OnceLock::new(),
         });
         let worker = std::thread::Builder::new()
             .name("speech-queue".to_string())
@@ -480,6 +488,11 @@ impl Speaker {
     /// replace a live consumer's stream halfway through a conversation.
     pub fn observe(&self, observer: Arc<dyn UtteranceObserver>) {
         let _ = self.shared.observer.set(observer);
+    }
+
+    /// Install before the first reply, so every output owner shares admission.
+    pub fn gate_playback(&self, gate: Arc<dyn StartPlayback>) {
+        let _ = self.shared.playback_gate.set(gate);
     }
 
     /// Bring every reply rendered from now on to this level. A reply already
@@ -677,6 +690,21 @@ fn render_loop(shared: &Shared, speech: &dyn Speech, output: &dyn Output) {
         }
 
         let mut state = shared.state.lock();
+        let mut played = None;
+        if let Ok(audio) = &rendered {
+            while !state.shutdown && state.generation == reply.generation {
+                played = match shared.playback_gate.get() {
+                    Some(gate) => gate.try_play(output, audio),
+                    None => Some(output.play(audio)),
+                };
+                if played.is_some() {
+                    break;
+                }
+                // Release the queue lock while input owns the turn: hush and
+                // shutdown must still cancel a rendered reply immediately.
+                shared.wake.wait_for(&mut state, PLAYBACK_POLL);
+            }
+        }
         state.in_flight = None;
         if state.shutdown {
             return;
@@ -702,7 +730,7 @@ fn render_loop(shared: &Shared, speech: &dyn Speech, output: &dyn Output) {
             // would bump the generation, stop a silent device, and then have
             // the stale audio appended behind it. `play` only queues, so
             // `hush` waits on the order of a mixer append, not an utterance.
-            Ok(audio) => match output.play(&audio) {
+            Ok(_) => match played.expect("a current reply was admitted or the loop returned") {
                 Ok(()) => {
                     state.last_error = None;
                     // Handed over, not heard. `Finished` is set by the poll in

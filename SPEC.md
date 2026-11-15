@@ -1,7 +1,57 @@
 # TUICommander Specification
 
+Neutral Designer trigger authoring renders installed source schemas and pinned workflow inputs through the shared action client. Preview and save are separate from enabling. Enabling requires current overlap acknowledgement; mutation errors re-read durable binding metadata. The shared transport is integrated; production provider behavior is verified separately from authoring rendering.
+
+- [x] Neutral catalog Designer authoring (#014-5d73): schema-driven authoring uses `workflow_neutral_action` and preserves the legacy Designer until parity. Configured catalog, pure preview, pinned subflows and correction contracts are verified through actual service DTOs and the real frontend RPC boundary; live end-to-end parity remains a separate gate.
+
+Internal bounded correction composition lowers a pinned selected region to the neutral durable loop. Correction counts exclude the initial attempt and survive worker/head changes and replay; exhaustion/ambiguity routes to operator. Native exact-candidate review/check assessment and the existing neutral MCP action expose the boundary; Designer renders the generated region contract and exact child publication, with consumed corrections derived from retained loop iteration (#016-358f). See [workflow contracts](docs/backend/workflows.md#bounded-correction-composition-016-358f-phases-ab).
+
+The installed neutral workflow provider composes the closed configured family
+set: native operations, saved script/HTTP operations, the configured mediated
+model profile, installed Jira/GitLab projects and the enabled Telegram alias.
+Discovery is local and reads no credentials. Agent execution requires captured
+and current Operator authority; external writes retain exact ledger approval.
+Pure preview requires no run binding and grants no execution authority.
+Authenticated public starts bind backend caller/workspace provenance before dispatch; operational cutover remains staged.
+Internal bounded correction composition lowers a pinned selected region to the neutral durable loop. Correction counts exclude the initial attempt and survive worker/head changes and replay; exhaustion/ambiguity routes to operator. Native exact-candidate review/check assessment and the existing neutral MCP action expose the boundary; Designer rendering remains pending (#016-358f). See [workflow contracts](docs/backend/workflows.md#bounded-correction-composition-016-358f-phases-ab).
+
+Internal structured workflow scripts now have a bounded, versioned input/result
+adapter with exact effect identity and conservative mutation reconciliation.
+Authenticated public start binding is installed; generic Designer script rendering is verified.
+See [the script interface](docs/backend/workflow-script-interface.md).
+
+Internal Jira Cloud workflow activities provide typed lookup/search/create/update/comment/transition contracts and original-effect observation over the existing account client. Configured host composition is installed; authenticated public start binding is installed and live adapter acceptance remains staged; see [Jira contracts](docs/backend/workflows.md#installed-jira-cloud-activities-011-2a30) (#011-2a30).
+
+Internal workflow HTTP activities support typed requests/results and pinned
+installed connector contracts with bounded pagination into collections. Native
+host composition is installed; authenticated public neutral start binds trusted backend callers. See
+[the contract](docs/backend/workflow-http-connectors.md) (#009-e32f).
+
+- [x] Chat Send now, Compose Steer and urgent peer mail interrupt Claude Code, Codex and ego through one forced-steer flow; no busy Enter fallback (#2869-3e82).
+
+Prompt composers share Enter/Ctrl+Enter to send, Shift+Enter for newline, and
+Cmd+S/Ctrl+S to park or swap drafts without sending. See
+[the keyboard model](docs/frontend/prompt-input-keyboard-inventory.md).
+
+Managed stall recovery (#2711-e893, #2748-73c0): The silence sweep never stops a PTY. It nudges the stalled worker once per silence episode through its inbox and terminal, and sends its parent one `stalled` notice with `recovery: "nudged_worker"` and the explicit `stop` command. Declared waits and a BLOCKED hold to the parent are exempt. Running background work is not exempt, because a hung command must still reach the parent; the notice carries `background_work`. A worker whose latest mail to its parent starts with RESULT gets no nudge (`recovery: "parent_decides"`), so it does not resend its result every episode.
+
+Typed agent reports (#2702-b458): optional structured report metadata survives all mail readers. A single ordered backend table derives live stages, with turn-generation invalidation and host report acceptance times. See docs/user-guide/agent-teams.md.
+
+Codex native tool hooks (#2626-f570): exact session/turn tool edges restore busy. Native `request_user_input` supplies a confident question and matching settlement; background tools preserve open waits. Permission ownership remains deferred to #2695-41da because CLI 0.166.0 does not expose it.
+
+Windows hook availability (#2630-568a): Native Windows does not install or inject TUIC's external POSIX status hooks. Hook state returns `unsupported`, and hook/status setters reject changes before writing preferences or user hook files. Saved preferences and existing hooks remain intact. Settings hides these controls based on the owning backend response, including remote machines. External agents retain heuristic detection; ego keeps native PTY OSC signals and its separate ACP path.
+
+Internal neutral workflows have typed native workspace/artifact pins, named verification, story transitions, exact-approved commit and canonical local bare push adapters. Native exact-change review uses the existing reviewer and pins either the staged artifact or an explicit committed candidate against its base; commit requires its passing persisted staged receipt. Empty diffs remain Uncertain. Named verification retains nonzero candidate-bound receipts for correction assessment. Native GitHub publication supports separately approved account/repository/artifact-bound branch and PR actions, with provider read-back receipts. Trusted public caller/run binding remains pending; unbound dispatch refuses. See [native workflow operations](docs/backend/workflows.md).
+
+- [x] `/fs/read` supports optional byte offset/length with exact base64 pages capped at 1 MiB, total size, continuation and clamp fields; full text reads keep their contract (#2694-ff9e).
+
+- [x] The OpenCode 2.2.3 managed plugin uses the native v2 interface for private `--standalone` launches. Native form/permission waits restore current activity on matching settlement and clear on execution/session teardown; shared servers do not publish per-terminal state (#2628-ad9b).
+
+- [x] Grok native completion, cancellation, failure and correlated permission waits settle through the shared PTY state path (#2624-848f).
+
 Codex global hook setup (#2625-c4b5): installed status requires native current-definition trust. Explicit installs use CLI-returned keys/hashes and versioned config writes; failed verification requires `/hooks` review. Base-config verification does not claim profile-specific hook trust.
 
+- [x] Compose queue items offer labelled Steer and Cancel, reusing backend Send now capability and stable ids (#2862-c636).
 - [x] Busy Session Chat prompts use the host queue with Cancel and exactly-once Send now controls (#2589-4bc4).
 
 - [x] Config recovery (#2564-8455, #2565-8b3c): invalid fields fall back independently with a startup warning and preserved original backup. Legacy scrollback reflow enrolls once; subsequent explicit false values remain authoritative.
@@ -48,13 +98,13 @@ Native MCP guidance (#2069-7347): session, agent, repo, ui, voice, telegram and 
 Design Mode optional capture (#1724-fe7e): the extension declares `<all_urls>` only in optional host permissions. **Let agents capture any site** requests that grant from a user click; after consent Chrome capture needs no further action gesture. Without consent, preserve `activeTab` capture and return a typed error naming the option. Capture consent does not grant agent eval or opt into remote error injection. Remote error reads require explicit host consent; the panel confirms actual eval grant origins instead of trusting request success alone.
 UI Design Mode actions (#2067-e708): `ui design_start/stop/status/reload/navigate/screenshot/errors/eval` reuse the Design Mode owner, armed caller/repository checks and extension host grants. Saved `design_mode` denials apply to the grouped actions. The old tool is removed by the 2068 capability cutover; use `ui design_*`.
 
-
 Conditional MCP tools (#2066-516c, conditional portion of #2067-e708): remote requires a live authenticated connected server; voice requires persisted dictation enabled and spoken replies enabled; Telegram requires enabled setup, a bot alias and its private token file. Shared predicates gate listing, search, schema lookup and calls. Owner changes invalidate the catalogue. Configuration does not replace conversation binding, Telegram registration or deployment consent. Design Mode uses grouped `ui design_*` actions after the catalogue cutover.
 - [x] Mobile CLI answer bars occupy a separate gutter outside the text box, including column-zero ego rows, without adding Claude text indentation (#2110-734c).
 - [x] Mobile CLI answers reuse the desktop answer planner and green gutter style instead of displaying protocol speech bubbles; prompts and fenced examples stay literal (#2070-773d).
 
 - [x] Native MCP Settings rows use domain sections without changing tool names, saved disabled values or effective denials (#2063-baa9).
 
+- [x] Markdown review sends use saved local edit ranges and enclosing-section guidance on desktop and mobile, with whole-file fallback for missing or invalidated baselines (#2706-eeec).
 - [x] Mobile Markdown review sends persisted edits and tweak comments through the shared desktop prompt and backend idle queue, with repository agent selection and delivery feedback (#2042-a71b).
 
 - [x] Durable independent peer-mail subscriptions: shared insertion journal, filtered bounded replay, explicit acknowledgement, retention-loss counters, HTTP SSE and ACP resource notifications (#2004-4760).
@@ -75,10 +125,11 @@ Desktop close policy (B1, #1802-e6b8): Rust owns `app.close_behavior` (`ask` def
 
 Agent capture tooling: `scripts/agent_capture/run.py` records real installed CLIs through isolated headless sessions, promotes reviewed captures with ordered expected states, and integrates with the 1342 replay oracle. Missing or unauthenticated CLIs remain unverified.
 
-
 Published story workflows can start in Plans and Stories through the owning daemon. When the existing readiness check reports no imported host routing policy, Plans and Stories hides workflow Start controls and shows a neutral sentence. Routing policy controls arrive in a later version. Hosts with a policy retain the existing start flow. Run history renders graph positions, decisions, evidence and paged event payloads, with explicit graph recovery and cancellation. IPC/HTTP and the generated `workflow action=run` MCP schema share the native run service. Plan start remains visibly unavailable pending plan dispatch. The grouped `workflow` MCP tool exposes typed story, run, proposal_create, report and launch actions through existing service owners. Proposal retries preserve coordinator ownership and proposal-key idempotency. Legacy workflow tool names are removed without aliases; scheduled automations stay separate. `tuic workflow` forwards the same envelope.
 
-**Version:** 2.0.0
+Terminal workflow runs remove their own untouched checkouts and branches after verified agent closure. Changed or still-owned work is retained with a run incident and a base-cleanup refusal that names its run. Allocation receipts survive restart; caller-supplied checkouts keep their existing lifecycle. See [Run checkout lifecycle](docs/backend/workflows.md#run-checkout-lifecycle).
+
+**Version:** 2.1.0
 **Last Updated:** 2026-09-16
 
 ## Shared form controls — Implemented (#1815-01c9)
@@ -100,6 +151,8 @@ current ego `not_checked` value is shown as **Enforcement not checked** (approve
 by the coordinator on 2026-10-06). The ego297 measured-array contract is supported: all selected exec guarantees
 produce an OS badge; partial/empty arrays produce Prompt only with explanation.
 Unknown evidence remains unverified, and off+online never passes vacuously. Existing ACP sessions retain their admitted state.
+
+- [x] The sidebar toolbar switch cycles R (rich), C (compact), H (live harness branches with rich rows). H replaces Auto and the separate harness filter button (#2942-122e).
 
 ## Overview
 
@@ -194,9 +247,7 @@ All Tauri commands that perform I/O (git subprocesses, network, bcrypt) are `asy
 
 The SolidJS frontend is being refactored incrementally to improve module ownership,
 test isolation, and deferred loading without changing the framework or product
-behavior. The measured architecture map, dependency constraints, sequencing, and
-validation contract are maintained in
-[`docs/frontend/solid-refactoring-plan.md`](docs/frontend/solid-refactoring-plan.md).
+behavior.
 
 The work preserves browser/Tauri transport parity and keeps terminal frame and
 paint scheduling imperative. Structural changes must remain independently tested
@@ -385,6 +436,29 @@ process look like a terminal and would recreate exactly the hybrid this rule
 forbids. ACP data is already structured and must never pass through the terminal
 parser or be projected into `ParsedEvent`.
 
+**AI Chat activity is derived in Rust** (`src-tauri/src/acp/activity.rs`,
+#2637-c6d3). Each attachment snapshot carries `activity`, and every change also
+goes on the stream as `activityChanged`:
+
+```text
+state = open permission or question ? awaiting
+      : running turn, live tool call or live ego child ? busy
+      : idle
+```
+
+Tool calls count only inside a running turn, so a `session/load` replay cannot
+latch busy. Children come from ego's negotiated `_meta.ego.childActivity`
+frames on `session_info_update` (client opt-in
+`clientCapabilities._meta.ego.childActivity = {"version":1}`), keyed by session,
+turn, item and child identity. A turn end clears its foreground children; a
+durable child stays until ego settles or clears it. A settled seat leaves
+`humanWaits` at once; cancel, turn failure, detach and connection end settle the
+rest, and a connection that ends marks a running turn `interrupted`. The
+`revision` grows on every change, and a host keeps the higher of snapshot and
+stream, so a reconnect cannot restore an answered question. Activity is display
+only: whether a prompt is sent or queued still depends on the turn alone, so
+background child work never opens a second prompt into an occupied turn.
+
 When the ACP connection fails, it settles as a failure. It does not degrade to a
 PTY session, to reading ego's files, or to terminal input. There is no runtime
 feature flag selecting between the two paths.
@@ -501,6 +575,13 @@ Hold the primary modifier alone for 450 ms to show the first nine terminal-tab s
 
 ## Workspaces: linked worktrees with warm artifacts
 
+Creation receipts and API inventory expose `creator_session`, the stable bound
+TUIC peer that allocated the checkout, including ACP peers without a PTY.
+Git administration metadata preserves this provenance across reloads; recycling
+or restoration records the new allocation's creator. Legacy and unbound
+checkouts report `null`. API inventory waits for creator publication under the
+allocation lock. This provenance is separate from live terminal placement.
+
 MCP callers can declare an existing linked worktree through
 `session action=declare_worktree worktree_path=/absolute/path`. Ownership comes
 from the immutable PTY launch directory and registered Git worktrees. The
@@ -510,7 +591,6 @@ own tab placement during OSC 7, reconnect and restore while the matching checkou
 exists. Creation without declaration remains cwd-based. Removing
 or recycling a worktree closes only terminals whose current cwd lies inside that
 checkout. A stale sidebar membership never authorizes closing an unrelated tab.
-
 
 Every workspace created by TUICommander is a linked Git worktree. Its refs and
 objects are shared with the parent repository, so commits are visible from the
@@ -577,7 +657,6 @@ Story details show the persisted origin, plan step, revision and claiming sessio
 New story and Edit plan keep the primary action, then Cancel, together at the bottom-left. New story has no permanent manual-prefix hint below acceptance criteria; `[MANUAL]` criteria remain supported. Story Edit stays in the story header. Disabled Add dependency exposes its reason as a native tooltip and accessible description.
 
 Native stories have an optional persisted story type (feature, fix, refactor, chore, task). Old and omitted values remain untyped. Rust derives combined open/closed/type filters and per-status board membership without filtering dependency records or plan aggregation. Open excludes only Done and WontFix. The dialog retains filters and the List/Kanban switch for the application session, including detach and reattach through panel parameters and return actions. The core Solid board follows the separate Wiz plugin layout without importing its code; native cards open details and use the app pointer-drag utility for phase moves without plugin code. Backend `available_transitions` supplies actual command/destination pairs for a revision through the existing story action envelope, using the commit evaluator. Kanban drops, List phase selectors and the detail selector beside Edit share one transition submission path. Illegal or stale moves never change board membership locally.
-
 
 Workflow definitions have their own config-directory database (`workflows.sqlite3`): editable drafts and immutable published revisions. Graph validation gates publication; the seeded `Resolve plan` definition pins a published `Story delivery` revision. The existing `human` closure policy requires an explicit approval transition, which may come from any trusted caller; `automatic` closure cannot be published until a TUIC-owned evidence gate exists. Definitions pin bounded direct-executable check commands. TUIC runs independent checks outside the global receipt-service lock. Completion probes the assigned worktree and Git artifact before the receipt transaction, then revalidates persisted run sequence, story revisions and command identity inside it; unrelated run events do not discard a valid result, and retries keep their original request cursor. TUIC records durable commit/tree-bound check receipts, then verifies an operator-created merge on the canonical branch against the clean tree computed by Git from its exact parents and runs the checks again on its result before recording `StoryIntegrated`. Extra or omitted merge content is rejected. A conflicted merge requires explicit human review or a separately verified artifact; the current receipt path cannot certify it. A later canonical commit requires a TUIC-computed `CanonicalRecertified` event with successful checks at the clean new tip and ancestry of every integrated source. Durable run records and event projections exist in `workflow_runs.sqlite3`, with idempotent actions and recovery of uncertain effects after restart. Runtime reconciliation preserves live attempts and in-flight effects; restart-only recovery logs each failed run and continues recovering healthy runs. Explicit story dispatch enforces bounded concurrency and conservative file-scope exclusion, while a managed coordinator assigns registered isolated worktrees before spawn. Dependents and final run completion require a current integration receipt at each accepted story revision. Plans and Stories keeps a stable, viewport-bounded size while tabs and selections change; long content scrolls inside. On desktop, its header can detach it into a resizable window and bring it back through the shared panel controls. The Plans and Stories dialog reads a plan's run list and ordered event timeline. The owning daemon executes the published serial story and plan graphs; public graph start controls remain in development.
 
@@ -647,6 +726,8 @@ delegation structure the Flow view draws is observed from spawns and sends; it
 is not inferred, and nothing groups entries into workstreams.
 
 ## Native plans and stories
+
+Automatic story backend selection uses passive Wiz markers and a globally approved installed connector. Explicit native/Wiz/legacy command overrides take precedence. Detected unavailable Wiz and invalid explicit configuration fail closed. The Stories header reports identity, availability and automatic/explicit provenance through the shared IPC/HTTP/headless story status action. Existing native plans and ongoing executions are not migrated. Runs pin their story backend at admission; a backend cannot change during a running or paused run, and runs started before pins keep the pre-pin rule (legacy command binding, otherwise native).
 
 New story supports a plain request followed by Fill with AI. Rust builds the prompt,
 reuses the existing isolated one-shot driver, validates JSON and native story fields,
@@ -795,11 +876,13 @@ Some frontend-only stores persist to localStorage:
 - [x] Answer surfaces use a green left rule without a background tint; Paper uses its darker success green for the rule; paragraph spacing and user-question styling stay unchanged (#1896-f355).
 - [x] Terminal Chat groups answer blocks into one reading-width card per turn, copies the whole card, compresses terminal pastes and system notices, and keeps the collapsed tool row with Claude Bash descriptions. Turn separators are omitted until transcript timestamps reach the frontend (#1832-b19a).
 - [x] Collapsed terminal Compose shows the shared FIFO count in a muted pill, hidden at zero, with a command/message breakdown on hover or focus (#2339-056c).
+- [x] Desktop CLI Compose reserves only its minimum editor row and footer; draft growth overlays output without repeated PTY resizing, leaving editor focus collapses extra height while preserving a scrollable draft, refocusing restores growth, and closing restores the viewport. Chat and mobile layouts remain unchanged (#2697-1a25).
 - [x] Terminal Compose starts at one control line, grows intrinsically up to its existing 96px editor maximum, scrolls longer drafts internally, and shrinks after clear or successful send through shared auto-grow bounds (#2447-9d28).
 - [x] Terminal Compose shows only Ctrl+Enter in the newline hint and hides shortcut hints in panels up to 640px wide instead of wrapping (#2411-c7c9).
 - [x] Empty-composer ArrowUp recalls the latest host-owned text prompt: ACP actor queue or desktop Compose PTY user-command FIFO. Native CLI Pending receipts and multimodal ACP restore remain unsupported (#2556-6065).
 - [x] Terminal Chat inline code chips remain whole when they fit the reading column; empty ACP plan snapshots render no blank card (#2557-0f37, #2558-2056).
 - [x] Terminal Compose sends on Enter, inserts a new line on Ctrl+Enter or Shift+Enter, and queues on Shift+Ctrl+Enter. IME confirmation does not send (#2395-ed27).
+- [x] Pending and sent user messages in session Chat and AI Chat, plus both queue lists, share framed previews for `[image: path]` attachments: one frame, a pair, or a two-column grid. Raw markers are hidden; unavailable images have a placeholder (#2871-e10c).
 - [x] Terminal Compose accepts ordered image drops and an image-only multi-file picker through the existing paste save path. Drop inserts at the pointer; unsupported images and failed saves show an error.
 - [x] Terminal Chat uses focused, docked Compose input with existing send/queue semantics; CLI open/pin preferences and shared unsent drafts survive view switches. Active exported native questions and permission choices render above Compose and use the same PTY key semantics as mobile, without submitting drafts; unexported/free-form prompts retain CLI fallback.
 - [x] Terminal selection copy unwraps soft-wrapped rows, removes coherent Claude visual gutters and composer margins, and preserves literal block characters, pasted prompt glyphs, and short typed line breaks
@@ -861,7 +944,7 @@ Some frontend-only stores persist to localStorage:
 - [~] Pending ego permissions and form requests alert a subscribed phone when the desktop is away, linking to the matching mobile Chat conversation with a 30-second limit per conversation (real-phone verification pending; ego card notices await a defined wire shape)
 - [x] MCP Proxy Hub (aggregate upstream MCP servers via HTTP and stdio, tool namespace prefixing, circuit breaker, hot-reload, origin-bound OS keyring credentials enforced before outgoing requests, tool filtering, session-local Grok compatibility through lazy meta-tools)
 - [x] Copy Path in Markdown panel
-- [x] Claude Usage Dashboard (native SolidJS component with API polling, session analytics, usage timeline)
+- [x] Claude Usage Dashboard (native SolidJS component with registry quota, session analytics, usage timeline)
 - [x] ConfirmDialog component (in-app dark-themed replacement for native OS dialogs)
 - [x] Status bar unified agent badge with priority cascade (rate limit > usage API > PTY usage > name)
 - [x] Movement-based PTY agent activity detection ("text above the input area moves = active") with explicit-hook precedence, prompt-based Ready screens, Codex presence-based Working policy, Grok activity/composer disambiguation, interrupt confirmation, and confirmed-idle safety gates
@@ -913,6 +996,7 @@ Some frontend-only stores persist to localStorage:
 - [x] Streaming preserves speech before trailing silence; shared RMS and speech-confidence gates reject no-speech audio
 - [x] Floating toast for partial transcription results
 - [x] Prompt token carry-forward across windows
+- [x] The default hands-free start notice asks for an immediate one-sentence spoken acknowledgement, then a short spoken answer when done; the language suffix still appends.
 - [x] Hands-free conversation — one bound terminal, continuous VAD segmentation, optional activation phrase with a timed window, cancellable hold-back before sending. Disarms itself on target closure, owner disconnect or capture failure
 - [x] `Cmd+Alt+V` (`Ctrl+Alt+V` on Windows/Linux) toggles hands-free on the active terminal; user overrides win and disabled dictation is a silent no-op.
 - [x] Custom start notice: `hands_free_start_notice` replaces the built-in `MODE_ENTRY_HINT` (empty = built-in, folded to one line); `get_hands_free_default_notice` serves the default for a reset control
@@ -1004,16 +1088,13 @@ Both archive and restore refuse claimed stories and plans that contain a claimed
 
 `story_archive_history` (`story_id`) and `plan_archive_history` (`plan_id`) return `{type:"archive_history",value:[{revision,archived,actor}]}` in revision order. Events commit atomically with the record and retain caller provenance. Existing status transition history remains separate. Transition history uses readable command labels and 1-based criterion numbers, with the current criterion text when available. Actors show a live session name or an eight-character session ID; hover the actor to see the complete session ID. The current history API does not return timestamps. Consecutive archive-only revisions preserve accepted-work integration receipts; a work change or a moved canonical Git ref still invalidates them. Example: `tuic story '{"action":"archive_story","story_id":"<id>","expected_revision":1}' --project /absolute/project`.
 
-
 Workflow graph slice B: AppState owns the serial daemon executor and OS database owner lock on desktop and headless boot. Initial graph position is atomic and start-key idempotent; per-run mailboxes and durable deadlines drive controls without a frontend. Graph roots reserve native stories, and manual claim/start shares the run writer lock. No Agent effects, delivery policy or new UI are enabled; unsupported graphs cannot start as executable workflows.
 
 Workflow graph slice C: the owning daemon executes pinned serial Agent/Judge/Loop/Pause/Notify/Join nodes through the existing RunStore ledger and managed launch fences. Named sol/sonnet profiles are required. New unsupported Gate and plan node publications are refused visibly. Manual pauses suspend active duration. Slice F supplies public story graph starts and history controls; D/E add independent approval and plan dispatch; graph completion alone never closes a native story.
 
-
 ### Workflow story policy (slice D)
 
 The daemon runs pinned deterministic checks before accepting an independent reviewer approval. Native approval history preserves the reviewer actor and revision; the run retains the reviewed artifact and check receipts. A workflow implementer cannot approve its story after exit or claim release. Integration remains an explicit operator action.
-
 
 ### Workflow plan dispatch (slice E)
 
@@ -1026,6 +1107,27 @@ Implemented: terminal context-menu inspector backed by prospectively captured li
 ### Run incidents
 
 Plans and Stories run history contains a read-only incident projection owned by Rust. Workflow reports, interrupted attempts, bound-session exit/state and pending prompt-delivery failure markers, and bound task records supply evidence. No elapsed-time stuck inference, new persistence or automatic recovery is introduced. Suggestions require operator action. Only agents explicitly bound to the selected run participate; unavailable causes are disclosed. IPC and HTTP use the existing workflow run action contract.
+
+### AI Chat conversational reactions (implemented)
+
+The existing message menu offers thumbs up, thumbs down, heart, celebrate, and a comment for
+completed assistant messages with a native source ID. Rust builds one conversational user prompt
+with the ID, a bounded source quote, and explicit non-evaluation/non-authorization wording.
+Both transports use the original ACP attachment and its ordinary busy queue, never a provider
+rating API, permission response, interrupt, or PTY fallback. Accepted marks are saved in backend
+configuration by conversation and native message ID. Adding/removing marks is separate from
+model consumption; removal sends a new turn and cannot retract prior context. Offline refusal
+leaves marks unchanged. Comments use an independent unsent field. Shared dropdown positioning
+uses a viewport-clamped portal so transcript overflow cannot clip it. Terminal Chat draft feedback
+is unchanged.
+
+### AI Chat diagram guidance (implemented)
+
+Attended conversation launches add fixed host guidance for fenced Mermaid rendering and prefer it over ASCII when a diagram is useful. The host does not require diagrams or rewrite the saved master-prompt snapshot. The full 8192-byte user limit remains separate. Reopened conversations keep their user snapshot and receive the host guidance on process launch. Generic ACP and unattended launches do not receive it.
+
+### Active-turn AI Chat forks (implemented)
+
+With message-point fork support, AI Chat can fork a successful completed turn while the parent continues. The backend actor selects the last observed successful-turn message UUID for a busy fork without an explicit cutoff. Current partial output, cancellation and failure never advance that boundary. A fresh load without a verified boundary refuses the automatic choice; an explicit earlier message stays subject to ego's completed-turn validation. Tip forks stay available while idle.
 
 ### Conversation-specific AI Chat launch (implemented)
 
@@ -1163,12 +1265,7 @@ type. Create stays disabled until Title, Type and every required field hold a
 valid value; it dispatches one `create` action and hands the returned item to the
 host to open. A rejection keeps the draft. Tasks shell mounting is separate.
 
-
 Automation worktree cleanup (#1623-8b2a): Automation runs retain automation/run IDs and the exact created workspace path and ID in their saved snapshot, including after definition deletion. Worktree cleanup is explicit and limited to final runs. The backend resolves the saved identity and rechecks shared Git integration/archive proof, dirt, submodule commits and live sessions; it never forces removal or closes sessions. Shared `automation_action` actions `worktree_preview` and `cleanup_worktree` accept a saved run `id` on IPC, HTTP, MCP and CLI.
-
-### Guided event configuration (#2012-72ff)
-
-Three built-in Smart Prompts guide issue-to-draft-PR, incoming PR review and authorized bounded-fix configuration. They open in the composer for review and ask for owner/profile/GitHub/skill prerequisites, confirmed policy limits and supported host capabilities. They do not add a GitHub event runtime or grant publication authority; unavailable intake/publication stops with a draft policy. The after-beta live pilot is not yet verified. See [Guided event configuration](docs/user-guide/event-driven-templates.md).
 
 ### Built-in automation templates
 
@@ -1180,7 +1277,6 @@ Review and edit the draft, then select **Save**. Templates start paused; applyin
 one never persists a definition or starts a run. **Resume** is a separate action.
 Templates use the existing checkout with no precheck and do not change agent
 permissions. Recurring cadence previews retain the existing runtime limitations.
-
 
 ### Automatic agent toast cards (#1760-bab7)
 
@@ -1291,7 +1387,6 @@ Use **Follow task** in an item detail to follow comments locally; use **Unfollow
 
 GitHub provides a full normal-comment count, so an increase is detected even beyond the first page. Jira and GitLab provide paged comment entries: newly observed comments notify when their creation time is newer than the prior baseline, or when a previously unseen comment ID shares its latest timestamp. Unloaded pages, unseen review sources and items that are not refreshed cannot produce a notice. Editing a comment or loading older history does not notify. No Linear provider is shipped, so it is not covered.
 
-
 Shared wake (B6, #1807-4f1f): `session_wake::ensure_live` serializes durable resume with suspension. Tab open, submit and peer mail use this path; input waits in the existing ready-window queue. Failed creation retains the durable tab. IPC `resume_session` maps to `POST /sessions/wake`; MCP list/status expose retained sessions as `hibernated`.
 
 ## ego terminal Chat view
@@ -1343,7 +1438,6 @@ MCP settings, POST /settings/action and IPC settings_action share generated Rust
 ## Settings choice discovery (#1908-c327)
 
 Internal owner requests now support cached dynamic-choice describe and explicit refresh, scoped by target and revision. Notification output devices reuse the UI enumeration owner and preserve unavailable versus successful empty results. General settings transport publication remains separate.
-
 
 Agent model settings support typed model edits without starting a CLI. Explicit
 choice refresh probes only the addressed Claude run config with `--help`, using
@@ -1511,10 +1605,13 @@ Project-local authorization denials do not disable issue/PR actions. Tokens with
 classic scope headers retain API-based permission checks. Live mutation evidence
 requires separate authorization for a scratch project.
 
-
 ### Ego terminal usage (#2386-6f7c)
 
-Ego terminal usage uses the exact live pid lease and `ego usage --json` v3 or v4. The shared badge shows observed context tokens, the observed context capacity when present, complete monetary spend, and complete subscription API-price equivalents. Spend and equivalents remain separate. Version 4 also shows explicitly reported remaining requests, tokens, input tokens, output tokens, or USD. Session observations must match the exact provider/model; a current OpenRouter credential balance is labelled `openrouter key`, not session spend. The hover text includes each limit's observation time, source, and reported reset. Unknown fields stay hidden; TUIC does not calculate remaining balances from limit minus usage or borrow another provider account. The executable comes from the live terminal, not the AI Chat setting.
+Ego terminal local usage uses the exact live pid lease and `ego usage --json --session <id>` reports v3–v6. The badge shows the short model name and observed context tokens/capacity; its tooltip shows the full provider/model. Unsupported report versions return an error and log one warning per process, rather than silently emptying the badge. The executable comes from the live terminal, not the AI Chat setting. Subscription quotas use the provider registry key owned by the foreground harness. An ego session never borrows a Claude or Codex CLI account. The frontend initializes one registry store from `get_provider_quotas` and follows quota and session-binding events. The status bar and Claude/Codex quota dashboards select cached entries; the mobile quota block reads the registry-backed session usage endpoint; session switches and frontend intervals do not issue quota reads. Claude/Codex provider details are optional, independently timestamped active data. Local session analytics remain separate. Grok's billing dashboard retains its existing path until its recorded billing-response adapter is ready (2999-998f).
+
+The `ego` quota owner of the provider quota registry reads only ego's shared `rate_limits` contract, never ego credentials or a provider endpoint. The passive source is the `rate_limits` array of the usage report v6 that the session usage reader already acquired; it is observed for every provider under the key of that `EGO_HOME`. The active read runs `ego auth usage <provider> --json` with the bound `EGO_HOME`, at most 256 KiB of output and a twenty-second deadline. ego answers from its own fresh snapshot and owns the provider cadence across processes. Issue states map to registry classes: `auth_invalid` blocks until `auth.json` changes, `backoff_until` sets the retry time, `unavailable` with a retry time is a transient failure and without one means no source. A window name with a model suffix is model-scoped (`seven_day_opus` is `opus`, `code_review_*` is `code review`); only `seven_day`, `five_hour` and their `_primary`/`_secondary` forms are account-wide. No Claude, Codex or Grok CLI is needed. The ego release with `auth usage` must be installed (normally `~/.local/bin/ego`); an older ego exits non-zero and the quota is unavailable.
+
+The `pi` quota owner keys a pi session as `pi:<provider>:<PI_CODING_AGENT_DIR or ~/.pi/agent>`. The managed Pi extension writes a generic typed `pi-event` channel; its first kind, `provider_response`, carries the status and only the allow-listed quota headers (`anthropic-ratelimit-unified-*`, `x-codex-*` quota fields), never auth headers. A frame binds the session to the provider of that response and stores its windows as the passive value. The active read uses the `oauth` entry of the provider in pi's `auth.json`, with the expiry pre-check: Anthropic `/api/oauth/usage`, ChatGPT `wham/usage` with the stored account id. GitHub Copilot, API-key logins and other providers are unavailable.
 
 ### Native story search projection
 
@@ -1526,46 +1623,9 @@ tombstones. Story mutations do not depend on daemon availability. Closed and
 archived stories stay searchable. No story file is written to the project;
 plans and the story mutation API are unchanged. See the native stories guide.
 
-
-## Optional issue triage (#2324-424d)
-
-`event_intake.triage` adds off-by-default per-repository, policy-versioned issue
-evaluation before labelled implementation. OWNER/MEMBER/COLLABORATOR association
-is required. A separate existing-workspace definition has no precheck or automatic
-cron execution. Its profile is operator-attested read-only without push credentials;
-TUIC does not enforce credential isolation (future 2450-6845). Caller-bound
-`automations triage_decision` records accepted/rejected/needs_input immutably. The
-host adds the intake label for acceptance, or posts a rejection reason and adds its
-label, using durable at-most-once delivery claims. Unknown publication requires
-operator reconciliation, not replay. Triage ledger records outlive normal history
-retention. See [Automations](docs/user-guide/automations.md#optional-triage-before-labelled-intake).
-
-#### Reviewed event issue publication
-
-Event intake can opt in through `event_intake.workflow` to an explicit published
-native story workflow revision. Dispatch creates the native story and reuses its
-isolated artifact, independent review and configured check receipts. Draft
-publication requires current evidence matching the pushed SHA and includes review
-findings. Configurations without a workflow retain legacy behavior. See the
-[guide](docs/user-guide/automations.md#opt-in-reviewed-issue-workflows).
-
-#### Review-only incoming PR automation
-
-A separate default-off `pull_request_reviews` repository allowlist binds an enabled
-automation definition to no-host-tool ACP reviews. The shared GitHub poller feeds
-durable `PullRequestReview` triggers keyed by repository, PR and immutable GitHub
-head SHA; definition changes do not reset deduplication. A newer observed head
-revokes the older result's publication claim even under capacity pressure. The
-host compares immutable base/head SHAs, rechecks eligibility, then claims and posts
-one pinned COMMENT review. No generic agent, worktree, push, PR creation, approval
-or merge is available through this path. Unknown publication is non-retriable.
-The existing run history API carries output, publication intent and review URL.
-Deterministic checks and check-result publication are not part of this executor.
-
 ## Archived worktree retention — Implemented (#2469-c93f)
 
 `archive_retention_days` defaults to 0 (Off), with nullable repository overrides and repo-local configuration. Existing repository-refresh cleanup invokes a shared host-side sweep. Only registered, completed immediate `__archived` children with matching recorded path and sufficient Unix-second archive age are eligible. Legacy archives without timestamps are kept. Non-force Git removal preserves archive refs, refuses dirty files without archive-time recovery, and protects locked or live checkouts. The status line names deleted and kept archives.
-
 
 ### Typed workflow commands (WF05)
 
@@ -1586,7 +1646,6 @@ accepted/refused decisions, with accepted decisions atomic with their report
 event and read-only inspection through the shared run action. This is receipt
 disposition, not artifact approval. ACP/policy/continuation/successor/owned-close
 lifecycle remains incomplete; attribution and report receipt permit no cleanup.
-
 
 ### Correlated workflow regions (WF02)
 
@@ -1624,7 +1683,7 @@ consumers build on this internal primitive; they are not installed by WF19.
 
 ### Native workflow integration (WF07)
 
-An opt-in typed integration action now pins expected base/source commits, checks a synthetic two-parent merge object, and publishes that exact no-ff result under a canonical repository lock. Durable phase records retain proof-obligation outbox debt, dependency refresh and cleanup independently. Native integration policy defaults to false through WF17; isolated trial clones only before repository parity approval. Cleanup uses TUIC non-force removal after integration, exact-tip archive and ownership checks. WF08 proof batching is not included. See [backend contract](docs/backend/workflows.md#opt-in-native-integration-wf07).
+An opt-in typed integration action now pins expected base/source commits, checks a synthetic two-parent merge object, and publishes that exact no-ff result under a canonical repository lock. Durable phase records retain proof-obligation outbox debt, dependency refresh and cleanup independently. Native integration policy defaults to false through WF17; isolated trial clones only before repository parity approval. Cleanup uses TUIC non-force removal after integration, exact-tip archive and ownership checks. WF08 adds independently timer-flushed proof cohorts; integration alone is not proof completion. See [backend contract](docs/backend/workflows.md#opt-in-native-integration-wf07).
 
 ### Branch-local workflow decisions (WF03)
 
@@ -1637,6 +1696,16 @@ Explicit run pause/cancel and historical NeedsInput replay remain available.
 IPC, HTTP and MCP use the same question/inbox service. See
 [workflow decisions](docs/backend/workflows.md#branch-local-questions-and-decision-inbox-wf03).
 
+### Post-land proof ownership (WF08)
+
+Repository services import WF07 landing debt independently of story aggregation.
+WF19 clock decisions flush bounded cohorts, including single landings. Fixed
+membership, one parent waiter and WF05 command receipts prevent newer debt from
+being cleared by older batches. Explicit operator/gate configuration is required
+before dispatch; unknown workers block instead of passing or respawning. Registry
+ports retain complete-universe reuse and AWS-only read-only Janitor comparison.
+Online SQLite backup/restore verifies raw evidence digests and preserves omissions.
+See the backend workflow guide for configuration and operational limits.
 
 ### Pinned reusable workflow Calls (WF09)
 
@@ -1654,3 +1723,107 @@ The Plans and Stories toolbar pill shows active-plan, Ready and In progress coun
 ### AI Chat hands-free target
 
 Implemented: the hands-free target picker includes attached host-managed ACP chats. Opaque ACP binding ids stay separate from PTY identity. Spoken text follows the existing ACP prompt submission and queue path, with the same live pinned-or-viewed repository hint as typed input. MCP speech requires the bound native ACP connection and generation. Closing or leaving the bound chat releases its microphone and speaker binding.
+
+## Pi managed native status (#2629-9537)
+
+Pi status uses one marked extension under its agent directory. Lifecycle callbacks drive busy and idle. Public extension UI promises own awaiting until finally; background tools do not clear them. Session shutdown invalidates outstanding modal owners. Model selection does not start work. Installation, status and removal use the existing shared hook commands, so desktop and HTTP use the same backend. The recorded API is Pi 0.84.2; Windows native hooks remain outside this implementation.
+
+### Question text from exact transcripts (2633-cbd3)
+
+A confirmed live Claude or Codex wait gets its question text from, in order: the current structured event, the matching unresolved question tool call in the exact transcript (Claude pid registry, Codex hook binding), then the screen fallback. The transcript only names a wait; it never sets one. A tool result (answer, refusal, abort), a new turn, another session file, a lost exact binding or process exit settles the call, and a replay of the call cannot reopen it. Without a hook request id only a sole open call qualifies. ego keeps its native question owner in PTY and ACP mode. The Codex chat projection stays completed-only.
+
+### Structured questions and plan approval (2634-ea5b)
+
+A native question payload becomes one `question_card` in the session snapshot: Claude `AskUserQuestion` and `ExitPlanMode` PreToolUse input, Codex `request_user_input` input and ego `agent-event` `modal_open` question data. Other tool names give no card. The card is enrichment only: it is shown only while `awaiting_input` belongs to the same native request id, and it never sets, keeps or clears a wait. Its text wins over transcript and screen text. A native screen dialog keeps its title, labels, order and keys; the card adds the current question header, its position in a multi-question payload and option descriptions. Over-cap or malformed payloads give no card. A plan approval card has no plan text, because Claude 2.1.316 sends `ExitPlanMode` with empty input. The answer, PostToolUse, Escape decline, Escape plan refusal (`User rejected Claude's plan`), Stop/idle, `modal_end`, `turn_end`, `session_end` and shell return settle the request; a late copy of its payload cannot reopen it. Answers stay on the existing native key path (`sendCommand`). ego AI Chat (ACP) has no PTY and is unchanged.
+
+### Tool-name readout (2636-5551)
+
+`SessionState.current_tool` is the newest live native tool name of an agent PTY. Sources: Claude, Codex (bound turn) and Grok hook receipts, ego `tool_start`/`tool_end` frames, and the managed Pi extension (`tool_execution_start`/`_end`) and OpenCode plugin (`session.tool.input.started`, `session.tool.success`/`failed`) through the `agent-tool` OSC 7770 verb. Only frames of the terminal's own TUIC session and native session count; subagent receipts do not. A tool end removes only its own native id, and an ended id never starts again. Turn end, cancellation, interrupt, session end, coarse idle/prompt, shell return and PTY exit clear all live tools; an idle shell shows none. Labels are cut to 64 characters without control characters, and arguments are never read. The readout is metadata: it never changes coarse state or an open modal. Desktop (status bar agent badge) and mobile (session card, details sheet) render the same snapshot. Gemini has no readout and gets no AfterTool hook. ego AI Chat (ACP) is unchanged; Step 16 owns it. Pi and OpenCode support rests on their API and schema sources (Pi 0.84.2 `types.d.ts`, OpenCode 2.2.3 session-event schema); no live tool event of theirs was recorded.
+
+### Claude native permission attention (2627-110e)
+
+Native Claude permission receipts are scoped to the terminal and current native session/prompt. PermissionRequest matches a pending tool by name and input; permission_prompt is the only subscribed notification type. Matching success/failure or native answer/cancel input retracts attention, including no-post-tool cancellation. Question, plan and elicitation owners survive unrelated tool activity. Launch/global installers share this map and preserve user hooks. Ego PTY and ACP boundaries are unchanged.
+
+The Workflow Designer exposes revision-guarded duplicate/discard, review policy and exact Agent contracts, typed command/decision inputs, and read-only publication/run pin inspection. A missing host routing policy has an explicit preview/import path in Plans and Stories. Desktop, browser and MCP use the same Rust definition service.
+
+Managed PTY inventories include a silence alarm separate from factual stage, defaulting to 30 awake minutes. Detached CLI background commands have a one-hour default ceiling, configurable up to one day; timeout stops the owned group/tree and reports exit 124. Provider retry is not part of this change.
+
+### Workflow run inspection (implemented)
+
+The workflow run `inspect` read returns one committed snapshot, accepted report history and a bounded event page with `nextSequence`/`hasMore`. Existing ancillary journals expose available/unknown sections independently. English/Italian digests derive deterministically from that durable cursor. Consumers, including AI Chat through the existing workflow API, read these snapshots and deltas rather than reconstructing outcomes from conversation. The existing input/report acknowledgment and notification policies remain in force.
+
+Optional direct provider usage observations persist in accepted typed report events, with provider/id identity, model, source, optional token counts and settled/estimated/unknown exact decimal money. Repeated nested exports retain all owners and count once. Conflicting identity payloads suppress aggregate money/tokens. Currency, rate source and subscription equivalents remain distinct; incomplete coverage cannot imply zero spend or cost parity. No account quota or inclusive parent/session totals are imported as run spend. Existing provider audit import remains available and is not reinterpreted as workflow attribution.
+
+### Waiting items and agent health projection
+
+Items that wait on the user do not belong in Activity Dashboard (2733-c614). Plans and Stories shows the project's manual-check stories, workflow question inbox entries and unread reports under Waiting on you, each linked to its story, run or report file; the activity bell notifies each item once and clears it when the item is resolved. Activity Dashboard shows factual agent health only. Terminal questions stay activity: the awaiting badge reports them. The Rust projection is read-only; answers remain in their owning workflow/story surface. Stall flags come from the owning host, and stale reads cannot republish a resolved item. Registered local projects provide story/workflow items; remote sessions retain connection ownership for health. Product text never names the operator.
+
+### Portfolio delivery intake (WF10)
+
+The workflow run journal owns opt-in deduplicated requests, revision-fenced decisions, retained plan claims, one-shot timers and cursor wake replay. Pinned plan delivery uses coordinator-free WF04 input and the existing Story Dispatch admission service. Story content stays behind the `StoryBackend` port (native SQLite adapter today); execution state stays in the native ledger. Declared migration inventory becomes unknown when expired; unknown/nonempty inventory retains completed claims. WF08 still owns proof execution independently. The composite A-under-B evidence remains outstanding; see [Portfolio delivery](docs/backend/portfolio-delivery.md).
+
+### Release scope and publication authority (WF15)
+
+A pinned release scope keeps release, next and Boss-wait work apart, counts each release alone and raises one zero wake per scope revision. Readiness adds current proof and exact-commit CI jobs and assets; publication is cleared only by recorded consent for the exact artifact and action plus the frontend-debt and denied-material gates. The daemon performs no publication; see [Portfolio delivery](docs/backend/portfolio-delivery.md).
+
+### Persistent reports (WF16C)
+
+The workflow run journal keeps report metadata, acknowledgment and idempotent upkeep receipts. An unacknowledged answer survives expiry, digest rewrites keep recorded ticks, and a progress report is current evidence only after a source check. Unread reports reach Waiting on you and the activity bell as typed references. See [Workflows](docs/backend/workflows.md#persistent-reports-wf16c).
+
+## Automation completion tab policy
+
+Automation definitions accept optional `close_on_finish` (default `false`) through
+MCP, HTTP, IPC and the editor. Confirmed completed runs close only their recorded
+session through the existing tab-close lifecycle. Failed, unknown and input-blocked
+runs stay open. This option does not remove worktrees, branches or sibling tabs.
+
+### Tab-bar agent launch menu
+
+- [x] The tab-bar `+` opens the existing launch menu below the button. Agent/run config pairs rank by persisted local branch counts, with repository fallback and stable ties. Terminal remains a menu item; Alt/Option-click and Cmd/Ctrl+T open a plain terminal. Sidebar click behavior is unchanged.
+- [x] The new-tab picker uses agent/terminal icons, 44 px rows and 15 px agent labels. Multiple configs show a secondary name without an em dash; a check marks defaults, and single-config agents show only their name.
+
+## Automations timezone selection
+
+The Timezone dropdown filters zone names while open. It includes the names accepted
+by the backend, including aliases and fixed-offset zones. New automations select
+the host-local zone returned by schedule preview, not the browser zone. A saved
+zone outside the list remains selected until you choose another zone.
+
+### Internal neutral reusable operation contracts
+
+The workflow catalog can persist exact project-scoped script/subflow descriptors
+with descriptor-level IO and named outcomes. Script targets retain versioned inline
+shell source; subflow targets retain exact child publication/content pins and an
+identical typed interface. Publication includes target edges in its bounded
+closure. These are internal contracts, not executed adapters or authoring APIs;
+native handlers and effect authority remain host-owned. The host registry binds
+exact reusable handlers to Script/Subflow; saved descriptors cannot impersonate
+native handlers. A store-backed project-catalog builder verifies all stored
+versions and rejects host ID collisions before resolving subflow dependencies.
+See the backend workflow reference for validation and format boundaries.
+
+Story editing capability refinement (protocol 1): `operations.story_edits` is
+additive (`title`, `priority`, `problem`, `criteria_add`, `single_change`); the
+legacy `update_story` flag keeps its aggregate meaning. Restricted external
+saves produce exactly one apply or refuse without applying. Native and legacy
+aggregate editors keep existing behavior. See docs/backend/story-backend-protocol.md.
+
+Plugin random-access binary reads: `fileSize` and `readFileRange` share the `fs:read` policy with whole-file binary reads. Exact ranges are capped at 8 MiB per call.
+
+## Diagnostic heap profiling
+
+The opt-in `heap-profile` feature selects a prefixed Rust jemalloc allocator on macOS/Linux across desktop, agent-test and headless entry points. Default and Windows builds keep the system allocator. `/diagnostics/heap` verifies activation and controls dumps; memory diagnostics distinguish allocator counters from native malloc and OS footprint. See `docs/backend/heap-profiling.md`.
+
+Neutral workflow authoring and inspection share one staged IPC/HTTP/MCP action contract. Draft presentation metadata stays outside definition hashes and host authority; native execution still requires provider installation. No scheduler or trigger cutover is implied. See [neutral transport](docs/backend/workflows.md#neutral-workflow-transport-015).
+
+### Neutral source trigger admission (010-978f)
+
+Internal source-neutral bindings select pinned publications, validate typed mappings, preview overlaps and deduplicate per binding/resource/generation. Explicit replay uses authenticated owner authority and retained snapshots. PR replacements coalesce behind reconciliation of existing effects. GitHub consumes the existing poller/client; public ingress is unchanged. See [the contract](docs/backend/workflow-trigger-admission.md). Native installation, transport integration and Designer demonstration retain their owner obligations.
+
+### Shared CLI quota reads
+
+Claude and Codex quota consumers use one registry owner per credential. Active
+provider detail has its own timestamp and survives newer passive window updates.
+Existing usage response shapes stay unchanged. Codex token statistics use a
+separate App Server RPC and do not refresh quota. Claude retains its persisted
+last-good reading and cooldown as storage behind the registry policy.

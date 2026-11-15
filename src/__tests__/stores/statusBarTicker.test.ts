@@ -172,3 +172,38 @@ describe("statusBarTicker scavenge quiet ticks", () => {
 		expect(statusBarTicker.getAll().map((m) => m.text)).toEqual(["Long"]);
 	});
 });
+
+describe("statusBarTicker side-by-side pool", () => {
+	const add = (id: string, priority: number) =>
+		statusBarTicker.addMessage({ id, pluginId: "p", text: id, priority, ttlMs: 0 });
+
+	it("getPool returns the normal tier sorted, without low-priority messages", () => {
+		add("b", 20);
+		add("a", 40);
+		add("low", 5);
+		expect(statusBarTicker.getPool().map((m) => m.id)).toEqual(["a", "b"]);
+	});
+
+	it("getPool keeps urgent messages only", () => {
+		add("normal", 40);
+		add("urgent", 100);
+		expect(statusBarTicker.getPool().map((m) => m.id)).toEqual(["urgent"]);
+	});
+
+	it("rotation skips the messages shown side by side — catches a pinned message also rotating", () => {
+		add("a", 40);
+		add("b", 30);
+		add("c", 20);
+		for (let i = 0; i < 4; i++) {
+			const state = statusBarTicker.getRotationState(undefined, 1);
+			expect(state.message!.id).not.toBe("a");
+			expect(state.total).toBe(2);
+			statusBarTicker._rotate();
+		}
+	});
+
+	it("rotation is empty when every message is shown side by side", () => {
+		add("a", 40);
+		expect(statusBarTicker.getRotationState(undefined, 1).message).toBeNull();
+	});
+});

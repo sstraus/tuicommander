@@ -1,0 +1,27 @@
+[
+  {
+    "hookEventName": "session_start",
+    "sessionId": "ask-recorded-1",
+    "hook_event_name": "SessionStart"
+  },
+  {
+    "hookEventName": "user_prompt_submit",
+    "sessionId": "ask-recorded-1",
+    "promptId": "ask-recorded-2",
+    "hook_event_name": "UserPromptSubmit"
+  },
+  {
+    "hookEventName": "pre_tool_use",
+    "sessionId": "ask-recorded-1",
+    "toolName": "ask_user_question",
+    "toolUseId": "ask-recorded-3",
+    "hook_event_name": "PreToolUse"
+  },
+  {
+    "hookEventName": "notification",
+    "sessionId": "ask-recorded-1",
+    "notificationType": "elicitation_dialog",
+    "message": "User question requested",
+    "hook_event_name": "Notification"
+  }
+]

@@ -248,8 +248,8 @@ for (const host of ["desktop", "mobile"] as const) {
 		chatViewStore.beginSubmission("contract", "Then check the docs");
 		await waitFor(() => expect(view.getAllByLabelText("Pending prompt")).toHaveLength(2));
 		expect(view.getAllByLabelText("Pending prompt").map((element) => element.textContent)).toEqual([
-			"PendingReview the testsCopy",
-			"PendingThen check the docsCopy",
+			"PendingReview the tests",
+			"PendingThen check the docs",
 		]);
 		expect(view.getAllByLabelText("Pending prompt").every((element) => element.hasAttribute("data-pending"))).toBe(
 			true,

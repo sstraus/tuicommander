@@ -14,7 +14,7 @@ render(() => <main style={{width:width+'px',height:'840px',display:'flex','flex-
 setTimeout(()=>{
  const row=document.querySelector('[data-terminal-chat]');
  const box=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width,height:r.height};};
- const users=[...document.querySelectorAll('[aria-label="Copy user message"]')].map(copy=>{
+ const users=[...document.querySelectorAll('[aria-label="User message actions"]')].map(copy=>{
   const bubble=copy.parentElement;
   const range=document.createRange();range.selectNodeContents(bubble);range.setEndBefore(copy);
   return {box:box(bubble),textRects:[...range.getClientRects()].map(box=>({left:box.left,right:box.right,top:box.top})),scrollWidth:bubble.scrollWidth,clientWidth:bubble.clientWidth,text:bubble.textContent};

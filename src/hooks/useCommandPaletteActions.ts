@@ -11,6 +11,7 @@ import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
 import { updaterStore } from "../stores/updater";
 import { runWithFeedback } from "../utils/promptContext";
+import { revealRepoInSidebar } from "../utils/revealRepoInSidebar";
 import type { useGitOperations } from "./useGitOperations";
 import type { ShortcutHandlers } from "./useKeyboardShortcuts";
 import type { SmartPromptResult } from "./useSmartPrompts";
@@ -39,6 +40,7 @@ export function useCommandPaletteActions(options: CommandPaletteActionOptions): 
 				keybinding: "",
 				execute: () => {
 					repositoriesStore.setActive(repo.path);
+					revealRepoInSidebar(repo.path);
 					const branch = repo.activeWorkspaceId || Object.keys(repo.workspaces)[0];
 					if (branch) void options.gitOps.handleBranchSelect(repo.path, branch);
 				},
@@ -55,6 +57,7 @@ export function useCommandPaletteActions(options: CommandPaletteActionOptions): 
 				execute: () => {
 					repositoriesStore.setPark(repo.path, false);
 					repositoriesStore.setActive(repo.path);
+					revealRepoInSidebar(repo.path);
 					const branch = repo.activeWorkspaceId || Object.keys(repo.workspaces)[0];
 					if (branch) void options.gitOps.handleBranchSelect(repo.path, branch);
 				},

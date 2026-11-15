@@ -1,7 +1,7 @@
 import { EditorView } from "@codemirror/view";
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ComposePanel } from "../../components/ComposePanel/ComposePanel";
 import { captureDictationTarget } from "../../hooks/dictationTarget";
 import type { QueuedCommand } from "../../hooks/usePty";
@@ -10,7 +10,13 @@ import { terminalsStore } from "../../stores/terminals";
 
 vi.mock("../../invoke", () => ({
 	invoke: vi.fn().mockResolvedValue(undefined),
+	listen: async () => () => {},
 }));
+
+beforeAll(async () => {
+	const { activityStore } = await import("../../stores/activityStore");
+	await activityStore.hydrate();
+});
 
 afterEach(async () => {
 	cleanup();
@@ -102,6 +108,41 @@ describe("ComposePanel", () => {
 		}
 	});
 
+	// Catches: Save is ignored or submits the prompt instead of parking it.
+	it.each([{ ctrlKey: true }, { metaKey: true }])(
+		"parks and restores a compose draft without sending %o",
+		async (modifiers) => {
+			const { container, props } = renderPanel();
+			await waitFor(() => expect(container.querySelector(".cm-content")).not.toBeNull());
+			typeIntoEditor(container, "keep this draft");
+			const content = container.querySelector(".cm-content") as HTMLElement;
+			fireEvent.keyDown(content, { key: "s", ...modifiers });
+			expect(editorText(container)).toBe("");
+			fireEvent.keyDown(content, { key: "s", ...modifiers });
+			expect(editorText(container)).toBe("keep this draft");
+			expect(props.onSend).not.toHaveBeenCalled();
+			expect(props.onEnqueue).not.toHaveBeenCalled();
+		},
+	);
+
+	// Catches: remount discards the parked draft or another PTY restores it.
+	it("keeps parked drafts across remounts and isolated by PTY session", async () => {
+		const first = renderPanel({ sessionId: "parked-source" });
+		await waitFor(() => expect(first.container.querySelector(".cm-content")).not.toBeNull());
+		typeIntoEditor(first.container, "source draft");
+		fireEvent.keyDown(first.container.querySelector(".cm-content") as HTMLElement, { key: "s", ctrlKey: true });
+		first.unmount();
+		const other = renderPanel({ sessionId: "parked-other" });
+		await waitFor(() => expect(other.container.querySelector(".cm-content")).not.toBeNull());
+		fireEvent.keyDown(other.container.querySelector(".cm-content") as HTMLElement, { key: "s", ctrlKey: true });
+		expect(editorText(other.container)).toBe("");
+		other.unmount();
+		const restored = renderPanel({ sessionId: "parked-source" });
+		await waitFor(() => expect(restored.container.querySelector(".cm-content")).not.toBeNull());
+		fireEvent.keyDown(restored.container.querySelector(".cm-content") as HTMLElement, { key: "s", ctrlKey: true });
+		expect(editorText(restored.container)).toBe("source draft");
+	});
+
 	it("Enter sends instead of inserting a newline; Shift+Ctrl+Enter still queues", async () => {
 		const { container, props } = renderPanel();
 		await waitFor(() => expect(container.querySelector(".cm-content")).not.toBeNull());
@@ -121,8 +162,17 @@ describe("ComposePanel", () => {
 		expect(props.onSend).toHaveBeenCalledTimes(1);
 	});
 
-	// Catches: Ctrl+Enter still sending, or Shift+Enter falling through to send.
-	it.each([{ ctrlKey: true }, { shiftKey: true }])("inserts a newline without submitting for %o", async (modifiers) => {
+	// Catches: Compose retains its old Ctrl+Enter newline instead of the common send action.
+	it("sends with Ctrl+Enter", async () => {
+		const { container, props } = renderPanel();
+		await waitFor(() => expect(container.querySelector(".cm-content")).not.toBeNull());
+		typeIntoEditor(container, "send this");
+		fireEvent.keyDown(container.querySelector(".cm-content") as HTMLElement, { key: "Enter", ctrlKey: true });
+		expect(props.onSend).toHaveBeenCalledWith("send this");
+	});
+
+	// Catches: Shift+Enter falling through to send.
+	it.each([{ shiftKey: true }])("inserts a newline without submitting for %o", async (modifiers) => {
 		const { container, props } = renderPanel();
 		await waitFor(() => expect(container.querySelector(".cm-content")).not.toBeNull());
 		typeIntoEditor(container, "before after");
@@ -156,10 +206,10 @@ describe("ComposePanel", () => {
 	});
 
 	// Catches: the newline legend advertising both bindings and crowding compact panels.
-	it("shows only Ctrl+Enter for newline in the shortcut legend", () => {
+	it("shows Shift+Enter for newline in the shortcut legend", () => {
 		const { getByText } = renderPanel();
 		expect(getByText("send").textContent).toBe("↵ send");
-		expect(getByText("newline").textContent).toBe("ctrl ↵ newline");
+		expect(getByText("newline").textContent).toBe("⇧ ↵ newline");
 		expect(getByText("queue").textContent).toBe("⇧ ctrl ↵ queue");
 	});
 
@@ -178,6 +228,26 @@ describe("ComposePanel", () => {
 		fireEvent.keyDown(content, { key: "Enter", ctrlKey: true, shiftKey: true });
 		expect(props.onEnqueue).not.toHaveBeenCalled();
 		expect(container.querySelector('[title^="Queue for the next idle moment"]')).toBeNull();
+	});
+
+	// Catches: WKWebView does not focus a clicked button, so the pill's mousedown
+	// blurs the editor; the unfocused panel clips the list and the shortcut loses its target.
+	it("keeps the editor focused when the queued pill is clicked, so the list shows and Shift+Ctrl+Enter still queues", async () => {
+		const { container, props, setQueued, getByText } = renderPanel({ pinned: () => true });
+		await waitFor(() => expect(container.querySelector(".cm-content")).not.toBeNull());
+		setQueued(2);
+		await waitFor(() => expect(getByText(/2 queued/)).toBeTruthy());
+		const view = EditorView.findFromDOM(container.querySelector(".cm-editor") as HTMLElement) as EditorView;
+		typeIntoEditor(container, "next prompt");
+		view.focus();
+		const pill = getByText(/2 queued/).closest("button") as HTMLElement;
+		// Default action of a mousedown on a non-focusable button in WebKit: focus leaves the editor.
+		if (fireEvent.mouseDown(pill)) (document.activeElement as HTMLElement | null)?.blur();
+		fireEvent.click(pill);
+		await waitFor(() => expect(getByText("run the tests")).toBeTruthy());
+		expect(container.contains(document.activeElement)).toBe(true);
+		fireEvent.keyDown(document.activeElement as HTMLElement, { key: "Enter", ctrlKey: true, shiftKey: true });
+		expect(props.onEnqueue).toHaveBeenCalledWith("next prompt");
 	});
 
 	it("shows the pending count only when something is queued", async () => {
@@ -222,7 +292,7 @@ describe("ComposePanel", () => {
 		await waitFor(() => expect(container.textContent).toContain("TUIC notice"));
 		expect(container.textContent).toContain("[TUIC] message available");
 
-		fireEvent.click(getAllByTitle("Remove from queue")[0]);
+		fireEvent.click(getAllByTitle("Cancel queued prompt")[0]);
 		expect(props.onRemoveQueued).toHaveBeenCalledWith(7);
 	});
 
@@ -234,7 +304,7 @@ describe("ComposePanel", () => {
 		fireEvent.click(getByText(/2 queued/));
 		await waitFor(() => expect(getByText("then push")).toBeTruthy());
 
-		fireEvent.click(getAllByTitle("Remove from queue")[1]);
+		fireEvent.click(getAllByTitle("Cancel queued prompt")[1]);
 		expect(props.onRemoveQueued).toHaveBeenCalledWith(2);
 	});
 
@@ -512,4 +582,89 @@ describe("Compose pending recall", () => {
 		await waitFor(() => expect(recall).toHaveBeenCalledTimes(1));
 		expect(editorText(container)).toBe("");
 	});
+});
+
+describe("Compose queue actions", () => {
+	it("steers the stable id once and reloads an unchanged queue count — catches missing Steer or duplicate dispatch", async () => {
+		let finish!: () => void;
+		const steer = vi.fn(
+			() =>
+				new Promise<void>((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const load = vi.fn(
+			async (): Promise<QueuedCommand[]> => [
+				{ id: 42, text: "selected prompt", kind: "user_command", send_now: "interrupt" },
+			],
+		);
+		const screen = renderPanel({ queuedCount: () => 1, onLoadQueue: load, onSteerQueued: steer });
+		fireEvent.click(screen.getByText("1 queued"));
+		const action = await screen.findByRole("button", { name: "Steer: selected prompt" });
+		expect(action.textContent).toBe("Steer");
+		expect(action.title).toBe("Send now: stop the current request");
+		fireEvent.click(action);
+		fireEvent.click(action);
+		expect(steer).toHaveBeenCalledExactlyOnceWith(42);
+		finish();
+		await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+		expect(screen.props.onSend).not.toHaveBeenCalled();
+	});
+
+	it("labels Cancel and omits unsupported Steer — catches an unsupported item exposing native input", async () => {
+		const steer = vi.fn();
+		const screen = renderPanel({ queuedCount: () => 2, onSteerQueued: steer });
+		fireEvent.click(screen.getByText("2 queued"));
+		const cancel = await screen.findByRole("button", { name: "Cancel: then push" });
+		expect(cancel.textContent).toBe("Cancel");
+		expect(screen.queryByRole("button", { name: /^Steer:/ })).toBeNull();
+		fireEvent.click(cancel);
+		expect(screen.props.onRemoveQueued).toHaveBeenCalledWith(2);
+		expect(screen.getByRole("button", { name: "Clear all" })).toBeTruthy();
+	});
+
+	it("shows interrupt mode and blocks Steer while a dialog waits — catches steering into a question", async () => {
+		const [allowed, setAllowed] = createSignal(true);
+		const screen = renderPanel({
+			queuedCount: () => 1,
+			canSteerQueued: allowed,
+			onSteerQueued: vi.fn(),
+			onLoadQueue: async () => [{ id: 6, text: "interrupt prompt", kind: "user_command", send_now: "interrupt" }],
+		});
+		fireEvent.click(screen.getByText("1 queued"));
+		const action = await screen.findByRole("button", { name: "Steer: interrupt prompt" });
+		expect(action.title).toBe("Send now: stop the current request");
+		setAllowed(false);
+		expect(screen.queryByRole("button", { name: /^Steer:/ })).toBeNull();
+		expect(screen.getByRole("button", { name: "Cancel: interrupt prompt" })).toBeTruthy();
+	});
+});
+
+// Catches: a refused Steer losing recovery feedback or retrying the payload automatically.
+it("keeps the refused queued prompt visible and shows the backend error", async () => {
+	const steer = vi.fn().mockRejectedValue(new Error("The prompt stays queued."));
+	const screen = renderPanel({
+		queuedCount: () => 1,
+		onSteerQueued: steer,
+		onLoadQueue: async () => [{ id: 9, text: "keep me", kind: "user_command", send_now: "interrupt" }],
+	});
+	fireEvent.click(screen.getByText("1 queued"));
+	fireEvent.click(await screen.findByRole("button", { name: "Steer: keep me" }));
+	expect((await screen.findByRole("alert")).textContent).toBe("The prompt stays queued.");
+	expect(screen.getByText("keep me")).toBeTruthy();
+	await waitFor(() =>
+		expect((screen.getByRole("button", { name: "Steer: keep me" }) as HTMLButtonElement).disabled).toBe(false),
+	);
+	expect(steer).toHaveBeenCalledTimes(1);
+});
+
+// Catches: the compose queue keeping a separate text-only renderer.
+it("renders framed attachments in the compose queue", async () => {
+	const { container, getByText } = renderPanel({
+		queuedCount: () => 1,
+		onLoadQueue: async () => [{ id: 1, kind: "user_command", text: "[image: /repo/queued.png]\nReview the diagram" }],
+	});
+	fireEvent.click(getByText("1 queued"));
+	await waitFor(() => expect(container.querySelectorAll('img[alt="Attached image"]')).toHaveLength(1));
+	expect(container.querySelector('[data-prompt-images="single"]')).not.toBeNull();
 });

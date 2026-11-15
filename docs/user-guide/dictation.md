@@ -180,8 +180,8 @@ nothing look identical.
 ## Platform Notes
 
 - **macOS:** GPU-accelerated transcription via Metal
-- **Windows:** GPU-accelerated transcription via Vulkan
-- **Linux:** CPU-only (optional CUDA/Vulkan build feature)
+- **Windows:** GPU-accelerated transcription via Vulkan when a Vulkan driver is present, CPU otherwise
+- **Linux:** GPU-accelerated transcription via Vulkan when a Vulkan driver is present, CPU otherwise
 - Microphone permission is requested on first use (not at app startup)
 
 ## Status Indicators

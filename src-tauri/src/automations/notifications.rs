@@ -25,6 +25,16 @@ pub(crate) fn settle(store: &RunStore, run: &AutomationRun, channel: &str, confi
     let Some(transition) = transition(run) else {
         return;
     };
+    settle_as(store, run, transition, channel, confirmed);
+}
+
+fn settle_as(
+    store: &RunStore,
+    run: &AutomationRun,
+    transition: &str,
+    channel: &str,
+    confirmed: bool,
+) {
     if store
         .settle_notification(
             &run.id,
@@ -63,11 +73,12 @@ pub(crate) fn publish(
     run: &AutomationRun,
 ) -> bool {
     let bell = claim(store, run, "bell").unwrap_or(false);
+    // An unknown run has no live-channel notice, but its owner must still learn of it.
+    if matches!(run.status, RunStatus::Failed | RunStatus::Unknown) {
+        notify_owner(state, store, run);
+    }
     if transition(run).is_none() {
         return false;
-    }
-    if run.status == RunStatus::Failed {
-        notify_owner(state, store, run);
     }
     let allowed = enabled(config, run);
     let title = format!("{} · {}", run.definition.name, transition(run).unwrap());
@@ -142,33 +153,57 @@ pub(crate) fn publish(
     bell
 }
 
+/// The newest output line that reads as an error, e.g. a provider "API Error: ...".
+fn last_error_line(output: &str) -> Option<String> {
+    output
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| line.to_ascii_lowercase().contains("error"))
+        .map(|line| line.chars().take(300).collect())
+}
+
 fn notify_owner(state: &Arc<AppState>, store: &RunStore, run: &AutomationRun) {
     let Some(creator) = run.definition.created_by_session.as_deref() else {
         return;
     };
+    let (transition, kind) = match run.status {
+        RunStatus::Failed => ("failed", "automation_run_failed"),
+        RunStatus::Unknown => ("unknown", "automation_run_unknown"),
+        _ => return,
+    };
     // Claim before offering mail: an ambiguous send must not create a retry storm.
-    if !claim(store, run, "owner").unwrap_or(false) {
+    if !store
+        .claim_notification(&run.id, transition, "owner", run.updated_ms)
+        .unwrap_or(false)
+    {
         return;
+    }
+    let mut content = serde_json::json!({
+        "type":kind, "run_id":run.id,
+        "definition_id":run.definition.id, "name":run.definition.name,
+        "reason":run.reason,
+    });
+    if run.status == RunStatus::Unknown {
+        // The session is what the owner resumes; the error line says why the run stopped.
+        content["session_id"] = run.session_id.clone().into();
+        content["last_error"] = last_error_line(&run.stdout.text).into();
     }
     let queued = crate::mcp_http::mcp_transport::queue_peer_notice(
         state,
         creator,
         crate::state::AgentMessage {
-            id: format!("automation-failed:{}", run.id),
+            id: format!("automation-{transition}:{}", run.id),
             from_tuic_session: "tuic".into(),
             from_name: "automations".into(),
-            content: serde_json::json!({
-                "type":"automation_run_failed", "run_id":run.id,
-                "definition_id":run.definition.id, "name":run.definition.name,
-                "reason":run.reason,
-            })
-            .to_string(),
+            content: content.to_string(),
             timestamp: chrono::Utc::now().timestamp_millis().max(0) as u64,
+            report: None,
             delivered_via_channel: false,
         },
     );
     // Confirm inbox acceptance, not that an agent or a human consumed the message.
-    settle(store, run, "owner", queued);
+    settle_as(store, run, transition, "owner", queued);
 }
 
 #[cfg(test)]

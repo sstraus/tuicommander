@@ -29,6 +29,8 @@
   --attention: #e8984c;
   --changes: #d29922;
   --urgent: #ffd700;
+  --activity: #59a8dd;  /* semantic: always blue, not overridden by themes */
+  --unseen: #c084fc;
   --error: #ef4444;
   --text-on-accent: #000000;
   /* Commander uses white accent text, which is too faint for this small banner. */

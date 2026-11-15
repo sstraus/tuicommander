@@ -15,6 +15,18 @@ interface ChoicePromptOverlayProps {
 export function ChoicePromptOverlay(props: ChoicePromptOverlayProps) {
 	return (
 		<div class={styles.dropup} classList={{ [styles.embedded]: props.embedded }}>
+			<Show when={props.prompt.header || props.prompt.question_count}>
+				<div class={styles.context}>
+					<Show when={props.prompt.header}>
+						<span>{props.prompt.header}</span>
+					</Show>
+					<Show when={props.prompt.question_count}>
+						<span class={styles.position}>
+							{props.prompt.question_index}/{props.prompt.question_count}
+						</span>
+					</Show>
+				</div>
+			</Show>
 			<div class={styles.title}>{props.prompt.title}</div>
 			<For each={props.prompt.options}>
 				{(option) => (

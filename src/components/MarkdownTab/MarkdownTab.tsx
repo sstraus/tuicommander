@@ -1,5 +1,6 @@
 import { type Component, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { reviewAgents as repositoryReviewAgents } from "../../../browser-extension/design-mode/reviewAgents.js";
+import { createMarkdownReviewBaseline } from "../../hooks/markdownReviewBaseline";
 import { usePty } from "../../hooks/usePty";
 import { useRepository } from "../../hooks/useRepository";
 import { t } from "../../i18n";
@@ -17,6 +18,7 @@ import { uiStore } from "../../stores/ui";
 import { copyPathToClipboard } from "../../utils/clipboard";
 import { openFileAction } from "../../utils/filePreview";
 import { buildMarkdownReviewPrompt } from "../../utils/markdownReviewPrompt";
+import { openConfirmedLink } from "../../utils/openUrl";
 import { isAbsolutePath, joinPath, normalizeSep, pathDirname } from "../../utils/pathUtils";
 import { consumePendingHeading, setPendingHeading } from "../../utils/pendingHeadings";
 import {
@@ -75,6 +77,7 @@ export type MarkdownLinkTarget =
 			line?: number | null;
 	  }
 	| { kind: "missing"; path: string }
+	| { kind: "external"; target: string }
 	| { kind: "blocked"; reason: string };
 
 export type MarkdownFileLink = Extract<MarkdownLinkTarget, { kind: "file" }>;
@@ -89,6 +92,11 @@ function headingSlug(text: string): string {
 
 export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 	const [content, setContent] = createSignal("");
+	const reviewBaseline = createMarkdownReviewBaseline();
+	const loadContent = (text: string) => {
+		reviewBaseline.load(text);
+		setContent(text);
+	};
 	const [loading, setLoading] = createSignal(false);
 	const [error, setError] = createSignal<string | null>(null);
 	const {
@@ -183,10 +191,15 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 
 			if (!content()) setLoading(true);
 			setError(null);
+			let cancelled = false;
+			onCleanup(() => {
+				cancelled = true;
+			});
 
 			(async () => {
 				try {
 					const fileContent = await readFileContent(fsRoot || repoPath, filePath);
+					if (cancelled) return;
 					if (!fileContent) {
 						// Empty result = genuinely-empty file OR a deleted/missing file
 						// (repo.readFile returns "" for both, no throw). Neither is
@@ -196,8 +209,9 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 						// stale tab on a deleted file would otherwise spam warnings.
 						appLogger.debug("app", "readFileContent returned empty", { repoPath, filePath, fsRoot });
 					}
-					setContent(fileContent);
+					loadContent(fileContent);
 				} catch (err) {
+					if (cancelled) return;
 					const msg = err instanceof Error ? err.message : String(err);
 					// A deleted file is expected for a stale tab and this effect re-runs on
 					// every repo-revision bump, so an ERROR log here spams. Match the
@@ -208,7 +222,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 					setError(msg);
 					setContent("");
 				} finally {
-					setLoading(false);
+					if (!cancelled) setLoading(false);
 				}
 			})();
 		} else if (tab.type === "virtual") {
@@ -272,7 +286,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 		(async () => {
 			try {
 				const diskContent = await readFileContent(root, filePath);
-				if (!cancelled && diskContent !== currentContent) setContent(diskContent);
+				if (!cancelled && diskContent !== currentContent) loadContent(diskContent);
 			} catch (err) {
 				if (cancelled) return;
 				const msg = err instanceof Error ? err.message : String(err);
@@ -353,7 +367,8 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 		requestAnimationFrame(() => scrollToHeading(anchor));
 	});
 
-	const handleMdLink = async (href: string) => {
+	/** Resolves to `false` when the target does not exist, so the renderer turns the link back into text. */
+	const handleMdLink = async (href: string): Promise<boolean | undefined> => {
 		const tab = props.tab;
 		if (tab.type !== "file") return;
 		const ft = tab as FileTab;
@@ -370,6 +385,10 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 			}
 			if (resolved.kind === "missing") {
 				toastsStore.add("File not found", `File not found: ${resolved.path}`, "error");
+				return false;
+			}
+			if (resolved.kind === "external") {
+				await openConfirmedLink(resolved.target);
 				return;
 			}
 			if (resolved.kind === "blocked") {
@@ -404,6 +423,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 		if (tab.type !== "file") return false;
 		const ft = tab as FileTab;
 		const root = ft.fsRoot || ft.repoPath;
+		const before = content();
 
 		try {
 			if (isAbsolutePath(ft.filePath)) {
@@ -415,6 +435,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 				toastsStore.add("Couldn't save Markdown file", "The file path could not be resolved.", "error");
 				return false;
 			}
+			reviewBaseline.save(before, updatedContent);
 			setContent(updatedContent);
 			setEditedSinceSend(true);
 			return true;
@@ -587,9 +608,16 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 		const count = comments.length;
 		if (!sessionId || !path || !hasReviewChanges() || sendingChanges()) return;
 		const sentContent = content();
+		const captured = reviewBaseline.capture();
 		setSendingChanges(true);
 		try {
-			const outcome = await pty.enqueueCommand(sessionId, buildMarkdownReviewPrompt(path, count));
+			const changedLines = await invoke<string | null>("markdown_review_changed_lines", {
+				path,
+				baseline: captured.baseline,
+				expected: sentContent,
+			}).catch(() => null);
+			const outcome = await pty.enqueueCommand(sessionId, buildMarkdownReviewPrompt(path, count, changedLines));
+			reviewBaseline.acknowledge(sentContent, captured.epoch);
 			setSentCommentIds(new Set(comments.map((comment) => comment.id)));
 			if (content() === sentContent) setEditedSinceSend(false);
 			const terminalId = terminalsStore.findBySessionId(sessionId);
@@ -765,7 +793,8 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 							content={content()}
 							commentableBlocks={props.tab.type === "file"}
 							baseDir={baseDir()}
-							onLinkClick={props.tab.type === "file" ? (href) => void handleMdLink(href) : undefined}
+							autoLinkFiles={props.tab.type === "file"}
+							onLinkClick={props.tab.type === "file" ? handleMdLink : undefined}
 							onCheckboxToggle={(idx, mark, col) => {
 								void handleCheckboxToggle(idx, mark, col);
 							}}

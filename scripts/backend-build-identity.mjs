@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { readFileSync, statSync } from "node:fs";
+import { dirname, isAbsolute, resolve } from "node:path";
 
 // Cargo's final <binary>.d lists the local unit graph, unlike an individual
 // rustc .d. Parse Make escaping, including paths containing spaces or Windows
@@ -27,17 +27,11 @@ function dependencies(text) {
 	return words;
 }
 
-function localPath(root, path) {
-	const rel = relative(root, path);
-	return rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
-}
-
 /** Development-only Cargo staleness check; never compiles or restarts anything. */
 export function backendBuildIdentity(cwd, backend) {
 	const unavailable = { status: "unavailable", key: "unavailable" };
 	if (!backend?.exe || !Number.isFinite(backend.started_at_ms)) return unavailable;
 	try {
-		const root = resolve(cwd);
 		const exe = backend.build_exe || backend.exe;
 		if (!isAbsolute(exe)) return unavailable;
 		const artifacts = [exe, ...(backend.bridge_exe ? [backend.bridge_exe] : [])];
@@ -62,18 +56,9 @@ export function backendBuildIdentity(cwd, backend) {
 				if (!isAbsolute(file)) throw new Error("Relative Cargo dependency");
 				return resolve(file);
 			}));
-			const visited = new Set();
-			for (const file of [...inputs]) {
-				let dir = dirname(file);
-				while (localPath(root, dir) && !visited.has(dir)) {
-					visited.add(dir);
-					const manifest = join(dir, "Cargo.toml");
-					if (existsSync(manifest)) inputs.add(manifest);
-					if (dir === root) break;
-					dir = dirname(dir);
-				}
-			}
-			inputs.add(join(root, "src-tauri/Cargo.lock"));
+			// Cargo dep-info is authoritative: an edit that matters to this binary
+			// relinks it. Manifests are not inputs, because Cargo leaves a fresh
+			// binary untouched after a manifest edit that does not affect it.
 			for (const file of [...inputs].sort()) {
 				const info = statSync(file);
 				key.update(`${file}\0${info.mtimeMs}\0${info.size}\0`);

@@ -137,7 +137,7 @@ Click **Unpark** on any repo in the parked repos popover. It returns to the main
 
 ## Compact and rich layout
 
-The **layout button** in the toolbar (left of the filter icon) cycles the sidebar through three modes and prints the current one on itself: **A** (auto, outlined), **C** (compact), **R** (rich). The choice is saved.
+The **layout button** in the toolbar (left of the filter icon) cycles the sidebar through three modes and prints the current one on itself: **R** (rich), **C** (compact), **H** (harness-only, with rich rows). R and C restore at startup. A saved H opens as R, because harness sessions are not live yet at startup.
 
 **Compact** is the one-line rows. **Rich** keeps the same navigation density and adds facts:
 
@@ -147,7 +147,7 @@ The **layout button** in the toolbar (left of the filter icon) cycles the sideba
 
 Compact carries the same facts in tooltips: the branch name's tooltip has the commit age, ahead/behind and the stale rule; an agent row's tooltip has its state and line. Subagents and nesting exist only in rich.
 
-**Auto** shows rich when the list fits the window or the primary pointer is a finger, compact otherwise. It uses a conservative 52 px row budget for expanded working-agent details, minus 96 px of toolbar and footer. Rich branch names and stats stay on one line; long names truncate and full PR titles remain in tooltips. Touch branch actions remain in the existing swipe tray.
+**H** shows only branches with a live harness session, together with their repositories and groups. R and C clear this harness filter. The separate active-only filter stays available in every mode. Older Auto preferences open in rich mode.
 
 Subagent lines come from the existing `progress_flow` command, read at most every 5 seconds per repository, only in rich.
 
@@ -187,7 +187,7 @@ confirmation dialog and is disabled while removal is in progress.
 
 Swipe right, tap the row, or tap elsewhere to close the actions. Opening another
 row closes the previous one. Vertical swipes continue to scroll the sidebar.
-Mouse and trackpad controls keep their existing hover behavior.
+Mouse and trackpad actions appear over the right edge of the row on hover or keyboard focus. Crowded facts do not push the actions outside the sidebar or scroll row names left.
 
 In rich mode, sessions idle for more than two hours fold into an expandable count. Backend activity timestamps determine age; busy sessions, awaiting input, unread output, selected rows and parents of visible children stay visible. Expanding preserves row order. Compact mode does not fold idle sessions.
 

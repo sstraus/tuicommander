@@ -625,3 +625,29 @@ describe("activityStore list mutations (613-00e8 F107)", () => {
 		expect(activityStore.state.items.map((i) => i.id)).toEqual(["a"]);
 	});
 });
+
+// Catches: importing the store creates a module-level hydration promise that stays
+// pending in every suite that never hydrates, which Vitest reports as an async leak.
+it("importing the store leaves no pending promise of its own", async () => {
+	const { createHook } = await import("node:async_hooks");
+	vi.resetModules();
+	const pending = new Map<number, string>();
+	const hook = createHook({
+		init(asyncId, type) {
+			if (type !== "PROMISE") return;
+			const stack = new Error("activity-store-import").stack ?? "";
+			if (stack.includes("stores/activityStore.ts")) pending.set(asyncId, stack);
+		},
+		promiseResolve(asyncId) {
+			pending.delete(asyncId);
+		},
+	});
+	hook.enable();
+	try {
+		await import("../../stores/activityStore");
+		await new Promise((resolve) => setImmediate(resolve));
+	} finally {
+		hook.disable();
+	}
+	expect([...pending.values()]).toEqual([]);
+});

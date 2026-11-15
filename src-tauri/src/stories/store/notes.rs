@@ -23,32 +23,10 @@ impl StoryStore {
                 return Err(invalid("duplicate receipt reference"));
             }
         }
-        // Workflow receipts and run ownership are immutable. Probe outside the story write
-        // transaction, so adding evidence never acquires the two stores in reverse order.
-        let subject = self.get_story(story_id)?;
-        let plan = self.get_plan(&subject.plan_id)?;
+        // The legacy run engine that issued workflow receipts was removed; no
+        // persisted receipt can be referenced any more.
         if !receipts.is_empty() {
-            let run_db = self
-                .db_path
-                .parent()
-                .ok_or("story store has no parent directory")?
-                .join("workflow_runs.sqlite3");
-            if !run_db.is_file() {
-                return Err(invalid("workflow receipt not found"));
-            }
-            let runs = crate::workflows::RunStore::open_at(&run_db)?;
-            for receipt in &receipts {
-                if !runs.receipt_belongs_to_plan(
-                    &receipt.run_id,
-                    &receipt.command_id,
-                    &plan.project,
-                    &plan.id,
-                )? {
-                    return Err(invalid(
-                        "workflow receipt does not exist in the story project and plan",
-                    ));
-                }
-            }
+            return Err(invalid("workflow receipt not found"));
         }
         let mut conn = self.connect()?;
         let tx = immediate(&mut conn)?;

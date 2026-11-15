@@ -172,7 +172,7 @@ A **mobile companion PWA** lets you monitor agents from your phone, answer quest
 
 On-device speech-to-text powered by whisper-rs. No cloud service, no API keys, no data leaving your machine.
 
-- GPU-accelerated on macOS (Metal) and Windows (Vulkan), CPU on Linux (optional CUDA/Vulkan)
+- GPU-accelerated on macOS (Metal), Windows and Linux (Vulkan, CPU when no driver is present)
 - Push-to-talk hotkey — text injected into the active terminal
 - 4 model sizes from Small (488 MB) to Large V2 (3 GB), incl. large-v3-turbo (1.6 GB)
 

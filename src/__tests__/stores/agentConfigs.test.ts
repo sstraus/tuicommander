@@ -388,6 +388,22 @@ describe("agentConfigsStore", () => {
 		});
 	});
 
+	describe("workflow profile", () => {
+		// Catches: the owner's workflow profile choice being dropped on load or on save.
+		it("loads the saved choice and saves a new one", async () => {
+			await testInScopeAsync(async () => {
+				await hydrateWith({ agents: {}, workflow_profile: "Claude default" });
+				expect(store.getWorkflowProfile()).toBe("Claude default");
+				mockInvoke.mockClear();
+				store.setWorkflowProfile("Grok");
+				expect(mockInvoke).toHaveBeenCalledWith(
+					"save_agents_config",
+					expect.objectContaining({ config: expect.objectContaining({ workflow_profile: "Grok" }) }),
+				);
+			});
+		});
+	});
+
 	describe("per-agent progress_tracking", () => {
 		it("has no opinion until one is set, which is how the agent follows the global flag", async () => {
 			await testInScopeAsync(async () => {

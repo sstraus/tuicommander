@@ -75,6 +75,10 @@ export function useKeyboardRedirect(autoFocus: boolean = true) {
 			// Get active element
 			const activeElement = document.activeElement;
 
+			// AI Chat owns typing even on its non-input controls or selected text.
+			// Redirecting there can turn a chat draft into terminal commands.
+			if (e.defaultPrevented || activeElement?.closest('[data-focus-target="ai-chat"]')) return;
+
 			// Don't redirect if focus is in an input element
 			if (activeElement && INPUT_ELEMENTS.has(activeElement.tagName)) {
 				return;

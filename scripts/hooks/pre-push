@@ -11,7 +11,33 @@
 # — a network hiccup must never block a push. Reference-only commits that
 # legitimately use a bare `#N` bypass with `git push --no-verify` or
 # `TUIC_SKIP_ISSUE_CHECK=1 git push`.
-set -euo pipefail
+#
+# It also enforces agent capabilities (story 2713). TUIC sets TUIC_CAPABILITIES
+# for an agent it spawned with a fixed set; such an agent pushes a branch only
+# with `push` and a tag only with `tag`. Unset means the session is not capped.
+# The issue-check bypass does not skip this rule.
+set -Eeuo pipefail
+trap 'printf "pre-push failed at line %s (exit %s)\n" "$LINENO" "$?" >&2' ERR
+
+# stdin: <local-ref> <local-sha> <remote-ref> <remote-sha>, read once for both rules.
+push_refs="$(cat)"
+
+if [ -n "${TUIC_CAPABILITIES+set}" ]; then
+  while read -r _ _ cap_remote_ref _; do
+    [ -n "$cap_remote_ref" ] || continue
+    case "$cap_remote_ref" in
+      refs/tags/*) needed=tag ;;
+      *) needed=push ;;
+    esac
+    case ",${TUIC_CAPABILITIES}," in
+      *",${needed},"*) ;;
+      *)
+        printf '\n\033[1;31m✗ pre-push blocked:\033[0m this agent lacks the %s capability (%s)\n' "$needed" "$cap_remote_ref" >&2
+        printf 'TUIC fixed its capabilities at spawn: [%s]. Ask the agent that spawned you.\n' "$TUIC_CAPABILITIES" >&2
+        exit 1 ;;
+    esac
+  done <<<"$push_refs"
+fi
 
 [ "${TUIC_SKIP_ISSUE_CHECK:-}" = "1" ] && exit 0
 
@@ -19,7 +45,7 @@ remote_name="${1:-origin}"
 
 # Only enforce on the default branch — that's where closing keywords take effect
 # on push (this repo pushes directly to main).
-default_branch="$(git symbolic-ref --quiet --short "refs/remotes/${remote_name}/HEAD" 2>/dev/null | sed "s|^${remote_name}/||")"
+default_branch="$(git symbolic-ref --quiet --short "refs/remotes/${remote_name}/HEAD" 2>/dev/null | sed "s|^${remote_name}/||" || true)"
 default_branch="${default_branch:-main}"
 
 # gh is required to know an issue's state. No gh / no auth → cannot verify → allow.
@@ -75,7 +101,6 @@ check_range() {
   done < <(git rev-list "$range")
 }
 
-# stdin: <local-ref> <local-sha> <remote-ref> <remote-sha>
 zero="0000000000000000000000000000000000000000"
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ "$local_sha" = "$zero" ] && continue               # branch deletion
@@ -85,7 +110,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   else
     check_range "${remote_sha}..${local_sha}"
   fi
-done
+done <<<"$push_refs"
 
 [ "${#offenders[@]}" -eq 0 ] && exit 0
 

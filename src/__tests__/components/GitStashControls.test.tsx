@@ -3,6 +3,9 @@ import { expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("../../invoke", () => ({ invoke: h.invoke }));
+vi.mock("../../hooks/useSmartPrompts", () => ({
+	useSmartPrompts: () => ({ executeSmartPrompt: vi.fn(), canExecute: () => ({ ok: true }) }),
+}));
 
 import { StashesTab } from "../../components/GitPanel/StashesTab";
 

@@ -105,16 +105,15 @@ async fn worktree_tabs_keep_their_own_file_root_in_the_mobile_viewer_address() {
     assert_eq!(list[1]["fs_root"], "/worktrees/feature");
 }
 
-// Catches: exposing traversal, sibling-repository files, unregistered roots, or non-Markdown tabs.
+// Catches: exposing traversal, other repositories' tabs, or non-Markdown tabs.
 #[tokio::test]
 #[serial_test::serial]
-async fn menu_omits_files_outside_registered_roots_and_non_markdown_files() {
+async fn menu_omits_traversal_foreign_repository_and_non_markdown_tabs() {
     let tabs = vec![
         tab("a", "/repo", "../secret.md", None),
-        tab("b", "/repo", "/repo-other/secret.md", None),
         tab("c", "/repo", "src/main.ts", None),
-        tab("d", "/repo", "secret.md", Some("/unregistered")),
         tab("e", "/unregistered", "secret.md", None),
+        tab("f", "/repo", "/elsewhere/../etc/secret.md", None),
         tab("ok", "/repo", "docs/UPPER.MD", None),
     ];
     let list = menu(tabs, "/repo", config()).await;
@@ -125,6 +124,26 @@ async fn menu_omits_files_outside_registered_roots_and_non_markdown_files() {
             .map(|t| t["id"].as_str().unwrap())
             .collect::<Vec<_>>(),
         vec!["ok"]
+    );
+}
+
+// Catches: a tab outside every registered root is dropped from the phone list
+#[tokio::test]
+#[serial_test::serial]
+async fn menu_lists_open_tabs_outside_every_registered_root_with_an_openable_path() {
+    let tabs = vec![
+        tab("it", "/repo", "/home/boss/.tmp/it/report_it.md", None),
+        tab("sibling", "/repo", "/repo-other/notes.md", Some("/repo")),
+        tab("stray-root", "/repo", "plan.md", Some("/unregistered")),
+    ];
+    let list = menu(tabs, "/repo", config()).await;
+    assert_eq!(
+        list,
+        json!([
+            {"id":"it","title":"report_it.md","relative_path":"report_it.md","absolute_path":"/home/boss/.tmp/it/report_it.md","fs_root":"/home/boss/.tmp/it"},
+            {"id":"sibling","title":"notes.md","relative_path":"notes.md","absolute_path":"/repo-other/notes.md","fs_root":"/repo-other"},
+            {"id":"stray-root","title":"plan.md","relative_path":"plan.md","absolute_path":"/unregistered/plan.md","fs_root":"/unregistered"}
+        ])
     );
 }
 
