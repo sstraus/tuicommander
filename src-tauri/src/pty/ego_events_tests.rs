@@ -365,6 +365,7 @@ fn ego_native_compaction_session_start_keeps_background_wake_origin() {
 // owned-child capture (`ego-owned-child-2930.tcap`) has exactly this order;
 // a detached exec puts the same bytes on the wire.
 
+#[cfg(unix)]
 const EGO_SESSION: &str = "ego-sess";
 
 /// An ego PTY that has seen `session_start`, with a live (recording) PTY so
