@@ -11,6 +11,8 @@ trap 'rm -rf "$scratch"' EXIT
 
 repo="$scratch/repo"
 git init -q "$repo"
+# The empty git template (scripts/with-test-tmp.sh) leaves no .git/hooks for the installer.
+mkdir -p "$repo/.git/hooks"
 mkdir -p "$repo/scripts/hooks" "$repo/src-tauri/src" "$repo/src"
 cp "$project_root/scripts/hooks/pre-commit" "$project_root/scripts/hooks/fixture-production-diff.py" "$repo/scripts/hooks/"
 cp "$project_root/scripts/hooks/install-hooks.sh" "$repo/scripts/hooks/"

@@ -21,6 +21,9 @@ for checkout in "$repo" "$scratch/other"; do
   chmod +x "$checkout/scripts/hooks/pre-commit"
 done
 
+# The test harness inits repos with an empty template, so there is no
+# .git/hooks until something creates it.
+mkdir -p "$repo/.git/hooks"
 printf '#!/bin/sh\n# external hook\n' > "$repo/.git/hooks/pre-push"
 # An install made by the old installer: a symlink into one checkout.
 ln -s "$repo/scripts/hooks/pre-commit" "$repo/.git/hooks/pre-commit"

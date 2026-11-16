@@ -402,6 +402,23 @@ test-run directories under `~/Gits/.tmp/tuic-tests` and the checkout's
 `.tmp/tuic-tests` after they have been unused for more than seven days. Run
 standalone Rust tests through that wrapper.
 
+### Git inside tests
+
+`scripts/with-test-tmp.sh` and the nextest setup script
+(`src-tauri/scripts/nextest-test-tmp.sh`) give every test process two git settings,
+and `tuic-test-support`'s constructor gives the same to a bare `cargo test` binary:
+
+- `GIT_TEMPLATE_DIR` is a template under the scratch root that holds an empty `hooks/`
+  directory and git's one-line `info/exclude`, so `git init` and `git clone` in a fixture copy no
+  `hooks/*.sample` files (slower, machine-dependent, and an EPERM where writes to
+  `.git/hooks` are denied) while `.git/hooks` and `.git/info/exclude` still exist.
+- `GIT_CEILING_DIRECTORIES` holds the scratch root's parent (lexical and physical
+  spelling, appended to any value already set), so git run under the root never
+  discovers a repository above it. A fixture whose `git init` failed used to fall
+  through to this checkout and rename or delete its branches.
+
+Both apply to test processes only; production git calls never see them.
+
 Rust coverage uses `make cov` (`cargo llvm-cov nextest`). Nextest builds the ACP
 and MCP fixture executables once for the library tests that launch them. Under
 llvm-cov, setup uses the parent of `LLVM_PROFILE_FILE` as Cargo's explicit
