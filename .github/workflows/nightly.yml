@@ -364,8 +364,8 @@ jobs:
           LAST_STABLE=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
           echo "Last stable tag: $LAST_STABLE"
 
-          mkdir -p .tmp/tuic-tests
-          NOTES=$(mktemp .tmp/tuic-tests/nightly-notes.XXXXXX)
+          mkdir -p "${RUNNER_TEMP}/tuic-tests"
+          NOTES=$(mktemp "${RUNNER_TEMP}/tuic-tests/nightly-notes.XXXXXX")
           trap 'rm -f "$NOTES"' EXIT
           {
             echo '**Rolling build from `nightly` — always the latest code.**'

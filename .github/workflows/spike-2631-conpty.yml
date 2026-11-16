@@ -24,7 +24,9 @@ jobs:
       - name: Build smallest faithful native PTY harness
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force .tmp/conpty-spike/src, .tmp/conpty-evidence | Out-Null
+          $spike = Join-Path $env:RUNNER_TEMP "conpty-spike"
+          $evidence = Join-Path $env:RUNNER_TEMP "conpty-evidence"
+          New-Item -ItemType Directory -Force "$spike/src", $evidence | Out-Null
           @'
           [package]
           name = "windows-hook-osc"
@@ -33,24 +35,26 @@ jobs:
           [workspace]
           [dependencies]
           portable-pty = "=0.9.0"
-          '@ | Set-Content .tmp/conpty-spike/Cargo.toml
-          Copy-Item scripts/agent-capture/windows-hook-osc.rs .tmp/conpty-spike/src/main.rs
-          cargo build --manifest-path .tmp/conpty-spike/Cargo.toml
+          '@ | Set-Content "$spike/Cargo.toml"
+          Copy-Item scripts/agent-capture/windows-hook-osc.rs "$spike/src/main.rs"
+          cargo build --manifest-path "$spike/Cargo.toml"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Record host and console-child output
         shell: pwsh
         run: |
-          $PSVersionTable | Out-String | Set-Content .tmp/conpty-evidence/powershell.txt
-          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber | Format-List | Out-String | Set-Content .tmp/conpty-evidence/windows.txt
-          rustc -Vv | Set-Content .tmp/conpty-evidence/rustc.txt
-          git rev-parse HEAD | Set-Content .tmp/conpty-evidence/commit.txt
-          Copy-Item .tmp/conpty-spike/Cargo.lock .tmp/conpty-evidence/harness-Cargo.lock
-          & .tmp/conpty-spike/target/debug/windows-hook-osc.exe capture .tmp/conpty-evidence
+          $spike = Join-Path $env:RUNNER_TEMP "conpty-spike"
+          $evidence = Join-Path $env:RUNNER_TEMP "conpty-evidence"
+          $PSVersionTable | Out-String | Set-Content "$evidence/powershell.txt"
+          Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, BuildNumber | Format-List | Out-String | Set-Content "$evidence/windows.txt"
+          rustc -Vv | Set-Content "$evidence/rustc.txt"
+          git rev-parse HEAD | Set-Content "$evidence/commit.txt"
+          Copy-Item "$spike/Cargo.lock" "$evidence/harness-Cargo.lock"
+          & "$spike/target/debug/windows-hook-osc.exe" capture $evidence
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: windows-conpty-osc-2631
-          path: .tmp/conpty-evidence/
+          path: ${{ runner.temp }}/conpty-evidence/
           if-no-files-found: error
           retention-days: 14
