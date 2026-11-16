@@ -35,7 +35,10 @@ git_template="$root/git-template-empty"
 # (tests write .git/hooks/* and read or append .git/info/exclude); only the sample hooks are gone.
 mkdir -p "$git_template/hooks" "$git_template/info"
 printf '%s\n' '# git ls-files --others --exclude-from=.git/info/exclude' > "$git_template/info/exclude"
-git_ceiling=$(tuic_git_ceiling_with "$(dirname "$root")")
+# The parent of the physical root too: a symlinked root lives somewhere else.
+# (A setup script can only add variables, not unset them: GIT_DIR and friends are
+# cleared by the tuic-test-support constructor in every test binary instead.)
+git_ceiling=$(tuic_git_ceiling_with "$(dirname "$root")" "$(dirname "$(cd "$root" && pwd -P)")")
 {
     printf 'TUIC_TEST_TMP_ROOT=%s\n' "$root"
     printf 'TMPDIR=%s/\n' "$root"

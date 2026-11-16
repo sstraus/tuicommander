@@ -413,11 +413,19 @@ and `tuic-test-support`'s constructor gives the same to a bare `cargo test` bina
   `hooks/*.sample` files (slower, machine-dependent, and an EPERM where writes to
   `.git/hooks` are denied) while `.git/hooks` and `.git/info/exclude` still exist.
 - `GIT_CEILING_DIRECTORIES` holds the scratch root's parent (lexical and physical
-  spelling, appended to any value already set), so git run under the root never
+  spelling, appended to any value already set; the physical spelling of a symlinked
+  or `..`-containing root is resolved by the OS), so git run under the root never
   discovers a repository above it. A fixture whose `git init` failed used to fall
   through to this checkout and rename or delete its branches.
 
 Both apply to test processes only; production git calls never see them.
+
+Two inherited settings are removed rather than honoured, so the suite never depends on
+the developer's shell: an exported `GIT_TEMPLATE_DIR` is replaced by the empty template,
+and `GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`, `GIT_INDEX_FILE`, `GIT_OBJECT_DIRECTORY`
+(and `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_NAMESPACE`, `GIT_PREFIX`) are cleared
+(`scripts/with-test-tmp.sh` unsets them before its own git calls; test binaries clear them
+in the `tuic-test-support` constructor). The ceiling never restricts an explicit `GIT_DIR`.
 
 Rust coverage uses `make cov` (`cargo llvm-cov nextest`). Nextest builds the ACP
 and MCP fixture executables once for the library tests that launch them. Under

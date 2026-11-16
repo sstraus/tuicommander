@@ -27,8 +27,31 @@ fn install_test_temp_root() {
         unsafe { std::env::set_var(key, &root) };
     }
     isolate_git_config(&root);
+    clear_git_location_overrides();
     install_empty_git_template(&root);
     fence_git_discovery(&root);
+}
+
+/// Variables that point git at a specific repository or object store. An
+/// exported `GIT_DIR` selects that repository outright and
+/// `GIT_CEILING_DIRECTORIES` never restricts it, so a test process must not
+/// inherit any of them (a developer shell or hook may export them).
+pub const GIT_LOCATION_OVERRIDES: &[&str] = &[
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+    "GIT_PREFIX",
+];
+
+fn clear_git_location_overrides() {
+    for key in GIT_LOCATION_OVERRIDES {
+        // SAFETY: called from the process constructor, before libtest starts threads.
+        unsafe { std::env::remove_var(key) };
+    }
 }
 
 /// `git init`/`git clone` in a fixture would otherwise copy git's own
@@ -36,11 +59,10 @@ fn install_test_temp_root() {
 /// and an EPERM where `.git/hooks` writes are forbidden. An empty template dir
 /// keeps them out (its `hooks/` and `info/` are empty directories, so `.git/hooks`
 /// and `.git/info` still exist). Test
-/// processes only; production git calls never see this variable.
+/// processes only; production git calls never see this variable. An inherited
+/// `GIT_TEMPLATE_DIR` is replaced, not honoured: the suite must not depend on a
+/// developer's personal template.
 fn install_empty_git_template(root: &std::path::Path) {
-    if std::env::var_os("GIT_TEMPLATE_DIR").is_some_and(|value| !value.is_empty()) {
-        return;
-    }
     let template = root.join("git-template-empty");
     // `hooks/` stays an empty directory: tests write `.git/hooks/*` without creating it.
     for dir in ["hooks", "info"] {
@@ -88,18 +110,23 @@ pub fn git_ceiling_directories(
     existing: Option<&std::ffi::OsStr>,
 ) -> Result<std::ffi::OsString, String> {
     let lexical = lexically_normal(root)?;
-    let parent = lexical
+    let lexical_parent = lexical
         .parent()
         .ok_or_else(|| format!("{} has no parent", root.display()))?
         .to_path_buf();
-    // The parent of the canonical root, not the canonical parent: when `root`
-    // itself is a symlink, git compares against where it really lives.
-    let canonical = std::fs::canonicalize(&lexical)
+    // Canonicalize the root as given, not its lexical form: the OS resolves a
+    // symlink followed by `..` against the real filesystem, so only this names
+    // where the scratch root really lives. The parent of the canonical root, not
+    // the canonical parent: when `root` itself is a symlink, git compares
+    // against where it really lives. A root that does not exist (yet) is
+    // resolved lexically first, and has no physical entry if that fails too.
+    let physical_parent = std::fs::canonicalize(root)
+        .or_else(|_| std::fs::canonicalize(&lexical))
         .ok()
         .and_then(|real| real.parent().map(std::path::Path::to_path_buf));
     Ok(append_ceiling_entries(
         existing,
-        std::iter::once(parent).chain(canonical),
+        std::iter::once(lexical_parent).chain(physical_parent),
     ))
 }
 
@@ -128,21 +155,28 @@ fn append_ceiling_entries(
     existing: Option<&std::ffi::OsStr>,
     entries: impl IntoIterator<Item = std::path::PathBuf>,
 ) -> std::ffi::OsString {
-    let sep = if cfg!(windows) { ';' } else { ':' };
+    // Kept as OS strings: a lossy UTF-8 round trip would turn a non-UTF-8 byte
+    // into U+FFFD and fence a different directory. The separator is ASCII, so
+    // comparing the encoded bytes of each segment is exact.
+    let sep: u8 = if cfg!(windows) { b';' } else { b':' };
     let mut value = existing
-        .map(|v| v.to_string_lossy().into_owned())
+        .map(std::ffi::OsStr::to_os_string)
         .unwrap_or_default();
     for entry in entries {
-        let entry = entry.to_string_lossy().into_owned();
-        if entry.is_empty() || value.split(sep).any(|present| present == entry) {
+        let entry = entry.into_os_string();
+        let present = value
+            .as_encoded_bytes()
+            .split(|byte| *byte == sep)
+            .any(|segment| segment == entry.as_encoded_bytes());
+        if entry.is_empty() || present {
             continue;
         }
         if !value.is_empty() {
-            value.push(sep);
+            value.push(std::str::from_utf8(&[sep]).expect("ASCII separator"));
         }
-        value.push_str(&entry);
+        value.push(&entry);
     }
-    value.into()
+    value
 }
 
 /// The only git configuration a test process sees besides each fixture

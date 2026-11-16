@@ -30,16 +30,28 @@ out="$scratch/wrapper-env"
 kept="$(cd "$project_root" && GIT_CEILING_DIRECTORIES=/pre/set scripts/with-test-tmp.sh bash -c 'printf %s "$GIT_CEILING_DIRECTORIES"')"
 case "$kept" in /pre/set:*) ;; *) fail "the wrapper dropped an inherited ceiling: $kept" ;; esac
 
+# 2b. Inherited repository-location variables never reach the wrapper's command.
+leaked="$(cd "$project_root" && GIT_DIR=/nonexistent GIT_WORK_TREE=/nonexistent GIT_COMMON_DIR=/nonexistent \
+  GIT_INDEX_FILE=/nonexistent GIT_OBJECT_DIRECTORY=/nonexistent scripts/with-test-tmp.sh \
+  bash -c 'env | grep -E "^GIT_(DIR|WORK_TREE|COMMON_DIR|INDEX_FILE|OBJECT_DIRECTORY)=" || true')"
+[ -z "$leaked" ] || fail "the wrapper passed on repository-location variables: $leaked"
+
 # 3. The nextest setup script exports the same two variables for test processes.
-root="$scratch/nextest-root"
+# The root sits inside an enclosing repository, so the probe below discriminates: without
+# the ceiling git finds it, with the emitted ceiling it must not.
+enclosing="$scratch/enclosing"
+git init -q "$enclosing"
+root="$enclosing/nextest-root"
 env_file="$scratch/nextest-env"
 : >"$env_file"
 (cd "$project_root/src-tauri" && TUIC_TEST_TMP_ROOT="$root" NEXTEST_ENV="$env_file" sh scripts/nextest-test-tmp.sh)
 tmpl="$(sed -n 's/^GIT_TEMPLATE_DIR=//p' "$env_file")"
 ceiling="$(sed -n 's/^GIT_CEILING_DIRECTORIES=//p' "$env_file")"
 [ -d "$tmpl/hooks" ] && [ -d "$tmpl/info" ] && [ -z "$(find "$tmpl" -type f ! -path "*/info/exclude")" ] || fail "nextest script: template dir missing or not empty of files ($tmpl)"
-case ":$ceiling:" in *":$(cd "$scratch" && pwd):"*) ;; *) fail "nextest script: ceiling lacks the root's parent: $ceiling" ;; esac
+case ":$ceiling:" in *":$(cd "$enclosing" && pwd -P):"*) ;; *) fail "nextest script: ceiling lacks the root's parent: $ceiling" ;; esac
 mkdir -p "$root/probe"
+env -u GIT_CEILING_DIRECTORIES git -C "$root/probe" rev-parse --show-toplevel >/dev/null 2>&1 \
+  || fail "nextest script: the probe is not inside an enclosing repository, so it proves nothing"
 if found="$(GIT_CEILING_DIRECTORIES="$ceiling" git -C "$root/probe" rev-parse --show-toplevel 2>&1)"; then
   fail "nextest script: git under the root found $found"
 fi

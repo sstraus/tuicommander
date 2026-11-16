@@ -2,6 +2,11 @@
 # Run a test command with scratch files inside this checkout or its Gits root.
 set -euo pipefail
 
+# An exported GIT_DIR (or friends) selects a repository outright and the ceiling never
+# restricts it, so neither this script's own git calls nor the command may inherit one.
+# Same list as tuic-test-support's GIT_LOCATION_OVERRIDES.
+unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+  GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE GIT_PREFIX
 root="$(git -C "$(dirname "$0")/.." rev-parse --show-toplevel)"
 # A linked worktree must not inherit the parent TUICommander's Cargo target.
 # Otherwise its tests can reuse dependency artifacts compiled from another checkout.
@@ -94,6 +99,8 @@ tuic_git_ceiling_with() {
 mkdir -p "$test_tmp/git-template-empty/hooks" "$test_tmp/git-template-empty/info"
 printf '%s\n' '# git ls-files --others --exclude-from=.git/info/exclude' > "$test_tmp/git-template-empty/info/exclude"
 export GIT_TEMPLATE_DIR="$test_tmp/git-template-empty"
-GIT_CEILING_DIRECTORIES="$(tuic_git_ceiling_with "$(dirname "$test_tmp")")"
+# The parent of the PHYSICAL root as well: when the root is (or lives behind) a symlink,
+# git compares ceiling entries with where the root really is.
+GIT_CEILING_DIRECTORIES="$(tuic_git_ceiling_with "$(dirname "$test_tmp")" "$(dirname "$(cd "$test_tmp" && pwd -P)")")"
 export GIT_CEILING_DIRECTORIES
 "$@"

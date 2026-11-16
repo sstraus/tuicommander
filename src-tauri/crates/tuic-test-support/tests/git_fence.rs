@@ -72,3 +72,94 @@ fn the_ceiling_keeps_an_inherited_value_and_lists_each_entry_once() {
 fn a_relative_root_is_refused() {
     assert!(git_ceiling_directories(Path::new("relative/root"), None).is_err());
 }
+
+// Catches: an inherited GIT_DIR/GIT_WORK_TREE (or friends) selecting the developer's
+// repository: the ceiling never restricts an explicit GIT_DIR. The probe runs in a
+// child of this binary started WITH those variables; its constructor must clear them.
+#[test]
+fn git_location_overrides_are_cleared_at_startup() {
+    if std::env::var_os("TUIC_FENCE_CHILD").is_none() {
+        let exe = std::env::current_exe().expect("current exe");
+        let mut cmd = std::process::Command::new(exe);
+        cmd.args(["--exact", "git_location_overrides_are_cleared_at_startup"])
+            .env("TUIC_FENCE_CHILD", "1");
+        for key in tuic_test_support::GIT_LOCATION_OVERRIDES {
+            cmd.env(key, "/nonexistent/tuic-fence");
+        }
+        let out = cmd.output().expect("run the child test binary");
+        assert!(
+            out.status.success(),
+            "child failed: {}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        return;
+    }
+    for key in tuic_test_support::GIT_LOCATION_OVERRIDES {
+        assert!(
+            std::env::var_os(key).is_none(),
+            "{key} survived the constructor"
+        );
+    }
+}
+
+// Catches: an inherited GIT_TEMPLATE_DIR winning over the empty template, so the
+// suite depends on a developer's personal template.
+#[test]
+fn an_inherited_template_dir_is_replaced() {
+    if std::env::var_os("TUIC_FENCE_CHILD").is_none() {
+        let personal = tempfile::tempdir_in(test_temp_root()).expect("personal template");
+        std::fs::create_dir_all(personal.path().join("hooks")).unwrap();
+        std::fs::write(
+            personal.path().join("hooks/pre-commit.sample"),
+            "#!/bin/sh\n",
+        )
+        .unwrap();
+        let out = std::process::Command::new(std::env::current_exe().expect("current exe"))
+            .args(["--exact", "an_inherited_template_dir_is_replaced"])
+            .env("TUIC_FENCE_CHILD", "1")
+            .env("GIT_TEMPLATE_DIR", personal.path())
+            .output()
+            .expect("run the child test binary");
+        assert!(
+            out.status.success(),
+            "child failed: {}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        return;
+    }
+    let repo = tempfile::tempdir_in(test_temp_root()).expect("fixture dir");
+    assert!(git(repo.path(), &["init", "-q"]).status.success());
+    assert!(!repo.path().join(".git/hooks/pre-commit.sample").exists());
+}
+
+// Catches: lexical `..` removal naming a different directory than the OS does when a
+// symlink precedes it, which fences the wrong parent.
+#[cfg(unix)]
+#[test]
+fn a_symlink_followed_by_dotdot_fences_the_real_parent() {
+    let base = tempfile::tempdir_in(test_temp_root()).expect("base dir");
+    let base = std::fs::canonicalize(base.path()).unwrap();
+    std::fs::create_dir_all(base.join("real/a/b")).unwrap();
+    std::fs::create_dir_all(base.join("elsewhere")).unwrap();
+    std::os::unix::fs::symlink(base.join("real/a/b"), base.join("elsewhere/link")).unwrap();
+    // `elsewhere/link/..` is `real/a` on disk but `elsewhere` lexically.
+    let root = base.join("elsewhere/link/../scratch");
+    std::fs::create_dir_all(&root).unwrap();
+    assert!(base.join("real/a/scratch").is_dir());
+    let ceiling = git_ceiling_directories(&root, None).unwrap();
+    let entries: Vec<PathBuf> = std::env::split_paths(&ceiling).collect();
+    assert!(entries.contains(&base.join("real/a")), "{entries:?}");
+}
+
+// Catches: a lossy UTF-8 round trip rewriting a non-UTF-8 inherited value or entry.
+#[cfg(unix)]
+#[test]
+fn non_utf8_ceiling_entries_are_kept_byte_for_byte() {
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+    let existing = std::ffi::OsString::from_vec(b"/outer-\xff".to_vec());
+    let root = PathBuf::from(std::ffi::OsString::from_vec(b"/scratch-\xfe/root".to_vec()));
+    let ceiling = git_ceiling_directories(&root, Some(existing.as_os_str())).unwrap();
+    assert_eq!(ceiling.as_bytes(), b"/outer-\xff:/scratch-\xfe");
+}
