@@ -2,7 +2,9 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { mkdir } from "node:fs/promises";
-const require = createRequire("/home/rb/Gits/.tmp/pw/");
+const playwrightDir = process.env.PLAYWRIGHT_DIR;
+if (!playwrightDir) throw new Error("Set PLAYWRIGHT_DIR to a directory with node_modules/playwright-core installed (browsers default to $PLAYWRIGHT_DIR/browsers); there is no default location.");
+const require = createRequire(`${playwrightDir}/`);
 const { chromium, webkit, devices } = require("playwright-core");
 const url = "http://127.0.0.1:4179/src/components/Tasks/detail/__tests__/preview.html";
 await mkdir("reports/visual", { recursive: true });

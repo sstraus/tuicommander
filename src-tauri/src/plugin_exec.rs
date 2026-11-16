@@ -766,7 +766,16 @@ mod tests {
     // Catches: the owner cannot run a declared plugin tool in an external checkout.
     #[tokio::test]
     async fn plugin_external_cwd_is_used() {
-        let outside = crate::test_support::dir_outside_home();
+        // An existing directory outside HOME: the system root on Windows (its temp dir is inside
+        // the profile), else a fresh test temp dir.
+        let scratch = tempfile::tempdir().unwrap();
+        let outside = if cfg!(windows) {
+            std::path::PathBuf::from(
+                std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string()),
+            )
+        } else {
+            scratch.path().to_path_buf()
+        };
         let print_cwd = if cfg!(windows) { "cd" } else { "pwd -P" };
         let stdout = run_host_shell(print_cwd, &outside.to_string_lossy())
             .await

@@ -35,7 +35,7 @@ async function failureReport(callback) {
 		writeFileSync: (_path, value) => { saved = JSON.parse(value); },
 		spawnSync: (command) => command.endsWith("lsof")
 			? { status: 0, stdout: "p123\n" }
-			: { status: 0, stdout: "/isolated/.tmp/agent-test/agent-test/tuicommander-agent-test" },
+			: { status: 0, stdout: "/var/tmp-x/tuic-agent-test/0123abcd/agent-test/tuicommander-agent-test" },
 		createServer: (listener) => {
 			handler = listener;
 			return {
@@ -46,7 +46,7 @@ async function failureReport(callback) {
 			};
 		},
 		fetch: async (url) => {
-			if (url.endsWith("/health")) return reply({ ok: true, socket_path: `/tuic-at/${hash}/tuic-mcp-${hash}.sock` });
+			if (url.endsWith("/health")) return reply({ ok: true, socket_path: `/tuic-at/${hash.slice(0, 8)}/tuic-mcp-${hash}.sock` });
 			if (url.includes("/logs?")) return reply([{ message: "diagnostic log" }]);
 			assert.ok(url.endsWith("/debug/invoke_js"));
 			if (callback) {

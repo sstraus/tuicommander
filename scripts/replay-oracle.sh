@@ -12,7 +12,10 @@ if [[ $(uname -s) == Darwin ]]; then
   export PATH="$HOME/Library/Application Support/mbx/bin:$PATH"
   which cargo
   mbx doctor
-  runner=("$HOME/Gits/personal/orchestrator/tools/build/build-slot.sh")
+fi
+# Optional build admission wrapper (e.g. a build-slot scheduler).
+if [[ -n "${TUIC_BUILD_SLOT:-}" && -x "$TUIC_BUILD_SLOT" ]]; then
+  runner=("$TUIC_BUILD_SLOT")
 fi
 cd "$root/src-tauri"
-exec "$root/scripts/with-test-tmp.sh" "${runner[@]}" cargo nextest run --lib -E 'test(replay_oracle)'
+exec "$root/scripts/with-test-tmp.sh" ${runner[@]+"${runner[@]}"} cargo nextest run --lib -E 'test(replay_oracle)'

@@ -11,18 +11,16 @@ fn assert_checkout_socket(socket: &std::path::Path) {
         "socket escaped this checkout's socket scratch: {}",
         socket.display()
     );
-    assert!(
-        socket.as_os_str().len() < 104,
-        "socket exceeds Unix path budget"
-    );
+    if let Err(reason) = tuic_test_support::unix_socket_path_fits(socket) {
+        panic!("{reason}");
+    }
 }
 
 fn run_against_stub(
     status: u16,
     response_body: &str,
 ) -> (Output, String, String, std::path::PathBuf) {
-    let scratch = tempfile::tempdir_in(tuic_test_support::short_socket_test_temp_root())
-        .expect("socket scratch");
+    let scratch = tuic_test_support::socket_dir();
     let socket = scratch.path().join("story.sock");
     let listener = UnixListener::bind(&socket).expect("stub socket");
     let response_body = response_body.to_owned();

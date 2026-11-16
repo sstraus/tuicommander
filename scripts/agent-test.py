@@ -16,10 +16,46 @@ import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import threading
 
 ROOT = Path(__file__).resolve().parent.parent
 BINARY = "tuicommander-agent-test"
+
+
+def runtime_root() -> Path:
+    """Where each instance's socket, pid file and stop FIFO live.
+
+    The host temp dir (the one scripts/with-test-tmp.sh records before it
+    points TMPDIR at a long per-run test root), so the socket path stays under
+    the macOS Unix socket limit. TUIC_AGENT_TEST_ROOT overrides it.
+    """
+    override = os.environ.get("TUIC_AGENT_TEST_ROOT")
+    if override:
+        return Path(override)
+    # $TMPDIR is the caller's scratch root (in a sandbox, the only place it may write), so the
+    # runtime files live under it, never under a broader host-wide temp dir.
+    host = Path(os.environ.get("TUIC_TEST_HOST_TMPDIR") or tempfile.gettempdir())
+    return host / "tuic-at"
+
+
+def build_root(root: Path = ROOT) -> Path:
+    """Where this checkout's isolated binaries are copied, outside the checkout.
+
+    `<base>/<first 8 hex of sha256(resolved checkout path)>`, so two worktrees never share a
+    binary. The base is TUIC_AGENT_TEST_BUILD_ROOT, else `tuic-agent-test` under the host temp
+    dir. The OS may purge it; the binary is a rebuild-on-demand artifact.
+    """
+    override = os.environ.get("TUIC_AGENT_TEST_BUILD_ROOT")
+    base = Path(override) if override else (
+        Path(os.environ.get("TUIC_TEST_HOST_TMPDIR") or tempfile.gettempdir()) / "tuic-agent-test")
+    return base / hashlib.sha256(str(root.resolve()).encode()).hexdigest()[:8]
+
+
+def build_runner() -> list[str]:
+    """Optional build admission wrapper (e.g. a build-slot scheduler), named by TUIC_BUILD_SLOT."""
+    slot = os.environ.get("TUIC_BUILD_SLOT")
+    return [slot] if slot and Path(slot).is_file() else []
 
 
 def plan(instance: str, port: str, speech_output: bool = False) -> dict:
@@ -31,15 +67,15 @@ def plan(instance: str, port: str, speech_output: bool = False) -> dict:
         raise ValueError("speech output requires an agent-test-<name> instance")
     if os.environ.get("CARGO_TARGET_DIR"):
         raise ValueError("unset CARGO_TARGET_DIR; mbx owns the target directory")
-    # Keep runtime temp separate from the intentionally granted Gits/.tmp scratch
-    # root: ego must prove its negative filesystem probe outside granted roots.
-    # This stays under Gits and does not change ego grants or confinement.
+    # Short, instance-specific runtime files. The directory takes 8 hex digits
+    # of the instance hash: with the full 16 a 49-byte macOS host temp dir puts
+    # the socket at exactly the 104-byte SUN_LEN limit.
     digest = hashlib.sha256(instance.encode()).hexdigest()[:16]
-    runtime = Path.home() / "Gits/.tuic/tuic-at" / digest
+    runtime = runtime_root() / digest[:8]
     socket = runtime / f"tuic-mcp-{digest}.sock"
     if len(os.fsencode(socket)) >= 104:
-        raise ValueError("runtime socket path exceeds the macOS Unix socket limit")
-    executable = ROOT / ".tmp/agent-test" / instance / BINARY
+        raise ValueError("runtime socket path exceeds the macOS Unix socket limit; set TUIC_AGENT_TEST_ROOT to a shorter directory")
+    executable = build_root() / instance / BINARY
     # Tao's launch activation hack makes every initially visible window key,
     # even with focus=false. Agent-test presents it without a key only at Ready.
     config = json.loads((ROOT / "src-tauri/tauri.conf.json").read_text())
@@ -130,13 +166,13 @@ def start(launch: dict, reuse_sha256=None) -> int:
             raise RuntimeError("cargo must resolve to the mbx shim")
         if reuse_sha256 is None:
             subprocess.run(["mbx", "doctor"], env=env, cwd=ROOT, check=True)
-            slot = Path.home() / "Gits/personal/orchestrator/tools/build/build-slot.sh"
-            runner = [str(slot)] if slot.is_file() else []
+            runner = build_runner()
             subprocess.run([*runner, *launch["frontend"]], env=env, cwd=ROOT, check=True)
             # Embedded assets, separate application identity, no dev server or bundle writes.
             env["TAURI_CONFIG"] = launch["build_environment"]["TAURI_CONFIG"]
-            freeze = Path.home() / "Gits/.tmp/BUILD_FREEZE"
-            if freeze.exists() and "feat-2086" not in freeze.read_text():
+            # An optional shared build freeze file, named by TUIC_BUILD_FREEZE.
+            freeze = Path(os.environ.get("TUIC_BUILD_FREEZE") or os.devnull)
+            if freeze.is_file() and "feat-2086" not in freeze.read_text():
                 raise RuntimeError("BUILD_FREEZE does not allow feat-2086")
             artifacts = {}
             with subprocess.Popen([*runner, *launch["cargo"]], cwd=ROOT, env=env, stdout=subprocess.PIPE, text=True) as build:

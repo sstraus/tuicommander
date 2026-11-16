@@ -82,12 +82,8 @@ fn run(
     tool_text: &str,
     is_error: bool,
 ) -> (Output, Vec<Seen>, Duration) {
-    let root =
-        std::path::PathBuf::from(std::env::var("HOME").unwrap()).join("Gits/.tmp/tuic-tests");
-    std::fs::create_dir_all(&root).unwrap();
-    let path = root.join(format!(
-        "tuic-drop-{}-{}.sock",
-        std::process::id(),
+    let path = tuic_test_support::short_socket_path(&format!(
+        "d{}.sock",
         NEXT_SOCKET.fetch_add(1, Ordering::Relaxed)
     ));
     let listener = UnixListener::bind(&path).unwrap();

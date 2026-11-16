@@ -187,13 +187,17 @@ marks, multiple marks, overwrites, scroll/resize, styled rows, selection and
 search; NFC equivalence cannot hide loss. The broader matrix uses emulators as
 diagnostic comparisons and does not declare every divergence a TUIC defect.
 
-Install its pinned test-only dependencies:
+Install its pinned test-only dependencies outside the checkout (`TI` is the scratch
+dir; `ansi_integrity.py` and `check_xterm.cjs` read the same `TUIC_TERMINAL_INTEGRITY_DIR`,
+with a default of `<temp dir>/tuic-tests/terminal-integrity`):
 
 ```sh
-npm install --prefix .tmp/terminal-integrity/oracle --ignore-scripts \
+export TUIC_TERMINAL_INTEGRITY_DIR="${TMPDIR:-$(dirname "$(mktemp -u)")}/terminal-integrity"
+TI="$TUIC_TERMINAL_INTEGRITY_DIR"
+npm install --prefix "$TI"/oracle --ignore-scripts \
   --no-audit --no-fund @xterm/headless@5.5.0
-uv venv .tmp/terminal-integrity/venv
-uv pip install --python .tmp/terminal-integrity/venv/bin/python \
+uv venv "$TI"/venv
+uv pip install --python "$TI"/venv/bin/python \
   -r tests/terminal-stress/requirements-integrity.txt
 ```
 
@@ -212,9 +216,9 @@ TUIC_PORT=9877 src-tauri/target/debug/tuic-remote --instance integrity-ansi
 Use the credentials configured for that disposable instance:
 
 ```sh
-.tmp/terminal-integrity/venv/bin/python tests/terminal-stress/ansi_integrity.py \
+"$TI"/venv/bin/python tests/terminal-stress/ansi_integrity.py \
   --auth USER:PASS --random-cases 0
-.tmp/terminal-integrity/venv/bin/python tests/terminal-stress/ansi_integrity.py \
+"$TI"/venv/bin/python tests/terminal-stress/ansi_integrity.py \
   --auth USER:PASS --seed 819 --random-cases 2000
 ```
 
@@ -266,7 +270,7 @@ not. Color/style correctness is outside this text-integrity oracle.
 For an independent tie-breaker on a saved failure:
 
 ```sh
-npm install --prefix .tmp/terminal-integrity/oracle --ignore-scripts \
+npm install --prefix "$TI"/oracle --ignore-scripts \
   --no-audit --no-fund @xterm/headless@5.5.0
 node tests/terminal-stress/check_xterm.cjs FAILURE_DIRECTORY
 ```
@@ -286,7 +290,7 @@ termios; a passing macOS run does not prove Windows ConPTY behavior.
 ### Checker regression tests
 
 ```sh
-.tmp/terminal-integrity/venv/bin/python -m unittest discover \
+"$TI"/venv/bin/python -m unittest discover \
   -s tests/terminal-stress -p test_ansi_integrity.py -v
 ```
 

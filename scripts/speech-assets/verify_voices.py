@@ -39,7 +39,7 @@ Nothing is written into the repository. All downloads go to `--cache-dir`.
 
 Usage:
 
-    uv run scripts/speech-assets/verify_voices.py --cache-dir ~/Gits/.tmp/pocket-voices
+    uv run scripts/speech-assets/verify_voices.py --cache-dir "${TMPDIR:-/tmp}/pocket-voices"
 """
 
 from __future__ import annotations

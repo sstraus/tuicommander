@@ -1,11 +1,13 @@
 import {createServer} from 'vite';
+import {resolve} from 'node:path';
+import {testTmpRoot} from '../../../scripts/test-tmp-root.mjs';
 import solid from 'vite-plugin-solid';
 import {spawn} from 'node:child_process';
 import {writeFile,mkdir,readFile,readdir} from 'node:fs/promises';
-const out=process.env.TUIC_ICON_EVIDENCE ?? '.tmp/visual-icon-geometry';
+const out=process.env.TUIC_ICON_EVIDENCE ?? resolve(testTmpRoot(),'visual-icon-geometry');
 await mkdir(out,{recursive:true});
 const phase=process.env.TUIC_ICON_PHASE ?? 'after';
-const s=await createServer({configFile:false,plugins:[solid(),{name:'themes',configureServer(server){server.middlewares.use('/__tuic_themes',async(_req,res)=>{const dir='src-tauri/src/themes';const files=await readdir(dir);res.setHeader('content-type','application/json');res.end(JSON.stringify(await Promise.all(files.filter(f=>f.endsWith('.json')).map(async f=>({key:f.slice(0,-5),...JSON.parse(await readFile(`${dir}/${f}`,'utf8'))})))));});}}],define:{__APP_VERSION__:'"2.0.0"',__BUILD_GIT_HASH__:'"audit"'},cacheDir:'.tmp/visual-audit/vite',server:{host:'127.0.0.1',port:0},logLevel:'error'});
+const s=await createServer({configFile:false,plugins:[solid(),{name:'themes',configureServer(server){server.middlewares.use('/__tuic_themes',async(_req,res)=>{const dir='src-tauri/src/themes';const files=await readdir(dir);res.setHeader('content-type','application/json');res.end(JSON.stringify(await Promise.all(files.filter(f=>f.endsWith('.json')).map(async f=>({key:f.slice(0,-5),...JSON.parse(await readFile(`${dir}/${f}`,'utf8'))})))));});}}],define:{__APP_VERSION__:'"2.0.0"',__BUILD_GIT_HASH__:'"audit"'},cacheDir:resolve(testTmpRoot(),'visual-audit-vite'),server:{host:'127.0.0.1',port:0},logLevel:'error'});
 let chrome,ws;
 try{
 await s.listen();

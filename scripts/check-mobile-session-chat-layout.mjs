@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
-const wrapper = `${process.env.HOME}/Gits/personal/brainstorming/tools/browser-stealth/ab-stealth.sh`;
+import { browserWrapper } from "./browser-wrapper.mjs";
+const wrapper = browserWrapper();
 const evidence = process.env.MOBILE_CHAT_EVIDENCE;
 assert.ok(evidence, "MOBILE_CHAT_EVIDENCE is required");
 mkdirSync(evidence, { recursive: true });

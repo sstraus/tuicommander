@@ -6,6 +6,7 @@ import { createServer } from "vite";
 import solid from "vite-plugin-solid";
 import { after, before, it } from "node:test";
 import assert from "node:assert/strict";
+import { testTmpRoot } from "../../../scripts/test-tmp-root.mjs";
 
 // Real browser measurements: happy-dom cannot evaluate pseudo-elements or layout.
 // Run: TUIC_TEST_CHROME=<binary> node --test src/__tests__/browser/AIChatReplyRail.browser.mjs
@@ -15,12 +16,12 @@ const appearances = [];
 before(async () => {
 	const chrome = process.env.TUIC_TEST_CHROME;
 	if (!chrome) throw new Error("TUIC_TEST_CHROME is required for rendered AI Chat appearance tests");
-	const root = resolve(".tmp/aichat-appearance");
+	const root = resolve(testTmpRoot(), "aichat-appearance");
 	await mkdir(root, { recursive: true });
 	server = await createServer({
 		configFile: false,
 		plugins: [solid()],
-		cacheDir: resolve(".tmp/aichat-appearance/vite-cache"),
+		cacheDir: resolve(root, "vite-cache"),
 		logLevel: "error",
 		server: { host: "127.0.0.1", port: 0 },
 		define: { __APP_VERSION__: '"test"' },

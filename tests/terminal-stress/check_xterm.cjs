@@ -3,7 +3,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const readline = require('node:readline');
-const { Terminal } = require(path.resolve('.tmp/terminal-integrity/oracle/node_modules/@xterm/headless'));
+// The oracle install lives outside the checkout: TUIC_TERMINAL_INTEGRITY_DIR, else
+// <temp dir>/tuic-tests/terminal-integrity (same default as ansi_integrity.py).
+const integrityDir = process.env.TUIC_TERMINAL_INTEGRITY_DIR
+  || path.join(require('node:os').tmpdir(), 'tuic-tests', 'terminal-integrity');
+const { Terminal } = require(path.join(integrityDir, 'oracle/node_modules/@xterm/headless'));
 
 async function render(payload, rows, cols, retainCleared = false) {
   const terminal = new Terminal({cols, rows, scrollback: 10000, allowProposedApi: true});

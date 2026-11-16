@@ -3,8 +3,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 out=src-tauri/icons/macos
-mkdir -p .tmp "$out"
-work=$(mktemp -d "$PWD/.tmp/macos-icon.XXXXXX")
+mkdir -p "$out"
+# Scratch under the caller's temp dir (mktemp honours TMPDIR), never inside the checkout.
+work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 # The body occupies 824 of 1024 pixels, centered with a 100-pixel margin.
 # Render the rounded mask at 4x resolution for smooth small representations.

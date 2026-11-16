@@ -13,6 +13,7 @@ import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -28,10 +29,17 @@ def inventory():
             for agent, binary in AGENTS.items()}
 
 
-def under_gits(path):
+def scratch_root():
+    """The host temp dir; scripts/with-test-tmp.sh records it as TUIC_TEST_HOST_TMPDIR
+    before pointing TMPDIR at a long per-run root that would overflow the daemon's
+    socket path."""
+    return Path(os.environ.get("TUIC_TEST_HOST_TMPDIR") or tempfile.gettempdir()).resolve()
+
+
+def under_scratch(path):
     path = Path(path).expanduser().resolve()
-    if not path.is_relative_to(Path.home() / "Gits"):
-        raise ValueError(f"path must stay under ~/Gits: {path}")
+    if not path.is_relative_to(scratch_root()):
+        raise ValueError(f"path must stay under the host temp dir {scratch_root()}: {path}")
     return path
 
 
@@ -112,13 +120,13 @@ def capture_run(args):
     agent = scenario["agent"]
     if not installed[agent]["binary"]:
         raise RuntimeError(f"{agent}: unverified (not installed)")
-    output = under_gits(args.output)
+    output = under_scratch(args.output)
     output.mkdir(parents=True, exist_ok=False)
     home = output / "daemon-home"
     home.mkdir()
     agent_home = Path(args.agent_home).expanduser().resolve()
     if agent_home != Path.home():
-        agent_home = under_gits(agent_home)
+        agent_home = under_scratch(agent_home)
     if not agent_home.is_dir():
         raise ValueError("agent-home must already exist; no login is automated")
     daemon = args.daemon.resolve()

@@ -3,16 +3,20 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { createServer } from "vite";
 
 const run = promisify(execFile);
 const evidence = path.resolve(process.argv[2]);
-assert(evidence.startsWith(`${process.env.HOME}/Gits/`));
+// Evidence stays under the test temp root, never an arbitrary caller-supplied directory.
+assert(evidence.startsWith(path.resolve(process.env.TUIC_TEST_TMP_ROOT || tmpdir()) + path.sep));
 await mkdir(evidence, { recursive: true });
 await mkdir(path.join(evidence, "reap-scope"), { recursive: true });
-const wrapper = path.join(process.env.HOME, "Gits/personal/brainstorming/tools/browser-stealth/ab-stealth.sh");
+// The stealth browser wrapper (the global rules' agent-browser entry point) is machine-specific.
+const wrapper = process.env.TUIC_BROWSER_WRAPPER;
+assert(wrapper, "set TUIC_BROWSER_WRAPPER to the stealth agent-browser wrapper");
 const session = `session-menu-${Date.now()}`;
 const env = {...process.env, AB_SESSION:session, AB_AGENT_BROWSER_DIR:path.join(evidence,"reap-scope")};
 const server = await createServer({configFile:"src/mobile/__tests__/browser/sessionUsage.vite.config.ts",server:{port:0}});

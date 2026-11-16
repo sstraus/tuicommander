@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { browserWrapper } from "./browser-wrapper.mjs";
 import { createServer } from "vite";
 import solid from "vite-plugin-solid";
 
@@ -13,7 +14,7 @@ const [backend, evidence] = process.argv.slice(2);
 assert(backend && evidence, "pass backend URL and evidence directory");
 const root = process.cwd();
 assert(evidence.startsWith(`${root}${path.sep}`), "evidence must be inside the worktree");
-const wrapper = path.join(process.env.HOME, "Gits/personal/brainstorming/tools/browser-stealth/ab-stealth.sh");
+const wrapper = browserWrapper();
 const env = { ...process.env, AB_SESSION: "tuic-chat-follow-proof", AB_KEEP_FOCUS: "0" };
 const relative = path.relative(root, evidence).split(path.sep).join("/");
 await mkdir(evidence, { recursive: true });

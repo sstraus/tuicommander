@@ -6,7 +6,7 @@ const readline = require('node:readline');
 const { performance } = require('node:perf_hooks');
 const assert = require('node:assert/strict');
 const source = process.argv[2];
-const base = path.join(process.env.HOME, 'Gits/.tmp/2727-spike');
+const base = path.join(process.env.TUIC_TEST_TMP_ROOT || path.join(require('node:os').tmpdir(), 'tuic-tests'), '2727-spike');
 const root = path.join(base, `run-${Date.now()}`);
 fs.mkdirSync(path.join(root, 'stories'), { recursive: true });
 const storyDir = path.join(source, 'stories');

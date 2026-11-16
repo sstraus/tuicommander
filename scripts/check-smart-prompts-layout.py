@@ -11,12 +11,14 @@ from pathlib import Path
 import re
 import signal
 import subprocess
+import tempfile
 import time
 import urllib.request
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
-WRAPPER = Path.home() / 'Gits/personal/brainstorming/tools/browser-stealth/ab-stealth.sh'
+# The stealth browser wrapper (the global rules' agent-browser entry point) is machine-specific.
+WRAPPER = Path(os.environ.get('TUIC_BROWSER_WRAPPER') or 'agent-browser-stealth-wrapper-not-configured')
 MEASURE = """JSON.stringify((() => {
  const editor=[...document.querySelectorAll('section')].find(s=>s.querySelector('h3')?.textContent==='Edit Layout review');
  const rect=e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,height:r.height,width:r.width};};
@@ -51,9 +53,15 @@ def main():
     session = 'smart-prompts-' + uuid.uuid4().hex[:12]
     env = dict(os.environ, AB_SESSION=session, AB_AGENT_BROWSER_DIR=str(evidence / 'reap-scope'))
     env.pop('AB_KEEP_FOCUS', None)
-    config = ROOT / '.tmp' / (session + '.config.ts')
-    config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text("import {defineConfig} from 'vite';import solid from 'vite-plugin-solid';export default defineConfig({plugins:[solid()],define:{__APP_VERSION__:'\"layout\"',__BUILD_GIT_HASH__:'\"layout\"'},optimizeDeps:{entries:['src/__tests__/browser/smartPromptsLayout.html']},server:{host:'127.0.0.1',port:15979,strictPort:true}});")
+    # Scratch lives under the caller's temp dir, never inside the checkout.
+    scratch = Path(os.environ.get('TUIC_TEST_TMP_ROOT') or tempfile.gettempdir())
+    scratch.mkdir(parents=True, exist_ok=True)
+    config = scratch / (session + '.config.mjs')
+    # The config sits outside the checkout, so bare imports would not resolve: pin the plugin by path.
+    solid_path = subprocess.run(
+        ['node', '--input-type=module', '-e', "import {fileURLToPath} from 'node:url';console.log(fileURLToPath(import.meta.resolve('vite-plugin-solid')))"],
+        cwd=ROOT, text=True, capture_output=True, check=True).stdout.strip()
+    config.write_text("import solid from " + json.dumps(solid_path) + ";export default {plugins:[solid()],define:{__APP_VERSION__:'\"layout\"',__BUILD_GIT_HASH__:'\"layout\"'},optimizeDeps:{entries:['src/__tests__/browser/smartPromptsLayout.html']},server:{host:'127.0.0.1',port:15979,strictPort:true}};")
     daemon = None
     results = []
     voice_results = []

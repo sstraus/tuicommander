@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
-mkdir -p .tmp/mobile-question-visual
-node node_modules/vite/bin/vite.js --config scripts/mobile-question-visual/vite.config.ts > .tmp/mobile-question-visual/vite.log 2>&1 &
+# Same scratch root capture.mjs uses (TUIC_TEST_TMP_ROOT, else <temp dir>/tuic-tests).
+scratch="$(node scripts/test-tmp-root.mjs)/mobile-question-visual"
+mkdir -p "${scratch}"
+node node_modules/vite/bin/vite.js --config scripts/mobile-question-visual/vite.config.ts > "${scratch}/vite.log" 2>&1 &
 vite_pid=$!
 trap 'kill "$vite_pid" 2>/dev/null || true; wait "$vite_pid" 2>/dev/null || true' EXIT
 for attempt in {1..50}; do

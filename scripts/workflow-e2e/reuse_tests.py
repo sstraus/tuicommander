@@ -13,9 +13,7 @@ spec.loader.exec_module(agent_test)
 
 class ReuseAdmission(unittest.TestCase):
     def setUp(self):
-        root=ROOT/'.tmp/workflow-e2e-preflight'
-        root.mkdir(parents=True,exist_ok=True)
-        self.directory=tempfile.TemporaryDirectory(dir=root)
+        self.directory=tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.path=Path(self.directory.name)
         for name in (agent_test.BINARY,'tuic-bridge','tuic'):

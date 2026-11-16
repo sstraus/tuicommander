@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
 """Opt-in native macOS joined GitHub observation; see fixtures/github_volume/README.md."""
-import hashlib, json, os, pathlib, re, subprocess, time, urllib.request, uuid
+import hashlib, json, os, pathlib, re, shutil, subprocess, tempfile, time, urllib.request, uuid
 root = pathlib.Path.cwd()
-base = root / '.tmp/github-live-1995'
+# Evidence must outlive the wrapper's per-run root (deleted on exit), so it lives under the host temp
+# dir, never inside the checkout; it can hold account data.
+base = pathlib.Path(os.environ.get('TUIC_TEST_HOST_TMPDIR') or tempfile.gettempdir()) / 'tuic-tests' / 'github-live-1995'
 evidence = base / ('run-' + uuid.uuid4().hex[:8])
-evidence.mkdir()
+evidence.mkdir(parents=True)
 (evidence / 'reap-scope').mkdir()
-wrapper = str(pathlib.Path.home() / 'Gits/personal/brainstorming/tools/browser-stealth/ab-stealth.sh')
+wrapper = os.environ.get('TUIC_BROWSER_WRAPPER') or shutil.which('ab-stealth.sh') or 'ab-stealth.sh'
 browserenv = dict(os.environ, AB_SESSION='chore-1995-' + uuid.uuid4().hex[:8], AB_AGENT_BROWSER_DIR=str(evidence / 'reap-scope'))
+browserenv['TUIC_1995_TRACE'] = str(base / 'frontend-trace.ndjson')
 browserenv.pop('GH_TOKEN', None)
 browserenv.pop('GITHUB_TOKEN', None)
 token = subprocess.run(['gh', 'auth', 'token'], capture_output=True, text=True, check=True, timeout=30).stdout.strip()
 assert token
-backendenv = dict(os.environ, GH_TOKEN=token, TUIC_1995_EVIDENCE=str(evidence), TUIC_1995_SOURCE_REF=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), TMPDIR=str(pathlib.Path.home() / 'Gits/.tmp/tuic-tests'), TUIC_TEST_TMP_ROOT=str(root / '.tmp/tuic-tests'))
+backendenv = dict(os.environ, GH_TOKEN=token, TUIC_1995_EVIDENCE=str(evidence), TUIC_1995_SOURCE_REF=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), TMPDIR=str(pathlib.Path(os.environ.get('TUIC_TEST_HOST_TMPDIR') or tempfile.gettempdir()) / 'tuic-tests'), TUIC_TEST_TMP_ROOT=str(base / 'test-root'))
+(base / 'test-root').mkdir(parents=True, exist_ok=True)
 backendenv.pop('GITHUB_TOKEN', None)
 exe = None
-for line in pathlib.Path(os.environ.get('TUIC_1995_BUILD_LOG', str(pathlib.Path.home() / 'Gits/.tmp/chore-1995-native-harness-build.log'))).read_text().splitlines():
+for line in pathlib.Path(os.environ['TUIC_1995_BUILD_LOG']).read_text().splitlines():
     try:
         r = json.loads(line)
     except:

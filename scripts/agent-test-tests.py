@@ -1,9 +1,11 @@
 """Focused launcher contracts. No test starts a desktop application."""
+import hashlib
 import json
 import importlib.util
 from unittest.mock import patch
 import os
 import re
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -38,8 +40,7 @@ class AgentTestPlanTests(unittest.TestCase):
             # The macOS host, linked worktree and mbx shim are preconditions of start(), not the
             # boundary under test: provide them so the contract also runs on Linux CI.
             shim = str(Path.home() / "Library/Application Support/mbx/bin/cargo")
-            (ROOT / ".tmp").mkdir(exist_ok=True)
-            with tempfile.TemporaryDirectory(dir=ROOT / ".tmp") as worktree:
+            with tempfile.TemporaryDirectory() as worktree:
                 (Path(worktree) / ".git").write_text("gitdir: elsewhere\n")
                 with patch.object(launcher.sys, "platform", "darwin"), \
                         patch.object(launcher, "ROOT", Path(worktree)), \
@@ -56,14 +57,18 @@ class AgentTestPlanTests(unittest.TestCase):
         self.assertIn("heap-profile", diagnostic["cargo"][diagnostic["cargo"].index("--features") + 1])
 
     def test_dry_run_cannot_reuse_daily_config_binary_or_listener(self):
-        binary = ROOT / ".tmp/agent-test/agent-test/tuicommander-agent-test"
+        spec = importlib.util.spec_from_file_location("agent_test_launcher", ROOT / "scripts/agent-test.py")
+        launcher = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(launcher)
+        binary = launcher.build_root() / "agent-test" / "tuicommander-agent-test"
         before = binary.stat() if binary.exists() else None
         plan = self.plan(TUIC_APP_INSTANCE="", TUIC_PORT="9876", TUIC_DEV_BIN_DIR="/unsafe")
         self.assertEqual(plan["environment"]["TUIC_APP_INSTANCE"], "agent-test")
         self.assertEqual(plan["environment"]["TUIC_PORT"], "19876")
         self.assertTrue(plan["config_dir"].endswith("/com.tuic.commander/instances/agent-test"))
         self.assertEqual(Path(plan["binary"]).name, "tuicommander-agent-test")
-        self.assertTrue(Path(plan["binary"]).is_relative_to(ROOT / ".tmp"))
+        self.assertFalse(Path(plan["binary"]).is_relative_to(ROOT))
+        self.assertEqual(Path(plan["binary"]), binary)
         self.assertEqual(plan["listener"], "127.0.0.1:19876 (no port fallback)")
         self.assertEqual(plan["disabled"], ["global shortcuts", "dictation/microphone", "Telegram", "updater", "global MCP install", "global CLI mutations", "global agent hooks", "deep links", "sleep inhibition"])
         self.assertIn("tauri/custom-protocol", plan["cargo"])
@@ -72,17 +77,46 @@ class AgentTestPlanTests(unittest.TestCase):
         self.assertEqual(binary.stat() if binary.exists() else None, before,
                          "dry run must neither create nor replace an existing warm executable")
 
-    def test_runtime_temp_does_not_overlap_ego_scratch_grant(self):
-        # Bug caught (2364): inherited TMPDIR under the intentional shared
-        # scratch grant prevents ego from proving its negative filesystem probe.
-        scratch_grant = Path.home() / "Gits/.tmp"
+    def test_binary_lives_outside_the_checkout_in_a_per_checkout_instance_dir(self):
+        # Catches: the isolated binary landing back inside the checkout (.tmp/), or two
+        # worktrees/instances sharing one binary directory.
+        digest = hashlib.sha256(str(ROOT.resolve()).encode()).hexdigest()[:8]
+        plan = self.plan(TUIC_AGENT_TEST_BUILD_ROOT="")
+        binary = Path(plan["binary"])
+        self.assertFalse(binary.is_relative_to(ROOT))
+        self.assertFalse(binary.is_relative_to(ROOT.resolve()))
+        self.assertEqual(binary.parts[-3:], (digest, "agent-test", "tuicommander-agent-test"))
+        self.assertRegex(digest, r"^[0-9a-f]{8}$")
+        with tempfile.TemporaryDirectory() as base:
+            plan = self.plan("AGENT_TEST_INSTANCE=agent-test-7", TUIC_AGENT_TEST_BUILD_ROOT=base)
+            self.assertEqual(Path(plan["binary"]), Path(base) / digest / "agent-test-7" / "tuicommander-agent-test")
+            self.assertFalse(Path(base, digest).exists(), "dry run must not create the build dir")
+
+    def test_runtime_temp_lives_under_the_callers_tmpdir(self):
+        # A sandboxed run may only write under its own $TMPDIR, so the socket, pid file and stop
+        # FIFO must be derived from it, never from a broader host-wide temp dir.
+        # A short fixed-length name: the socket path budget (104 bytes) leaves ~56 for the base.
+        # with-test-tmp.sh points TMPDIR at a long per-run root and records the original in
+        # TUIC_TEST_HOST_TMPDIR, which is the short base this test needs.
+        base = Path(os.environ.get("TUIC_TEST_HOST_TMPDIR") or tempfile.gettempdir())
+        scratch = base / f"s{os.getpid() % 10000}"
+        scratch.mkdir()
+        try:
+            self.check_runtime_temp_under(scratch)
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+    def check_runtime_temp_under(self, scratch):
         for instance in ["agent-test", "agent-test-2364", "a" * 63]:
             with self.subTest(instance=instance):
-                plan = self.plan(f"AGENT_TEST_INSTANCE={instance}", TMPDIR=str(scratch_grant))
+                # with-test-tmp.sh records the caller's original TMPDIR as TUIC_TEST_HOST_TMPDIR
+                # (the TMPDIR it then replaces with a long per-run root); without that wrapper the
+                # plain TMPDIR is the caller's scratch root.
+                for variable in ("TMPDIR", "TUIC_TEST_HOST_TMPDIR"):
+                    environment = {"TMPDIR": tempfile.gettempdir(), "TUIC_TEST_HOST_TMPDIR": "", variable: str(scratch)}
+                    plan = self.plan(f"AGENT_TEST_INSTANCE={instance}", **environment)
+                    self.assertTrue(Path(plan["environment"]["TMPDIR"]).is_relative_to(scratch), variable)
                 temporary = Path(plan["environment"]["TMPDIR"])
-                self.assertTrue(temporary.is_relative_to(Path.home() / "Gits"))
-                self.assertFalse(temporary.is_relative_to(scratch_grant),
-                                 "ego negative probe must run outside the shared scratch grant")
                 self.assertEqual(Path(plan["socket"]).parent, temporary)
                 self.assertEqual(Path(plan["pid_file"]).parent, temporary)
                 self.assertEqual(Path(plan["stop_fifo"]).parent, temporary)
@@ -204,6 +238,28 @@ class AgentTestPlanTests(unittest.TestCase):
         for plan in [default, other]:
             self.assertEqual(plan["connect"],
                              f"curl --unix-socket '{plan['socket']}' http://localhost/health # Agents use this socket; TCP requires Basic auth")
+
+    def test_runtime_files_live_under_the_host_temp_dir_never_home(self):
+        # Bug caught: the socket dir was hard-coded under the home directory, which is
+        # not writable for other users or sandboxes. A test wrapper's long TMPDIR
+        # must not leak in either: the host temp dir it recorded wins.
+        host = self.plan(TUIC_TEST_HOST_TMPDIR="/var/host-tmp", TMPDIR="/long/per-run/test/root/")
+        self.assertEqual(Path(host["pid_file"]).parent.parent, Path("/var/host-tmp/tuic-at"))
+        digest = Path(host["socket"]).name.removeprefix("tuic-mcp-").removesuffix(".sock")
+        self.assertEqual(Path(host["socket"]).parent.name, digest[:8])
+        self.assertEqual(host["environment"]["TMPDIR"], str(Path(host["socket"]).parent) + "/")
+        explicit = self.plan(TUIC_AGENT_TEST_ROOT="/short", TUIC_TEST_HOST_TMPDIR="/var/host-tmp")
+        self.assertTrue(Path(explicit["socket"]).is_relative_to("/short"))
+        self.assertFalse(Path(self.plan(TUIC_TEST_HOST_TMPDIR="/var/host-tmp")["socket"]).is_relative_to(Path.home()))
+        # A 49-byte macOS host temp dir (/var/folders/xx/<28>/T) must fit SUN_LEN.
+        mac = self.plan(TUIC_TEST_HOST_TMPDIR="/var/folders/rd/" + "b" * 30 + "/T/")
+        self.assertLess(len(mac["socket"].encode()), 104)
+        result = subprocess.run(
+            ["make", "--no-print-directory", "agent-test", "AGENT_TEST_DRY_RUN=1"],
+            cwd=ROOT, env={**os.environ, "TUIC_AGENT_TEST_ROOT": "/" + "x" * 80},
+            text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("TUIC_AGENT_TEST_ROOT", result.stderr)
 
     def test_static_wiring_keeps_guards_before_machine_wide_effects(self):
         # Static audit requested by the story: dropping a runtime guard must fail

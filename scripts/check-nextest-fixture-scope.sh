@@ -7,7 +7,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 tauri="$root/src-tauri"
-work="$(mktemp -d "${TMPDIR:-$root/.tmp}/nextest-fixture-scope.XXXXXX")"
+work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 marker="$work/fixture-bins-ran"

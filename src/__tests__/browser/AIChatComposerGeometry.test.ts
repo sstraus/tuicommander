@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -21,6 +21,8 @@ type Sample = {
 	focusStyle: { outline: string; shadow: string };
 };
 const directory = process.env.TUIC_COMPOSER_GEOMETRY_DIR;
+// Vite's cache for the fixture server lives under the test temp dir, never inside the checkout.
+const viteCacheDir = join(process.env.TUIC_TEST_TMP_ROOT ?? join(tmpdir(), "tuic-tests"), "composer-geometry-vite");
 const phase = process.env.TUIC_COMPOSER_GEOMETRY_PHASE ?? "after";
 // Opt-in: happy-dom cannot measure CSS. This mounts the real component in worktree Vite.
 describe.skipIf(!directory)("AI Chat composer fixed actions", () => {
@@ -57,7 +59,7 @@ describe.skipIf(!directory)("AI Chat composer fixed actions", () => {
 				`
 			import { createServer } from 'vite'; import solid from 'vite-plugin-solid';
 			const server = await createServer({ configFile:false, plugins:[solid()], logLevel:'error',
-			 cacheDir:'.tmp/composer-geometry-vite',
+			 cacheDir:${JSON.stringify(viteCacheDir)},
 			 define:{__APP_VERSION__:JSON.stringify('geometry'),__BUILD_GIT_HASH__:JSON.stringify('geometry')},
 			 server:{host:'127.0.0.1',port:0} });
 			await server.listen(); console.log('FIXTURE_PORT='+server.httpServer.address().port);

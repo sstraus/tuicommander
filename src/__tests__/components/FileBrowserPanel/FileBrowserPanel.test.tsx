@@ -4,12 +4,14 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
+	realpathSync,
 	renameSync,
 	rmSync,
 	statSync,
 	watch,
 	writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { fireEvent, render, waitFor, within } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
@@ -181,7 +183,10 @@ describe("FileBrowserPanel external filesystem refresh", () => {
 	])(
 		"%s — catches unwatched expanded children and stale collapsed caches",
 		async (scenario) => {
-			const scratch = join(process.cwd(), ".tmp", "file-tree-external");
+			// Under the per-run test root (scripts/with-test-tmp.sh sets TMPDIR), not the checkout: an agent
+			// sandbox denies `git init`'s .git/config write anywhere below it. Physical spelling, because
+			// the watcher reports resolved paths.
+			const scratch = join(realpathSync(tmpdir()), "file-tree-external");
 			mkdirSync(scratch, { recursive: true });
 			const root = mkdtempSync(join(scratch, "tree-"));
 			const nested = scenario === "non-git root with nested git repo";

@@ -6,6 +6,9 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/gitlink.XXXXXX")
 trap 'rm -rf "$work"' EXIT
+# Explicit git config: never the developer's global/system files.
+. "$here/test-tmp-lib.sh"
+tuic_git_isolate_config "$work/gitcfg"
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 
 git init -q --bare -b main "$work/remote.git"

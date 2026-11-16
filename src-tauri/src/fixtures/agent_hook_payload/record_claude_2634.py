@@ -1,13 +1,13 @@
 """Record Claude Code question/plan tool hooks with TUIC's real hook commands.
 
 Usage: python3 rec.py <ask|plan_yes|plan_no>
-Writes under ~/Gits/.tmp/tuic-2634/cap/<mode>/: hooks.jsonl (native stdin),
+Writes under <temp dir>/tuic-2634/cap/<mode>/: hooks.jsonl (native stdin),
 capture.tcap (TUICCAP2: real output chunk boundaries plus input), log.json.
 """
 import fcntl, json, os, pathlib, pty, select, struct, subprocess, sys, termios, time
 
 mode = sys.argv[1]
-root = pathlib.Path.home() / 'Gits/.tmp/tuic-2634/cap' / mode
+root = pathlib.Path(os.environ.get('TUIC_TEST_HOST_TMPDIR') or __import__('tempfile').gettempdir()) / 'tuic-2634/cap' / mode
 root.mkdir(parents=True, exist_ok=True)
 work = root / 'scratch'
 work.mkdir(exist_ok=True)

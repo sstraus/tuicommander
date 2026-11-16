@@ -1578,8 +1578,8 @@ fn resolve_path(path: &str) -> String {
 ///
 /// The check lives in the CLI, not in the app, on purpose. `std::env::temp_dir`
 /// reads `TMPDIR`/`TEMP` from *this* process, so it resolves to the caller's
-/// shell — which is how `~/Gits/.tmp` (this repo's own `TMPDIR` convention for
-/// Rust suites) is caught. The app process has a different `TMPDIR` and cannot
+/// shell — which is how a custom `TMPDIR` (say, one under the user's projects
+/// directory) is caught. The app process has a different `TMPDIR` and cannot
 /// see it.
 fn disposable_roots() -> Vec<PathBuf> {
     let roots =
@@ -2116,7 +2116,7 @@ mod tests {
     #[test]
     fn disposable_roots_follow_this_process_tmpdir() {
         // The whole reason the check lives in the CLI: it reads the *caller's*
-        // TMPDIR, which is what `~/Gits/.tmp` runs under in this repo.
+        // TMPDIR, wherever the caller's shell points it.
         let roots = disposable_roots();
         let temp = std::env::temp_dir();
         assert!(
