@@ -415,12 +415,20 @@ pub fn test_temp_root() -> std::path::PathBuf {
 }
 
 /// Fixture location for tests whose subject distinguishes persistent paths from
-/// temporary roots. Each caller must own a TempDir here so teardown removes it.
-/// This is separate from TMPDIR, not a classifier bypass (story 2160).
+/// temporary roots (orphan cleanup, stale-registration repair). Each caller must own a
+/// TempDir here so teardown removes it.
+///
+/// It lives below the per-run test root, NOT in the checkout: the agent sandbox denies
+/// `git init`'s `.git/config` write anywhere under the checkout, and a path under
+/// `$TMPDIR` is a recognised temporary root. `tuic_core::temp_paths::is_persistent_test_fixture`
+/// (feature `test-support`) exempts exactly this directory from the classifier, so the
+/// code under test sees a persistent path while the fixture stays hermetic (story 2160).
 pub fn non_temporary_fixture_root() -> std::path::PathBuf {
-    let root = checkout_root().join(".tmp/orphan-persistent-fixtures");
+    let root = test_temp_root().join("persistent-fixtures");
     std::fs::create_dir_all(&root).expect("create non-temporary fixture root");
-    root
+    // Git reports worktree paths physically; a fixture spelled through `/tmp` or `/var`
+    // (symlinks on macOS) would never compare equal to what the code under test returns.
+    root.canonicalize().unwrap_or(root)
 }
 
 /// The longest socket path Rust's std binds or connects: one byte for the NUL
