@@ -4692,6 +4692,7 @@ fn is_under_recognized_temp_root(path: &str) -> bool {
     recognized_temp_roots()
         .iter()
         .any(|root| !root.as_os_str().is_empty() && candidate.starts_with(root))
+        && !tuic_core::temp_paths::is_persistent_test_fixture(&candidate)
 }
 
 /// One candidate the classifier found — enough for the frontend to preview
