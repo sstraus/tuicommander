@@ -85,6 +85,11 @@ tuic_git_ceiling_with() {
     for _tuic_entry in "$(CDPATH='' cd -- "$_tuic_dir" 2>/dev/null && pwd)" \
       "$(CDPATH='' cd -- "$_tuic_dir" 2>/dev/null && pwd -P)"; do
       [ -n "$_tuic_entry" ] || continue
+      # git splits this variable on ':' with no escape, so an entry containing one would
+      # fence two other directories: refuse (fail closed) rather than fence nothing.
+      case "$_tuic_entry" in
+        *:*) echo "git ceiling: '$_tuic_entry' contains ':', which GIT_CEILING_DIRECTORIES cannot express; use a scratch root without one" >&2; return 1 ;;
+      esac
       case ":$_tuic_ceiling:" in
         *":$_tuic_entry:"*) ;;
         *) _tuic_ceiling=${_tuic_ceiling:+$_tuic_ceiling:}$_tuic_entry ;;

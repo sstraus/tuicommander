@@ -163,3 +163,23 @@ fn non_utf8_ceiling_entries_are_kept_byte_for_byte() {
     let ceiling = git_ceiling_directories(&root, Some(existing.as_os_str())).unwrap();
     assert_eq!(ceiling.as_bytes(), b"/outer-\xff:/scratch-\xfe");
 }
+
+// Catches: a root whose parent contains the list separator: git would read two other
+// entries and fence neither, so the fence must refuse instead of failing open.
+#[cfg(unix)]
+#[test]
+fn a_parent_containing_the_list_separator_is_refused() {
+    let err = git_ceiling_directories(Path::new("/scratch/a:b/root"), None).unwrap_err();
+    assert!(
+        err.contains("GIT_CEILING_DIRECTORIES cannot express"),
+        "{err}"
+    );
+    // An existing inherited value may contain several entries; only NEW ones are checked.
+    assert!(
+        git_ceiling_directories(
+            Path::new("/scratch/root"),
+            Some(std::ffi::OsStr::new("/a:/b"))
+        )
+        .is_ok()
+    );
+}

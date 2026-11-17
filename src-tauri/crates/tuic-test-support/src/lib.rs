@@ -124,6 +124,19 @@ pub fn git_ceiling_directories(
         .or_else(|_| std::fs::canonicalize(&lexical))
         .ok()
         .and_then(|real| real.parent().map(std::path::Path::to_path_buf));
+    // git splits GIT_CEILING_DIRECTORIES on the list separator and has no escape for it:
+    // an entry containing one would fence two other directories and leave this one open.
+    // Refuse rather than fail open.
+    let separator = if cfg!(windows) { b';' } else { b':' };
+    for entry in std::iter::once(&lexical_parent).chain(physical_parent.as_ref()) {
+        if entry.as_os_str().as_encoded_bytes().contains(&separator) {
+            return Err(format!(
+                "{} contains `{}`, which GIT_CEILING_DIRECTORIES cannot express; use a scratch root without one",
+                entry.display(),
+                separator as char
+            ));
+        }
+    }
     Ok(append_ceiling_entries(
         existing,
         std::iter::once(lexical_parent).chain(physical_parent),

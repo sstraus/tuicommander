@@ -55,4 +55,11 @@ env -u GIT_CEILING_DIRECTORIES git -C "$root/probe" rev-parse --show-toplevel >/
 if found="$(GIT_CEILING_DIRECTORIES="$ceiling" git -C "$root/probe" rev-parse --show-toplevel 2>&1)"; then
   fail "nextest script: git under the root found $found"
 fi
+# 4. A scratch root whose parent contains ':' cannot be fenced: both scripts refuse.
+colon="$scratch/a:b"
+mkdir -p "$colon"
+if (cd "$project_root/src-tauri" && TUIC_TEST_TMP_ROOT="$colon/root" NEXTEST_ENV="$scratch/colon-env" sh scripts/nextest-test-tmp.sh) 2>"$scratch/colon-err"; then
+  fail "nextest script: accepted a root whose parent contains ':'"
+fi
+grep -q "cannot express" "$scratch/colon-err" || fail "nextest script: no message for a ':' root: $(cat "$scratch/colon-err")"
 echo "git fence: wrapper and nextest setup export a template and a ceiling"
