@@ -4,12 +4,13 @@ import {resolve,join} from 'node:path';
 import {homedir} from 'node:os';
 import {createServer} from 'vite';
 import solid from 'vite-plugin-solid';
+import {testTmpRoot} from '../../../scripts/test-tmp-root.mjs';
 const directory=resolve(process.env.TUIC_CHAT_WRAP_DIR);
 const page=process.env.TUIC_CHAT_WRAP_PAGE??'chatWrapGeometry';
 const widths=(process.env.TUIC_CHAT_WRAP_WIDTHS??'420,960').split(',').map(Number);
 const phase=process.env.TUIC_CHAT_WRAP_PHASE??'after';
 await mkdir(directory,{recursive:true});
-const server=await createServer({configFile:false,plugins:[solid()],cacheDir:'.tmp/chat-wrap-vite',logLevel:'error',define:{__APP_VERSION__:JSON.stringify('geometry'),__BUILD_GIT_HASH__:JSON.stringify('geometry')},server:{host:'127.0.0.1',port:0}});
+const server=await createServer({configFile:false,plugins:[solid()],cacheDir:join(testTmpRoot(),'chat-wrap-vite'),logLevel:'error',define:{__APP_VERSION__:JSON.stringify('geometry'),__BUILD_GIT_HASH__:JSON.stringify('geometry')},server:{host:'127.0.0.1',port:0}});
 let chrome,socket;
 try {
  await server.listen();

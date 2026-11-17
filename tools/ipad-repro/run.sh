@@ -2,7 +2,8 @@
 # usage: run.sh TAG URL [X Y DX DY HOLD STEPS]   (sim: iPad Pro 13 M5, iOS 26.5)
 # Needs: python3 -m http.server 8123 in web/ (started separately), xcui build in dd/.
 SIM=${SIM:-BB821790-FFCA-4839-910E-06224D45FD21}
-D="$HOME/Gits/.tmp/tuic-1329-ipad"; export TMPDIR="$D/"
+# Scratch (xcodebuild output, logs): TUIC_IPAD_DIR, else the caller's temp dir.
+host_tmp=${TMPDIR:-/tmp}; D="${TUIC_IPAD_DIR:-${host_tmp%/}/tuic-1329-ipad}"; export TMPDIR="$D/"
 TAG=$1; URL=$2
 xcrun simctl bootstatus $SIM -b >/dev/null 2>&1
 xcrun simctl openurl $SIM "$URL"; sleep 3

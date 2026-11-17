@@ -5,7 +5,7 @@ import {runInNewContext} from 'node:vm';
 
 const oracle = readFileSync(new URL('./geometry.js', import.meta.url), 'utf8');
 // Recorded native WebKit measurements, 2026-10-19:
-// ~/Gits/.tmp/results/live-1789/comparison.json, general.native_failures[0].boxes.
+// the live-1789 run's results/live-1789/comparison.json, general.native_failures[0].boxes.
 const recorded = {
   label: {x:917,y:2200.171875,right:944.234375,bottom:2218.171875,width:27.234375,height:18},
   lastLine: {x:917,y:2200.3388671875,right:944.2314453125,bottom:2218.0048828125,width:27.2314453125},

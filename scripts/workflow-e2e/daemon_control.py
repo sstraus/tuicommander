@@ -3,13 +3,16 @@ import hashlib
 import json
 from pathlib import Path
 import socket
+import tempfile
+import os
 import time
 
 
 def restart(client, manifest):
     path = Path(manifest['lifecycleSocket']).resolve()
-    if not path.is_relative_to(Path.home()/'Gits/.tmp'):
-        raise ValueError('restart control socket must be owned test state under Gits/.tmp')
+    owned = Path(os.environ.get('TUIC_TEST_HOST_TMPDIR') or tempfile.gettempdir()).resolve()
+    if not path.is_relative_to(owned):
+        raise ValueError(f'restart control socket must be owned test state under {owned}')
     request = {'action':'restart', 'instance':manifest['environment']['TUIC_APP_INSTANCE'],
                'candidate':manifest['candidate']}
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:

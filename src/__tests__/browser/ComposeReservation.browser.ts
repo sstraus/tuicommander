@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { build, type PreviewServer, preview } from "vite";
 import solid from "vite-plugin-solid";
@@ -10,7 +10,9 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 // Dedicated browser config keeps workstation browser checks out of happy-dom runs.
 const run = promisify(execFile);
 const wrapper = resolve(homedir(), "Gits/personal/brainstorming/tools/browser-stealth/ab-stealth.sh");
-const evidence = resolve(process.env.TUIC_COMPOSE_EVIDENCE ?? `${homedir()}/Gits/.tmp/results/2697`);
+// Scratch, evidence and Vite's cache live under the test temp dir, never inside the checkout.
+const scratchRoot = join(process.env.TUIC_TEST_TMP_ROOT ?? join(tmpdir(), "tuic-tests"), "compose-reservation");
+const evidence = resolve(process.env.TUIC_COMPOSE_EVIDENCE ?? join(scratchRoot, "evidence"));
 const environment = { ...process.env, AB_SESSION: "tuic-2697-compose", AB_KEEP_FOCUS: "1" };
 let server: PreviewServer;
 
@@ -33,7 +35,7 @@ async function read(label: string) {
 
 beforeAll(async () => {
 	await mkdir(evidence, { recursive: true });
-	const outDir = resolve(".tmp/compose-reservation-dist");
+	const outDir = join(scratchRoot, "dist");
 	await build({
 		configFile: false,
 		plugins: [
@@ -48,7 +50,7 @@ beforeAll(async () => {
 			},
 		],
 		logLevel: "error",
-		cacheDir: resolve(".tmp/compose-reservation-vite"),
+		cacheDir: join(scratchRoot, "vite-cache"),
 		build: { outDir, rollupOptions: { input: resolve("src/__tests__/browser/composeReservation.html") } },
 	});
 	server = await preview({

@@ -7,10 +7,7 @@ use std::time::{Duration, Instant};
 // marker, or forgets to propagate an explicit identity to its detached runner.
 #[test]
 fn bg_explicit_instance_writes_one_namespace_and_runner_inherits_selection() {
-    let temp = tempfile::Builder::new()
-        .prefix("bic-")
-        .tempdir_in(tuic_test_support::short_socket_test_temp_root())
-        .unwrap();
+    let temp = tuic_test_support::socket_dir();
     let log = temp.path().join("child.log");
     let output = Command::new(env!("CARGO_BIN_EXE_tuic"))
         .args(["--instance", "critic-bg", "bg"])

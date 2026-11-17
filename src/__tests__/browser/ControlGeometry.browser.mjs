@@ -5,13 +5,14 @@ import { resolve } from 'node:path';
 import { it } from 'node:test';
 import { createServer } from 'vite';
 import solid from 'vite-plugin-solid';
+import { testTmpRoot } from '../../../scripts/test-tmp-root.mjs';
 
 // Real browser layout, not happy-dom's zero-size boxes. Screenshots clip only the fixture element.
 it('catches shared control geometry drifting at desktop and touch widths', {timeout: 60000}, async (context) => {
-  const directory = resolve(process.env.TUIC_GEOMETRY_EVIDENCE ?? '.tmp/control-geometry');
+  const directory = resolve(process.env.TUIC_GEOMETRY_EVIDENCE ?? resolve(testTmpRoot(), 'control-geometry'));
   await mkdir(directory, {recursive: true});
   const {version} = JSON.parse(await readFile('src-tauri/tauri.conf.json', 'utf8'));
-  const server = await createServer({configFile:false, define:{__APP_VERSION__:JSON.stringify(version),__BUILD_GIT_HASH__:JSON.stringify('geometry-fixture')}, plugins:[solid()], cacheDir:resolve('.tmp/control-geometry-vite'), logLevel:'error', server:{host:'127.0.0.1',port:0}});
+  const server = await createServer({configFile:false, define:{__APP_VERSION__:JSON.stringify(version),__BUILD_GIT_HASH__:JSON.stringify('geometry-fixture')}, plugins:[solid()], cacheDir:resolve(testTmpRoot(), 'control-geometry-vite'), logLevel:'error', server:{host:'127.0.0.1',port:0}});
   let chrome, socket;
   try {
     await server.listen();

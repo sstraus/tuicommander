@@ -98,8 +98,8 @@ fi
 choice=$(echo "$choice" | tr '[:upper:]' '[:lower:]')
 case "$choice" in
   e|edit)
-    mkdir -p .tmp
-    TMPFILE=$(mktemp .tmp/release-notes-XXXXXX.txt)
+    # Under the caller's temp dir (mktemp honours TMPDIR), never inside the checkout.
+    TMPFILE=$(mktemp)
     trap 'rm -f "$TMPFILE"' EXIT
     echo "$NOTES" > "$TMPFILE"
     ${EDITOR:-vim} "$TMPFILE"

@@ -46,12 +46,8 @@ fn request(stream: &mut std::os::unix::net::UnixStream) -> serde_json::Value {
 }
 
 fn wait_response(args: &[&str], delay: Duration) -> (std::process::Output, Duration) {
-    let root =
-        std::path::PathBuf::from(std::env::var("HOME").unwrap()).join("Gits/.tmp/tuic-tests");
-    std::fs::create_dir_all(&root).unwrap();
-    let socket = root.join(format!(
-        "tuic-wait-{}-{}.sock",
-        std::process::id(),
+    let socket = tuic_test_support::short_socket_path(&format!(
+        "w{}.sock",
         NEXT_SOCKET.fetch_add(1, Ordering::Relaxed)
     ));
     let listener = UnixListener::bind(&socket).unwrap();
@@ -136,12 +132,8 @@ fn default_agent_wait_accepts_response_after_three_seconds() {
 
 #[test]
 fn non_wait_request_still_times_out_after_about_three_seconds() {
-    let root =
-        std::path::PathBuf::from(std::env::var("HOME").unwrap()).join("Gits/.tmp/tuic-tests");
-    std::fs::create_dir_all(&root).unwrap();
-    let socket = root.join(format!(
-        "tuic-nonwait-{}-{}.sock",
-        std::process::id(),
+    let socket = tuic_test_support::short_socket_path(&format!(
+        "nw{}.sock",
         NEXT_SOCKET.fetch_add(1, Ordering::Relaxed)
     ));
     let listener = UnixListener::bind(&socket).unwrap();

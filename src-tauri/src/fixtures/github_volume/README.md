@@ -51,7 +51,7 @@ instance or change installed application settings.
 A TLS receiver redirects only the harness client's `api.github.com` socket.
 It forwards read-only GETs and GraphQL queries to live GitHub with the
 process-local token. It refuses mutations. Response bodies and safe request
-metadata are retained under `.tmp/github-live-1995/run-*/`; authorization
+metadata are retained under `github-live-1995/run-*/` in `<host temp dir>/tuic-tests/` (`$TUIC_TEST_HOST_TMPDIR` under the wrapper; it outlives the wrapper's per-run root), never inside the checkout; authorization
 headers and the token are never logged or written. These captured response
 fixtures can contain account/repository data. Do not commit them.
 
@@ -61,7 +61,7 @@ ports 14360/14361. Use the required build-slot wrapper and mbx shim for this
 native test executable; it must run on the Mac with the browser. Do not set
 `CARGO_TARGET_DIR`.
 
-1. Create `.tmp/github-live-1995` and compile the native lib test executable
+1. Compile the native lib test executable
    with `scripts/with-test-tmp.sh cargo test --manifest-path src-tauri/Cargo.toml
    --lib --no-run --message-format=json`, retaining complete JSON output in
    a log under `~/Gits/.tmp/`.

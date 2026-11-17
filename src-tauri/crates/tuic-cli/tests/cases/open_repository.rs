@@ -10,11 +10,9 @@ use std::sync::{Arc, Mutex};
 #[test]
 fn directory_open_uses_server_registration_and_propagates_rejection() {
     for (explicit, rejected) in [(false, false), (true, false), (true, true)] {
-        let tmp = tempfile::Builder::new()
-            .prefix("open-")
-            .tempdir_in(tuic_test_support::test_temp_root())
-            .unwrap();
-        let socket = tmp.path().join("mcp.sock");
+        // The short socket root: a path under the test temp root can exceed sun_path.
+        let sockets = tuic_test_support::socket_dir();
+        let socket = sockets.path().join("mcp.sock");
         let listener = UnixListener::bind(&socket).unwrap();
         listener.set_nonblocking(true).unwrap();
         let done = Arc::new(AtomicBool::new(false));
@@ -110,11 +108,9 @@ fn file_open_uses_selected_server_without_os_handler() {
 fn run_file_open(explicit: bool) {
     {
         let rejected = false;
-        let tmp = tempfile::Builder::new()
-            .prefix("open-")
-            .tempdir_in(tuic_test_support::test_temp_root())
-            .unwrap();
-        let socket = tmp.path().join("mcp.sock");
+        // The short socket root: a path under the test temp root can exceed sun_path.
+        let sockets = tuic_test_support::socket_dir();
+        let socket = sockets.path().join("mcp.sock");
         let listener = UnixListener::bind(&socket).unwrap();
         listener.set_nonblocking(true).unwrap();
         let done = Arc::new(AtomicBool::new(false));

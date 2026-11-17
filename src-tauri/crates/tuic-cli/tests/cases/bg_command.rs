@@ -9,8 +9,7 @@ use std::time::{Duration, Instant};
 static NEXT_JOB: AtomicU64 = AtomicU64::new(0);
 
 fn test_path(name: &str) -> std::path::PathBuf {
-    let root = std::path::PathBuf::from(std::env::var("TUIC_TEST_TMP_ROOT").unwrap());
-    std::fs::create_dir_all(&root).unwrap();
+    let root = tuic_test_support::test_temp_root();
     root.join(format!(
         "bg-{name}-{}-{}",
         std::process::id(),
@@ -18,10 +17,11 @@ fn test_path(name: &str) -> std::path::PathBuf {
     ))
 }
 
-fn socket_path(name: &str) -> std::path::PathBuf {
-    tuic_test_support::short_socket_test_temp_root().join(format!(
-        "bg-{name}-{}-{}",
-        std::process::id(),
+/// `_name` documents the call site; the socket root is private to this
+/// process, so a counter alone keeps names unique and short (SUN_LEN).
+fn socket_path(_name: &str) -> std::path::PathBuf {
+    tuic_test_support::short_socket_path(&format!(
+        "b{}.sock",
         NEXT_JOB.fetch_add(1, Ordering::Relaxed)
     ))
 }

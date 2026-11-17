@@ -7,7 +7,12 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 
 const require = createRequire(import.meta.url);
-const { chromium, webkit, devices } = require(process.env.PLAYWRIGHT_MODULE ?? "/home/rb/Gits/.tmp/pw/node_modules/playwright-core");
+function playwrightDir() {
+	const dir = process.env.PLAYWRIGHT_DIR;
+	if (!dir) throw new Error("Set PLAYWRIGHT_MODULE (path to playwright-core) or PLAYWRIGHT_DIR (a directory with node_modules/playwright-core); there is no default location.");
+	return dir;
+}
+const { chromium, webkit, devices } = require(process.env.PLAYWRIGHT_MODULE ?? `${playwrightDir()}/node_modules/playwright-core`);
 const artifacts = resolve("reports/visual/setting-fields");
 await mkdir(artifacts, { recursive: true });
 const server = spawn(process.execPath, ["node_modules/vite/bin/vite.js", "--config", "src/components/SettingsPanel/fields/preview.config.ts", "--host", "127.0.0.1", "--port", "0"], { stdio: ["ignore", "pipe", "pipe"] });

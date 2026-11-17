@@ -4,6 +4,7 @@ version.workspace = true
 edition = "2024"
 
 [dependencies]
+tuic-ipc = { path = "../tuic-ipc" }
 portable-pty = "0.9"
 ctor = "0.8"
 

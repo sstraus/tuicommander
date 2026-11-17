@@ -7,7 +7,8 @@
 # diff run (`--in-diff`); a full-tree run is N mutants x one incremental build
 # of the lib crate and is deliberately not offered.
 #
-# Runs `--in-place` in a disposable local CLONE under .tmp/ instead of the copy
+# Runs `--in-place` in a disposable local CLONE (<host temp>/tuic-mutants-src-<checkout
+# hash>, beside, not inside, the per-run TMPDIR root, and never in the checkout) instead of the copy
 # cargo-mutants makes by default: `tauri::generate_context!` needs `../dist`
 # next to src-tauri, which a copy of the workspace root does not have, and the
 # copy would land in $TMPDIR where every freshly built test binary is scanned
@@ -37,18 +38,32 @@ set -euo pipefail
 
 RANGE="${1:-HEAD~1}"
 ROOT="$(git rev-parse --show-toplevel)"
-case "${TMPDIR:-}" in
-  "$ROOT/"*|"$HOME/Gits/"*) TEST_TMP_BASE="${TMPDIR%/}" ;;
-  *) TEST_TMP_BASE="$ROOT/.tmp/tuic-tests" ;;
-esac
-mkdir -p "$TEST_TMP_BASE"
-TEST_TMP="$(mktemp -d "$TEST_TMP_BASE/tuic-mutants.XXXXXX")"
-trap 'rm -rf "$TEST_TMP"' EXIT
+# Same roots as scripts/with-test-tmp.sh: the caller's temp dir, never $HOME.
+# shellcheck source=test-tmp-lib.sh
+. "$ROOT/scripts/test-tmp-lib.sh"
+TEST_TMP_HOST="$(tuic_test_host_tmpdir)"
+if [ -n "${TUIC_TEST_TMP_ROOT:-}" ]; then
+  # The caller's root: use it as is, never delete it.
+  TEST_TMP="$(tuic_test_tmp_root "$ROOT")"
+else
+  TEST_TMP_BASE="$(tuic_test_tmp_base)"
+  mkdir -p "$TEST_TMP_BASE"
+  TEST_TMP="$(mktemp -d "$TEST_TMP_BASE/tuic-mutants.XXXXXX")"
+  trap 'rm -rf "$TEST_TMP"' EXIT
+fi
 export TMPDIR="$TEST_TMP/"
 export TMP="$TMPDIR" TEMP="$TMPDIR"
 export TUIC_TEST_TMP_ROOT="$TEST_TMP"
-SRC="$ROOT/.tmp/mutants-src"
-DIFF="$ROOT/.tmp/mutants.diff"
+export TUIC_TEST_HOST_TMPDIR="$TEST_TMP_HOST"
+# A throwaway HOME for the test processes, like `make check`'s Rust steps.
+# cargo-mutants runs nextest, whose setup script applies it to the tests only
+# (cargo, rustup and mbx below keep the real HOME). TUIC_TEST_FAKE_HOME=0 opts out.
+export TUIC_TEST_FAKE_HOME="${TUIC_TEST_FAKE_HOME:-1}"
+# The clone is a build tree that outlives the run (its mutants.out holds the logs), so it sits in
+# the host temp dir, not in the per-run TMPDIR root above (which a default run deletes on exit and
+# where every test binary is scanned on exec) and not in the checkout. One per checkout.
+SRC="$TEST_TMP_HOST/tuic-mutants-src-$(tuic_checkout_hash "$(cd "$ROOT" && pwd -P)")"
+DIFF="$TEST_TMP/mutants.diff"
 
 # Every cargo call goes through the mbx shim when it is installed (shared
 # artifact cache + machine-wide compile scheduler); CI has no mbx and runs
@@ -61,7 +76,6 @@ command -v cargo-mutants >/dev/null || { echo "cargo-mutants missing: cargo inst
 ls "$ROOT/src-tauri/binaries"/tuic-bridge-* >/dev/null 2>&1 || { echo "sidecar missing — run 'pnpm build:sidecar' first"; exit 1; }
 [ -f "$ROOT/plugins/plan/manifest.json" ] || { echo "plugins submodule not checked out — run 'git submodule update --init plugins' first"; exit 1; }
 
-mkdir -p "$ROOT/.tmp"
 # Paths relative to src-tauri, with the b/ prefix --in-diff expects.
 git -C "$ROOT" diff --relative=src-tauri "$RANGE" HEAD -- src-tauri > "$DIFF"
 if ! grep -q '^+++ b/.*\.rs$' "$DIFF"; then
@@ -78,8 +92,9 @@ git -C "$SRC" checkout --quiet --detach "$(git -C "$ROOT" rev-parse HEAD)"
 # generate_context! embeds ../dist; tauri-build checks the gitignored sidecar.
 mkdir -p "$SRC/dist" "$SRC/src-tauri/binaries"
 cp -R "$ROOT/dist/." "$SRC/dist/"
-# The clone already contains tracked sidecars. Never overwrite that inode:
-# code-signature caches and concurrent readers must keep the old bytes.
+# Sidecars are gitignored (none are tracked), so copy the built ones in. A
+# clone of an older commit may still contain a tracked one: never overwrite
+# that inode — code-signature caches and concurrent readers must keep the old bytes.
 for source in "$ROOT"/src-tauri/binaries/*; do
   [[ -f "$source" ]] || continue
   name="${source##*/}"

@@ -14,7 +14,8 @@ import threading
 
 root = Path(__file__).resolve().parents[4]
 work = Path(sys.argv[1]).resolve()
-assert Path.home() / "Gits" in work.parents
+# Scratch work dir under the host temp dir, never inside the real HOME.
+assert Path(os.environ.get("TUIC_TEST_HOST_TMPDIR") or tempfile.gettempdir()).resolve() in work.parents
 work.mkdir(exist_ok=False)
 records = {}
 

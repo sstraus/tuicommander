@@ -4,8 +4,10 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "vite";
 
-const { chromium, webkit, devices } = createRequire(`${process.env.PLAYWRIGHT_DIR ?? "/home/rb/Gits/.tmp/pw"}/`)("playwright-core");
-process.env.PLAYWRIGHT_BROWSERS_PATH ??= "/home/rb/Gits/.tmp/pw/browsers";
+const playwrightDir = process.env.PLAYWRIGHT_DIR;
+if (!playwrightDir) throw new Error("Set PLAYWRIGHT_DIR to a directory with node_modules/playwright-core installed (browsers default to $PLAYWRIGHT_DIR/browsers); there is no default location.");
+const { chromium, webkit, devices } = createRequire(`${playwrightDir}/`)("playwright-core");
+process.env.PLAYWRIGHT_BROWSERS_PATH ??= `${playwrightDir}/browsers`;
 const artifacts = "reports/visual/wi-b4-board";
 await mkdir(artifacts, { recursive: true });
 const server = await createServer({ configFile: "vitest.config.ts", server: { host: "127.0.0.1", port: 0 } });

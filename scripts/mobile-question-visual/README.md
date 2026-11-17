@@ -2,7 +2,7 @@
 
 Run `scripts/with-test-tmp.sh bash scripts/mobile-question-visual/run.sh` through
 the build-slot scheduler. Requires the bundled Chrome for Testing used by the
-Settings visual harness. All browser state and PNGs stay under `.tmp/`.
+Settings visual harness. All browser state and PNGs stay under the test scratch root (`$TUIC_TEST_TMP_ROOT`, else `<temp dir>/tuic-tests`) in `mobile-question-visual/`, never inside the checkout.
 
 The real SessionDetailScreen and mobile CSS render narrow ego question states
 recorded by the Rust replay of the installed ego captures for story 1973.

@@ -3,8 +3,8 @@
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve, sep } from "node:path";
 
 const [instance, accountId, projectId, issueType, output, consent, ...extra] = process.argv.slice(2);
 if (
@@ -23,9 +23,11 @@ if (
 	);
 }
 const root = resolve(import.meta.dirname, "..");
-if (!resolve(output).startsWith(join(homedir(), "Gits/"))) throw Error("Evidence must stay under Gits");
+if (!resolve(output).startsWith(join(root, "docs") + sep)) throw Error("Evidence must stay under docs/");
 const hash = createHash("sha256").update(instance).digest("hex").slice(0, 16);
-const socket = join(homedir(), "Gits/.tuic/tuic-at", hash, `tuic-mcp-${hash}.sock`);
+// make agent-test's socket layout (scripts/agent-test.py): <root>/tuic-at/<hash:8>/tuic-mcp-<hash:16>.sock.
+const agentTestRoot = process.env.TUIC_AGENT_TEST_ROOT || join(process.env.TUIC_TEST_HOST_TMPDIR || tmpdir(), "tuic-at");
+const socket = join(agentTestRoot, hash.slice(0, 8), `tuic-mcp-${hash}.sock`);
 const files = readdirSync(join(root, "dist/assets"));
 const asset = (prefix) => {
 	const name = files.find((name) => name.startsWith(prefix) && name.endsWith(".js"));

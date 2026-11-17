@@ -9,14 +9,17 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import signal
 import subprocess
+import tempfile
 import time
 import urllib.request
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
-WRAPPER = Path.home() / 'Gits/personal/brainstorming/tools/browser-stealth/ab-stealth.sh'
+# The browser-stealth wrapper: TUIC_BROWSER_WRAPPER, else ab-stealth.sh on PATH.
+WRAPPER = os.environ.get('TUIC_BROWSER_WRAPPER') or shutil.which('ab-stealth.sh') or 'ab-stealth.sh'
 MEASURE = """JSON.stringify([...document.querySelectorAll('pre[data-raw-code]')].map(pre => {
  const button = pre.querySelector('[data-copy-code]');
  const rect = element => { const r=element.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,height:r.height}; };
@@ -48,8 +51,15 @@ def main():
     session = 'code-copy-' + uuid.uuid4().hex[:12]
     env = dict(os.environ, AB_SESSION=session, AB_AGENT_BROWSER_DIR=str(evidence / 'reap-scope'))
     env.pop('AB_KEEP_FOCUS', None)
-    config = ROOT / '.tmp' / (session + '.config.ts')
-    config.write_text("import {defineConfig} from 'vite';import solid from 'vite-plugin-solid';export default defineConfig({plugins:[solid()],define:{__APP_VERSION__:'\"layout\"',__BUILD_GIT_HASH__:'\"layout\"'},optimizeDeps:{entries:['src/__tests__/browser/sessionChatAppearance.html']},server:{host:'127.0.0.1',port:15970,strictPort:true}});")
+    # Scratch lives under the caller's temp dir, never inside the checkout.
+    scratch = Path(os.environ.get('TUIC_TEST_TMP_ROOT') or tempfile.gettempdir())
+    scratch.mkdir(parents=True, exist_ok=True)
+    config = scratch / (session + '.config.mjs')
+    # The config sits outside the checkout, so bare imports would not resolve: pin the plugin by path.
+    solid_path = subprocess.run(
+        ['node', '--input-type=module', '-e', "import {fileURLToPath} from 'node:url';console.log(fileURLToPath(import.meta.resolve('vite-plugin-solid')))"],
+        cwd=ROOT, text=True, capture_output=True, check=True).stdout.strip()
+    config.write_text("import solid from " + json.dumps(solid_path) + ";export default {plugins:[solid()],define:{__APP_VERSION__:'\"layout\"',__BUILD_GIT_HASH__:'\"layout\"'},optimizeDeps:{entries:['src/__tests__/browser/sessionChatAppearance.html']},server:{host:'127.0.0.1',port:15970,strictPort:true}};")
     daemon = None
     results = []
     with (evidence / 'transcript.txt').open('w') as log, (evidence / 'vite.log').open('w') as vite_log:

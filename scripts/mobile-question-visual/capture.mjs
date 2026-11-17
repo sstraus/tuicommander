@@ -1,6 +1,8 @@
 import {spawn} from 'node:child_process';
 import {mkdir,readFile,writeFile,unlink} from 'node:fs/promises';
-const dir=process.cwd()+'/.tmp/mobile-question-visual/'+(process.env.VISUAL_RUN??'capture')+'/';
+import {testTmpRoot} from '../test-tmp-root.mjs';
+// Browser state and PNGs live under the caller's temp dir, never inside the checkout.
+const dir=testTmpRoot()+'/mobile-question-visual/'+(process.env.VISUAL_RUN??'capture')+'/';
 await mkdir(dir,{recursive:true});
 const failures=[];
 await mkdir(dir+'chrome-profile',{recursive:true});await mkdir(dir+'png',{recursive:true});

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { once } from 'node:events';
+import { testTmpRoot } from '../test-tmp-root.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const defaultTarget = {
@@ -87,7 +88,7 @@ export function connect(t, root) {
 }
 
 export async function setup(t) {
-  const temp = process.env.TUIC_TEST_TMP_ROOT || join(repo, '.tmp', 'story-adapter-conformance');
+  const temp = join(testTmpRoot(), 'story-adapter-conformance');
   mkdirSync(temp, { recursive: true });
   const root = mkdtempSync(join(temp, 'case-'));
   let seed;

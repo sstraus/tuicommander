@@ -1,6 +1,9 @@
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 import { readFileSync, appendFileSync } from "node:fs";
+// The driver (observe-github-volume-1995.py) names the trace file, under its scratch root.
+const tracePath = process.env.TUIC_1995_TRACE;
+if (!tracePath) throw new Error("TUIC_1995_TRACE must name the frontend trace file; run via observe-github-volume-1995.py");
 const roots = [
 	...new Set(
 		readFileSync("src-tauri/src/mcp_http/command_table_paths.txt", "utf8")
@@ -28,7 +31,7 @@ export default defineConfig({
 				server.middlewares.use((req, _res, next) => {
 					if (roots.some((root) => req.url?.startsWith("/" + root)))
 						appendFileSync(
-							".tmp/github-live-1995/frontend-trace.ndjson",
+							tracePath,
 							JSON.stringify({ at: new Date().toISOString(), method: req.method, url: req.url }) + "\n",
 						);
 					next();

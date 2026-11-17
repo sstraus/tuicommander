@@ -30,14 +30,14 @@ class DevExecutableTests(unittest.TestCase):
         self.env = dict(os.environ, TUIC_DEV_BIN_DIR=str(self.installed), COPY_PROBE="kept")
 
     def record_shell(self, shell: str) -> Path:
+        # A script that execs the real host shell, not a relocated copy of the
+        # Apple binary: a relocated platform binary is killed (137) where
+        # re-signing does not help (sandboxes), and the runner only needs a real
+        # executable file to copy and launch. exec keeps one process, so
+        # signals, exit statuses, argv and env are the shell's own.
         recorded = self.root / (Path(shell).name + "-recorded")
-        shutil.copy(shell, recorded)
-        if sys.platform == "darwin":
-            # Relocated Apple platform binaries were killed with 137 on this host.
-            # Match a Rust debug build's ad-hoc signature, without any keychain.
-            subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-",
-                            "--timestamp=none", str(recorded)],
-                           check=True, capture_output=True, text=True)
+        recorded.write_text(f'#!/bin/sh\nexec {shell} "$@"\n')
+        recorded.chmod(0o755)
         return recorded
 
     def command(self, script: str, *args: str) -> list[str]:
@@ -94,7 +94,8 @@ class DevExecutableTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 7, result.stderr)
             self.assertEqual(result.stdout, f"argument with spaces\n--flag\nkept\n{self.target / NAMES[0]}\n")
-            self.assertIn(str(self.installed / NAMES[0]), result.stderr)
+            # The runner reports the resolved directory (a symlinked temp dir spells differently).
+            self.assertIn(str((self.installed / NAMES[0]).resolve()), result.stderr)
             self.assertEqual((self.installed / NAMES[0]).read_bytes(), recorded.read_bytes())
             self.assertEqual(set(path.name for path in self.installed.iterdir()), {*NAMES, ".lock"})
 

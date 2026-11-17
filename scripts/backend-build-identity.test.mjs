@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { backendBuildIdentity } from "./backend-build-identity.mjs";
@@ -33,7 +33,7 @@ before(() => {
 	write("browser-extension/design-mode/main.js", "compiled bridge asset\n");
 	write("src/frontend.ts", "frontend only\n");
 	write("src-tauri/README.md", "not compiled\n");
-	const output = execFileSync("cargo", ["build", "--manifest-path", join(root, "src-tauri/Cargo.toml"), "--message-format=json"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], cwd: join(root, "src-tauri"), env: { ...process.env, TMPDIR: join(homedir(), "Gits/.tmp/") } });
+	const output = execFileSync("cargo", ["build", "--manifest-path", join(root, "src-tauri/Cargo.toml"), "--message-format=json"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], cwd: join(root, "src-tauri"), env: { ...process.env, TMPDIR: `${process.env.TUIC_TEST_HOST_TMPDIR ?? tmpdir()}/` } });
 	const artifacts = output.trim().split("\n").map((line) => JSON.parse(line)).filter((entry) => entry.reason === "compiler-artifact" && entry.executable);
 	const copies = {};
 	for (const artifact of artifacts) {
@@ -143,7 +143,7 @@ test("a dev-dependency-only manifest edit that Cargo does not relink for stays q
 	const before = statSync(built("skew-fixture")).mtimeMs;
 	try {
 		writeFileSync(manifest, `${original}\n[dev-dependencies]\nlocal-input={path="local-input"}\n`);
-		execFileSync("cargo", ["build", "--manifest-path", manifest], { stdio: "pipe", cwd: join(root, "src-tauri"), env: { ...process.env, TMPDIR: join(homedir(), "Gits/.tmp/") } });
+		execFileSync("cargo", ["build", "--manifest-path", manifest], { stdio: "pipe", cwd: join(root, "src-tauri"), env: { ...process.env, TMPDIR: `${process.env.TUIC_TEST_HOST_TMPDIR ?? tmpdir()}/` } });
 		assert.equal(statSync(built("skew-fixture")).mtimeMs, before, "Cargo relinked: the premise of this test is gone");
 		for (const file of ["src-tauri/Cargo.toml", "src-tauri/Cargo.lock"]) touch(join(root, file));
 		assert.equal(check().status, "current");

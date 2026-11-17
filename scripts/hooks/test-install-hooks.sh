@@ -2,8 +2,13 @@
 set -euo pipefail
 
 project_root="$(git rev-parse --show-toplevel)"
-test_tmp="${TUIC_TEST_TMP_ROOT:-$project_root/.tmp/tuic-tests}"
+test_tmp="$(. "$project_root/scripts/test-tmp-lib.sh" && tuic_test_tmp_root "$project_root")"
 mkdir -p "$test_tmp"
+# Fail closed: no git here may find a repository above the test root.
+export GIT_CEILING_DIRECTORIES="$(. "$project_root/scripts/test-tmp-lib.sh" && tuic_git_ceiling_with "$test_tmp")"
+# Explicit git config: never the developer's global/system files.
+. "$project_root/scripts/test-tmp-lib.sh"
+tuic_git_isolate_config "$test_tmp"
 scratch="$(mktemp -d "$test_tmp/install-hooks.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
 
@@ -21,6 +26,9 @@ for checkout in "$repo" "$scratch/other"; do
   chmod +x "$checkout/scripts/hooks/pre-commit"
 done
 
+# The test harness inits repos with an empty template, so there is no
+# .git/hooks until something creates it.
+mkdir -p "$repo/.git/hooks"
 printf '#!/bin/sh\n# external hook\n' > "$repo/.git/hooks/pre-push"
 # An install made by the old installer: a symlink into one checkout.
 ln -s "$repo/scripts/hooks/pre-commit" "$repo/.git/hooks/pre-commit"
