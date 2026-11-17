@@ -1828,7 +1828,7 @@ async fn trim_build_artifact_inner(path: String, repo_paths: Vec<String>) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{dir_outside_home, slashed};
+    use crate::test_support::slashed;
     use std::path::Path;
 
     #[test]
@@ -2013,14 +2013,22 @@ mod tests {
         assert!(validate_within_home("relative/path").is_err());
     }
 
+    /// A fake home and an existing sibling outside it, both under the test
+    /// temp root: no rejection probe ever points at a real system directory.
+    fn home_and_outside() -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().join("home");
+        let outside = root.path().join("outside");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        (root, home, outside)
+    }
+
     #[test]
     fn validate_rejects_outside_home() {
-        let _guard = FS_TEST_LOCK.lock().unwrap();
-        let home = dirs::home_dir().unwrap();
-        let outside = dir_outside_home();
-        if !outside.starts_with(&home) {
-            assert!(validate_within_home(&outside.to_string_lossy()).is_err());
-        }
+        let (_root, home, outside) = home_and_outside();
+        let _guard = set_home_dir_override(home);
+        assert!(validate_within_home(&outside.to_string_lossy()).is_err());
     }
 
     #[test]
@@ -2313,19 +2321,17 @@ mod tests {
 
     #[test]
     fn write_file_rejects_outside_home() {
-        let _guard = FS_TEST_LOCK.lock().unwrap();
-        let home = dirs::home_dir().unwrap();
-        let outside = dir_outside_home();
-        if !outside.starts_with(&home) {
-            let target = outside.join(".tuic-test-write-outside.txt");
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            let result = rt.block_on(plugin_write_file_inner(
-                target.to_string_lossy().to_string(),
-                "content".to_string(),
-            ));
-            assert!(result.is_err());
-            assert!(result.unwrap_err().contains("home directory"));
-        }
+        let (_root, home, outside) = home_and_outside();
+        let _guard = set_home_dir_override(home);
+        let target = outside.join(".tuic-test-write-outside.txt");
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(plugin_write_file_inner(
+            target.to_string_lossy().to_string(),
+            "content".to_string(),
+        ));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("home directory"));
+        assert!(!target.exists());
     }
 
     #[test]

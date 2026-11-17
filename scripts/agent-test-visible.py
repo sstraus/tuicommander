@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 
@@ -149,8 +150,11 @@ def agent_test_window_renders_visible_without_focus(instance, port, evidence, du
     if sys.platform != "darwin" or not (ROOT / ".git").is_file():
         raise RuntimeError("native observer requires an authorized macOS linked worktree")
     evidence = evidence.resolve()
-    if not evidence.is_relative_to(Path.home() / "Gits"):
-        raise ValueError("evidence directory must be under ~/Gits")
+    # The host temp dir: scripts/with-test-tmp.sh records it before pointing
+    # TMPDIR at a long per-run test root.
+    host_tmp = Path(os.environ.get("TUIC_TEST_HOST_TMPDIR") or tempfile.gettempdir()).resolve()
+    if not evidence.is_relative_to(host_tmp):
+        raise ValueError(f"evidence directory must be under the host temp dir {host_tmp}")
     evidence.mkdir(parents=True, exist_ok=False)
     variables = [f"AGENT_TEST_INSTANCE={instance}", f"AGENT_TEST_PORT={port}"]
     launch = json.loads(subprocess.check_output(
@@ -160,8 +164,9 @@ def agent_test_window_renders_visible_without_focus(instance, port, evidence, du
     pid_file = Path(launch["pid_file"])
     if pid_file.exists():
         raise RuntimeError("selected agent-test instance already has a supervisor; not touching it")
-    freeze = Path.home() / "Gits/.tmp/BUILD_FREEZE"
-    if freeze.exists():
+    # An optional shared build freeze file, named by TUIC_BUILD_FREEZE.
+    freeze = Path(os.environ.get("TUIC_BUILD_FREEZE") or os.devnull)
+    if freeze.is_file():
         raise RuntimeError("BUILD_FREEZE is present; do not launch a native build")
     before = frontmost()
     if not before.get("pid") or before["name"] == "tuicommander-agent-test":
@@ -172,8 +177,8 @@ def agent_test_window_renders_visible_without_focus(instance, port, evidence, du
     drove_terminal = False
     cleanup = {}
     # mbx creates a Unix socket under TMPDIR: the worktree test wrapper's long
-    # scratch path exceeds macOS SUN_LEN. Scope this short Gits path to the build.
-    build_environment = {**os.environ, "TMPDIR": str(Path.home() / "Gits/.tmp") + "/"}
+    # scratch path exceeds macOS SUN_LEN. Scope the short host temp dir to the build.
+    build_environment = {**os.environ, "TMPDIR": str(host_tmp) + "/"}
     with (evidence / "desktop.log").open("w") as log:
         child = subprocess.Popen(["make", "agent-test", *variables], cwd=ROOT,
                                  env=build_environment, stdout=log, stderr=subprocess.STDOUT)

@@ -9,7 +9,6 @@ import { join, resolve, sep } from "node:path";
 const [socket, instance, consent, ...extra] = process.argv.slice(2);
 if (
 	!socket ||
-	!resolve(socket).startsWith(resolve(homedir(), "Gits/.tuic/tuic-at") + sep) ||
 	!/^agent-test-[a-z0-9-]+$/.test(instance ?? "") ||
 	consent !== "--isolated-desktop" ||
 	extra.length
@@ -19,7 +18,8 @@ if (
 	);
 }
 const instanceHash = createHash("sha256").update(instance).digest("hex").slice(0, 16);
-if (resolve(socket) !== join(homedir(), "Gits/.tuic/tuic-at", instanceHash, `tuic-mcp-${instanceHash}.sock`))
+// make agent-test's socket layout (scripts/agent-test.py): <root>/tuic-at/<hash:8>/tuic-mcp-<hash:16>.sock.
+if (!resolve(socket).endsWith(`${sep}tuic-at${sep}${instanceHash.slice(0, 8)}${sep}tuic-mcp-${instanceHash}.sock`))
 	throw Error("Instance/socket mismatch");
 const root = resolve(import.meta.dirname, "..");
 const assets = readdirSync(join(root, "dist/assets"));

@@ -1,7 +1,8 @@
 import os, json, socket, subprocess, time, urllib.request, urllib.error, pathlib, uuid, http.client, hashlib, sys
 root=pathlib.Path(__file__).resolve().parents[4]
 home=pathlib.Path(sys.argv[1]).resolve()
-assert pathlib.Path.home() / 'Gits' in home.parents
+# Scratch HOME under the host temp dir, never inside the real HOME.
+assert pathlib.Path(os.environ.get('TUIC_TEST_HOST_TMPDIR') or tempfile.gettempdir()).resolve() in home.parents
 home.mkdir(exist_ok=False)
 out=root/'src-tauri/src/mcp_http/fixtures/managed-reconnect-2008.json'
 with socket.socket() as s: s.bind(('127.0.0.1',0)); port=s.getsockname()[1]

@@ -2,8 +2,8 @@
 # Boundary test: fake only gh's network boundary, run the production publisher.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-mkdir -p "$root/.tmp/tuic-tests"
-work=$(mktemp -d "$root/.tmp/tuic-tests/test-beta-feed.XXXXXX")
+# Scratch under the caller's temp dir (mktemp honours TMPDIR), never inside the checkout.
+work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 export BETA_TEST_WORK="$work"
 export BETA_TEST_ROOT="$root"

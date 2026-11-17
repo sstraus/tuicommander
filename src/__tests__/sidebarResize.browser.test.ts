@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { expect, it } from "vitest";
@@ -16,7 +17,10 @@ const url = process.env.TUIC_SIDEBAR_URL;
 it.skipIf(!wrapper || !url)(
 	"keeps row starts visible when overflowing actions are focused before and after widening",
 	async () => {
-		const evidence = resolve(process.env.TUIC_SIDEBAR_EVIDENCE ?? ".tmp/sidebar-resize-browser");
+		const evidence = resolve(
+			process.env.TUIC_SIDEBAR_EVIDENCE ??
+				resolve(process.env.TUIC_TEST_TMP_ROOT ?? resolve(tmpdir(), "tuic-tests"), "sidebar-resize-browser"),
+		);
 		await mkdir(evidence, { recursive: true });
 		const run = async (...args: string[]) => {
 			const { stdout } = await exec(wrapper!, args, {

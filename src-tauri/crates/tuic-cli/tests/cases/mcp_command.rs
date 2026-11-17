@@ -9,12 +9,8 @@ use std::time::{Duration, Instant};
 static NEXT_SOCKET: AtomicU64 = AtomicU64::new(0);
 
 fn socket() -> (std::path::PathBuf, UnixListener) {
-    let root =
-        std::path::PathBuf::from(std::env::var("HOME").unwrap()).join("Gits/.tmp/tuic-tests");
-    std::fs::create_dir_all(&root).unwrap();
-    let path = root.join(format!(
-        "tuic-mcp-{}-{}.sock",
-        std::process::id(),
+    let path = tuic_test_support::short_socket_path(&format!(
+        "m{}.sock",
         NEXT_SOCKET.fetch_add(1, Ordering::Relaxed)
     ));
     let listener = UnixListener::bind(&path).unwrap();
@@ -625,8 +621,8 @@ fn mcp_reads_stdin_json_with_apostrophe() {
 
 #[test]
 fn mcp_rejects_bad_input_before_connecting() {
-    let nonexistent = std::path::PathBuf::from(std::env::var("HOME").unwrap())
-        .join("Gits/.tmp/tuic-tests/no-mcp.sock");
+    let nonexistent = tuic_test_support::short_socket_path("none.sock");
+    assert!(!nonexistent.exists());
     for args in [
         vec!["mcp", "agent", "{"],
         vec!["mcp", "agent", "{}", "extra"],

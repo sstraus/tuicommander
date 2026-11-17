@@ -3,25 +3,28 @@
 // Starts only fixture Vite (no desktop/backend), runs real-browser regressions, traps shutdown.
 import { spawn } from "node:child_process";
 import { accessSync, constants, mkdirSync, mkdtempSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { browserWrapper } from "./browser-wrapper.mjs";
+import { testTmpRoot } from "./test-tmp-root.mjs";
 import { createServer } from "vite";
 import solid from "vite-plugin-solid";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const wrapper = process.env.TUIC_CHAT_BROWSER_WRAPPER ?? join(homedir(), "Gits/personal/brainstorming/tools/browser-stealth/ab-stealth.sh");
+const wrapper = process.env.TUIC_CHAT_BROWSER_WRAPPER ?? browserWrapper();
 if (process.platform !== "darwin") throw new Error("check-chat-readability requires macOS and the approved mac-chrome stealth wrapper; run this local gate at landing");
 accessSync(wrapper, constants.X_OK);
-mkdirSync(join(root, ".tmp"), { recursive: true });
+// Scratch and the Vite cache live under the caller's temp dir, never inside the checkout.
+const scratch = testTmpRoot();
+mkdirSync(scratch, { recursive: true });
 const evidence = process.env.TUIC_CHAT_EVIDENCE_DIR
 	? resolve(process.env.TUIC_CHAT_EVIDENCE_DIR)
-	: mkdtempSync(join(root, ".tmp/chat-readability-"));
+	: mkdtempSync(join(scratch, "chat-readability-"));
 const server = await createServer({
 	root,
 	configFile: false,
 	plugins: [solid()],
-	cacheDir: join(root, ".tmp/chat-readability-vite-cache"),
+	cacheDir: join(scratch, "chat-readability-vite-cache"),
 	logLevel: "error",
 	server: { host: "127.0.0.1", port: 0, strictPort: true },
 	define: { __APP_VERSION__: '"test"' },

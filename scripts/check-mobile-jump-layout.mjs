@@ -2,12 +2,14 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createServer } from "vite";
 import solid from "vite-plugin-solid";
+import { testTmpRoot } from "./test-tmp-root.mjs";
 
-const evidence = process.env.MOBILE_JUMP_EVIDENCE ?? ".tmp/mobile-jump-layout";
+// Default evidence lives under the caller's temp dir, never inside the checkout.
+const evidence = resolve(process.env.MOBILE_JUMP_EVIDENCE ?? join(testTmpRoot(), "mobile-jump-layout"));
 mkdirSync(evidence, { recursive: true });
 const browsers = join(process.env.HOME, ".agent-browser/browsers");
 const chrome = process.env.CHROME_BIN ?? join(browsers, readdirSync(browsers).filter(n => n.startsWith("chrome-")).sort().at(-1), "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing");
@@ -16,7 +18,7 @@ let browser;
 let ws;
 try {
  await server.listen();
- browser = spawn(chrome, ["--headless=new", "--no-first-run", "--no-default-browser-check", `--user-data-dir=${join(process.cwd(), evidence, "chrome")}`, "--remote-debugging-port=19928", "about:blank"], { stdio: "ignore" });
+ browser = spawn(chrome, ["--headless=new", "--no-first-run", "--no-default-browser-check", `--user-data-dir=${join(evidence, "chrome")}`, "--remote-debugging-port=19928", "about:blank"], { stdio: "ignore" });
  let tabs;
  for (let i = 0; i < 100; i++) {
   try { tabs = await (await fetch("http://127.0.0.1:19928/json")).json(); if (tabs.some(t => t.type === "page")) break; } catch {}

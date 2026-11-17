@@ -21,9 +21,6 @@ pub fn recognized_temp_roots() -> Vec<PathBuf> {
             .map(PathBuf::from),
         );
     }
-    if let Some(home) = dirs::home_dir() {
-        roots.push(home.join("Gits").join(".tmp"));
-    }
     roots
 }
 
@@ -76,6 +73,25 @@ pub fn is_under_temp_roots(path: &Path, roots: &[PathBuf]) -> bool {
     })
 }
 
+/// Whether `path` is a *persistent* test fixture that happens to sit under a temp root.
+///
+/// Tests of orphan cleanup and registration repair need a checkout the classifier
+/// treats as persistent, but the only writable scratch an agent sandbox offers is under
+/// `$TMPDIR`, which is a recognised temp root. The fixture root
+/// (`tuic_test_support::non_temporary_fixture_root`, below the per-run test root) is
+/// therefore exempted here. Compiled in only with the `test-support` feature, which
+/// the app and `tuic-git` enable for their test builds; in every other build this is a
+/// constant `false`, so production classification is exactly [`recognized_temp_roots`].
+#[cfg(feature = "test-support")]
+pub fn is_persistent_test_fixture(path: &Path) -> bool {
+    is_under_temp_roots(path, &[tuic_test_support::non_temporary_fixture_root()])
+}
+
+#[cfg(not(feature = "test-support"))]
+pub fn is_persistent_test_fixture(_path: &Path) -> bool {
+    false
+}
+
 pub fn is_temporary_path(path: &Path) -> bool {
-    is_under_temp_roots(path, &recognized_temp_roots())
+    is_under_temp_roots(path, &recognized_temp_roots()) && !is_persistent_test_fixture(path)
 }

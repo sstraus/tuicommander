@@ -1,73 +1,67 @@
 #!/usr/bin/env bash
-# Catches: the wrapper's TMPDIR in a deep checkout leaves no room for the Unix
-# socket mbx binds inside it (`<TMPDIR>mbx-session-XXXXXX/cache-agent.sock`),
-# so mbx fails with "path must be shorter than SUN_LEN" and no Rust test runs
-# (#2841-774f). Either the scratch root fits the budget, or the wrapper refuses
-# up front and names the limit.
+# Catches: the wrapper's TMPDIR leaves no room for the Unix socket mbx binds inside
+# it (`<TMPDIR>/mbx-session-XXXXXX/cache-agent.sock`), so mbx fails with "path must be
+# shorter than SUN_LEN" and no Rust test runs (#2841-774f). Either the per-run root
+# fits the budget, or (when mbx is installed) the wrapper refuses up front and names
+# the limit; where no mbx is installed a long temp dir is accepted.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-test_tmp_base="${TMPDIR:-$root/.tmp/tuic-tests}"
-mkdir -p "$test_tmp_base"
-fixture="$(mktemp -d "${test_tmp_base%/}/tuic-socket-test.XXXXXX")"
-trap 'rm -rf "$fixture"' EXIT
-deep="$fixture/a-checkout-path-long-enough-to-push-the-scratch-root-past-the-socket-limit/repo"
-git init --quiet "$deep"
-mkdir -p "$deep/scripts"
-cp "$root/scripts/with-test-tmp.sh" "$deep/scripts/with-test-tmp.sh"
-
-# What mbx appends to TMPDIR for its session socket, and the macOS sun_path
-# capacity without the terminating NUL.
+scratch="$(mktemp -d "${TMPDIR:?}/tuic-socket-test.XXXXXX")"
+trap 'rm -rf "$scratch"' EXIT
 mbx_suffix="mbx-session-XXXXXX/cache-agent.sock"
 limit=103
+fail() { echo "socket-path: $*" >&2; exit 1; }
 
-set +e
-out="$(env -u TMPDIR -u TMP -u TEMP "$deep/scripts/with-test-tmp.sh" \
-  sh -c 'printf "%s\n%s\n" "$TMPDIR" "$TUIC_TEST_TMP_ROOT"' 2>"$fixture/stderr")"
-status=$?
-set -e
-if [ "$status" -eq 0 ]; then
-  tmpdir="$(printf '%s\n' "$out" | sed -n 1p)"
-  scratch_root="$(printf '%s\n' "$out" | sed -n 2p)"
-  socket="$tmpdir$mbx_suffix"
-  if [ "${#socket}" -gt "$limit" ]; then
-    echo "mbx socket path is ${#socket} bytes, over $limit: $socket" >&2
-    exit 1
-  fi
-  case "$tmpdir" in
-    "$scratch_root"/*) ;;
-    *) echo "TMPDIR $tmpdir is outside the test temp root $scratch_root" >&2; exit 1 ;;
-  esac
+# A stand-in mbx on PATH, and a PATH with no mbx at all.
+stub="$scratch/stub-bin"
+mkdir -p "$stub"
+printf '#!/bin/sh\nexit 0\n' > "$stub/mbx"
+chmod +x "$stub/mbx"
+without_mbx=""
+IFS=: read -r -a dirs <<<"$PATH"
+for dir in "${dirs[@]}"; do
+  [[ -x "$dir/mbx" ]] && continue
+  without_mbx="${without_mbx:+$without_mbx:}$dir"
+done
+
+run_wrapper() { # <path> <host tmpdir> -- prints TMPDIR; stderr to $scratch/stderr
+  env -u TUIC_TEST_TMP_ROOT -u TUIC_TEST_TMP_BASE PATH="$1" TUIC_TEST_HOST_TMPDIR="$2" \
+    "$root/scripts/with-test-tmp.sh" sh -c 'printf "%s\n" "$TMPDIR"' 2>"$scratch/stderr"
+}
+
+# 1. The current temp dir, mbx installed: the socket fits, or the wrapper says why not.
+if out="$(run_wrapper "$stub:$without_mbx" "$(cd "${TMPDIR%/}" && pwd -P)")"; then
+  socket="$out$mbx_suffix"
+  (( ${#socket} <= limit )) || fail "mbx socket path is ${#socket} bytes, over $limit: $socket"
 else
-  grep -q "socket path limit" "$fixture/stderr" || {
-    echo "the wrapper failed without naming the socket path limit:" >&2
-    cat "$fixture/stderr" >&2
-    exit 1
-  }
+  grep -q "socket path limit" "$scratch/stderr" || { cat "$scratch/stderr" >&2; fail "refused without naming the socket path limit"; }
 fi
 
-# Catches: on a GitHub runner the checkout root is over the budget and no
-# ~/Gits exists, so the wrapper refused every CI test job (#3061-4580). With
-# RUNNER_TEMP set it must run inside it. The runner's own temp dir is short;
-# a local run uses a short directory under ~/Gits/.tmp instead.
-short_parent="${RUNNER_TEMP:-$HOME/Gits/.tmp}"
-mkdir -p "$short_parent"
-runner_temp="$(mktemp -d "${short_parent%/}/rXXXX")"
-trap 'rm -rf "$fixture" "$runner_temp"' EXIT
-runner_home="$fixture/runner-home"
-mkdir -p "$runner_home"
-if ! out="$(env -u TMPDIR -u TMP -u TEMP HOME="$runner_home" RUNNER_TEMP="$runner_temp" \
-  "$deep/scripts/with-test-tmp.sh" sh -c 'printf "%s\n" "$TMPDIR"' 2>"$fixture/stderr")"; then
-  echo "the wrapper refused a long runner checkout although RUNNER_TEMP was set:" >&2
-  cat "$fixture/stderr" >&2
-  exit 1
+# 2. A long temp dir and mbx installed: refused up front, naming the limit.
+long="$scratch/$(printf 'a%.0s' $(seq 1 70))"
+mkdir -p "$long"
+if run_wrapper "$stub:$without_mbx" "$long" >/dev/null; then
+  fail "the wrapper accepted a ${#long}-byte temp dir with mbx installed"
 fi
+grep -q "socket path limit" "$scratch/stderr" || { cat "$scratch/stderr" >&2; fail "the refusal does not name the socket path limit"; }
+
+# 3. The same long temp dir with no mbx anywhere: nothing binds that socket, so it runs.
+out="$(run_wrapper "$without_mbx" "$long")" || { cat "$scratch/stderr" >&2; fail "the wrapper refused a long temp dir although mbx is not installed"; }
 case "$out" in
-  "$runner_temp"/*) ;;
-  *) echo "runner TMPDIR $out is outside RUNNER_TEMP $runner_temp" >&2; exit 1 ;;
+  "$long"/*|"$(cd "$long" && pwd -P)"/*) ;;
+  *) fail "TMPDIR $out is not under the host temp dir $long" ;;
 esac
-socket="$out$mbx_suffix"
-if [ "${#socket}" -gt "$limit" ]; then
-  echo "runner mbx socket path is ${#socket} bytes, over $limit: $socket" >&2
-  exit 1
+
+# 4. A short temp dir: the run dir sits directly in it (no tuic-tests level) when the
+#    usual <host>/tuic-tests/tuic-run.XXXXXX would not fit, and the socket fits.
+short="$scratch/s"
+mkdir -p "$short"
+physical_short="$(cd "$short" && pwd -P)"
+if (( ${#physical_short} + 1 + 15 <= 67 )); then
+  out="$(run_wrapper "$stub:$without_mbx" "$physical_short")" || { cat "$scratch/stderr" >&2; fail "refused a short temp dir"; }
+  socket="$out$mbx_suffix"
+  (( ${#socket} <= limit )) || fail "short temp dir: mbx socket path is ${#socket} bytes: $socket"
+else
+  echo "socket-path: note: ${#physical_short} bytes is already over the budget here; the short-dir case is UNCHECKED" >&2
 fi

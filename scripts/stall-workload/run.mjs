@@ -2,7 +2,8 @@
 /** One bounded run; owns and cleans up only the processes and PTYs it creates. */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
@@ -10,13 +11,17 @@ import solid from "vite-plugin-solid";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 process.chdir(root);
-const evidence = resolve(process.argv[2] ?? `${process.env.HOME}/Gits/.tmp/stall-workload-${Date.now()}`);
+const evidence = resolve(process.argv[2] ?? resolve(tmpdir(), `stall-workload-${Date.now()}`));
 if (existsSync(evidence)) throw new Error(`Evidence directory already exists: ${evidence}`);
 mkdirSync(evidence, { recursive: true });
 const home = resolve(evidence, "home");
 mkdirSync(home);
 mkdirSync(resolve(evidence, "tmp"));
-const snapshots = resolve(root, ".tmp", `stall-revisions-${Date.now()}`);
+// Revision exports live beside the evidence (outside the checkout); bare imports in them
+// resolve through a node_modules link, and Vite is allowed to serve the directory below.
+const snapshots = resolve(evidence, "revisions");
+mkdirSync(snapshots, { recursive: true });
+symlinkSync(resolve(root, "node_modules"), resolve(snapshots, "node_modules"), "dir");
 const git = (...args) => {
 	const result = spawnSync("git", args, { encoding: "utf8" });
 	if (result.status !== 0) throw new Error(result.stderr);
@@ -248,7 +253,7 @@ try {
 			host: "127.0.0.1",
 			port: vitePort,
 			strictPort: true,
-			fs: { allow: [root] },
+			fs: { allow: [root, snapshots] },
 			proxy: {
 				"/sessions": {
 					target: base,

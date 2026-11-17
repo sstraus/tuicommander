@@ -32,8 +32,9 @@ class UnixHTTP(http.client.HTTPConnection):
 
 def main():
     binary = Path(sys.argv[1]).resolve(strict=True)
-    base = Path.home() / "Gits" / ".tmp"
-    base.mkdir(parents=True, exist_ok=True)
+    # The short host temp dir (scripts/with-test-tmp.sh records it before pointing
+    # TMPDIR at a long per-run root): the instance socket must fit macOS SUN_LEN.
+    base = Path(os.environ.get("TUIC_TEST_HOST_TMPDIR") or tempfile.gettempdir())
     with tempfile.TemporaryDirectory(prefix="gh2345-", dir=base) as temporary:
         root = Path(temporary)
         home = root / "home"

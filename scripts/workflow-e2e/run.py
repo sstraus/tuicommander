@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import tempfile
 import traceback
 import time
 from client import Client, command
@@ -36,7 +37,12 @@ def admission(args):
     if Path(manifest['socket']) != expected:
         raise ValueError('socket does not match the isolated instance')
     binary = Path(manifest['binary']).resolve(strict=True)
-    if not binary.is_relative_to(ROOT / '.tmp/agent-test' / instance):
+    # Same formula as scripts/agent-test.py build_root(), duplicated minimally (that file's name
+    # is not importable): <base>/<sha256(checkout)[:8]>/<instance>.
+    build_base = Path(os.environ.get('TUIC_AGENT_TEST_BUILD_ROOT') or
+        Path(os.environ.get('TUIC_TEST_HOST_TMPDIR') or tempfile.gettempdir()) / 'tuic-agent-test')
+    build_dir = build_base / hashlib.sha256(str(ROOT).encode()).hexdigest()[:8] / instance
+    if not binary.is_relative_to(build_dir.resolve()):
         raise ValueError('binary is outside this worktree instance')
     changed=command(['git','diff',candidate,'--name-only'],ROOT).splitlines()
     allowed=lambda p: (p.startswith(('docs/','scripts/workflow-e2e/')) or p in
@@ -46,8 +52,9 @@ def admission(args):
     if manifest.get('binarySha256') != hashlib.sha256(binary.read_bytes()).hexdigest():
         raise ValueError('binary differs from the approved build digest')
     output = Path(args.evidence).resolve()
-    if not output.is_relative_to(Path.home() / 'Gits'):
-        raise ValueError('evidence must stay under Gits')
+    host_tmp = Path(os.environ.get('TUIC_TEST_HOST_TMPDIR') or tempfile.gettempdir()).resolve()
+    if not output.is_relative_to(host_tmp):
+        raise ValueError(f'evidence must stay under the host temp dir {host_tmp}')
     if output.exists():
         raise ValueError('evidence directory must be fresh')
     return manifest, expected, binary, output, candidate

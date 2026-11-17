@@ -22,7 +22,7 @@ if (
 	throw new Error("Unsupported recording");
 const endpoint = `http://127.0.0.1:${Number(port)}`;
 const hash = createHash("sha256").update(instance).digest("hex").slice(0, 16);
-if (socketPath && !resolve(socketPath).endsWith(`/tuic-at/${hash}/tuic-mcp-${hash}.sock`))
+if (socketPath && !resolve(socketPath).endsWith(`/tuic-at/${hash.slice(0, 8)}/tuic-mcp-${hash}.sock`))
 	throw new Error("Socket must belong to the named make agent-test instance");
 const call = (path, options = {}) => {
 	if (!socketPath)
@@ -61,7 +61,7 @@ const get = async (path) => {
 // Fail closed: verify the named harness socket AND the actual listener executable.
 // A non-production port alone is not evidence that this is the isolated binary.
 const health = await get("/health");
-if (!health.ok || !String(health.socket_path).endsWith(`/tuic-at/${hash}/tuic-mcp-${hash}.sock`))
+if (!health.ok || !String(health.socket_path).endsWith(`/tuic-at/${hash.slice(0, 8)}/tuic-mcp-${hash}.sock`))
 	throw new Error("Target is not the named make agent-test instance");
 const listeners = spawnSync("/usr/sbin/lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-Fp"], { encoding: "utf8" });
 const pids = [
@@ -76,7 +76,7 @@ if (listeners.status !== 0 || pids.length !== 1) throw new Error("Cannot identif
 const processInfo = spawnSync("ps", ["-p", pids[0], "-o", "command="], { encoding: "utf8" });
 if (
 	processInfo.status !== 0 ||
-	!processInfo.stdout.trim().endsWith(`/.tmp/agent-test/${instance}/tuicommander-agent-test`)
+	!new RegExp(`/tuic-agent-test/[0-9a-f]{8}/${instance}/tuicommander-agent-test$`).test(processInfo.stdout.trim())
 )
 	throw new Error("Listener executable is not tuicommander-agent-test");
 let accept;

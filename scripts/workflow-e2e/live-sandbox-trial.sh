@@ -6,7 +6,7 @@
 # read from the orchestrator .env and never printed (it reaches curl on stdin).
 set -euo pipefail
 REPO="sstraus/tuic-e2e-sandbox"
-OUT="${TUIC_TRIAL_OUT:-$HOME/Gits/.tmp/2530}"
+OUT="${TUIC_TRIAL_OUT:-${TUIC_TEST_HOST_TMPDIR:-${TMPDIR:?set TMPDIR or TUIC_TRIAL_OUT}}/tuic-trial-2530}"
 mkdir -p "$OUT"
 set -a; . "$HOME/Gits/personal/orchestrator/.env"; set +a
 : "${GITHUB_E2E_TOKEN:?GITHUB_E2E_TOKEN missing in the orchestrator .env}"

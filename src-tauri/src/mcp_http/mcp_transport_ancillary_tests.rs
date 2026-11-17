@@ -1701,7 +1701,8 @@ fn ui_tab_falls_back_to_pty_cwd_when_no_peer_agent() {
         })
         .expect("openpty");
     let mut cmd = portable_pty::CommandBuilder::new("true");
-    cmd.cwd("/tmp");
+    // Any existing directory: the recorded `cwd` below is what is read.
+    cmd.cwd(crate::test_support::test_temp_root());
     let child = pair.slave.spawn_command(cmd).expect("spawn");
     let writer = pair.master.take_writer().expect("writer");
     state.session_maps.sessions.insert(

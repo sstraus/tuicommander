@@ -15,6 +15,7 @@ import shlex
 import struct
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import unicodedata
@@ -73,6 +74,19 @@ UNICODE_ROWS = (
     "UNICODE-OVERWRITE:Z",
     "UNICODE-WIDE:中文 日本語 € ─│",
 )
+
+
+
+def integrity_dir() -> Path:
+    """Returns the scratch dir for the oracle install, venv and failure artifacts.
+
+    Never inside the checkout: TUIC_TERMINAL_INTEGRITY_DIR, else
+    <temp dir>/tuic-tests/terminal-integrity.
+    """
+    configured = os.environ.get("TUIC_TERMINAL_INTEGRITY_DIR")
+    if configured:
+        return Path(configured)
+    return Path(tempfile.gettempdir()) / "tuic-tests" / "terminal-integrity"
 
 
 def unicode_operations() -> bytes:
@@ -610,7 +624,7 @@ def main():
     parser.add_argument("--seed", type=int, default=819)
     parser.add_argument("--random-cases", type=int, default=2000)
     parser.add_argument("--timeout", type=float, default=120)
-    parser.add_argument("--artifacts", default=".tmp/terminal-integrity/failures")
+    parser.add_argument("--artifacts", default=str(integrity_dir() / "failures"))
     args = parser.parse_args()
     if args.rows < 8 or args.cols < 60 or args.random_cases < 0:
         parser.error("rows >= 8, cols >= 60 and random-cases >= 0 required")

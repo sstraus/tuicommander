@@ -36,6 +36,8 @@ tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tuic-test-support = { path = "../tuic-test-support" }
+# Enables tuic_core::temp_paths::is_persistent_test_fixture for this crate's own tests (see non_temporary_fixture_root).
+tuic-core = { path = "../tuic-core", features = ["test-support"] }
 
 [lints]
 workspace = true

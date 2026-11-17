@@ -31,9 +31,7 @@ class NightlyDaemonPublication(unittest.TestCase):
     # Catches: cleanup removes the release and successful daemon builds cannot
     # publish anything when every desktop build fails before tauri-action creates it.
     def test_successful_daemon_publishes_when_all_desktop_builds_fail(self):
-        scratch = ROOT / ".tmp" / "tuic-tests"
-        scratch.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=scratch) as directory:
+        with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)
             store = work / "release"
             store.mkdir()

@@ -10,9 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class PreflightAdmission(unittest.TestCase):
     def rejected(self, manifest, reason):
-        scratch = ROOT/'.tmp/workflow-e2e-preflight'
-        scratch.mkdir(parents=True,exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=scratch) as directory:
+        with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'manifest.json'
             path.write_text(json.dumps(manifest))
             evidence=Path(directory)/'evidence'

@@ -1,16 +1,21 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer, loadConfigFromFile } from "vite";
+import { testTmpRoot } from "../../../scripts/test-tmp-root.mjs";
 
 const repo = fileURLToPath(new URL("../../../", import.meta.url));
-const scratchRoot = join(repo, ".tmp");
-mkdirSync(scratchRoot, { recursive: true });
+// `.tmp` is ignored by a pure path predicate (`ignoreNonFrontendFile`), so those paths are asserted
+// on the predicate and nothing is written under `.tmp`, `src/.tmp` or `public/.tmp` in the checkout.
+// The `watch` case still needs real files inside the repo root (a positive control under `src/`
+// and a tooling control under `tools/`) because the watcher is rooted at the checkout.
+const cwdScratchRoot = testTmpRoot();
+mkdirSync(cwdScratchRoot, { recursive: true });
 
 async function otherCwd() {
 	const originalCwd = process.cwd();
-	const alternate = mkdtempSync(join(scratchRoot, "vite-watch-cwd-"));
+	const alternate = mkdtempSync(join(cwdScratchRoot, "vite-watch-cwd-"));
 	try {
 		mkdirSync(join(alternate, "src-tauri"));
 		writeFileSync(join(alternate, "src-tauri", "tauri.conf.json"), '{"version":"wrong-checkout"}');
@@ -23,6 +28,8 @@ async function otherCwd() {
 		assert.equal(ignored(join(repo, "src", "App.tsx")), false);
 		assert.equal(ignored(join(repo, ".tmp", "report.html")), true);
 		assert.equal(ignored(join(repo, "src", ".tmp", "report.html")), true);
+		assert.equal(ignored(join(repo, "public", ".tmp", "report.html")), true);
+		assert.equal(ignored(join(repo, ".tmp", "vite-watch-x", "index.html")), true);
 		const actualVersion = JSON.parse(readFileSync(join(repo, "src-tauri", "tauri.conf.json"), "utf-8")).version;
 		assert.equal(config.define.__APP_VERSION__, JSON.stringify(actualVersion));
 	} finally {
@@ -33,21 +40,22 @@ async function otherCwd() {
 
 async function watch() {
 	let server;
-	const scratch = mkdtempSync(join(scratchRoot, "vite-watch-"));
-	const sourceTmp = join(repo, "src", ".tmp");
-	const publicTmp = join(repo, "public", ".tmp");
-	const sourceControl = join(sourceTmp, "vite-watch-control.html");
-	const publicControl = join(publicTmp, "vite-watch-control.html");
 	const watched = join(repo, "src", "vite-watch-control.html");
 	const tooling = join(repo, "tools", "vite-watch-control.html");
 	try {
-		mkdirSync(sourceTmp);
-		mkdirSync(publicTmp);
 		server = await createServer({
 			configFile: join(repo, "vite.config.ts"),
 			server: { port: 0, strictPort: false, ws: { port: 0 } },
 			optimizeDeps: { noDiscovery: true },
 		});
+		// `.tmp` at every depth is ignored (pure predicate, no files written inside the checkout).
+		const ignored = server.config.server.watch.ignored;
+		assert.equal(typeof ignored, "function");
+		for (const path of [
+			join(repo, ".tmp", "vite-watch-x", "index.html"),
+			join(repo, "src", ".tmp", "vite-watch-control.html"),
+			join(repo, "public", ".tmp", "vite-watch-control.html"),
+		]) assert.equal(ignored(path), true, path);
 		const ready = new Promise((resolve) => server.watcher.once("ready", resolve));
 		await server.listen();
 		await ready;
@@ -62,23 +70,13 @@ async function watch() {
 		assert.ok(events.includes(watched));
 		assert.ok(messages.some((message) => JSON.stringify(message).includes('"type":"full-reload"')));
 		messages.length = 0;
-		const generated = join(scratch, "index.html");
-		writeFileSync(generated, "<html></html>");
-		await new Promise((resolve) => setTimeout(resolve, 700));
-		rmSync(generated);
-		await new Promise((resolve) => setTimeout(resolve, 700));
 		writeFileSync(tooling, "<html></html>");
-		writeFileSync(sourceControl, "<html></html>");
-		writeFileSync(publicControl, "<html></html>");
 		await new Promise((resolve) => setTimeout(resolve, 700));
-		for (const path of [generated, tooling, sourceControl, publicControl]) assert.ok(!events.includes(path), path);
+		for (const path of [tooling]) assert.ok(!events.includes(path), path);
 		assert.ok(!messages.some((message) => JSON.stringify(message).includes('"type":"full-reload"')));
 	} finally {
 		await server?.close();
-		for (const path of [watched, tooling, sourceControl, publicControl]) rmSync(path, { force: true });
-		rmdirSync(sourceTmp);
-		rmdirSync(publicTmp);
-		rmSync(scratch, { recursive: true, force: true });
+		for (const path of [watched, tooling]) rmSync(path, { force: true });
 	}
 }
 

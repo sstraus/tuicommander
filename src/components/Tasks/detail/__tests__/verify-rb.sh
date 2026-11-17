@@ -4,8 +4,10 @@ set -euo pipefail
 pnpm install --offline --frozen-lockfile
 pnpm exec tsc --noEmit
 scripts/with-test-tmp.sh pnpm vitest run src/components/Tasks/detail/__tests__ src/__tests__/components/ContentRenderer.test.tsx
-export PLAYWRIGHT_BROWSERS_PATH=/home/rb/Gits/.tmp/pw/browsers
-/home/rb/Gits/.tmp/pw/node_modules/.bin/playwright-core install webkit
+: "${PLAYWRIGHT_DIR:?Set PLAYWRIGHT_DIR to a directory with node_modules/playwright-core installed; there is no default location}"
+export PLAYWRIGHT_DIR
+export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-${PLAYWRIGHT_DIR}/browsers}"
+"${PLAYWRIGHT_DIR}/node_modules/.bin/playwright-core" install webkit
 mkdir -p reports/visual
 ./node_modules/.bin/vite --host 127.0.0.1 --port 4179 --strictPort > reports/visual/tasks-detail-vite.log 2>&1 &
 vite_pid=$!

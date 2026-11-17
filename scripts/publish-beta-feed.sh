@@ -7,8 +7,8 @@ repo=${GITHUB_REPOSITORY:-sstraus/tuicommander}
 core=${version%%+*}
 [[ "$core" == *-beta.* ]] && [[ "$core" != *-nightly* ]] || { echo "Not a beta: $version; feed unchanged"; exit 0; }
 root="$(cd "$(dirname "$0")/.." && pwd)"
-mkdir -p "$root/.tmp/tuic-tests"
-work=$(mktemp -d "$root/.tmp/tuic-tests/beta-feed.XXXXXX")
+# Scratch under the caller's temp dir (mktemp honours TMPDIR), never inside the checkout.
+work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 # Download first: a failed platform build or missing manifest must not damage the feed.
 gh release download "v$version" --repo "$repo" --pattern latest.json --dir "$work"
