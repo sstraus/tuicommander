@@ -128,8 +128,11 @@ pub(crate) async fn observe(
             .retire_github_source(&repository, kind, number)?;
     }
     for project in &projects {
+        let installed = host.catalog(project)?;
+        // The registry is read after catalog(), which loads the installed handler
+        // families; read first, a fresh host refuses every handler as unavailable.
         let registry = host.registry();
-        let catalog = store.build_project_catalog(project, &host.catalog(project)?, &registry)?;
+        let catalog = store.build_project_catalog(project, &installed, &registry)?;
         state.workflow_runtime.admit_github_batch(
             &store,
             &catalog,

@@ -72,6 +72,9 @@ pub(crate) struct SubscriptionKey {
     /// Named CLI profile when it changes the live configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
+    /// Stable named ego account, separate from its vendor and display name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection: Option<String>,
 }
 
 impl SubscriptionKey {
@@ -85,6 +88,7 @@ impl SubscriptionKey {
             provider: provider.into(),
             credential: credential.into(),
             profile: None,
+            connection: None,
         }
     }
 }
@@ -94,6 +98,9 @@ impl fmt::Display for SubscriptionKey {
         write!(f, "{}:{}:{}", self.owner, self.provider, self.credential)?;
         if let Some(profile) = &self.profile {
             write!(f, ":profile={profile}")?;
+        }
+        if let Some(connection) = &self.connection {
+            write!(f, ":connection={connection}")?;
         }
         Ok(())
     }
@@ -130,14 +137,14 @@ fn label(kind: WindowKind, window_seconds: Option<i64>) -> String {
         (WindowKind::Other, Some(s)) if s >= DAY => format!("{}d", (s + DAY / 2) / DAY),
         (WindowKind::Other, Some(s)) if s >= HOUR => format!("{}h", (s + HOUR / 2) / HOUR),
         (WindowKind::Other, Some(s)) => format!("{}m", ((s + 30) / 60).max(1)),
-        (WindowKind::Other, None) => "credits".into(),
+        (WindowKind::Other, None) => "usage".into(),
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct QuotaWindow {
     pub kind: WindowKind,
-    /// Short display label derived from the duration (`5h`, `7d`, `2d`, `credits`).
+    /// Short display label derived from the duration (`5h`, `7d`, `2d`, or `usage` if unknown).
     pub label: String,
     /// Percent used. May exceed 100 for spend limits.
     pub used_percent: f64,

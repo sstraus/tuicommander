@@ -186,27 +186,9 @@ impl EgoSettingsStore {
         }
         let raw = self
             .runtime
-            .block_on(context.run(&["auth".into(), "status".into()]))
+            .block_on(context.run(&["auth".into(), "status".into(), "--json".into()]))
             .map_err(|_| Error::new(ID, "store_failed"))?;
-        #[derive(Deserialize)]
-        struct Sources {
-            sources: Vec<Provider>,
-        }
-        #[derive(Deserialize)]
-        struct Provider {
-            provider: String,
-        }
-        let models = self
-            .runtime
-            .block_on(context.run(&["models".into(), "--json".into()]))
-            .map_err(|_| Error::new(ID, "store_failed"))?;
-        let sources: Sources =
-            serde_json::from_str(&models).map_err(|_| Error::new(ID, "store_failed"))?;
-        let mut credentials = std::collections::BTreeMap::new();
-        for source in sources.sources {
-            credentials.insert(source.provider, Value::Null);
-        }
-        credentials.extend(ego_schema::credentials(&raw)?);
+        let credentials = ego_schema::credentials(&raw)?;
         let managed: Managed = serde_json::from_value(listing.values.clone())
             .map_err(|_| Error::new(ID, "store_failed"))?;
         let mut value = ego_schema::value(&managed)?;
@@ -226,14 +208,26 @@ impl EgoSettingsStore {
                     json!("set");
             }
         }
-        for provider in credentials.keys() {
-            auth.entry(provider.clone())
-                .or_insert_with(|| json!({"headers":null,"credential_command":null}));
+        let mut presence = serde_json::Map::new();
+        for credential in credentials {
+            if credential.connection.is_none()
+                && let Some(provider) = &credential.provider
+            {
+                auth.entry(provider.clone())
+                    .or_insert_with(|| json!({"headers":null,"credential_command":null}));
+            }
+            presence.insert(
+                credential.key(),
+                if credential.present {
+                    json!("set")
+                } else {
+                    Value::Null
+                },
+            );
         }
         value["auth"] = Value::Object(auth);
         value["_owner_revision"] = json!(listing.revision);
-        value["credentials"] =
-            serde_json::to_value(credentials).map_err(|_| Error::new(ID, "store_failed"))?;
+        value["credentials"] = Value::Object(presence);
         // Bind optimistic revisions to process authority and workspace too, without exposing
         // this internal metadata as a readable or writable setting.
         value["_context"] = json!({"program":context.program,"workspace":context.workspace,"profile":context.profile});

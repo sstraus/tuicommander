@@ -39,6 +39,29 @@ it("owner_selection_refuses_ambiguous_subscriptions", async () => {
 	providerQuotaStore.stop();
 });
 
+// Catches named accounts sharing the frontend cache key despite distinct backend bindings.
+it("same_vendor_named_accounts_and_legacy_keep_distinct_views", async () => {
+	const { providerQuotaStore } = await import("../../stores/providerQuota");
+	const initial = [null, "account_a", "account_b", "anthropic"].map((connection, index) => ({
+		key: { owner: "ego", provider: "anthropic", credential: "/shared", connection },
+		session_ids: [`account-${index}`],
+		state: "unavailable",
+		snapshot: null,
+	}));
+	invoke.mockResolvedValueOnce(initial);
+	await providerQuotaStore.start();
+	for (let index = 0; index < initial.length; index++) {
+		expect(providerQuotaStore.view(`account-${index}`)).toEqual(initial[index]);
+	}
+	const pushed = { ...initial[2], state: "auth_invalid" };
+	handlers.get("provider-quota-changed")?.({ payload: pushed });
+	expect(providerQuotaStore.view("account-2")).toEqual(pushed);
+	for (const index of [0, 1, 3]) {
+		expect(providerQuotaStore.view(`account-${index}`)).toEqual(initial[index]);
+	}
+	providerQuotaStore.stop();
+});
+
 // Catches a late explicit refresh replacing a newer registry push.
 it("quota_push_wins_over_an_in_flight_refresh", async () => {
 	const { providerQuotaStore } = await import("../../stores/providerQuota");

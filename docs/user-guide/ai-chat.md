@@ -48,7 +48,32 @@ With the transcript focused, Cmd/Ctrl+K clears only its local view. A notificati
 
 Click an empty part of AI Chat or its transcript to focus the message composer. Clicked controls keep their own focus. Selecting transcript text keeps the selection for copying; typing while a chat control or selection has focus does not send characters to a terminal.
 
+Submitted text and attachments appear as **Sending…** immediately, including while
+another turn runs. This local receipt is not a confirmed queue entry and has no
+cancel or recall action. The actor queue appears only after backend evidence.
+The receipt clears when the backend identifies the turn as queued, running, or
+settled. If submission fails, **Send failed** retains the original payload with a
+**Retry** action. Retry uses that payload and leaves newer drafts and attachments
+alone. Check the conversation before retrying: a lost transport receipt cannot
+prove that the agent did not accept the original submission. Receipts belong to
+their source conversation in the current panel, even after Recover replaces its
+connection. Recovery does not resend them. An explicit Retry uses the conversation's
+current attached connection and the original repository context. If compaction or
+missing-session recovery replaces the source tab, its receipts follow the successor
+without an automatic resend. Turn evidence from the old session does not confirm a
+successor submission. A failure with no conversation selected follows the next newly
+created conversation, even if old tabs remain listed. Selecting an unrelated saved
+tab does not adopt it, and sending the retained payload still needs explicit Retry.
+They are not a durable outbox and do not claim delivery to the agent before confirmation.
+There is no local dismiss action or recovery for a missing acknowledgement; a local
+receipt can remain until the panel is torn down.
+
 ## Slash commands
+
+Agent-advertised commands are available unless an active host handler owns the
+same name. For example, advertised `/name` and `/retry` pass through unchanged
+with their arguments. A missing host capability does not hide an agent offer.
+Unadvertised commands remain explicitly unsupported, not ordinary model text.
 
 Start a draft with `/` to see the commands available in the selected conversation.
 Type a command name to filter the list. Each agent command shows its description
@@ -65,7 +90,7 @@ TUICommander handles these actions locally instead of sending them to the model:
 | Command | Action |
 |---|---|
 | `/new` | Start a new conversation with the existing New action. |
-| `/clear` | Clear this composer's text and attachments. An inline status confirms that history and agent context are unchanged. |
+| `/clear` | Clear agent context by starting a fresh conversation, using the same action as **New**. Saved conversation history is not deleted. |
 | `/quit`, `/q` | Stop the current AI Chat connection through the existing stop action. Saved history remains. Other tabs on that connection also disconnect. |
 | `/usage` | Show the context usage and cost already reported for this conversation. |
 | `/compact` | Run the same action as **Compact context**. Available only when advertised; wait for the turn to finish. |
@@ -73,7 +98,12 @@ TUICommander handles these actions locally instead of sending them to the model:
 | `/pause`, `/resume` | Run the advertised pause/resume controls in their applicable turn state. |
 
 Host actions do not accept arguments or attachments, except `/clear`, which
-removes attachments. Unsupported commands, including `/name` and `/retry`, stay
+can start a fresh conversation with attachments staged. The old conversation and
+its draft remain available in its tab; the new conversation starts empty.
+`/clear` is unavailable until the current turn (including a paused turn) finishes. If the
+reset is unavailable or fails, the composer text and attachments are kept.
+An agent offer named `clear` does not replace this host lifecycle action.
+Unsupported commands, including `/name` and `/retry`, stay
 in the composer with an inline **not available in AI Chat** explanation and a
 list of available names. A leading path token with another `/`, such as
 `/Users/x/file.ts` or `/tmp/error.log`, is sent as prompt text unless it matches

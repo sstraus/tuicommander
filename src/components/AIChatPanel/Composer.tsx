@@ -44,11 +44,12 @@ export const Composer: Component<{
 	const keyboardCorrection = useKeyboardCorrection();
 	const [pasteError, setPasteError] = createSignal<string | null>(null);
 	const [uploading, setUploading] = createSignal(false);
+	const [resettingContext, setResettingContext] = createSignal(false);
 	const [commandNotice, setCommandNotice] = createSignal<string | null>(null);
 	const commandMenuId = createUniqueId();
 	const [commandIndex, setCommandIndex] = createSignal(0);
 	const [commandsDismissed, setCommandsDismissed] = createSignal(false);
-	type Command = AcpAvailableCommand & { run?: () => void; unavailable?: string };
+	type Command = AcpAvailableCommand & { run?: () => void; unavailable?: string; preserveDraft?: boolean };
 	const commands = createMemo<Command[]>(() => {
 		const chat = props.chat;
 		const live = !!chat.sessionId() && !!chat.connectionId?.();
@@ -63,10 +64,22 @@ export const Composer: Component<{
 			},
 			{
 				name: "clear",
-				description: "Clear the composer and its attachments",
+				description: "Clear agent context by starting a new conversation",
+				unavailable:
+					busy || chat.held?.()
+						? "Wait for the current turn to finish before clearing context."
+						: !live || chat.phase() === "starting"
+							? "Open a conversation before clearing context."
+							: undefined,
+				// New selects an empty agent session without deleting the old history.
+				// Preserve the source tab's draft and attachments; only the new tab is empty.
+				preserveDraft: true,
 				run: () => {
-					aiChatDraft.clear();
-					setCommandNotice("Composer and attachments cleared. Conversation history and agent context are unchanged.");
+					setResettingContext(true);
+					void chat
+						.startSession()
+						.catch((error: unknown) => setCommandNotice(error instanceof Error ? error.message : String(error)))
+						.finally(() => setResettingContext(false));
 				},
 			},
 		];
@@ -130,19 +143,8 @@ export const Composer: Component<{
 				},
 			});
 		}
-		const hostNames = new Set([
-			"new",
-			"clear",
-			"quit",
-			"q",
-			"usage",
-			"compact",
-			"fork",
-			"pause",
-			"resume",
-			"name",
-			"retry",
-		]);
+		const hostNames = new Set(host.map((command) => command.name));
+		if (hostNames.has("quit")) hostNames.add("q");
 		return [...host, ...(chat.availableCommands?.() ?? []).filter((command) => !hostNames.has(command.name))];
 	});
 	const commandText = () => aiChatDraft.text().match(/^\/(\S*)(?:\s([\s\S]*))?$/);
@@ -226,7 +228,7 @@ export const Composer: Component<{
 	});
 	const send = () => {
 		// Compaction may refuse or lose selection. Keep the draft until it can be accepted.
-		if (props.chat.compacting?.()) return;
+		if (props.chat.compacting?.() || resettingContext()) return;
 		if (props.mobileAttachments && uploading()) return;
 		browserDictation.cancel();
 		setCommandNotice(null);
@@ -236,7 +238,10 @@ export const Composer: Component<{
 		if (!text.trim() && images.length === 0 && files.length === 0) return;
 		if (text.startsWith("/")) {
 			const typed = text.match(/^\/(\S+)(?:\s([\s\S]*))?$/);
-			const name = typed?.[1] === "q" ? "quit" : typed?.[1];
+			const name =
+				typed?.[1] === "q" && commands().some((command) => command.name === "quit" && command.run)
+					? "quit"
+					: typed?.[1];
 			const command = commands().find((candidate) => candidate.name === name);
 			// A second slash identifies path text; advertised command names still take precedence.
 			if (!command && !typed?.[1].includes("/")) {
@@ -252,7 +257,7 @@ export const Composer: Component<{
 					setCommandNotice(command.unavailable ?? `/${name} does not accept arguments or attachments.`);
 					return;
 				}
-				aiChatDraft.clear();
+				if (!command.preserveDraft) aiChatDraft.clear();
 				command.run();
 				queueMicrotask(resize);
 				return;
@@ -456,6 +461,36 @@ export const Composer: Component<{
 				ref={inputArea}
 				class={props.mobileAttachments ? `${s.inputArea} ${s.mobileComposer} ${mobileInput.form}` : s.inputArea}
 			>
+				<Show when={props.chat.sendingPrompts().length > 0}>
+					<div class={s.queueList} aria-label="Sending prompts" aria-live="polite">
+						<For each={props.chat.sendingPrompts()}>
+							{(prompt) => (
+								<div class={s.queueRow}>
+									<div class={s.queueText}>
+										<span>
+											{prompt.failed
+												? `Send failed. ${prompt.failure ?? "Submission could not complete."} Check the conversation before retrying. `
+												: "Sending… "}
+										</span>
+										<PromptContent text={prompt.text || "Attachment"} />
+										<For each={prompt.files}>{(file) => <span>{file.name}</span>}</For>
+										<Show when={prompt.images.length}>{prompt.images.length} image(s)</Show>
+									</div>
+									<Show when={prompt.failed}>
+										<Button
+											type="button"
+											variant="ghost"
+											aria-label={`Retry sending ${prompt.text}`}
+											onClick={() => void props.chat.retrySending(prompt.localId)}
+										>
+											Retry
+										</Button>
+									</Show>
+								</div>
+							)}
+						</For>
+					</div>
+				</Show>
 				<Show when={props.chat.queuedPrompts().length > 0}>
 					<div class={s.queueList} aria-label="Queued prompts">
 						<div class={s.queueHeader}>

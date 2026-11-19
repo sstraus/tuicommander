@@ -455,7 +455,7 @@ mod selection_regressions {
         assert!(!plain.reason.contains("Wiz"), "{}", plain.reason);
         assert_eq!(
             plain.reason,
-            "Plans and stories are stored in TUICommander. Create a plan to begin."
+            "Plans and stories are stored in TUICommander."
         );
         std::fs::create_dir(project.join(".wiz")).unwrap();
         let marked = status(&project);

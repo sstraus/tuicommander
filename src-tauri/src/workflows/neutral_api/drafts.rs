@@ -19,7 +19,7 @@ pub(crate) fn check_draft(
     editor: &EditorMetadata,
 ) -> Result<(), String> {
     if name.trim().is_empty() || name.len() > 200 {
-        return Err("neutral draft requires a bounded nonempty name".into());
+        return Err(super::refusal::DRAFT_NAME_INVALID.into());
     }
     if definition.instances.len() > 128
         || definition.control.nodes.len() > 256
@@ -28,7 +28,7 @@ pub(crate) fn check_draft(
             .len()
             > 256_000
     {
-        return Err("neutral draft is too large".into());
+        return Err(super::refusal::DRAFT_TOO_LARGE.into());
     }
     for (id, value) in editor.labels.iter().chain(&editor.presets) {
         if !definition.control.nodes.contains_key(id) || value.len() > 4096 {
@@ -74,7 +74,7 @@ impl WorkflowStore {
             params![project,id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))
         ).optional().map_err(|e| format!("read neutral draft: {e}"))?;
         let (name, revision, document, latest_published_revision, editor_document) =
-            row.ok_or("neutral draft not found in project")?;
+            row.ok_or(super::refusal::DRAFT_NOT_FOUND)?;
         let definition =
             serde_json::from_str(&document).map_err(|e| format!("decode neutral draft: {e}"))?;
         Ok(NeutralDraft {
@@ -121,7 +121,10 @@ impl WorkflowStore {
         let editor_document = serde_json::to_string(&editor).map_err(|e| e.to_string())?;
         let count = self.connect()?.execute("UPDATE neutral_workflow_drafts SET name=?1,revision=?2,definition_json=?3,editor_json=?7 WHERE project=?4 AND id=?5 AND revision=?6", params![name,revision,document,project,id,expected_revision,editor_document]).map_err(|e| format!("update neutral draft: {e}"))?;
         if count != 1 {
-            return Err("neutral draft revision changed or project does not own draft".into());
+            return Err(format!(
+                "{} or project does not own draft",
+                super::refusal::DRAFT_REVISION_CHANGED
+            ));
         }
         let latest_published_revision = self
             .get_neutral_draft(project, id)?

@@ -88,7 +88,7 @@ impl RuntimeOwner {
             Ok((effect, true)) if effect.dispatched => {
                 self.observe_neutral_future(
                     effect.key.fence.run.clone(),
-                    effect.key.clone(),
+                    &effect,
                     tag,
                     host.invoke_effect(effect.clone()),
                     Arc::new(Notify::new()),

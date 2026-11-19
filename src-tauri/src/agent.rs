@@ -1360,7 +1360,9 @@ pub(crate) fn default_prompt_args(agent_type: &str) -> Option<Vec<String>> {
         // is preserved by merge_mcp_params_into_args's claude flags-first rule.)
         "claude" => &["{prompt}"],
         // Positional prompt (interactive with the task pre-filled).
-        "gemini" | "codex" | "opencode" | "grok" | "amp" | "cursor" | "droid" => &["{prompt}"],
+        "gemini" | "codex" | "opencode" | "grok" | "amp" | "cursor" | "droid" | "ego" => {
+            &["{prompt}"]
+        }
         // Goose 1.49: `session` takes no positional prompt (exit 2); `run -s -t`
         // runs the text, then stays interactive.
         "goose" => &["run", "-s", "-t", "{prompt}"],
@@ -1981,7 +1983,7 @@ mod tests {
     fn default_prompt_args_cover_known_agents() {
         // Positional-prompt agents.
         for agent in [
-            "gemini", "codex", "opencode", "grok", "amp", "cursor", "droid",
+            "gemini", "codex", "opencode", "grok", "amp", "cursor", "droid", "ego",
         ] {
             assert_eq!(
                 default_prompt_args(agent),

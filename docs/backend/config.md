@@ -1960,6 +1960,25 @@ and base credential owner, never a caller-selected program or profile. Its
 tracked terminal is human-operated; termination and handle expiry are not
 credential success. See [interactive login](settings-startup.md#interactive-login).
 
+Ego Settings reads `auth status --json` version 1, not human status text or
+model-source labels. The typed inventory keeps vendor and optional stable
+connection separate. Legacy presence uses `/credentials/<provider>`; named
+presence uses `/credentials/connection:<full-id>`, including an orphan whose
+vendor is unknown. Only legacy rows and actual managed auth keys create legacy
+`/auth/<provider>` fields. Presence means a declared local source exists, not
+remote validity or entitlement. Missing, blank and empty declared key sources
+are unset. Invalid versions, malformed identities and duplicate identities fail
+with a sanitized `store_failed`; there is no human-output fallback. The
+configured Ego must support the coordinated machine inventory contract.
+The decoder and internal snapshot retain full IDs. Existing generic pointer
+limits still apply to explicit reads: a decoded key is at most 256 bytes and a
+path is at most 2048 bytes. The `connection:` prefix uses 11 bytes, so named IDs
+through 245 ASCII bytes are individually readable; longer IDs return sanitized
+`unknown_path`. They do not break unrelated reads. There is no whole-store or
+catalogue-expansion API that lists these preserved keys. A request containing
+an oversized pointer fails as a whole. Credential descriptors remain Get-only;
+this read-addressability limit does not add an edit target or truncate an ID.
+
 ## Persistent PR visibility filters
 
 Global `pr_hide_drafts`, `pr_hide_conflicting` and `pr_hide_ci_failing` values

@@ -64,6 +64,18 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 - [ ] After this frontend change lands on the main checkout (Vite HMR, no Rust restart), focus a Claude tab, a Codex tab and an ego tab bound to an anthropic or openai-codex subscription. Check that the agent badge shows the window percentage (for example `7d: 78%`) and that the ego badge uses the provider icon. Switch from Claude to Codex and check that the Claude percentage never shows on the Codex tab. Vitest covers the rule; the live check could not run from the worktree because the running frontend is the main checkout's Vite server.
 ## Agent badge shows registry usage (#3068-c03b)
 
-- [ ] Frontend part (hot-reloads once on main): on a Claude tab and on an ego tab bound to anthropic, the status-bar agent badge text holds the 7d percentage (live 2026-11-15: registry had Claude 78%, ego/anthropic 77%, but no badge showed it). Check with `debug invoke_js` that `.agentBadge .agentUsage` contains the percentage.
+- [ ] Frontend part (hot-reloads once on main): on a Claude tab and on an ego tab bound to anthropic, the status-bar agent badge text holds the 7d percentage (live 2026-11-15: registry had Claude 78%, ego/anthropic 77%, but no badge showed it). Check with `debug invoke_js` that `[class*="agentBadge"] [class*="agentUsage"]` contains the percentage.
 - [ ] Rust part, after a manual `make dev` restart: a Codex tab launched by TUIC (argv carries `-c projects=… -c check_for_update_on_startup=false -c developer_instructions=…`) appears in `get_provider_quotas` under `codex-cli/openai-codex` with its session id, and its badge shows the percentage. Before the fix the registry had no Codex view at all, because `codex_profile` refused every `-c` override.
 - [ ] After this frontend change lands on the main checkout (Vite HMR, no Rust restart), focus a Claude tab, a Codex tab and an ego tab bound to an anthropic or openai-codex subscription. Check that the agent badge shows the weekly percent with its reset and the monthly remaining (for example `7d: 78% -4d · mo: 99% left`; Codex/ego-Codex `credits: N left`), no tool name, and that it does not flicker across refreshes and that the ego badge uses the provider icon. Switch from Claude to Codex and check that the Claude percentage never shows on the Codex tab. Vitest covers the rule; the live check could not run from the worktree because the running frontend is the main checkout's Vite server.
+
+- [ ] **Linux ARM64 desktop 2.1.2 (3084-a4ba):** On the produced native Ubuntu
+  22.04 ARM64 package, record OS/architecture, artifact SHA256 and package metadata;
+  install it and open a desktop window with a working local terminal. Check ARM64
+  updater selection and CPU dictation without a usable Vulkan GPU. Requires an
+  actual ARM64 Linux desktop/display and the final native CI artifacts.
+  Native initial-desktop evidence now exists (2026-11-18) for the preserved
+  unsigned internal 2.1.1 DEB on Ubuntu 22.04.5, RPM on Fedora 44 and original
+  AppImage extract-and-run on Ubuntu 22.04.5. Each displayed the app and confirmed
+  actual WebView DOM readiness; this does not verify a working local terminal,
+  dictation, updater signatures/selection or default FUSE launch. Keep this item
+  open until the signed 2.1.2 candidate passes. See `docs/release-checklist.md`.

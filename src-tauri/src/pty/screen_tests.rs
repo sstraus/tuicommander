@@ -1,3 +1,58 @@
+/// Catches: an update unlinks a live agent image and permanently holds its input;
+/// a current shell or unknown image must never inherit a cached agent identity.
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_unlinked_foreground_image_keeps_current_identity() {
+    use crate::state::SpawnRootRole;
+    use crate::test_support::ForegroundIdentityProbe;
+
+    for role in [SpawnRootRole::DirectProgram, SpawnRootRole::Shell] {
+        for name in ["codex", "zsh", "ordinary"] {
+            let state = Arc::new(crate::state::tests_support::make_test_app_state());
+            let sid = "unlinked-foreground-image";
+            let probe = if role == SpawnRootRole::Shell {
+                ForegroundIdentityProbe::shell_root(state.clone(), sid, name)
+            } else {
+                ForegroundIdentityProbe::new(state.clone(), sid, name)
+            };
+            let pid = state
+                .session_maps
+                .sessions
+                .get(sid)
+                .unwrap()
+                .lock()
+                ._child
+                .process_id()
+                .unwrap();
+            assert_eq!(process_name_from_pid(pid).as_deref(), Some(name));
+            let expected = (name == "codex").then_some("codex");
+            assert_eq!(refresh_session_agent(&state, sid).as_deref(), expected);
+            probe.unlink_executable(name);
+            assert_eq!(
+                process_name_from_pid(pid).as_deref(),
+                Some(name),
+                "unlinked {role:?} image {name} must use its current OS name"
+            );
+            assert_eq!(refresh_session_agent(&state, sid).as_deref(), expected);
+            assert!(
+                !state
+                    .session_maps
+                    .session_states
+                    .get(sid)
+                    .unwrap()
+                    .foreground_input_blocked,
+                "unlinked {role:?} image {name} lost known foreground ownership"
+            );
+            drop(probe);
+            assert_eq!(
+                process_name_from_pid(pid),
+                None,
+                "exited image has no identity"
+            );
+        }
+    }
+}
+
 #[test]
 fn test_classify_agent_claude() {
     assert_eq!(classify_agent("claude"), Some("claude"));

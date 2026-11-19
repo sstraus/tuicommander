@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, createUniqueId, For, Show } from "solid-js";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
@@ -39,16 +39,27 @@ export function TriggerBindings(props: { project: string; publications: NeutralP
 			<p>Loading a stored binding replaces unsaved binding edits.</p>
 			<div class={s.bindingList}>
 				<For each={state.bindings()}>
-					{(binding) => (
-						<div class={s.binding}>
-							<Button disabled={state.busy()} onClick={() => state.choose(binding)}>
-								Load {binding.draft.id} · revision {binding.revision} · {binding.enabled ? "enabled" : "disabled"}
-							</Button>
-							<Show when={binding.refusal_reason}>
-								{(reason) => <span class={s.refusal}>No intake: {reason()}</span>}
-							</Show>
-						</div>
-					)}
+					{(binding) => {
+						const reasonId = createUniqueId();
+						return (
+							<div class={s.binding}>
+								<Button
+									disabled={state.busy()}
+									onClick={() => state.choose(binding)}
+									aria-describedby={binding.refusal_reason ? reasonId : undefined}
+								>
+									Load {binding.draft.id} · revision {binding.revision} · {binding.enabled ? "enabled" : "disabled"}
+								</Button>
+								<Show when={binding.refusal_reason}>
+									{(reason) => (
+										<span id={reasonId} class={s.refusal}>
+											No intake: {reason()}
+										</span>
+									)}
+								</Show>
+							</div>
+						);
+					}}
 				</For>
 			</div>
 			<fieldset disabled={state.busy()} class={s.form}>

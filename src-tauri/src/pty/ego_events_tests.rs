@@ -551,3 +551,170 @@ fn ego_compaction_inside_a_turn_with_owned_work_stays_busy() {
         ("busy".into(), "working".into(), false)
     );
 }
+
+/// Catches: session_end drops the native session before coarse idle can retract
+/// owned busy, leaving background_work published forever. Native frames below
+/// are unchanged recorded events; coarse busy models the separate owned-work
+/// input already covered by ego-owned-child-2930.tcap, not a new live capture.
+#[cfg(unix)]
+#[test]
+fn ego_native_session_end_clears_stale_owned_work() {
+    use base64::Engine;
+    let frames: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../fixtures/agent_tool_readout/ego-0.4.3-tool.json"
+    ))
+    .unwrap();
+    for end_open_turn in [false, true] {
+        let sid = "ego-native-owned-end";
+        let (state, silence, mut processor) = ego_turn_session(sid);
+        for frame in &frames {
+            let event = frame["event"].as_str().unwrap();
+            if end_open_turn && event == "turn_end" {
+                continue;
+            }
+            if event == "turn_start" {
+                processor.process_chunk("\x1b]7770;state=busy\x07", &silence, sid, &state);
+            }
+            if event == "session_end" {
+                assert_eq!(
+                    state
+                        .session_state_with_shell(sid)
+                        .unwrap()
+                        .agent_state
+                        .as_deref(),
+                    Some("working")
+                );
+            }
+            let payload = base64::engine::general_purpose::STANDARD.encode(frame.to_string());
+            processor.process_chunk(
+                &format!("\x1b]7770;agent-event={payload}\x07"),
+                &silence,
+                sid,
+                &state,
+            );
+            if event == "turn_end" {
+                assert!(state.session_state_with_shell(sid).unwrap().background_work);
+            }
+            if event == "session_end" {
+                let snapshot = state.session_state_with_shell(sid).unwrap();
+                assert!(
+                    !snapshot.background_work,
+                    "session_end must retract owned busy before coarse idle"
+                );
+            }
+        }
+        // ego's exit postamble calls NativeEvents::finish (session_end), then
+        // osc.state(State::Idle); see ego-cli/src/run/interactive_driver.rs.
+        processor.process_chunk("\x1b]7770;state=idle\x07", &silence, sid, &state);
+        let snapshot = state.session_state_with_shell(sid).unwrap();
+        assert!(!snapshot.background_work);
+        assert_eq!(snapshot.shell_state.as_deref(), Some("idle"));
+        assert_ne!(snapshot.agent_state.as_deref(), Some("working"));
+    }
+}
+
+/// Catches: a foreign end clears the current owner, or an ended owner's busy
+/// bit leaks into a fresh session that has not reported any owned work.
+#[cfg(unix)]
+#[test]
+fn ego_native_owned_work_is_scoped_to_the_ended_session() {
+    let sid = "ego-owned-restart";
+    let (state, silence, mut processor) = ego_turn_session(sid);
+    feed_ego(
+        &mut processor,
+        &state,
+        &silence,
+        sid,
+        &[
+            (Some("busy"), "turn_start", Some("t1")),
+            (Some("busy"), "turn_end", Some("t1")),
+        ],
+    );
+    let foreign = ego_frame("foreign", None, "session_end", None, serde_json::json!({}));
+    processor.process_chunk(
+        &format!("\x1b]7770;agent-event={foreign}\x07"),
+        &silence,
+        sid,
+        &state,
+    );
+    assert!(state.session_state_with_shell(sid).unwrap().background_work);
+    feed_ego(
+        &mut processor,
+        &state,
+        &silence,
+        sid,
+        &[(None, "session_end", None), (None, "session_start", None)],
+    );
+    assert!(!state.session_state_with_shell(sid).unwrap().background_work);
+    assert_eq!(ego_readiness(&state, sid).0, "idle");
+}
+
+/// Catches: shell return retains native owned busy, or its cleanup discards
+/// real OS descendant evidence / revokes delivered native turn authority.
+#[cfg(unix)]
+#[test]
+fn ego_shell_return_clears_owned_work_without_erasing_live_descendants() {
+    let sid = "ego-owned-shell";
+    let (state, silence, mut processor) = ego_turn_session(sid);
+    feed_ego(
+        &mut processor,
+        &state,
+        &silence,
+        sid,
+        &[
+            (Some("busy"), "turn_start", Some("t1")),
+            (Some("busy"), "turn_end", Some("t1")),
+        ],
+    );
+    state.process_snapshot_cache.store(Some(vec![
+        process(10, 1, "ego", "ego"),
+        process(11, 10, "cargo", "cargo test --locked"),
+    ]));
+    let epoch = state
+        .session_maps
+        .session_states
+        .get(sid)
+        .unwrap()
+        .turn_epoch;
+    refresh_background_work_from_cached_snapshot(
+        &state,
+        sid,
+        10,
+        "ego",
+        epoch,
+        state.process_snapshot_cache.load(),
+    );
+    assert!(
+        state
+            .session_maps
+            .session_states
+            .get(sid)
+            .unwrap()
+            .background_work,
+        "the real process classifier must first establish descendant evidence"
+    );
+    processor.process_chunk("\x1b]133;A\x07", &silence, sid, &state);
+    assert!(!state.session_state_with_shell(sid).unwrap().background_work);
+    assert!(
+        state
+            .session_maps
+            .session_states
+            .get(sid)
+            .unwrap()
+            .background_work,
+        "native cleanup must leave suspend-safety descendant evidence intact"
+    );
+    // A shell marker does not override an authoritative native busy turn.
+    feed_ego(
+        &mut processor,
+        &state,
+        &silence,
+        sid,
+        &[
+            (None, "session_start", None),
+            (Some("busy"), "turn_start", Some("t2")),
+        ],
+    );
+    processor.process_chunk("\x1b]133;A\x07", &silence, sid, &state);
+    assert_eq!(ego_readiness(&state, sid).0, "busy");
+}

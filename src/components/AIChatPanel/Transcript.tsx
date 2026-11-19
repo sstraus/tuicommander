@@ -434,6 +434,23 @@ const LinkedPlainText: Component<{ text: string; onOpenFile?: (href: string) => 
 	);
 };
 
+/** A long card (for example the compaction summary) shows its first line; the rest stays one click away. */
+const NoticeBody: Component<{ text: string }> = (props) => {
+	const split = createMemo(() => {
+		const text = props.text.trim();
+		const end = text.indexOf("\n");
+		return end < 0 ? { head: text, rest: "" } : { head: text.slice(0, end), rest: text.slice(end + 1).trim() };
+	});
+	return (
+		<Show when={split().rest} fallback={<div class={s.noticeBody}>{split().head}</div>}>
+			<details class={s.noticeDetails}>
+				<summary class={s.noticeBody}>{split().head}</summary>
+				<div class={s.noticeBody}>{split().rest}</div>
+			</details>
+		</Show>
+	);
+};
+
 /** These exact harness turns are not words typed by the person reading the chat. */
 function isHarnessNotice(text: string): boolean {
 	return (
@@ -1146,7 +1163,7 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 												<div class={s.noticeTitle}>
 													{(notice().action && NOTICE_LABELS[notice().action!.kind].title) || "Notice"}
 												</div>
-												<div class={s.noticeBody}>{notice().text}</div>
+												<NoticeBody text={notice().text} />
 												<Show when={notice().action}>
 													{(action) => (
 														<Button type="button" class={s.noticeAction} onClick={() => runNoticeAction(action())}>

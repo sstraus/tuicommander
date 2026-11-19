@@ -29,6 +29,8 @@ vi.mock("../../components/AIChatPanel/useAcpChat", () => ({
 		entries: () => [{ id: "answer", kind: "agent", text: chatText.value }],
 		busy: () => false,
 		queuedPrompts: () => [],
+		sendingPrompts: () => [],
+		retrySending: vi.fn(),
 		held: () => false,
 		gap: () => null,
 		error: () => null,

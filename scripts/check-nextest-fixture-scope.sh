@@ -27,7 +27,7 @@ run() {
 
 # Catches: a unit test that spawns a bin fixture but is missing from the setup filter.
 consumers="$(cd "$tauri" && grep -rlE 'tuic-(acp|mcp)-fixture' src crates/*/src | LC_ALL=C sort | tr '\n' ' ')"
-[ "$consumers" = "src/acp/oneshot.rs src/acp_chat.rs src/acp_message_actions.rs src/mcp_proxy/registry.rs src/mcp_proxy/stdio_client.rs src/state.rs src/workflows/run/neutral_model_adapter_tests.rs " ] || {
+[ "$consumers" = "src/acp/oneshot.rs src/acp_chat.rs src/acp_message_actions.rs src/mcp_http/acp_mcp.rs src/mcp_proxy/registry.rs src/mcp_proxy/stdio_client.rs src/state.rs src/workflows/run/neutral_model_adapter_tests.rs " ] || {
   echo "lib unit tests consuming bin fixtures changed: $consumers" >&2
   echo "update the fixture-bins filters in src-tauri/.config/nextest.toml and this list" >&2
   exit 1
@@ -68,6 +68,11 @@ rm -f "$marker"
 # Catches: neutral workflow model runs losing setup while chat consumers keep it.
 run -p tuicommander --no-default-features --lib -E 'test(=workflows::run::neutral_model_adapter_tests::exact_model_request_uses_mediated_process_and_binds_before_result)'
 [ -e "$marker" ] || { echo "fixture-bins setup did not run for neutral model runs" >&2; exit 1; }
+rm -f "$marker"
+
+# Catches: scenario harness tests losing setup while the model adapter tests keep it.
+run -p tuicommander --no-default-features --lib -E 'test(=workflows::run::runtime::scenario::tests::first_tick_after_restart_admits_the_due_occurrence)'
+[ -e "$marker" ] || { echo "fixture-bins setup did not run for scenario tests" >&2; exit 1; }
 rm -f "$marker"
 
 # Catches: the filter widened to the whole lib binary.

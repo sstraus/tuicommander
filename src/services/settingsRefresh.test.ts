@@ -255,3 +255,39 @@ it("disposal cancels a pending subscription retry", async () => {
 		vi.useRealTimers();
 	}
 });
+
+// Catches: a legacy invalidation refreshing a different owner or section, or duplicating a settings read.
+it("coalesces explicit invalidation with settings events within the selected owner and section", async () => {
+	const f = fixture();
+	const local = vi.fn().mockResolvedValue("local");
+	const remote = vi.fn().mockResolvedValue("remote");
+	const other = vi.fn().mockResolvedValue("other");
+	const stops = [
+		f.coordinator.register({ section: "repositories_registration", read: local, apply: vi.fn() }),
+		f.coordinator.register({
+			section: "repositories_registration",
+			connectionId: "daemon",
+			read: remote,
+			apply: vi.fn(),
+		}),
+		f.coordinator.register({ section: "app", read: other, apply: vi.fn() }),
+	];
+	try {
+		await flush();
+		local.mockClear();
+		remote.mockClear();
+		other.mockClear();
+		f.coordinator.invalidate("repositories_registration");
+		f.emit("repositories_registration", 1);
+		await flush();
+		expect(local).toHaveBeenCalledTimes(1);
+		expect(remote).not.toHaveBeenCalled();
+		expect(other).not.toHaveBeenCalled();
+		f.coordinator.invalidate("repositories_registration", "daemon");
+		await flush();
+		expect(remote).toHaveBeenCalledTimes(1);
+		expect(local).toHaveBeenCalledTimes(1);
+	} finally {
+		for (const stop of stops) stop();
+	}
+});

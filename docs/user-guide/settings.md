@@ -719,6 +719,16 @@ The explicit source ledgers distinguish read-only identities, derived credential
 
 ## Assisted startup
 
+Ego credential presence uses the configured Ego's machine inventory. Named
+accounts and legacy provider slots stay separate, even when their names match.
+Presence does not confirm remote access. Named accounts do not create legacy
+authentication edit fields. An older Ego without the machine inventory contract
+returns a failed owner read instead of using human status text.
+The inventory retains full account IDs, but the existing Settings pointer limit
+allows individual reads only through 245 ASCII bytes for named IDs. Longer
+pointers return `unknown_path`; unrelated settings remain readable. Credential
+presence stays read-only, and no account-key enumeration API is added.
+
 The [Settings startup contract](../backend/settings-startup.md) describes discoverable GitHub device/Enterprise workflows and Ego settings/readback. GitHub `list_accounts` discovers existing account IDs and credential presence. Typed Ego `begin_login` opens a terminal for you to authenticate; `login_status` reports process lifetime and owner credential readback separately. Native inventory completeness does not mean every onboarding or live UI check is complete.
 
 ### CircleCI Settings owner (#1991-bd88)
