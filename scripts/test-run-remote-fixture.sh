@@ -89,7 +89,7 @@ if (( ${#host} + 11 <= budget )); then
   rmdir "$mine"
   out="$(launch TMPDIR="$long_tmp/" TUIC_FIXTURE_TMPDIR="$mine")"
   test "$(field "$out" TMPDIR)" = "$mine/" || { echo "TUIC_FIXTURE_TMPDIR ignored: $out" >&2; exit 1; }
-  test "$(stat -f '%Lp' "$mine" 2>/dev/null || stat -c '%a' "$mine")" = 700 \
+  test "$(stat -c '%a' "$mine" 2>/dev/null || stat -f '%Lp' "$mine")" = 700 \
     || { echo "fixture TMPDIR is not private" >&2; exit 1; }
 elif (( ${#host} <= budget )); then
   # Nothing below a budget-sized host temp dir fits; the override is still used as is.

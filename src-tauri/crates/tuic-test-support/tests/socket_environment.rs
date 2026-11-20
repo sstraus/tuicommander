@@ -84,7 +84,7 @@ fn the_fixed_name_socket_list_is_not_empty() {
     // black_box: a const slice makes `is_empty()` a compile-time constant, which clippy's
     // `const_is_empty` rejects; the point of this test is exactly that nobody emptied the list.
     let sockets = std::hint::black_box(FIXED_NAME_SOCKETS);
-    assert!(!sockets.is_empty());
+    assert_ne!(sockets, []);
     for (what, relative) in sockets {
         assert!(!what.is_empty() && !relative.is_empty() && !relative.starts_with('/'));
     }
