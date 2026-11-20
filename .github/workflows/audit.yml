@@ -48,8 +48,8 @@ jobs:
           echo "$OUTPUT"
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
           # Save output for issue body (truncate if huge)
-          mkdir -p .tmp/tuic-tests
-          echo "$OUTPUT" | head -100 > .tmp/tuic-tests/pnpm-audit.txt
+          mkdir -p "${RUNNER_TEMP}/tuic-tests"
+          echo "$OUTPUT" | head -100 > "${RUNNER_TEMP}/tuic-tests/pnpm-audit.txt"
 
       # Accepted advisories are ignored through src-tauri/.cargo/audit.toml, which
       # cargo-audit picks up from the working directory. `make check` runs the same
@@ -64,8 +64,8 @@ jobs:
           EXIT_CODE=$?
           echo "$OUTPUT"
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
-          mkdir -p ../.tmp/tuic-tests
-          echo "$OUTPUT" | head -100 > ../.tmp/tuic-tests/cargo-audit.txt
+          mkdir -p "${RUNNER_TEMP}/tuic-tests"
+          echo "$OUTPUT" | head -100 > "${RUNNER_TEMP}/tuic-tests/cargo-audit.txt"
 
       - name: Create issue if vulnerabilities found
         if: steps.pnpm_audit.outputs.exit_code != '0' || steps.cargo_audit.outputs.exit_code != '0'
@@ -76,11 +76,11 @@ jobs:
           BODY="$BODY"$'\n\n'"Automated weekly audit found vulnerabilities."
 
           if [ "${{ steps.pnpm_audit.outputs.exit_code }}" != "0" ]; then
-            BODY="$BODY"$'\n\n'"### pnpm audit"$'\n\n'"<details><summary>Output</summary>"$'\n\n'"\`\`\`"$'\n'"$(cat .tmp/tuic-tests/pnpm-audit.txt)"$'\n'"\`\`\`"$'\n'"</details>"
+            BODY="$BODY"$'\n\n'"### pnpm audit"$'\n\n'"<details><summary>Output</summary>"$'\n\n'"\`\`\`"$'\n'"$(cat "${RUNNER_TEMP}/tuic-tests/pnpm-audit.txt")"$'\n'"\`\`\`"$'\n'"</details>"
           fi
 
           if [ "${{ steps.cargo_audit.outputs.exit_code }}" != "0" ]; then
-            BODY="$BODY"$'\n\n'"### cargo audit"$'\n\n'"<details><summary>Output</summary>"$'\n\n'"\`\`\`"$'\n'"$(cat .tmp/tuic-tests/cargo-audit.txt)"$'\n'"\`\`\`"$'\n'"</details>"
+            BODY="$BODY"$'\n\n'"### cargo audit"$'\n\n'"<details><summary>Output</summary>"$'\n\n'"\`\`\`"$'\n'"$(cat "${RUNNER_TEMP}/tuic-tests/cargo-audit.txt")"$'\n'"\`\`\`"$'\n'"</details>"
           fi
 
           # Check if an open audit issue already exists to avoid duplicates
