@@ -18,6 +18,12 @@ pub(crate) struct ProcessTreeEntry {
     /// it. `None` on Windows, whose `PROCESSENTRY32` carries no creation time —
     /// see [`started_with_agent`] for what the absence costs.
     pub(super) age_seconds: Option<u64>,
+    /// The platform could have reported argv but did not for this process
+    /// (native snapshot: another user's process, typically root under `sudo`).
+    /// `command` is then empty and must be read as UNKNOWN, not as "no
+    /// arguments". Never set by the `ps` parser or on Windows (whose ToolHelp
+    /// snapshot never had argv, and keeps its established name-only rules).
+    pub(super) argv_unknown: bool,
 }
 
 #[derive(Default)]
@@ -280,6 +286,7 @@ pub(crate) fn test_process_entry(
         name: name.into(),
         command: command.into(),
         age_seconds: Some(age_seconds),
+        argv_unknown: false,
     }
 }
 
@@ -330,6 +337,12 @@ pub(super) fn is_prompt_shell_process(process: &ProcessTreeEntry) -> bool {
         return true;
     }
     if !PROMPT_SHELL_NAMES.contains(&name.as_str()) {
+        return false;
+    }
+    // A shell whose argv could not be read may be `bash -c 'long job'` under
+    // sudo. Calling it a prompt would clear BUSY on running work, so the
+    // unknown case does not override (the conservative direction).
+    if process.argv_unknown {
         return false;
     }
     !process
@@ -455,12 +468,211 @@ pub(super) fn explicit_busy_is_a_nested_prompt(state: &AppState, session_id: &st
     foreground_group_at_prompt(root_pid, &processes)
 }
 
+/// The shared process-tree snapshot (unix).
+///
+/// Native first (`tuic_core::process_info`): sandboxed hosts refuse to exec the
+/// setuid `ps`. `ps` remains a FALLBACK, taken only when the native enumeration
+/// failed, or when a process in TUIC's own subtree — where every PTY session
+/// lives — could be listed but its argv or start time could not be read (a
+/// root process under `sudo`: `ps` is setuid root and can read it, an
+/// unprivileged native caller cannot). The fallback's first use per reason is
+/// logged once. If `ps` cannot run either, the native entries are used with
+/// `argv_unknown` set, which the consumers treat conservatively.
+// DEFERRED (2026-10-09): keep the `ps` fallback for this
+// release; remove it once the native path has soaked and the warning has
+// never been seen (docs/backend/pty.md).
 #[cfg(not(windows))]
 pub(crate) fn process_tree_snapshot() -> Option<Vec<ProcessTreeEntry>> {
-    let output = std::process::Command::new("ps")
-        .args(["-ww", "-axo", "pid=,ppid=,etime=,comm=,args="])
-        .output()
-        .ok()?;
+    process_tree_snapshot_from(
+        &tuic_core::process_info::NativeProcessSource,
+        std::process::id(),
+        std::time::SystemTime::now(),
+        ps_process_tree_snapshot,
+    )
+}
+
+/// Why a native snapshot was not enough on its own.
+#[cfg(not(windows))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum PsFallbackReason {
+    /// The native process-table enumeration itself failed.
+    EnumerationFailed,
+    /// A process in TUIC's subtree has unreadable argv or start time.
+    UnreadableDescendant,
+}
+
+#[cfg(not(windows))]
+pub(super) fn process_tree_snapshot_from(
+    source: &dyn tuic_core::process_info::ProcessSource,
+    own_pid: u32,
+    now: std::time::SystemTime,
+    ps_fallback: impl FnOnce(PsFallbackReason) -> Option<Vec<ProcessTreeEntry>>,
+) -> Option<Vec<ProcessTreeEntry>> {
+    let native = source.snapshot(true);
+    let reason = match &native {
+        None => Some(PsFallbackReason::EnumerationFailed),
+        Some(processes) => tuic_core::process_info::first_unreadable_in_subtree(processes, own_pid)
+            .map(|_| PsFallbackReason::UnreadableDescendant),
+    };
+    if let Some(reason) = reason
+        && let Some(entries) = ps_fallback(reason)
+    {
+        return Some(entries);
+    }
+    let entries = native?
+        .iter()
+        .map(|process| native_process_tree_entry(process, now))
+        .collect();
+    valid_process_snapshot(true, entries)
+}
+
+/// Map a native process onto the snapshot shape the consumers were written
+/// against (`ps -o comm=,args=`): `name` is argv[0] when readable (macOS `ps`
+/// prints argv[0]-derived text, `-zsh` for a login shell), else the executable
+/// path, else the kernel short name; `command` is argv joined with spaces.
+#[cfg(not(windows))]
+pub(super) fn native_process_tree_entry(
+    process: &tuic_core::process_info::ProcInfo,
+    now: std::time::SystemTime,
+) -> ProcessTreeEntry {
+    ProcessTreeEntry {
+        pid: process.pid,
+        parent_pid: process.ppid,
+        name: process.display_name(),
+        command: process
+            .argv
+            .as_ref()
+            .map(|argv| argv.join(" "))
+            .unwrap_or_default(),
+        age_seconds: process.age_seconds(now),
+        argv_unknown: process.argv.is_err(),
+    }
+}
+
+/// Whether the `ps` fallback may run now.
+///
+/// `unavailable` is set once `ps` can never be spawned here — the exec is denied (a
+/// sandbox: EPERM/EACCES) or there is no `ps` (ENOENT) — so every later fallback is
+/// skipped instead of failing the same exec each second. A transient spawn failure
+/// (EAGAIN under a process limit, EINTR, ENOMEM) does not set it.
+///
+/// A `ps` that started but exited unsuccessfully (killed, a transient table-read
+/// failure) does not prove it can never run again, so it only arms a cooldown:
+/// `retry_after_secs` (unix seconds) keeps a persistently failing `ps` from being
+/// exec'd every second while a later snapshot can still try again.
+#[cfg(not(windows))]
+pub(super) struct PsFallbackState {
+    pub(super) unavailable: std::sync::atomic::AtomicBool,
+    pub(super) retry_after_secs: std::sync::atomic::AtomicU64,
+}
+
+#[cfg(not(windows))]
+impl PsFallbackState {
+    pub(super) const fn new() -> Self {
+        Self {
+            unavailable: std::sync::atomic::AtomicBool::new(false),
+            retry_after_secs: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+}
+
+/// How long an unsuccessfully exited `ps` is left alone before the next attempt.
+#[cfg(not(windows))]
+const PS_FALLBACK_RETRY_COOLDOWN_SECS: u64 = 60;
+
+#[cfg(not(windows))]
+static PS_FALLBACK: PsFallbackState = PsFallbackState::new();
+
+#[cfg(not(windows))]
+fn unix_now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs())
+}
+#[cfg(not(windows))]
+static PS_FALLBACK_WARNED_ENUMERATION: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+#[cfg(not(windows))]
+static PS_FALLBACK_WARNED_UNREADABLE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// The `ps` fallback for [`process_tree_snapshot`]. The one place production
+/// code still execs `ps` (allow-listed in `scripts/check-no-process-exec.mjs`).
+#[cfg(not(windows))]
+pub(super) fn ps_process_tree_snapshot(reason: PsFallbackReason) -> Option<Vec<ProcessTreeEntry>> {
+    use std::sync::atomic::Ordering;
+    if PS_FALLBACK.unavailable.load(Ordering::Relaxed)
+        || unix_now_secs() < PS_FALLBACK.retry_after_secs.load(Ordering::Relaxed)
+    {
+        return None;
+    }
+    let warned = match reason {
+        PsFallbackReason::EnumerationFailed => &PS_FALLBACK_WARNED_ENUMERATION,
+        PsFallbackReason::UnreadableDescendant => &PS_FALLBACK_WARNED_UNREADABLE,
+    };
+    if !warned.swap(true, Ordering::Relaxed) {
+        tracing::warn!(
+            source = "process_snapshot",
+            ?reason,
+            "native process snapshot insufficient; falling back to `ps` (logged once per reason)"
+        );
+    }
+    run_ps_fallback(&PS_FALLBACK, unix_now_secs(), || {
+        std::process::Command::new("ps")
+            .args(["-ww", "-axo", "pid=,ppid=,etime=,comm=,args="])
+            .output()
+    })
+}
+
+/// [`ps_process_tree_snapshot`]'s spawn, latch and clock, all injected so the
+/// latch rule is testable without exec'ing anything.
+#[cfg(not(windows))]
+pub(super) fn run_ps_fallback(
+    state: &PsFallbackState,
+    now_secs: u64,
+    spawn: impl FnOnce() -> std::io::Result<std::process::Output>,
+) -> Option<Vec<ProcessTreeEntry>> {
+    use std::sync::atomic::Ordering;
+    let output = match spawn() {
+        Ok(output) => output,
+        Err(error) => {
+            let permanent = matches!(
+                error.kind(),
+                std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::NotFound
+            );
+            if permanent {
+                if !state.unavailable.swap(true, Ordering::Relaxed) {
+                    tracing::warn!(
+                        source = "process_snapshot",
+                        %error,
+                        "`ps` fallback cannot run; using the native snapshot with unknown argv"
+                    );
+                }
+            } else {
+                tracing::debug!(
+                    source = "process_snapshot",
+                    %error,
+                    "`ps` fallback failed to spawn this time; will retry"
+                );
+            }
+            return None;
+        }
+    };
+    // A `ps` that started but exited unsuccessfully (killed, a table-read failure) is not
+    // proof it can never run: arm a cooldown rather than latching it off for the process
+    // lifetime, so a persistently failing `ps` is not exec'd every second but a later
+    // snapshot (and a recovered `ps`) still gets another try.
+    if !output.status.success() {
+        let until = now_secs.saturating_add(PS_FALLBACK_RETRY_COOLDOWN_SECS);
+        if state.retry_after_secs.swap(until, Ordering::Relaxed) <= now_secs {
+            tracing::warn!(
+                source = "process_snapshot",
+                status = %output.status,
+                cooldown_secs = PS_FALLBACK_RETRY_COOLDOWN_SECS,
+                "`ps` fallback exited unsuccessfully; using the native snapshot with unknown argv until the cooldown ends"
+            );
+        }
+    }
     parse_process_tree_snapshot(
         output.status.success(),
         &String::from_utf8_lossy(&output.stdout),
@@ -498,6 +710,7 @@ pub(super) fn parse_process_tree_snapshot(
             name: name.to_string(),
             command: command.trim_start().to_string(),
             age_seconds: parse_elapsed_time(elapsed),
+            argv_unknown: false,
         });
     }
     (!result.is_empty()).then_some(result)
@@ -565,6 +778,7 @@ pub(crate) fn process_tree_snapshot() -> Option<Vec<ProcessTreeEntry>> {
                 command: String::new(),
                 name,
                 age_seconds: None,
+                argv_unknown: false,
             });
             if Process32Next(snapshot, &mut entry) == 0 {
                 break;
@@ -575,7 +789,6 @@ pub(crate) fn process_tree_snapshot() -> Option<Vec<ProcessTreeEntry>> {
     }
 }
 
-#[cfg(any(windows, test))]
 pub(super) fn valid_process_snapshot(
     enumeration_succeeded: bool,
     processes: Vec<ProcessTreeEntry>,
@@ -1561,14 +1774,9 @@ pub(super) fn is_script_interpreter(name: &str) -> bool {
 /// Returns None if the lookup fails.
 #[cfg(target_os = "macos")]
 pub(crate) fn process_name_from_pid(pid: u32) -> Option<String> {
-    let mut buf = [0u8; libc::MAXPATHLEN as usize];
-    // SAFETY: proc_pidpath writes into the provided buffer up to buffersize bytes.
-    // The buffer is stack-allocated with known size. pid is a valid u32 cast to i32.
-    let ret = unsafe { libc::proc_pidpath(pid as i32, buf.as_mut_ptr().cast(), buf.len() as u32) };
-    if ret <= 0 {
-        return None;
-    }
-    let path = std::str::from_utf8(&buf[..ret as usize]).ok()?;
+    // `proc_pidpath`, shared with the process-tree snapshot.
+    let path = tuic_core::process_info::exe(pid)?;
+    let path = path.to_str()?;
     if let Some(agent_type) = classify_agent_name_or_path(path) {
         return Some(agent_type.to_string());
     }
@@ -1593,7 +1801,7 @@ pub(crate) fn process_name_from_pid(pid: u32) -> Option<String> {
     // Native Claude installs a numeric executable; comm alone cannot name it.
     // Keep comm/process-title discovery when readlink is denied or the path
     // describes an interpreter instead of the agent it is hosting.
-    if let Ok(path) = std::fs::read_link(format!("/proc/{pid}/exe"))
+    if let Some(path) = tuic_core::process_info::exe(pid)
         && let Some(agent) = classify_agent_name_or_path(&path.to_string_lossy())
     {
         return Some(agent.to_string());
@@ -2090,14 +2298,11 @@ pub(crate) fn collect_process_stats(state: &AppState) -> Vec<ProcessStats> {
 /// each one taken while the session lock was held. One shared map serves every
 /// root, so the cost no longer scales with the number of sessions.
 pub(crate) fn process_parent_map() -> Option<std::collections::HashMap<u32, Vec<u32>>> {
+    // Native (`tuic_core::process_info`), not `ps -eo pid,ppid`: sandboxed
+    // hosts refuse to exec the setuid `ps`, which emptied the modal there.
     #[cfg(not(windows))]
     {
-        let output = std::process::Command::new("ps")
-            .args(["-eo", "pid,ppid"])
-            .output()
-            .ok()?;
-        let parent_map = parse_process_parent_map(&String::from_utf8_lossy(&output.stdout));
-        (!parent_map.is_empty()).then_some(parent_map)
+        tuic_core::process_info::parent_map(&tuic_core::process_info::NativeProcessSource)
     }
     #[cfg(windows)]
     {
@@ -2127,27 +2332,6 @@ pub(crate) fn process_parent_map() -> Option<std::collections::HashMap<u32, Vec<
     }
 }
 
-/// Parse `ps -eo pid,ppid` output into a parent -> children map.
-///
-/// Rows that do not read as two PIDs (the header, a truncated line) are
-/// skipped. Aborting on the first unreadable row would report every session as
-/// childless, and one shared map makes that failure global instead of local.
-#[cfg(not(windows))]
-pub(super) fn parse_process_parent_map(text: &str) -> std::collections::HashMap<u32, Vec<u32>> {
-    let mut parent_map: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
-    for line in text.lines() {
-        let mut parts = line.split_whitespace();
-        let (Some(Ok(pid)), Some(Ok(parent_pid))) = (
-            parts.next().map(str::parse::<u32>),
-            parts.next().map(str::parse::<u32>),
-        ) else {
-            continue;
-        };
-        parent_map.entry(parent_pid).or_default().push(pid);
-    }
-    parent_map
-}
-
 /// Every transitive descendant of `root`, excluding the root itself.
 ///
 /// `seen` guards the walk: the table comes from the OS, and a self-parented row
@@ -2173,35 +2357,19 @@ pub(super) fn descendants_from_parent_map(
     result
 }
 
-/// Query RSS (KB) and CPU% for a batch of PIDs using `ps` on Unix.
+/// Query RSS (KB) and CPU% for a batch of PIDs on Unix, natively.
+///
+/// CPU% is the process-lifetime average (CPU time over wall time since the
+/// process started) — Linux `ps -o %cpu` semantics. A pid whose usage cannot be
+/// read (gone, or on macOS owned by another user, e.g. under `sudo`) is absent
+/// and reports as 0 KB / 0%.
 #[cfg(not(windows))]
 pub(super) fn query_process_stats(pids: &[u32]) -> std::collections::HashMap<u32, (u64, f32)> {
-    let mut map = std::collections::HashMap::new();
-    if pids.is_empty() {
-        return map;
-    }
-    let pid_args: Vec<String> = pids.iter().map(|p| p.to_string()).collect();
-    let Ok(output) = std::process::Command::new("ps")
-        .args(["-o", "pid,rss,%cpu", "-p"])
-        .arg(pid_args.join(","))
-        .output()
-    else {
-        return map;
-    };
-    let text = String::from_utf8_lossy(&output.stdout);
-    for line in text.lines().skip(1) {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 3
-            && let (Ok(pid), Ok(rss), Ok(cpu)) = (
-                parts[0].parse::<u32>(),
-                parts[1].parse::<u64>(),
-                parts[2].parse::<f32>(),
-            )
-        {
-            map.insert(pid, (rss, cpu));
-        }
-    }
-    map
+    tuic_core::process_info::usage_stats(
+        &tuic_core::process_info::NativeProcessSource,
+        pids,
+        std::time::SystemTime::now(),
+    )
 }
 
 /// Query RSS (KB) and CPU% for a batch of PIDs on Windows.

@@ -11492,27 +11492,14 @@ branch refs/heads/feat
     /// count would report "2 before, 2 after" as unchanged even if one child
     /// had been reaped and a different one leaked in the same window.
     ///
-    /// Unix-only, like its caller: `ps` and the zombie state are both POSIX,
-    /// and without the gate this is dead code the Windows job warns about.
+    /// Unix-only, like its caller: the zombie state is POSIX, and without the
+    /// gate this is dead code the Windows job warns about. Read natively
+    /// (`tuic_core::process_info`), never by exec'ing `ps`: sandboxed hosts
+    /// refuse to run the setuid `ps`, which used to fail this test there.
     #[cfg(unix)]
     fn own_zombie_pids() -> Vec<u32> {
-        let ps = Command::new("ps")
-            .args(["-o", "pid=,ppid=,stat=", "-ax"])
-            .output()
-            .expect("ps");
-        let table = String::from_utf8_lossy(&ps.stdout);
-        let mine = std::process::id().to_string();
-        table
-            .lines()
-            .filter_map(|line| {
-                let mut fields = line.split_whitespace();
-                let pid = fields.next()?;
-                if fields.next()? != mine {
-                    return None;
-                }
-                fields.next()?.starts_with('Z').then(|| pid.parse().ok())?
-            })
-            .collect()
+        tuic_core::process_info::zombie_children(std::process::id())
+            .expect("list this process's zombie children")
     }
 
     /// End-to-end companion to `test_fetch_local_branch_with_slash_is_noop`:

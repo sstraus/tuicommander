@@ -99,17 +99,7 @@ fn executable_under_an_agent_named_directory_is_not_an_agent() {
     let scratch = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
     let dir = scratch.path().join("pi");
     std::fs::create_dir(&dir).unwrap();
-    let exe = dir.join("tool");
-    std::fs::copy("/bin/cat", &exe).unwrap();
-    #[cfg(target_os = "macos")]
-    assert!(
-        Command::new("/usr/bin/codesign")
-            .args(["--force", "--sign", "-"])
-            .arg(&exe)
-            .status()
-            .unwrap()
-            .success()
-    );
+    let exe = tuic_test_support::install_identity_probe(&dir, "tool");
     let mut child = Command::new(&exe).stdin(Stdio::piped()).spawn().unwrap();
     let mut name = None;
     for _ in 0..200 {
@@ -123,4 +113,38 @@ fn executable_under_an_agent_named_directory_is_not_an_agent() {
     child.wait().unwrap();
     let name = name.expect("process name");
     assert_eq!(crate::pty::classify_agent(&name), None, "name={name}");
+}
+
+/// Catches: foreground identity read from anything but the executable's own
+/// name. An installed probe named exactly like an agent is that agent; one
+/// whose name merely contains an agent's (`claudex`, `my-codex`) or a shell
+/// is not, and the name `process_name_from_pid` reports is the file name.
+#[cfg(unix)]
+#[test]
+fn process_name_from_pid_classifies_an_agent_named_executable_and_not_a_lookalike() {
+    use std::process::{Command, Stdio};
+    let scratch = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
+    let observe = |name: &str| -> String {
+        let exe = tuic_test_support::install_identity_probe(scratch.path(), name);
+        let mut child = Command::new(&exe).stdin(Stdio::piped()).spawn().unwrap();
+        let observed = crate::pty::process_name_from_pid(child.id());
+        child.kill().unwrap();
+        child.wait().unwrap();
+        observed.unwrap_or_else(|| panic!("no process name for {name}"))
+    };
+    for agent in ["claude", "codex"] {
+        let name = observe(agent);
+        assert_eq!(name, agent);
+        assert_eq!(crate::pty::classify_agent(&name), Some(agent));
+    }
+    for (file, expected) in [
+        ("claudex", "claudex"),
+        ("my-codex", "my-codex"),
+        ("bash", "bash"),
+        ("mywrapper", "mywrapper"),
+    ] {
+        let name = observe(file);
+        assert_eq!(name, expected);
+        assert_eq!(crate::pty::classify_agent(&name), None, "name={name}");
+    }
 }
