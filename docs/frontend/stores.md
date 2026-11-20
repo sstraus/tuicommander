@@ -97,6 +97,21 @@ interface TabLayout {
 
 Manages saved repositories, branches, terminal associations, and PR status cache.
 
+### Repository refresh ownership
+
+The settings refresh coordinator owns repository reads and adoption. The legacy
+`repositories-changed` event invalidates the same `repositories_registration`
+reader as settings events. Notifications queued together share a read; a notice
+during a read invalidates that result and schedules a replacement. Reconnects
+also use this reader. No keyboard or rendering delay is added.
+
+Adoption waits for in-flight saves, keeps unsaved local intent, and advances the
+persisted baseline with adopted state. State and baseline changes are published
+in one reactive batch, so consumers see one complete document rather than each
+intermediate repository, group or order update. It inspects live repository intent only
+for records that changed on disk, rather than serializing every live workspace.
+Both notification formats remain supported on desktop and HTTP/SSE transports.
+
 ### State Shape
 
 | Field | Type | Description |

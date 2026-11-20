@@ -4,6 +4,17 @@ These rules moved here from `AGENTS.md` to keep that file inside the
 32,768-byte project-instruction budget. They stay binding for every agent;
 `AGENTS.md` keeps a summary and a link to this page.
 
+## Process identity after a macOS agent update
+
+The foreground probe normally resolves a PID with `proc_pidpath`. An updater can
+unlink the executable while the process still runs, so that call returns
+`ENOENT`. In that case, TUIC reads the current kernel process name with
+`proc_name` and applies the same agent classifier. It never substitutes a cached
+agent identity. A shell or unknown name is not promoted to an agent, and a dead
+PID still has no identity. Foreground/root ownership and composer readiness
+checks remain unchanged. This fallback does not recover a missing executable
+path when only that path, rather than the process name, identifies the agent.
+
 ## The bottom zone is not agent output — never parse it
 
 Below an agent's input box sits a status line **the user configures**: a Claude

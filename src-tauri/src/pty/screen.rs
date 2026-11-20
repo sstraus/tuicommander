@@ -1557,16 +1557,24 @@ pub(super) fn is_script_interpreter(name: &str) -> bool {
 }
 
 /// Look up the process name for a given PID using OS-native syscalls.
-/// On macOS uses `proc_pidpath`, on Linux resolves `/proc/{pid}/exe` with a comm fallback.
+/// On macOS uses `proc_pidpath` with a current-name fallback for unlinked images;
+/// on Linux resolves `/proc/{pid}/exe` with a comm fallback.
 /// Returns None if the lookup fails.
 #[cfg(target_os = "macos")]
 pub(crate) fn process_name_from_pid(pid: u32) -> Option<String> {
     let mut buf = [0u8; libc::MAXPATHLEN as usize];
     // SAFETY: proc_pidpath writes into the provided buffer up to buffersize bytes.
     // The buffer is stack-allocated with known size. pid is a valid u32 cast to i32.
-    let ret = unsafe { libc::proc_pidpath(pid as i32, buf.as_mut_ptr().cast(), buf.len() as u32) };
+    let mut ret =
+        unsafe { libc::proc_pidpath(pid as i32, buf.as_mut_ptr().cast(), buf.len() as u32) };
     if ret <= 0 {
-        return None;
+        // An updater can unlink a live image, making proc_pidpath return ENOENT.
+        // Read the current kernel name, not a cached pre-exec agent identity.
+        // SAFETY: proc_name writes at most buf.len() bytes into this buffer.
+        ret = unsafe { libc::proc_name(pid as i32, buf.as_mut_ptr().cast(), buf.len() as u32) };
+        if ret <= 0 {
+            return None;
+        }
     }
     let path = std::str::from_utf8(&buf[..ret as usize]).ok()?;
     if let Some(agent_type) = classify_agent_name_or_path(path) {

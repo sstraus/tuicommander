@@ -38,7 +38,9 @@ if (/Mac|iPhone|iPad/.test(platform) || /Mac OS/.test(ua)) os = "macos";
 else if (/Win/.test(platform)) os = "windows";
 
 const labels = { macos: "Download for macOS", windows: "Download for Windows", linux: "Download for Linux" };
-const assetSuffix = { macos: ".dmg", windows: "x64-setup.exe", linux: "amd64.AppImage" };
+// Browser OS detection cannot reliably identify Linux CPU architecture. Keep the
+// Linux link on the release asset chooser; the shell installer uses uname -m.
+const assetSuffix = { macos: ".dmg", windows: "x64-setup.exe", linux: null };
 const osButtons = document.querySelectorAll("[data-download]");
 osButtons.forEach((b) => {
   if (b.dataset.download === "auto") b.textContent = labels[os];

@@ -224,6 +224,134 @@ fn mutation_with_lost_output_remains_uncertain_after_stop_replay_and_reconciliat
     assert!(replayed.attempt.unwrap().result.is_none());
 }
 
+// Catches: a delayed observation from the original script being attributed to an
+// approved rerun, including the error-to-uncertainty fallback; current-generation
+// identical uncertainty must still commit instead of deduplicating against generation 0.
+#[tokio::test]
+async fn delayed_original_observation_cannot_overwrite_the_approved_script_rerun() {
+    use super::super::neutral_effects::EffectQuestion;
+    use tokio::sync::oneshot;
+
+    for late_reply in ["uncertain", "completed", "error"] {
+        let (_dir, owner, original, adapter) = prepared(ECHO, &policy(false));
+        let id = original.key.fence.run.clone();
+        let unknown = adapter.reconcile(&original);
+        let (release, held) = oneshot::channel();
+        let old_done = Arc::new(Notify::new());
+        owner.observe_neutral_future(
+            id.clone(),
+            &original,
+            "held-original-observation".into(),
+            Box::pin(async move { held.await.unwrap() }),
+            old_done.clone(),
+        );
+        // The first lost reply and the operator's question/answer are real ledger
+        // transitions, not hand-set rerun fields in a snapshot.
+        owner
+            .neutral_effect_command(
+                &id,
+                EffectCommand::Observe {
+                    key: original.key.clone(),
+                    observation: unknown.clone(),
+                },
+            )
+            .unwrap();
+        let run = owner.store.neutral_execution(&id).unwrap();
+        owner
+            .neutral_effect_command(
+                &id,
+                EffectCommand::Question {
+                    key: original.key.clone(),
+                    question: EffectQuestion {
+                        revision: 1,
+                        title: "Run the original again?".into(),
+                        deadline_ms: run.deadline_ms,
+                    },
+                },
+            )
+            .unwrap();
+        owner
+            .neutral_effect_command(
+                &id,
+                EffectCommand::Answer {
+                    key: original.key.clone(),
+                    revision: 1,
+                    approved: true,
+                },
+            )
+            .unwrap();
+        let claimed = owner
+            .neutral_effect_command(
+                &id,
+                EffectCommand::Dispatch {
+                    key: original.key.clone(),
+                },
+            )
+            .unwrap();
+        let rerun = claimed.effect(&original.key).unwrap().clone();
+        let completed = EffectObservation {
+            stopped: true,
+            outcome: EffectOutcome::Completed {
+                result: NeutralResult::Completed {
+                    outcome: "ok".into(),
+                    outputs: BTreeMap::from([("next".into(), json!(7))]),
+                },
+            },
+        };
+        release
+            .send(match late_reply {
+                "uncertain" => Ok(unknown.clone()),
+                "completed" => Ok(completed.clone()),
+                _ => Err("original reconciliation reply lost".into()),
+            })
+            .unwrap();
+        old_done.notified().await;
+        assert_eq!(
+            owner.store.neutral_execution(&id).unwrap(),
+            claimed,
+            "{late_reply}: old observation changed the healthy rerun"
+        );
+
+        let current_done = Arc::new(Notify::new());
+        let same_unknown = unknown.clone();
+        owner.observe_neutral_future(
+            id.clone(),
+            &rerun,
+            "current-observation".into(),
+            Box::pin(async move { Ok(same_unknown) }),
+            current_done.clone(),
+        );
+        current_done.notified().await;
+        let current = owner.store.neutral_execution(&id).unwrap();
+        assert!(
+            current.sequence > claimed.sequence,
+            "{late_reply}: identical current-generation result was lost"
+        );
+        assert_eq!(
+            current.effect(&original.key).unwrap().observation.as_ref(),
+            Some(&unknown)
+        );
+        assert!(current.attempt.as_ref().unwrap().result.is_none());
+
+        owner.observe_neutral_future(
+            id.clone(),
+            &rerun,
+            "current-completion".into(),
+            Box::pin(async move { Ok(completed) }),
+            current_done.clone(),
+        );
+        current_done.notified().await;
+        let finished = owner.store.neutral_execution(&id).unwrap();
+        assert_eq!(
+            finished.attempt.as_ref().unwrap().result,
+            Some(NeutralResult::Completed {
+                outcome: "ok".into(),
+                outputs: BTreeMap::from([("next".into(), json!(7))]),
+            })
+        );
+    }
+}
+
 // Catches: parsing a valid truncated prefix as success or allowing unbounded
 // stderr; input limits must refuse before the child can write.
 #[test]

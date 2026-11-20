@@ -1,5 +1,10 @@
 # TUICommander Specification
 
+Linux ARM64 desktop packaging is prepared for 2.1.2: native Ubuntu 22.04 ARM64
+builds produce deb/rpm/AppImage packages with architecture and updater selection
+checks. Actual native installation and desktop smoke remain release gates, not
+verified support claims. See [the CI platform contract](docs/guides/ci.md#native-linux-arm64-desktop-packages-212).
+
 Neutral Designer trigger authoring renders installed source schemas and pinned workflow inputs through the shared action client. Preview and save are separate from enabling. Enabling requires current overlap acknowledgement; mutation errors re-read durable binding metadata. The shared transport is integrated; production provider behavior is verified separately from authoring rendering.
 
 - [x] Neutral catalog Designer authoring (#014-5d73): schema-driven authoring uses `workflow_neutral_action` and preserves the legacy Designer until parity. Configured catalog, pure preview, pinned subflows and correction contracts are verified through actual service DTOs and the real frontend RPC boundary; live end-to-end parity remains a separate gate.
@@ -74,7 +79,7 @@ Codex global hook setup (#2625-c4b5): installed status requires native current-d
 - [x] AI Chat active conversation follows across desktop and mobile through backend workspace selection, IPC/SSE invalidation and reconnect catch-up; session CLI | Chat remains device-local (#2403-e711).
 - [x] AI Chat sends multi-component absolute-path prompts without bypassing known or unknown slash-command validation (#2421-6e0a).
 
-- [x] AI Chat retains per-session ACP command offers, completes slash commands, routes supported host actions locally, and explains unavailable names without sending them (#2393-19fc).
+- [x] AI Chat retains per-session ACP command offers, completes slash commands, routes supported host actions locally, and explains unavailable names without sending them (#2393-19fc). `/clear` resets agent context through the New session lifecycle, preserves saved history and retains the draft when blocked or unsuccessful. Agent offers remain available when no active host handler owns their name. Local Sending receipts preserve submitted payloads until backend queue, running, or settlement evidence; failed receipts offer an explicit retry without changing newer drafts.
 
 - [x] AI Chat automatically compacts an exhausted ego context and replays the submitted prompt once through the shared manual compaction path; recovery failures stop without looping (#2392-b2e3).
 - [x] AI Chat bottom card: repository header and independent pin, document draft action, input/send row and live context/model footer; conversation overflow actions remain available (#2394-e3c4).
@@ -129,7 +134,7 @@ Published story workflows can start in Plans and Stories through the owning daem
 
 Terminal workflow runs remove their own untouched checkouts and branches after verified agent closure. Changed or still-owned work is retained with a run incident and a base-cleanup refusal that names its run. Allocation receipts survive restart; caller-supplied checkouts keep their existing lifecycle. See [Run checkout lifecycle](docs/backend/workflows.md#run-checkout-lifecycle).
 
-**Version:** 2.1.1
+**Version:** 2.1.2
 **Last Updated:** 2026-09-16
 
 ## Shared form controls — Implemented (#1815-01c9)
@@ -1023,6 +1028,7 @@ Some frontend-only stores persist to localStorage:
 - [ ] Error handling strategy config
 
 ### Agent Configuration (Done)
+- [x] MCP spawn provides an interactive Ego positional prompt fallback while preserving explicit arguments and named run profiles
 - [x] Settings > Agents tab with per-agent run configurations and an explicit, removable Codex bypass argument with warning icon
 - [x] MCP spawn accepts caller environment overrides and an overrideable run-config model while preserving legacy model arguments
 - [x] MCP bridge install/remove for every MCP-capable agent in the canonical registry

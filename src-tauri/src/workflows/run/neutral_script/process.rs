@@ -106,11 +106,13 @@ impl ScriptAdapter {
                 .reopen()
                 .map_err(|_| "open script input transport")?,
         );
-        let output = match super::super::check::execute_process(
+        // Only a read-only script can be run again, so only it needs a trace of its group.
+        let output = match super::super::check::execute_process_recording(
             command,
             Duration::from_secs(u64::from(policy.timeout_secs)),
             Some((self.runs_db.clone(), owner(effect))),
             false,
+            !policy.mutation,
         ) {
             Ok(output) => output,
             Err(super::super::check::ProcessError::NotStarted(reason)) => {

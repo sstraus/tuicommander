@@ -73,7 +73,8 @@ const resetSuffix = (resetsAt: string | null | undefined, now: number) => {
  * is left before the monthly limit (a monthly window as percent left; a credit balance as an
  * amount). Claude extra usage is a pay-as-you-go overage budget, not a subscription limit, so it
  * never makes a segment. Each segment carries the time to its own reset (" -4d").
- * Returns null when the snapshot has no weekly or monthly data.
+ * Falls back to an account-wide unclassified window without inferring its duration.
+ * Returns null when the snapshot has no displayable quota data.
  */
 export function formatAgentUsage(snapshot: QuotaView["snapshot"], now: number): AgentUsageText | null {
 	if (!snapshot) return null;
@@ -96,6 +97,13 @@ export function formatAgentUsage(snapshot: QuotaView["snapshot"], now: number): 
 		used.push(monthly.used_percent);
 	} else if (Number.isFinite(credits)) {
 		segments.push(`credits: ${Math.floor(credits)} left`);
+	}
+	if (!segments.length) {
+		const other = windows.find((window) => window.kind === "other" && !window.model);
+		if (other) {
+			segments.push(`${other.label}: ${Math.round(other.used_percent)}%${resetSuffix(other.resets_at, now)}`);
+			used.push(other.used_percent);
+		}
 	}
 	if (!segments.length) return null;
 	const resets = windows

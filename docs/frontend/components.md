@@ -736,7 +736,11 @@ Codex quota bars and typed provider detail come from the same registry store. Ba
 Native dashboard for Grok Build's `_x.ai/billing` ACP extension. Shows the
 current billing-period percentage, subscription tier, period end, on-demand
 used/cap amounts, and prepaid balance. It shares the usage-dashboard visual
-system and never turns an absent provider value into zero.
+system and never turns an absent provider value into zero. Billing detail remains
+available when the provider omits its optional usage percentage; no quota window
+is invented. An unknown Grok period appears as `usage` without an inferred duration.
+Reusing the dashboard for another session or the host refreshes its selected data
+immediately and discards replies from a previous selection.
 
 ## UI Primitives (`components/ui/`)
 

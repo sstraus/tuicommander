@@ -339,3 +339,60 @@ Short notes keep their original contents.
 
 The version-tag workflow uses the matching `CHANGELOG.md` section and a download
 legend. It does not use the nightly commit-history notes step.
+
+
+## Native Linux ARM64 desktop packages (2.1.2)
+
+Release and nightly desktop matrices use `ubuntu-22.04-arm` for native aarch64
+builds, alongside the unchanged Ubuntu 22.04 x64, macOS ARM64 and Windows x64
+legs. GitHub lists this ARM64 runner in its [hosted runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+The runner host selects the Rust target and both bundled `tuic`/`tuic-bridge`
+sidecars; this is not the headless remote-daemon build. Node/pnpm build the same
+frontend locally on that host. Rust stays pinned to the shared workflow version.
+
+The ARM64 leg uses native Ubuntu `libvulkan-dev`, not the SDK action's
+x64 Linux tool binaries. Ubuntu 22.04 does not package `glslc`. The ARM64 step
+builds shaderc v2023.8 from an immutable commit and the matching glslang,
+SPIRV-Headers and SPIRV-Tools revisions in its `DEPS`. The helper
+`scripts/build-linux-arm64-glslc.sh` checks each official source archive's SHA256
+before extraction. It also installs pinned Khronos Vulkan-Headers 1.4.309 to
+the task SDK prefix: Ubuntu 22.04 headers lack C++ declarations used by whisper.
+Only build-time headers change; the SDK links the Ubuntu runtime loader from
+`libvulkan-dev`. The helper builds the native compiler with CMake/Ninja and `python-is-python3` (the
+shaderc version generator invokes `python`), and compiles a compute shader as
+a prerequisite smoke check. No Git dependency-sync script or prebuilt x64
+compiler runs. Linux x64 keeps the existing Vulkan SDK action.
+It uses the existing Vulkan whisper backend, ALSA audio,
+WebRTC audio processing (Meson/Ninja), WebKitGTK 4.1 and GTK 3. `GGML_NATIVE=OFF`
+and `-march=armv8-a` keep the CPU baseline independent of the runner's CPU.
+Vulkan acceleration needs a compatible device/driver; without a usable device,
+whisper uses the CPU. The Vulkan loader is still required to start the app.
+
+The intended ARM64 runtime baseline is Ubuntu 22.04 or a compatible aarch64 GNU
+Linux distribution (glibc 2.35+, WebKitGTK 4.1/GTK 3, ALSA and AppIndicator).
+The deb/rpm require the distribution Vulkan loader; the AppImage must carry
+`libvulkan.so.1`. AppImage mounting requires working FUSE, or use its extraction
+mode. An RPM filename does not prove compatibility with an older RHEL release:
+its libraries must meet the build baseline. ARM32, musl and older glibc are not
+supported by this desktop build.
+
+`scripts/check-linux-desktop-packages.sh` checks the native host/toolchain, ELF
+machine types of the desktop and both sidecars, deb/rpm architecture and Vulkan
+dependencies, and the extracted payloads of all three package formats. It requires
+a nonempty AppImage updater signature and uploads per-architecture SHA256SUMS.
+Finalization requires all twelve supported default/format-specific updater
+entries in `latest.json`: macOS ARM64 app, Windows x64 NSIS, and Linux x64/ARM64
+AppImage/deb/rpm. Each entry needs a nonblank signature and its native package
+URL suffix. Parallel Tauri updater writers can lose other platform entries;
+missing macOS or Windows entries must block stable publication just as missing
+Linux entries do. This validates completeness, not cryptographic signatures. The shell
+installer selects `arm64.deb`, `aarch64.rpm` or `aarch64.AppImage` from `uname -m`
+and does not fall back to x64. Browser Linux links stay on the asset chooser,
+because a browser's OS string does not reliably identify CPU architecture.
+
+**Evidence limit:** these workflow and selection checks are implemented, not a
+claim that an ARM64 desktop package has already shipped or launched. Before
+2.1.2 publication, record a native ARM64 run, package architecture/dependencies,
+artifact SHA256, installation and actual desktop window/terminal smoke. No ARM64
+Linux display or produced desktop artifact was available in the implementation
+session; a daemon launch or a compile alone does not satisfy this gate.

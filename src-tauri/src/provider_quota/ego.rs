@@ -62,21 +62,31 @@ impl QuotaOwner for Ego {
     ) -> BoxFuture<'a, Result<QuotaSnapshot, QuotaError>> {
         Box::pin(async move {
             let program = self.program().await?;
-            let output = auth_usage(&program, Path::new(&key.credential), &key.provider).await?;
-            parse_auth_usage(&output, &key.provider, SystemClock.now_ms())
+            let output = auth_usage(&program, key).await?;
+            parse_auth_usage(
+                &output,
+                &key.provider,
+                key.connection.as_deref(),
+                SystemClock.now_ms(),
+            )
         })
     }
 }
 
-/// `<ego> auth usage <provider> --json` against the key's `EGO_HOME`. ego
+/// `ego auth [--connection ID] usage [provider] --json` in the key's `EGO_HOME`. ego
 /// answers from its own fresh snapshot when it has one and owns the provider
 /// cadence across processes; TUIC only bounds the process.
-async fn auth_usage(program: &Path, home: &Path, provider: &str) -> Result<Value, QuotaError> {
+async fn auth_usage(program: &Path, key: &SubscriptionKey) -> Result<Value, QuotaError> {
     let unavailable = || QuotaError::Unavailable("ego auth usage unavailable".into());
     let mut command = std::process::Command::new(program);
+    command.arg("auth");
+    if let Some(connection) = &key.connection {
+        command.args(["--connection", connection, "usage", "--json"]);
+    } else {
+        command.args(["usage", &key.provider, "--json"]);
+    }
     command
-        .args(["auth", "usage", provider, "--json"])
-        .env("EGO_HOME", home)
+        .env("EGO_HOME", &key.credential)
         .env_remove("EGO_PROFILE")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -120,13 +130,17 @@ async fn auth_usage(program: &Path, home: &Path, provider: &str) -> Result<Value
 fn parse_auth_usage(
     output: &Value,
     provider: &str,
+    connection: Option<&str>,
     now_ms: u64,
 ) -> Result<QuotaSnapshot, QuotaError> {
-    let issue = output["errors"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|e| matches!(e["provider"].as_str(), Some(p) if p == provider || p == "all"));
+    // A removed connection still identifies its error, but no longer has a known vendor.
+    // This applies to errors only; a quota value always needs both identity fields.
+    let issue = output["errors"].as_array().into_iter().flatten().find(|e| {
+        ((e["provider"].as_str() == Some(provider)
+            || (connection.is_some() && e["provider"].is_null()))
+            && quota_connection(e) == Some(connection))
+            || (e["provider"] == "all" && quota_connection(e) == Some(None))
+    });
     if let Some(issue) = issue {
         let message = issue["message"]
             .as_str()
@@ -146,8 +160,8 @@ fn parse_auth_usage(
     }
     rate_limits(&output["rate_limits"])
         .into_iter()
-        .find(|(p, _)| p == provider)
-        .map(|(_, snapshot)| snapshot)
+        .find(|(p, account, _)| p == provider && account.as_deref() == connection)
+        .map(|(_, _, snapshot)| snapshot)
         .ok_or_else(|| QuotaError::Contract("No ego quota for provider".into()))
 }
 
@@ -164,9 +178,17 @@ fn window_model(name: &str) -> Option<String> {
     (!matches!(scope, "primary" | "secondary")).then(|| scope.replace('_', " "))
 }
 
-/// One snapshot per provider from a `rate_limits` array. ego keeps only the
-/// selected credential of each provider.
-fn rate_limits(value: &Value) -> Vec<(String, QuotaSnapshot)> {
+/// Missing/null is explicitly legacy; malformed identity must never become legacy.
+fn quota_connection(entry: &Value) -> Option<Option<&str>> {
+    match &entry["connection"] {
+        Value::Null => Some(None),
+        Value::String(id) if !id.is_empty() => Some(Some(id)),
+        _ => None,
+    }
+}
+
+/// Vendor and optional named account use the same identity on both read paths.
+fn rate_limits(value: &Value) -> Vec<(String, Option<String>, QuotaSnapshot)> {
     value
         .as_array()
         .into_iter()
@@ -175,7 +197,8 @@ fn rate_limits(value: &Value) -> Vec<(String, QuotaSnapshot)> {
         .collect()
 }
 
-fn rate_limit(entry: &Value) -> Option<(String, QuotaSnapshot)> {
+fn rate_limit(entry: &Value) -> Option<(String, Option<String>, QuotaSnapshot)> {
+    let connection = quota_connection(entry)?.map(str::to_owned);
     let (Some(provider), Some(observed_at_ms)) =
         (entry["provider"].as_str(), entry["observed_at"].as_u64())
     else {
@@ -213,18 +236,17 @@ fn rate_limit(entry: &Value) -> Option<(String, QuotaSnapshot)> {
             QuotaSource::Active
         },
     };
-    Some((provider.to_owned(), snapshot))
+    Some((provider.to_owned(), connection, snapshot))
 }
 
 /// Passive source: the `rate_limits` of a usage report v6 that the session
 /// usage reader already acquired for this `EGO_HOME`. No extra process.
 pub(crate) fn observe_usage_report(registry: &QuotaRegistry, home: &Path, report: &Value) {
     let home = home.to_string_lossy();
-    for (provider, snapshot) in rate_limits(&report["rate_limits"]) {
-        registry.observe(
-            &SubscriptionKey::new("ego", provider, home.as_ref()),
-            snapshot,
-        );
+    for (provider, connection, snapshot) in rate_limits(&report["rate_limits"]) {
+        let mut key = SubscriptionKey::new("ego", provider, home.as_ref());
+        key.connection = connection;
+        registry.observe(&key, snapshot);
     }
 }
 
@@ -234,6 +256,263 @@ mod tests {
 
     fn contract() -> Value {
         serde_json::from_str(include_str!("fixtures/ego-contract.json")).unwrap()
+    }
+
+    // Window schema is the recorded producer contract; only account IDs and quota values
+    // are synthetic so a cross-account result cannot accidentally satisfy the oracle.
+    fn named_contract() -> Value {
+        let legacy = contract()["rate_limits"][0].clone();
+        let mut entries = Vec::new();
+        for (connection, used) in [
+            (None, 9.0),
+            (Some("account_a"), 31.0),
+            (Some("account_b"), 72.0),
+            (Some("anthropic"), 56.0),
+        ] {
+            let mut entry = legacy.clone();
+            entry["connection"] = serde_json::json!(connection);
+            entry["windows"][0]["used_percentage"] = serde_json::json!(used);
+            entries.push(entry);
+        }
+        serde_json::json!({"rate_limits": entries, "errors": []})
+    }
+
+    // Catches: active reads omit --connection or match another same-vendor result.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn ego_active_reads_select_named_account_and_preserve_legacy_command() {
+        let script = crate::test_support::fake_ssh_script(
+            "ego-quota-connection",
+            r#"printf '%s\n' "$@" > "$EGO_HOME/argv"
+exec /bin/cat "$EGO_HOME/auth-usage.json""#,
+            "exit /b 2",
+        );
+        let home = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
+        std::fs::write(
+            home.path().join("auth-usage.json"),
+            named_contract().to_string(),
+        )
+        .unwrap();
+        let owner = Ego::with_program(script);
+        for (connection, used) in [
+            (None, 9.0),
+            (Some("account_b"), 72.0),
+            (Some("anthropic"), 56.0),
+        ] {
+            let mut key = SubscriptionKey::new("ego", "anthropic", home.path().to_string_lossy());
+            key.connection = connection.map(str::to_owned);
+            let snapshot = owner.read(&key).await.unwrap();
+            assert_eq!(snapshot.windows[0].used_percent, used, "{connection:?}");
+            let expected = match connection {
+                Some(id) => format!("auth\n--connection\n{id}\nusage\n--json\n"),
+                None => "auth\nusage\nanthropic\n--json\n".into(),
+            };
+            assert_eq!(
+                std::fs::read_to_string(home.path().join("argv")).unwrap(),
+                expected
+            );
+        }
+    }
+
+    // Catches: passive observations update a vendor-wide key instead of the active account key.
+    #[test]
+    fn ego_passive_named_and_legacy_observations_keep_the_same_binding_identity() {
+        let registry = QuotaRegistry::default();
+        let keys: Vec<_> = [
+            None,
+            Some("account_a"),
+            Some("account_b"),
+            Some("anthropic"),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, connection)| {
+            let mut key = SubscriptionKey::new("ego", "anthropic", "/ego-home");
+            key.connection = connection.map(str::to_owned);
+            registry.bind(&index.to_string(), key.clone());
+            key
+        })
+        .collect();
+        let mut report = named_contract();
+        for entry in report["rate_limits"].as_array_mut().unwrap() {
+            entry["source"] = "passive".into();
+        }
+        observe_usage_report(&registry, Path::new("/ego-home"), &report);
+        for (key, used) in keys.iter().zip([9.0, 31.0, 72.0, 56.0]) {
+            let passive = registry.get(key).snapshot.unwrap();
+            let active =
+                parse_auth_usage(&report, &key.provider, key.connection.as_deref(), 0).unwrap();
+            assert_eq!(passive, active);
+            assert_eq!(passive.windows[0].used_percent, used);
+            assert_eq!(passive.source, QuotaSource::Passive);
+        }
+        let mut other_home = keys[2].clone();
+        other_home.credential = "/other-home".into();
+        assert!(registry.get(&other_home).snapshot.is_none());
+    }
+
+    // Catches: a legacy/other-account value or issue supplies quota for a missing named account.
+    #[test]
+    fn ego_named_result_matching_never_falls_back_to_legacy_or_malformed_identity() {
+        for connection in [
+            Value::Null,
+            serde_json::json!("account_a"),
+            serde_json::json!(""),
+            serde_json::json!(7),
+        ] {
+            let mut report = named_contract();
+            report["rate_limits"] = serde_json::json!([report["rate_limits"][0].clone()]);
+            report["rate_limits"][0]["connection"] = connection.clone();
+            report["errors"] = serde_json::json!([{"provider": "anthropic", "connection": connection, "state": "auth_invalid", "message": "other account"}]);
+            assert!(matches!(
+                parse_auth_usage(&report, "anthropic", Some("account_b"), 0),
+                Err(QuotaError::Contract(_))
+            ));
+        }
+        let mut report = named_contract();
+        report["errors"] = serde_json::json!([{"provider": "anthropic", "connection": "account_b", "state": "auth_invalid", "message": "repair B"}]);
+        assert_eq!(
+            parse_auth_usage(&report, "anthropic", Some("account_b"), 0),
+            Err(QuotaError::Auth("repair B".into()))
+        );
+        assert_eq!(
+            parse_auth_usage(&report, "anthropic", None, 0)
+                .unwrap()
+                .windows[0]
+                .used_percent,
+            9.0
+        );
+        // An orphaned named credential has a known account but no honest vendor.
+        // Catches: that producer-supported unavailable state becomes a contract error.
+        report["errors"] = serde_json::json!([{"connection": "account_b", "state": "unavailable", "message": "connection is no longer configured"}]);
+        assert_eq!(
+            parse_auth_usage(&report, "anthropic", Some("account_b"), 0),
+            Err(QuotaError::Unavailable(
+                "connection is no longer configured".into()
+            ))
+        );
+        report["errors"][0]["provider"] = "openai".into();
+        assert_eq!(
+            parse_auth_usage(&report, "anthropic", Some("account_b"), 0)
+                .unwrap()
+                .windows[0]
+                .used_percent,
+            72.0,
+            "a known different vendor cannot supply this account's error"
+        );
+    }
+
+    // Catches: the actual producer's named/legacy identity schema diverges from our synthetic cases.
+    #[test]
+    fn ego_recorded_producer_contract_preserves_account_identity() {
+        let active: Value =
+            serde_json::from_str(include_str!("fixtures/ego-named/active-quota.json")).unwrap();
+        let passive: Value =
+            serde_json::from_str(include_str!("fixtures/ego-named/passive-rate-limits.json"))
+                .unwrap();
+        let home = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
+        let session = "01a1e8cb-3cc2-7034-bd41-2b184256d4e0";
+        let directory = home.path().join(session);
+        std::fs::create_dir(&directory).unwrap();
+        let cases = [
+            (
+                None,
+                4_000_000_003_000,
+                11.0,
+                include_str!("fixtures/ego-named/manifest-legacy-or-cleared.json"),
+            ),
+            (
+                Some("account_a"),
+                4_000_000_000_000,
+                66.0,
+                include_str!("fixtures/ego-named/manifest-account_a.json"),
+            ),
+            (
+                Some("account_b"),
+                4_000_000_001_000,
+                33.0,
+                include_str!("fixtures/ego-named/manifest-account_b.json"),
+            ),
+            (
+                Some("anthropic"),
+                4_000_000_002_000,
+                22.0,
+                include_str!("fixtures/ego-named/manifest-anthropic.json"),
+            ),
+        ];
+        let registry = QuotaRegistry::default();
+        for (connection, observed, _, manifest) in cases {
+            let manifest_value: Value = serde_json::from_str(manifest).unwrap();
+            assert_eq!(manifest_value["connection"].as_str(), connection);
+            std::fs::write(directory.join("manifest.json"), manifest).unwrap();
+            // The captured journal has no model selection yet. Do not invent its vendor.
+            assert_eq!(
+                crate::agent_session::ego_session_quota_identity(home.path(), session),
+                Err("ego model unresolved")
+            );
+            let mut key = SubscriptionKey::new("ego", "anthropic", "/recorded-ego-home");
+            key.connection = connection.map(str::to_owned);
+            registry.bind(connection.unwrap_or("legacy"), key);
+            let snapshot = parse_auth_usage(&active, "anthropic", connection, 0).unwrap();
+            assert_eq!(snapshot.observed_at_ms, observed, "{connection:?}");
+            assert_eq!(snapshot.windows[0].used_percent, 82.0);
+        }
+        observe_usage_report(
+            &registry,
+            Path::new("/recorded-ego-home"),
+            &serde_json::json!({"rate_limits": passive}),
+        );
+        for (connection, _, used, _) in cases {
+            let key = registry.binding(connection.unwrap_or("legacy")).unwrap();
+            assert_eq!(
+                registry.get(&key).snapshot.unwrap().windows[0].used_percent,
+                used,
+                "{connection:?}"
+            );
+        }
+        for (vendor, connection, auth_error, fixture) in [
+            (
+                "openai",
+                "expired",
+                true,
+                include_str!("fixtures/ego-named/error-expired.json"),
+            ),
+            (
+                "anthropic",
+                "missing",
+                true,
+                include_str!("fixtures/ego-named/error-missing.json"),
+            ),
+            (
+                "anthropic",
+                "key",
+                false,
+                include_str!("fixtures/ego-named/error-key.json"),
+            ),
+            (
+                "anthropic",
+                "orphan",
+                true,
+                include_str!("fixtures/ego-named/error-orphan.json"),
+            ),
+        ] {
+            let output: Value = serde_json::from_str(fixture).unwrap();
+            let error = parse_auth_usage(&output, vendor, Some(connection), 0).unwrap_err();
+            assert!(
+                matches!(
+                    (&error, auth_error),
+                    (QuotaError::Auth(_), true) | (QuotaError::Unavailable(_), false)
+                ),
+                "{connection}: {error:?}"
+            );
+            assert!(
+                matches!(
+                    parse_auth_usage(&output, vendor, Some("other-account"), 0),
+                    Err(QuotaError::Contract(_))
+                ),
+                "{connection}"
+            );
+        }
     }
 
     // Catches: ego quota silently depends on another harness (a provider CLI on
@@ -299,7 +578,7 @@ exec /bin/cat "$EGO_HOME/auth-usage.json""#,
                 "errors": [{"provider": "anthropic", "state": state, "message": "m", "retry_at": retry_at}]
             })
         };
-        let read = |v: Value| parse_auth_usage(&v, "anthropic", 1_000_000);
+        let read = |v: Value| parse_auth_usage(&v, "anthropic", None, 1_000_000);
         assert_eq!(
             read(issue("auth_invalid", None)),
             Err(QuotaError::Auth("m".into()))
@@ -343,7 +622,7 @@ exec /bin/cat "$EGO_HOME/auth-usage.json""#,
             }],
             "errors": []
         });
-        let snapshot = parse_auth_usage(&output, "anthropic", 1_794_458_260_000).unwrap();
+        let snapshot = parse_auth_usage(&output, "anthropic", None, 1_794_458_260_000).unwrap();
         assert_eq!(snapshot.windows.len(), 2);
         let account_wide: Vec<f64> = snapshot
             .windows

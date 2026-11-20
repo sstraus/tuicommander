@@ -1,6 +1,7 @@
 //! One neutral workflow wire contract; transports do not own service authority.
 pub(crate) mod drafts;
 pub(crate) mod model;
+pub(crate) mod refusal;
 pub(crate) mod templates;
 mod triggers;
 pub(crate) mod validation;
@@ -57,7 +58,7 @@ pub(crate) fn neutral_action(
     caller: Option<super::NativeCaller>,
 ) -> Result<NeutralReply, String> {
     if !crate::fs::is_absolute_on_any_platform(project) {
-        return Err("project must be an absolute path".into());
+        return Err(refusal::PROJECT_NOT_ABSOLUTE.into());
     }
     let project = crate::progress::resolve_owning_project(Some(project))?
         .to_string_lossy()
@@ -166,7 +167,7 @@ pub(crate) fn neutral_action(
         } => {
             let draft = store.get_neutral_draft(&project, &id)?;
             if draft.revision != expected_revision {
-                return Err("neutral draft revision changed".into());
+                return Err(refusal::DRAFT_REVISION_CHANGED.into());
             }
             let context = host.publication_context(&project)?;
             let publication = NeutralAdmissionService {
@@ -199,7 +200,7 @@ pub(crate) fn neutral_action(
             publication,
         } => {
             if publication.reference.project != project {
-                return Err("cross-project child dispatch is not supported".into());
+                return Err(refusal::CHILD_CROSS_PROJECT.into());
             }
             let child = store.get_neutral_publication(
                 &project,

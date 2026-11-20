@@ -101,7 +101,9 @@ impl RuntimeOwner {
         // lookup and the shared transaction; it cannot select another wait.
         match result {
             Ok(_) => Ok(true),
-            Err(error) if error.contains("expired, stale or already answered") => Ok(false),
+            Err(error) if error == crate::workflows::neutral_api::refusal::APPROVAL_STALE => {
+                Ok(false)
+            }
             Err(error) => Err(error),
         }
     }

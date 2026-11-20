@@ -18,8 +18,8 @@ Manual checks that need a live build, a phone, Windows or Boss's eye. The list i
 - [workflows-stories-1.md](to-test/workflows-stories-1.md) — 30 items
 - [workflows-stories-2.md](to-test/workflows-stories-2.md) — 17 items
 - [workflows-stories-3.md](to-test/workflows-stories-3.md) — 19 items
-- [workflows-stories-4.md](to-test/workflows-stories-4.md) — 8 items
-- [workflows-stories-5.md](to-test/workflows-stories-5.md) — 1 items
+- [workflows-stories-4.md](to-test/workflows-stories-4.md) — 39 items
+- [workflows-stories-5.md](to-test/workflows-stories-5.md) — 16 items
 
 ## Agents, hooks and PTY state
 
@@ -34,7 +34,7 @@ Manual checks that need a live build, a phone, Windows or Boss's eye. The list i
 - [misc-4.md](to-test/misc-4.md) — 25 items
 - [misc-5.md](to-test/misc-5.md) — 27 items
 - [misc-6.md](to-test/misc-6.md) — 39 items
-- [misc-7.md](to-test/misc-7.md) — 10 items
+- [misc-7.md](to-test/misc-7.md) — 11 items
 
 ## Settings, themes, tabs, panels and terminal UI
 

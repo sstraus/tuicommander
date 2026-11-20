@@ -30,6 +30,10 @@
 
 - [ ] After Boss manually restarts `make dev` or installs `make build`, measure native keyboard-to-paint latency while a visible agent prints and other agent tabs perform session discovery. Confirm frame-receipt stalls no longer correlate with discovery file reads. The backend regression checks real PTY echo and an independent frame consumer under slow discovery I/O; it does not prove that every historical stall or native WebKit freeze is resolved. This peer did not restart or change the running desktop. _(HUMAN 2026-11-05: needs native keyboard-to-paint latency measurement under agent discovery; code/test: discovery_command_offloads_filesystem_work PASS only shows offload.)_
 
+## Grok billing detail after a backend restart (3078-4a2b)
+
+- [ ] After Boss restarts `make dev` or installs `make build`, confirm a Grok billing response without a usage percentage still shows its reported tier and amounts, with no invented percentage. An unknown period should show `usage` rather than `credits` in the badge. Switch an open session dashboard to the host dashboard and confirm immediate refresh without another session's billing. Real accounts omitting the percentage are not confirmed; adapter tests vary the existing recorded fixture under the optional-field parser contract. Rust validation is pending the shared batch.
+
 ## Grok native question parity (2027-7ef3) — Rust restart required
 
 - [ ] After Boss restarts `make dev` or installs `make build`, verify Grok Ask color/Yes-No choices and a default-mode CLI-enforced tool approval on desktop/mobile. Numeric answers must submit once without Enter; z must switch to a text-only wait, and refusal/settlement must retract the controls. Live native CLI forms were captured, but this worktree backend was not loaded into the desktop. _(NOT VERIFIED 2026-11-05: No Grok throwaway launched (grok_question_parity tests pass); Grok CLI auth/cost unknown. pty/grok_question_parity_tests.rs.)_

@@ -177,6 +177,93 @@ fn owner_matches(owner: &CheckOwner, cancelled: &CheckOwner) -> bool {
         && (owner.1 == cancelled.1 || owner.1.starts_with(&format!("{}:", cancelled.1)))
 }
 
+/// Durable record of an owned process group. A SIGKILL of TUIC leaves the group
+/// running (it has its own group), and this file is the only trace of it.
+#[cfg(unix)]
+fn group_record(owner: &CheckOwner) -> PathBuf {
+    let name: String = owner
+        .1
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    owner.0.with_extension("processes").join(name)
+}
+
+#[cfg(unix)]
+fn write_group_record(owner: &CheckOwner, pid: u32) {
+    let path = group_record(owner);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Err(error) = std::fs::write(&path, pid.to_string()) {
+        tracing::warn!(source = "workflows", %error, "Cannot record the owned process group");
+    }
+}
+
+/// Before an original attempt runs again: stop its group while this process
+/// still owns it, then look for the recorded group. A group that survived a TUIC
+/// kill is never signalled (its id may belong to another program now): the error
+/// is evidence for the operator, never a claim that the group is ours.
+pub(in crate::workflows) fn original_process_gone(
+    db_path: &Path,
+    run_id: &str,
+) -> Result<(), String> {
+    let owner = (db_path.to_owned(), run_id.to_owned());
+    {
+        let mut registry = CHECKS.lock().unwrap_or_else(|error| error.into_inner());
+        let live: Vec<_> = registry
+            .active
+            .get(&owner)
+            .into_iter()
+            .flatten()
+            .filter_map(|process| process.upgrade())
+            .collect();
+        registry.active.remove(&owner);
+        drop(registry);
+        for process in live {
+            process
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .stop(true);
+        }
+    }
+    #[cfg(unix)]
+    {
+        let record = group_record(&owner);
+        let Ok(text) = std::fs::read_to_string(&record) else {
+            return Ok(());
+        };
+        let pgid: libc::pid_t = text
+            .trim()
+            .parse()
+            .map_err(|_| "recorded process group is unreadable; not run again".to_owned())?;
+        // SAFETY: signal 0 only probes for existence.
+        let alive = unsafe { libc::kill(-pgid, 0) } == 0
+            || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH);
+        if alive {
+            return Err(format!(
+                "the original script process group {pgid} may still be running (the id may also belong to another program now)"
+            ));
+        }
+        let _ = std::fs::remove_file(record);
+    }
+    Ok(())
+}
+
+/// The effect settled or its run ended: its record names nothing to wait for.
+pub(in crate::workflows) fn forget_process_group(db_path: &Path, run_id: &str) {
+    #[cfg(unix)]
+    let _ = std::fs::remove_file(group_record(&(db_path.to_owned(), run_id.to_owned())));
+    #[cfg(not(unix))]
+    let _ = (db_path, run_id);
+}
+
 pub(in crate::workflows) fn cancel_checks(db_path: &Path, run_id: &str) {
     let owner = (db_path.to_owned(), run_id.to_owned());
     let mut registry = CHECKS.lock().unwrap_or_else(|error| error.into_inner());
@@ -321,10 +408,22 @@ impl From<ProcessError> for String {
 
 /// One cancellation registry for legacy checks and positioned command nodes.
 pub(in crate::workflows) fn execute_process(
+    command: Command,
+    timeout: Duration,
+    owner: Option<(PathBuf, String)>,
+    allow_cancelled: bool,
+) -> Result<ProcessOutput, ProcessError> {
+    execute_process_recording(command, timeout, owner, allow_cancelled, false)
+}
+
+/// `record_group` leaves a durable trace of the process group, for an attempt
+/// that an operator may approve to run again.
+pub(in crate::workflows) fn execute_process_recording(
     mut command: Command,
     timeout: Duration,
     owner: Option<(PathBuf, String)>,
     allow_cancelled: bool,
+    record_group: bool,
 ) -> Result<ProcessOutput, ProcessError> {
     let start = Instant::now();
     // Registration and spawn share the cancellation lock: cancellation also
@@ -355,6 +454,13 @@ pub(in crate::workflows) fn execute_process(
             "assign workflow check tree: {error}"
         )));
     }
+    #[cfg(unix)]
+    if record_group && let Some(owner) = &owner {
+        write_group_record(owner, child.id());
+    }
+    // A Windows job object ends the group with its owner: nothing to record.
+    #[cfg(not(unix))]
+    let _ = record_group;
     let stdout = drain_output(child.stdout.take());
     let stderr = drain_output(child.stderr.take());
     let process = Arc::new(Mutex::new(CheckProcess {
@@ -410,6 +516,11 @@ pub(in crate::workflows) fn execute_process(
     drop(registry);
     if let Some(error) = stop_error {
         return Err(ProcessError::Uncertain(error));
+    }
+    // The tree was stopped and reaped: the record no longer names a live group.
+    #[cfg(unix)]
+    if result.is_ok() && record_group {
+        let _ = std::fs::remove_file(group_record(&key));
     }
     let exit_code = result.map_err(ProcessError::Uncertain)?;
     let duration_ms = start.elapsed().as_millis().min(u64::MAX as u128) as u64;
