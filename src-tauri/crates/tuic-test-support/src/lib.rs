@@ -27,6 +27,169 @@ fn install_test_temp_root() {
         unsafe { std::env::set_var(key, &root) };
     }
     isolate_git_config(&root);
+    clear_git_location_overrides();
+    install_empty_git_template(&root);
+    fence_git_discovery(&root);
+}
+
+/// Variables that point git at a specific repository or object store. An
+/// exported `GIT_DIR` selects that repository outright and
+/// `GIT_CEILING_DIRECTORIES` never restricts it, so a test process must not
+/// inherit any of them (a developer shell or hook may export them).
+pub const GIT_LOCATION_OVERRIDES: &[&str] = &[
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_NAMESPACE",
+    "GIT_PREFIX",
+];
+
+fn clear_git_location_overrides() {
+    for key in GIT_LOCATION_OVERRIDES {
+        // SAFETY: called from the process constructor, before libtest starts threads.
+        unsafe { std::env::remove_var(key) };
+    }
+}
+
+/// `git init`/`git clone` in a fixture would otherwise copy git's own
+/// `hooks/*.sample` files into every scratch repo: slower, machine-dependent,
+/// and an EPERM where `.git/hooks` writes are forbidden. An empty template dir
+/// keeps them out (its `hooks/` and `info/` are empty directories, so `.git/hooks`
+/// and `.git/info` still exist). Test
+/// processes only; production git calls never see this variable. An inherited
+/// `GIT_TEMPLATE_DIR` is replaced, not honoured: the suite must not depend on a
+/// developer's personal template.
+fn install_empty_git_template(root: &std::path::Path) {
+    let template = root.join("git-template-empty");
+    // `hooks/` stays an empty directory: tests write `.git/hooks/*` without creating it.
+    for dir in ["hooks", "info"] {
+        std::fs::create_dir_all(template.join(dir)).expect("create the empty git template dir");
+    }
+    // git's own template ships this one-line file; tests read and append it.
+    std::fs::write(
+        template.join("info/exclude"),
+        "# git ls-files --others --exclude-from=.git/info/exclude\n",
+    )
+    .expect("write the template's info/exclude");
+    // SAFETY: called from the process constructor, before libtest starts threads.
+    unsafe { std::env::set_var("GIT_TEMPLATE_DIR", &template) };
+}
+
+/// Fail closed: no git process this test binary starts may discover a
+/// repository above the scratch root. A fixture whose `git init` failed used to
+/// fall through to the enclosing real checkout and rename or delete its
+/// branches. See [`git_ceiling_directories`].
+fn fence_git_discovery(root: &std::path::Path) {
+    let root = std::path::absolute(root).expect("absolute test temp root");
+    let existing = std::env::var_os("GIT_CEILING_DIRECTORIES");
+    let ceiling = git_ceiling_directories(&root, existing.as_deref())
+        .unwrap_or_else(|err| panic!("fence git discovery at {}: {err}", root.display()));
+    // SAFETY: called from the process constructor, before libtest starts threads.
+    unsafe { std::env::set_var("GIT_CEILING_DIRECTORIES", ceiling) };
+}
+
+/// The `GIT_CEILING_DIRECTORIES` value that stops git's repository discovery
+/// from climbing out of `root`: `existing` (kept verbatim, so a stricter value
+/// set by an outer wrapper survives) plus `root`'s parent, spelled both
+/// lexically and canonically, each added once.
+///
+/// Git skips any entry it cannot compare with its canonicalized cwd: relative
+/// entries are ignored, and after an empty entry symlinks are no longer
+/// resolved (macOS `/var` vs `/private/var`). Listing both spellings keeps the
+/// fence up either way. The ceiling is the parent, not `root` itself, because
+/// git still ascends from a cwd that *equals* a ceiling entry.
+///
+/// # Errors
+///
+/// `root` is relative or has no parent.
+pub fn git_ceiling_directories(
+    root: &std::path::Path,
+    existing: Option<&std::ffi::OsStr>,
+) -> Result<std::ffi::OsString, String> {
+    let lexical = lexically_normal(root)?;
+    let lexical_parent = lexical
+        .parent()
+        .ok_or_else(|| format!("{} has no parent", root.display()))?
+        .to_path_buf();
+    // Canonicalize the root as given, not its lexical form: the OS resolves a
+    // symlink followed by `..` against the real filesystem, so only this names
+    // where the scratch root really lives. The parent of the canonical root, not
+    // the canonical parent: when `root` itself is a symlink, git compares
+    // against where it really lives. A root that does not exist (yet) is
+    // resolved lexically first, and has no physical entry if that fails too.
+    let physical_parent = std::fs::canonicalize(root)
+        .or_else(|_| std::fs::canonicalize(&lexical))
+        .ok()
+        .and_then(|real| real.parent().map(std::path::Path::to_path_buf));
+    // git splits GIT_CEILING_DIRECTORIES on the list separator and has no escape for it:
+    // an entry containing one would fence two other directories and leave this one open.
+    // Refuse rather than fail open.
+    let separator = if cfg!(windows) { b';' } else { b':' };
+    for entry in std::iter::once(&lexical_parent).chain(physical_parent.as_ref()) {
+        if entry.as_os_str().as_encoded_bytes().contains(&separator) {
+            return Err(format!(
+                "{} contains `{}`, which GIT_CEILING_DIRECTORIES cannot express; use a scratch root without one",
+                entry.display(),
+                separator as char
+            ));
+        }
+    }
+    Ok(append_ceiling_entries(
+        existing,
+        std::iter::once(lexical_parent).chain(physical_parent),
+    ))
+}
+
+/// `path` with `.` and `..` resolved lexically; refuses a relative path, which
+/// git would silently ignore as a ceiling entry.
+fn lexically_normal(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    use std::path::{Component, PathBuf};
+
+    if !path.is_absolute() {
+        return Err(format!("{} is not absolute", path.display()));
+    }
+    let mut lexical = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                lexical.pop();
+            }
+            other => lexical.push(other),
+        }
+    }
+    Ok(lexical)
+}
+
+fn append_ceiling_entries(
+    existing: Option<&std::ffi::OsStr>,
+    entries: impl IntoIterator<Item = std::path::PathBuf>,
+) -> std::ffi::OsString {
+    // Kept as OS strings: a lossy UTF-8 round trip would turn a non-UTF-8 byte
+    // into U+FFFD and fence a different directory. The separator is ASCII, so
+    // comparing the encoded bytes of each segment is exact.
+    let sep: u8 = if cfg!(windows) { b';' } else { b':' };
+    let mut value = existing
+        .map(std::ffi::OsStr::to_os_string)
+        .unwrap_or_default();
+    for entry in entries {
+        let entry = entry.into_os_string();
+        let present = value
+            .as_encoded_bytes()
+            .split(|byte| *byte == sep)
+            .any(|segment| segment == entry.as_encoded_bytes());
+        if entry.is_empty() || present {
+            continue;
+        }
+        if !value.is_empty() {
+            value.push(std::str::from_utf8(&[sep]).expect("ASCII separator"));
+        }
+        value.push(&entry);
+    }
+    value
 }
 
 /// The only git configuration a test process sees besides each fixture

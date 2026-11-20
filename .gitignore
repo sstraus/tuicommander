@@ -61,6 +61,7 @@ scripts/*
 !scripts/workflow-palette-layout.py
 !scripts/agent-test-tests.py
 !scripts/test-agent-test.sh
+!scripts/test-with-test-tmp-git-fence.sh
 !scripts/check-desktop-embedding.sh
 !scripts/check-fixture-build-profile.sh
 !scripts/check-fixture-build-graph.py
