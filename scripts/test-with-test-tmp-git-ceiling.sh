@@ -32,14 +32,21 @@ probe='mkdir -p "$TMPDIR/x"; git -C "$TMPDIR/x" rev-parse --show-toplevel'
 
 # 1. with-test-tmp.sh with its per-run root below a base inside the outer repo
 #    (the opt-in in-checkout layout): the run dir's parent is fenced.
-base="$outer/.tmp/tuic-tests"
+#    The run root must fit the socket budget, or the wrapper moves it to the host
+#    temp dir and the fence is never exercised: this outer repo stays short.
+short="$(mktemp -d "$(tuic_test_host_tmpdir)/tgc.XXXXXX")"
+trap 'rm -rf "$scratch" "$short"' EXIT
+git init -q --template= "$short"
+mkdir -p "$short/scripts"
+cp "$root/scripts/with-test-tmp.sh" "$root/scripts/test-tmp-lib.sh" "$short/scripts/"
+base="$(cd "$short" && pwd -P)/.t"
 if found="$(env -u TUIC_TEST_TMP_ROOT -u GIT_CEILING_DIRECTORIES TUIC_TEST_TMP_BASE="$base" \
-  "$outer/scripts/with-test-tmp.sh" sh -c "$probe" 2>&1)"; then
+  "$short/scripts/with-test-tmp.sh" sh -c "$probe" 2>&1)"; then
   fail "with-test-tmp.sh: git under the test root found $found"
 fi
 # A stricter value set by an outer wrapper survives, and nothing is listed twice.
 value="$(env -u TUIC_TEST_TMP_ROOT GIT_CEILING_DIRECTORIES=/pre/set TUIC_TEST_TMP_BASE="$base" \
-  "$outer/scripts/with-test-tmp.sh" sh -c 'printf %s "$GIT_CEILING_DIRECTORIES"')"
+  "$short/scripts/with-test-tmp.sh" sh -c 'printf %s "$GIT_CEILING_DIRECTORIES"')"
 case "$value" in /pre/set:*) ;; *) fail "with-test-tmp.sh dropped the inherited ceiling: $value" ;; esac
 has_entry "$value" "$base" || fail "with-test-tmp.sh: ceiling lacks the run root's parent: $value"
 no_dups "$value" || fail "with-test-tmp.sh: duplicate ceiling entries: $value"
