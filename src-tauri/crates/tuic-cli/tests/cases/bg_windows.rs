@@ -4,13 +4,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 fn test_root() -> std::path::PathBuf {
-    let root = std::env::var_os("TUIC_TEST_TMP_ROOT")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| {
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".tmp/bg-tests")
-        });
-    std::fs::create_dir_all(&root).unwrap();
-    root
+    tuic_test_support::test_temp_root()
 }
 
 fn wait_for(path: &std::path::Path) {

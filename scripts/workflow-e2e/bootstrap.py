@@ -10,7 +10,8 @@ root=Path(__file__).resolve().parents[2]
 source=Path(__file__).parent
 files={p.name:p.read_bytes() for p in sorted(source.glob('*.py'))}
 digest=hashlib.sha256(b''.join(name.encode()+b'\0'+body for name,body in files.items())).hexdigest()
-cache=root/'.tmp/workflow-e2e-harness'
+# Frozen snapshots live under the caller's temp dir, never inside the checkout.
+cache=Path(os.environ.get('TUIC_TEST_TMP_ROOT') or Path(tempfile.gettempdir())/'tuic-tests')/'workflow-e2e-harness'
 cache.mkdir(parents=True,exist_ok=True)
 target=cache/digest
 if not target.exists():

@@ -4,13 +4,14 @@ import { cpSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node
 import { homedir } from "node:os";
 import { resolve, join } from "node:path";
 import { test } from "node:test";
+import { testTmpRoot } from "./test-tmp-root.mjs";
 
 // Exercise the installed Tauri bundler with the actual manifest binary declarations.
 // Stale fixture executables deliberately exist in the build output, as after tests.
 // Catches: a fixture leaks into a release despite not appearing in externalBin.
 test("release app excludes test fixtures even when their binaries already exist", { timeout: 90000 }, () => {
   assert.equal(process.platform, "darwin", "This packaging probe requires macOS");
-  const root = resolve(".tmp"); mkdirSync(root, { recursive: true });
+  const root = testTmpRoot(); mkdirSync(root, { recursive: true });
   const project = mkdtempSync(join(root, "release-fixture-binaries-"));
   const tauri = join(project, "src-tauri"); mkdirSync(join(tauri, "src"), { recursive: true });
   const manifest = execFileSync(process.env.PYTHON ?? "python3", ["-c", `

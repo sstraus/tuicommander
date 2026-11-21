@@ -10,6 +10,7 @@ import copy
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 import time
 import http.client
 import json
@@ -116,7 +117,8 @@ def fixture_request(socket_path, method, path, value=None):
 
 def local_fixture(args):
     """Real isolated daemons, native mail clients; never a hand-written daemon."""
-    root = Path.home() / "Gits" / ".tmp" / "tuic-1419"
+    # Logs and session cwd: the caller's temp dir (or TUIC_FIXTURE_ROOT), never $HOME.
+    root = Path(os.environ.get("TUIC_FIXTURE_ROOT") or tempfile.gettempdir()) / "tuic-1419"
     root.mkdir(parents=True, exist_ok=True)
     launcher = Path(args.fixture_launcher)
     if not launcher.is_file():
@@ -132,7 +134,8 @@ def local_fixture(args):
             url = f"http://127.0.0.1:{port}"
             log = open(root / f"fixture-{role}.log", "w")
             logs.append(log)
-            env = dict(os.environ, TMPDIR=str(root), TUIC_FIXTURE_TOKEN=token,
+            # The launcher picks each daemon's socket TMPDIR; /health reports it.
+            env = dict(os.environ, TUIC_FIXTURE_TOKEN=token,
                        PAGER="cat", GIT_PAGER="cat")
             instance = "mcp-" + role + "-" + uuid.uuid4().hex[:8]
             process = subprocess.Popen(["bash", str(launcher), args.fixture_bin,

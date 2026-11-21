@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import tempfile
 import time
 import urllib.request
 
@@ -16,7 +17,8 @@ def run(argv, **kwargs):
 
 def main():
     os.umask(0o077)
-    root = Path.home() / 'Gits/.tmp' / f'workflow-e2e-2707-fabbrica-{int(time.time())}'
+    host = Path(os.environ.get('TUIC_TEST_HOST_TMPDIR') or tempfile.gettempdir())
+    root = host / f'workflow-e2e-2707-fabbrica-{int(time.time())}'
     root.mkdir(mode=0o700)
     for directory in ('panel', 'panel/state', 'panel/operator', 'node', 'node/identity', 'bin'):
         (root / directory).mkdir(mode=0o700)

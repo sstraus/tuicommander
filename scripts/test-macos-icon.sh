@@ -35,8 +35,8 @@ check_margin "src-tauri/$png"
 [[ $(magick "src-tauri/$png" -format '%[fx:p{923,512}.a]' info:) == 1 ]]
 [[ $(magick "src-tauri/$png" -format '%[fx:p{974,512}.a]' info:) == 0 ]]
 # ICNS is the application icon Tauri embeds for pnpm tauri dev on macOS.
-mkdir -p .tmp
-work=$(mktemp -d "$PWD/.tmp/macos-icon-test.XXXXXX")
+# Scratch under the caller's temp dir (mktemp honours TMPDIR), never inside the checkout.
+work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 iconutil -c iconset src-tauri/icons/icon.icns -o "$work/icon.iconset"
 for icon in "$work/icon.iconset/"*.png; do

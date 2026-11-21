@@ -1,7 +1,8 @@
 /** Real Chromium regression; run against the worktree Vite fixture. */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-const wrapper = `${process.env.HOME}/Gits/personal/brainstorming/tools/browser-stealth/ab-stealth.sh`;
+import { browserWrapper } from "./browser-wrapper.mjs";
+const wrapper = browserWrapper();
 const base = process.env.MOBILE_LAYOUT_URL ?? "http://127.0.0.1:1447/scripts/fixtures/mobile-chat-layout.html";
 function browser(...args) {
  const result = spawnSync("perl", ["-e", "alarm 45; exec @ARGV", wrapper, ...args], { encoding: "utf8", env: { ...process.env, AB_SESSION: process.env.AB_SESSION ?? "tuic-mobile-aichat-green" } });

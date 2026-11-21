@@ -3,7 +3,7 @@
 # or a headless feature graph after CI has already built dictation tests.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-work="$(mktemp -d "${TMPDIR:-$root/.tmp}/fixture-build-profile.XXXXXX")"
+work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/bin"
 cat > "$work/bin/cargo" <<'EOF'

@@ -2,8 +2,7 @@
 /** Real desktop/registered-provider E2E. No module replacement or HTTP doubles. */
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
-import { resolve, sep } from "node:path";
+import { resolve } from "node:path";
 
 const usage =
 	"Usage: node scripts/github-work-desktop-e2e.mjs <isolated-socket> <account-id> <issue-number> <pr-number> --isolated-desktop [--preflight-only]";
@@ -14,7 +13,8 @@ if (process.argv.includes("--help")) {
 }
 if (
 	!socket ||
-	!resolve(socket).startsWith(resolve(homedir(), "Gits/.tuic/tuic-at") + sep) ||
+	// make agent-test's socket layout (scripts/agent-test.py): <root>/tuic-at/<hash:8>/tuic-mcp-<hash:16>.sock.
+	!/\/tuic-at\/([0-9a-f]{8})\/tuic-mcp-\1[0-9a-f]{8}\.sock$/.test(resolve(socket)) ||
 	!account ||
 	!/^[1-9][0-9]*$/.test(issue) ||
 	!/^[1-9][0-9]*$/.test(pr) ||

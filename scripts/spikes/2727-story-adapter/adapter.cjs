@@ -7,7 +7,8 @@ const { spawnSync } = require('node:child_process');
 const root = process.env.SPIKE_ROOT;
 const wiz = process.env.SPIKE_WIZ;
 const { parseFrontmatter } = require(path.join(wiz, 'scripts/lib/cli-utils'));
-if (!root.startsWith(path.join(process.env.HOME, 'Gits/.tmp/2727-spike/'))) throw Error('copy required');
+const spikeBase = path.join(process.env.TUIC_TEST_TMP_ROOT || path.join(require('node:os').tmpdir(), 'tuic-tests'), '2727-spike') + path.sep;
+if (!root.startsWith(spikeBase)) throw Error('copy required');
 const folder = path.join(root, 'stories');
 const send = (data) => process.stdout.write(`${JSON.stringify(data)}\n`);
 function scan() {

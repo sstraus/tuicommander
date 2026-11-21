@@ -13,9 +13,8 @@ pub(crate) use crate::fs::system32_exe;
 #[cfg(unix)]
 pub(crate) use tuic_test_support::short_socket_test_temp_root;
 pub(crate) use tuic_test_support::{
-    dir_outside_home, fail_with_stderr_script, fake_ssh_script, host_absolute, host_shell,
-    normalize_newlines, print_var_script, replay_file_command, slashed, sleep_script,
-    test_temp_root,
+    fail_with_stderr_script, fake_ssh_script, host_absolute, host_shell, normalize_newlines,
+    print_var_script, replay_file_command, slashed, sleep_script, test_temp_root,
 };
 
 /// A listening owner that resets every connection instead of serving a protocol.
@@ -688,17 +687,19 @@ pub(crate) fn mcp_argument_constraint<'a>(
 mod temp_root_tests {
     #[test]
     fn bare_test_binary_keeps_tempfile_dirs_inside_test_root() {
-        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap();
-        let inside = repo.join(".tmp/tuic-tests/980-inside");
-        let default_root = repo.join(".tmp/tuic-tests");
-        let outside = repo.join(".tmp/980-outside");
+        // Fixtures live under this process's own test root, never in the
+        // checkout. With no TUIC_TEST_TMP_ROOT the child derives its root
+        // from TUIC_TEST_TMP_BASE (the opt-in base), not from TMPDIR.
+        let scratch = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
+        let inside = scratch.path().join("980-inside");
+        let default_base = scratch.path().join("980-base");
+        let outside = scratch.path().join("980-outside");
         std::fs::create_dir_all(&inside).unwrap();
+        std::fs::create_dir_all(&default_base).unwrap();
         std::fs::create_dir_all(&outside).unwrap();
         for (configured_root, expected_root) in [
             (Some(inside.as_path()), inside.as_path()),
-            (None, default_root.as_path()),
+            (None, default_base.as_path()),
         ] {
             let mut child = std::process::Command::new(std::env::current_exe().unwrap());
             child
@@ -713,7 +714,9 @@ mod temp_root_tests {
             if let Some(root) = configured_root {
                 child.env("TUIC_TEST_TMP_ROOT", root);
             } else {
-                child.env_remove("TUIC_TEST_TMP_ROOT");
+                child
+                    .env_remove("TUIC_TEST_TMP_ROOT")
+                    .env("TUIC_TEST_TMP_BASE", &default_base);
             }
             let output = child.output().unwrap();
             assert!(

@@ -36,8 +36,11 @@ Use the repository capture helper:
 python3 tests/terminal-stress/capture.py \
   --session SESSION_ID \
   --base-url http://127.0.0.1:9876 \
-  -o /tmp/tuic-terminal-capture
+  -o "${TMPDIR:-/tmp}/tuic-terminal-capture"
 ```
+
+Every scratch path in this skill lives under `$TMPDIR` (or your session
+scratchpad), never a literal `/tmp`.
 
 Port `9876` is the live orchestrator. Use it only for read-only capture of the
 session Boss identified. Never run synthetic workloads or create throwaway
@@ -87,11 +90,11 @@ Replay the exact bytes through the same terminal parser at fixed captured
 dimensions:
 
 ```bash
-TUIC_REPLAY_FILE=/tmp/tuic-terminal-capture/raw.bin \
+TUIC_REPLAY_FILE="${TMPDIR:-/tmp}/tuic-terminal-capture/raw.bin" \
 TUIC_REPLAY_ROWS=33 \
 TUIC_REPLAY_COLS=146 \
 TUIC_REPLAY_CHUNK=4096 \
-TUIC_REPLAY_OUT=/tmp/tuic-terminal-replay.txt \
+TUIC_REPLAY_OUT="${TMPDIR:-/tmp}/tuic-terminal-replay.txt" \
 cargo test --manifest-path src-tauri/Cargo.toml --lib \
   replay_capture_from_env -- --ignored --nocapture
 ```
@@ -185,8 +188,7 @@ For full isolation, build the headless binary and give it a temporary home:
 ```bash
 cargo build --manifest-path src-tauri/Cargo.toml \
   --no-default-features --bin tuic-remote
-export TUIC_STRESS_HOME=/tmp/tuic-stress-home
-mkdir -p "$TUIC_STRESS_HOME"
+export TUIC_STRESS_HOME="$(mktemp -d "${TMPDIR:-/tmp}/tuic-stress-home.XXXXXX")"
 printf 'stress\nstresspass\n' | \
   HOME="$TUIC_STRESS_HOME" \
   src-tauri/target/debug/tuic-remote --set-password

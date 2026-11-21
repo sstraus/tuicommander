@@ -2,8 +2,13 @@
 set -euo pipefail
 
 project_root="$(git rev-parse --show-toplevel)"
-test_tmp="${TUIC_TEST_TMP_ROOT:-$project_root/.tmp/tuic-tests}"
+test_tmp="$(. "$project_root/scripts/test-tmp-lib.sh" && tuic_test_tmp_root "$project_root")"
 mkdir -p "$test_tmp"
+# Fail closed: no git here may find a repository above the test root.
+export GIT_CEILING_DIRECTORIES="$(. "$project_root/scripts/test-tmp-lib.sh" && tuic_git_ceiling_with "$test_tmp")"
+# Explicit git config: never the developer's global/system files.
+. "$project_root/scripts/test-tmp-lib.sh"
+tuic_git_isolate_config "$test_tmp"
 scratch="$(mktemp -d "$test_tmp/install-hooks.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
 

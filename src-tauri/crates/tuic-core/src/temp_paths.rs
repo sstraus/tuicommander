@@ -21,9 +21,6 @@ pub fn recognized_temp_roots() -> Vec<PathBuf> {
             .map(PathBuf::from),
         );
     }
-    if let Some(home) = dirs::home_dir() {
-        roots.push(home.join("Gits").join(".tmp"));
-    }
     roots
 }
 

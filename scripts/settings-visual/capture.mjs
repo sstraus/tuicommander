@@ -2,8 +2,10 @@ import {spawn,spawnSync} from 'node:child_process';
 import {createWriteStream} from 'node:fs';
 import {lockProbeFailure} from './lock-probe.mjs';
 import {mkdir,readFile,writeFile,unlink} from 'node:fs/promises';
+import {testTmpRoot} from '../test-tmp-root.mjs';
 const source=new URL('./',import.meta.url).pathname;
-const dir=process.cwd()+'/.tmp/settings-visual/'+(process.env.VISUAL_RUN??'capture')+'/';
+// Screenshots and reports live under the caller's temp dir, never inside the checkout.
+const dir=testTmpRoot()+'/settings-visual/'+(process.env.VISUAL_RUN??'capture')+'/';
 await mkdir(dir,{recursive:true});
 if(process.platform==='darwin'){
  const lock=spawnSync('ioreg',['-n','Root','-d1','-a'],{encoding:'utf8',timeout:10000});
@@ -29,7 +31,7 @@ ws.addEventListener('message',e=>{const x=JSON.parse(e.data);if(x.id){const p=pe
 function send(method,params={}){return new Promise((resolve,reject)=>{const id=++seq;const timer=setTimeout(()=>{pending.delete(id);reject(new Error('Visual harness CDP response timed out: '+method));},60000);pending.set(id,{resolve,reject,timer});ws.send(JSON.stringify({id,method,params}));});}
 async function ev(expression){const r=await send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw new Error(r.exceptionDetails.exception?.description??r.exceptionDetails.text);return r.result.value;}
 await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});await send('Page.enable');await send('Runtime.enable');await send('Fetch.enable',{patterns:[{urlPattern:'*'}]});
-const tabs=process.env.VISUAL_PAGES?process.env.VISUAL_PAGES.split(','):test==='settings_text_contrast_on_themed_surfaces'?['general','terminal','keyboard-shortcuts','ai-chat','plugins','repo:/workspace/fixture-project']:test==='settings_agent_initials_contrast'?['agents']:test==='settings_appearance_legend_light_text_contrast'?['appearance']:test==='settings_help_badges_share_label_line'?['general','notifications','github','agents','repo:/workspace/fixture-project']:['general','appearance','notifications','terminal','keyboard-shortcuts','github','agents','ai-chat','dictation','smart-prompts','mcp','remote-access','remote-machines','telegram','plugins','repo:/workspace/fixture-project'];
+const tabs=process.env.VISUAL_PAGES?process.env.VISUAL_PAGES.split(','):test==='settings_text_contrast_on_themed_surfaces'?['general','terminal','keyboard-shortcuts','ai-chat','plugins','repo:/workspace/fixture-project']:test==='settings_agent_initials_contrast'?['agents']:test==='settings_appearance_legend_light_text_contrast'?['appearance']:test==='settings_help_badges_share_label_line'?['general','notifications','github','agents','repo:/workspace/fixture-project']:['general','appearance','notifications','terminal','keyboard-shortcuts','github','agents','ai-chat','dictation','smart-prompts','mcp','remote-access','remote-servers','telegram','plugins','repo:/workspace/fixture-project'];
 // Custom launchers are desktop-only. Keep the scenario and its assertion for
 // desktop captures; browser mode must not expect controls the app deliberately hides.
 const launcherScenarios=process.env.VISUAL_BROWSER==='1'?[]:[{tab:'general',state:'launcher-editor'}];

@@ -7,11 +7,12 @@ import { promisify } from "node:util";
 import { test } from "node:test";
 import { createServer } from "vite";
 import solid from "vite-plugin-solid";
+import { testTmpRoot } from "../../../scripts/test-tmp-root.mjs";
 
 // Real line boxes are required: DOM emulators cannot detect clipped paths.
 // Catches: a long updater path or a multiline cause requires horizontal scrolling.
 test("update errors remain fully readable inside the dialog", { timeout: 240000 }, async () => {
-  const directory = resolve(process.env.TUIC_UPDATE_ERROR_EVIDENCE ?? ".tmp/update-error");
+  const directory = resolve(process.env.TUIC_UPDATE_ERROR_EVIDENCE ?? resolve(testTmpRoot(), "update-error"));
   await mkdir(directory, { recursive: true });
   const wrapper = join(homedir(), "Gits/personal/brainstorming/tools/browser-stealth/ab-stealth.sh");
   const run = promisify(execFile);
@@ -19,7 +20,7 @@ test("update errors remain fully readable inside the dialog", { timeout: 240000 
     env: { ...process.env, AB_SESSION: "tuic2724" }, timeout: 40000, maxBuffer: 2 ** 20,
   })).stdout;
   const server = await createServer({ configFile: false, plugins: [solid()],
-    cacheDir: ".tmp/update-error-vite", logLevel: "error",
+    cacheDir: resolve(testTmpRoot(), "update-error-vite"), logLevel: "error",
     define: { __APP_VERSION__: JSON.stringify("2.0.0"), __BUILD_GIT_HASH__: JSON.stringify("geometry") },
     server: { host: "127.0.0.1", port: 0 },
   });

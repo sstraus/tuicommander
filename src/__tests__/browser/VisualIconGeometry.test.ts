@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -29,7 +30,10 @@ describe.skipIf(!process.env.TUIC_TEST_CHROME)("production icon artwork geometry
 		};
 	}[];
 	beforeAll(() => {
-		const directory = resolve(process.env.TUIC_ICON_EVIDENCE ?? ".tmp/visual-icon-geometry");
+		const directory = resolve(
+			process.env.TUIC_ICON_EVIDENCE ??
+				resolve(process.env.TUIC_TEST_TMP_ROOT ?? resolve(tmpdir(), "tuic-tests"), "visual-icon-geometry"),
+		);
 		const result = spawnSync(process.execPath, ["src/__tests__/browser/visualIconGeometry.mjs"], {
 			encoding: "utf8",
 			timeout: 60000,

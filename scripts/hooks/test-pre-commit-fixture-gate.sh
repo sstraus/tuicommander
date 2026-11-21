@@ -4,7 +4,7 @@ set -euo pipefail
 export TUIC_SKIP_FORMAT_GATE=1
 
 project_root="$(git rev-parse --show-toplevel)"
-test_tmp="${TUIC_TEST_TMP_ROOT:-$project_root/.tmp/tuic-tests}"
+test_tmp="$(. "$project_root/scripts/test-tmp-lib.sh" && tuic_test_tmp_root "$project_root")"
 mkdir -p "$test_tmp"
 scratch="$(mktemp -d "$test_tmp/fixture-gate.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT

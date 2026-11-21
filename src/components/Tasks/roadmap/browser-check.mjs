@@ -4,6 +4,8 @@ import { createServer } from "node:net";
 import { once } from "node:events";
 import { resolve } from "node:path";
 
+const playwrightDir = process.env.PLAYWRIGHT_DIR;
+if (!playwrightDir) throw new Error("Set PLAYWRIGHT_DIR to a directory with node_modules/playwright-core installed (browsers default to $PLAYWRIGHT_DIR/browsers); there is no default location.");
 const out = resolve("reports/visual/tasks-roadmap");
 mkdirSync(out, { recursive: true });
 const probe = createServer();
@@ -24,7 +26,7 @@ try {
 		if (Date.now() > deadline) throw new Error("Vite did not start within setup budget; see vite.txt");
 		await new Promise((done) => setTimeout(done, 100));
 	}
-	const capture = spawn(process.execPath, ["src/components/Tasks/roadmap/capture.mjs", base, out, "/home/rb/Gits/.tmp/pw"], { stdio: "inherit", env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: "/home/rb/Gits/.tmp/pw/browsers", LD_LIBRARY_PATH: `/home/rb/Gits/.tmp/pw/libs/usr/lib/aarch64-linux-gnu:${process.env.LD_LIBRARY_PATH ?? ""}` } });
+	const capture = spawn(process.execPath, ["src/components/Tasks/roadmap/capture.mjs", base, out, playwrightDir], { stdio: "inherit", env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH ?? `${playwrightDir}/browsers`, LD_LIBRARY_PATH: `${playwrightDir}/libs/usr/lib/aarch64-linux-gnu:${process.env.LD_LIBRARY_PATH ?? ""}` } });
 	const [code] = await once(capture, "exit");
 	if (code !== 0) throw new Error(`Roadmap browser check failed with exit ${code}`);
 } finally {

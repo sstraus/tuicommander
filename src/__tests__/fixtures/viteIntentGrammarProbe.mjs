@@ -3,10 +3,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer, loadConfigFromFile, transformWithOxc } from "vite";
+import { testTmpRoot } from "../../../scripts/test-tmp-root.mjs";
 
 const repo = fileURLToPath(new URL("../../../", import.meta.url));
 const grammarPath = "src-tauri/crates/tuic-terminal/src/intent_marker.json";
-const scratchRoot = join(repo, ".tmp");
+// The watcher filter below maps scratch paths back onto the repo, so the scratch root can sit
+// outside the checkout (the temp dir).
+const scratchRoot = testTmpRoot();
 mkdirSync(scratchRoot, { recursive: true });
 const scratch = mkdtempSync(join(scratchRoot, "vite-intent-"));
 let server;
