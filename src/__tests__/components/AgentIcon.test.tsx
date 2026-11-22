@@ -30,7 +30,7 @@ describe("AgentIcon for ego sessions", () => {
 	});
 
 	// Catches: a provider leaking onto a non-ego agent.
-	it.each(["codex", "claude", "gemini", "amp", "cursor", "droid", "opencode"] as const)(
+	it.each(["codex", "claude", "agy", "amp", "cursor", "droid", "opencode"] as const)(
 		"ignores the provider for %s",
 		(agent) => {
 			expect(pathOf(agent, "openrouter")).toBe(pathOf(agent));

@@ -157,7 +157,7 @@ pub(crate) fn run_action(
             } else {
                 // DEFERRED (2026-11-20) — remote adapters need their own stop
                 // proof; the generic original_stopped default cannot prove it.
-                let proof = if matches!(
+                let proof: Result<(), String> = if matches!(
                     effect.invocation.descriptor.target,
                     Some(crate::workflows::catalog::ReusableTarget::Script { .. })
                 ) {
