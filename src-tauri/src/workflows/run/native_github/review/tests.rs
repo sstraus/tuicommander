@@ -346,7 +346,6 @@ async fn review_publication_lost_reply_is_never_written_again() {
 // Catches graph inputs reusing an approval granted for a different publication action or PR.
 #[tokio::test]
 async fn review_publication_exact_approval_cannot_change_action_or_target() {
-    use crate::agent_capabilities::Capability;
     use crate::workflows::run::check::git_output;
     use crate::workflows::run::native_test_support::Fixture;
     let f = Fixture::new();
@@ -378,7 +377,7 @@ async fn review_publication_exact_approval_cannot_change_action_or_target() {
             &key,
             "native.publication.github",
             &request,
-            Some(Capability::Push),
+            None,
         )
         .unwrap();
     let mut changed = request.clone();
@@ -390,7 +389,7 @@ async fn review_publication_exact_approval_cannot_change_action_or_target() {
                 &key,
                 "native.publication.github",
                 &changed,
-                Some(Capability::Push)
+                None
             )
             .is_err()
     );
@@ -402,7 +401,7 @@ async fn review_publication_exact_approval_cannot_change_action_or_target() {
                 &key,
                 "native.publication.github",
                 &changed,
-                Some(Capability::Push)
+                None
             )
             .is_err()
     );

@@ -85,7 +85,6 @@ impl<E: DispatchEffects> Dispatcher<E> {
         &self,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<Vec<AutomationRun>, String> {
-        self.runs.prune(now.timestamp_millis(), None)?;
         scheduler::tick(&self.runs, &self.definitions.load()?, now)
     }
 

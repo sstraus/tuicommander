@@ -19,7 +19,7 @@ pub(super) fn notify_committed() {
 /// launched or restarted here; ingestion is optional and retries a missing one.
 pub(crate) fn spawn() {
     tokio::spawn(async {
-        let path = crate::config::config_dir().join("stories.sqlite3");
+        let path = crate::db::path(crate::db::TUIC_DB);
         loop {
             if path.is_file() {
                 match MdkbClient::connect().await {

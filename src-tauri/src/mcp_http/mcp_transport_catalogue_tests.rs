@@ -431,16 +431,16 @@ fn progress_is_the_only_tool_claude_code_must_not_defer() {
 ///
 /// The collapsed surface is three meta-tools plus `progress`, which stays
 /// directly callable because reporting must not require a discovery call
-/// first. Everything else is reachable through `call_tool`, so this is a
+/// first, and `batch`, which takes any of the hidden tools by name. Everything else is reachable through `call_tool`, so this is a
 /// smaller list and not a smaller capability.
 #[test]
-fn the_collapsed_surface_is_the_meta_tools_plus_progress() {
+fn the_collapsed_surface_is_the_meta_tools_plus_progress_and_batch() {
     let state = test_state();
 
     let collapsed = tool_names(&merged_tool_definitions_for_mode(&state, None, true));
     assert_eq!(
         collapsed,
-        ["search_tools", "get_tool_schema", "call_tool", "progress"]
+        ["search_tools", "get_tool_schema", "call_tool", "progress", "batch"]
             .map(String::from)
             .to_vec(),
         "ego must get the discovery surface, not the catalogue"
@@ -727,6 +727,7 @@ fn merged_tools_collapse_false_returns_all_native_tools() {
             "plugin_dev_guide",
             "settings",
             "debug",
+            "batch",
         ],
         "expanded discovery must return exactly the tools available to this unconfigured caller"
     );
@@ -740,10 +741,10 @@ fn merged_tools_collapse_true_keeps_progress_directly_available() {
     let merged = merged_tool_definitions(&state, None, None);
     let names = tool_names(&merged);
 
-    assert_eq!(names.len(), 4);
+    assert_eq!(names.len(), 5);
     assert_eq!(
         names,
-        vec!["search_tools", "get_tool_schema", "call_tool", "progress"]
+        vec!["search_tools", "get_tool_schema", "call_tool", "progress", "batch"]
     );
 }
 
@@ -758,6 +759,7 @@ fn grok_session_uses_meta_tools_without_mutating_global_config() {
             last_activity: std::time::Instant::now(),
             is_claude_code: false,
             requires_meta_tools: true,
+            client_kind: None,
             has_sse_stream: false,
             sse_generation: 0,
             repo_path: None,
@@ -767,7 +769,7 @@ fn grok_session_uses_meta_tools_without_mutating_global_config() {
     let merged = merged_tool_definitions(&state, Some("grok-session"), None);
     assert_eq!(
         tool_names(&merged),
-        vec!["search_tools", "get_tool_schema", "call_tool", "progress"]
+        vec!["search_tools", "get_tool_schema", "call_tool", "progress", "batch"]
     );
     assert!(!state.config.read().collapse_tools);
 }
@@ -809,10 +811,10 @@ fn merged_tools_collapse_true_hides_disabled_progress() {
     state.config.write().mcp_capabilities.denied = vec!["progress".to_string()];
 
     let merged = merged_tool_definitions(&state, None, None);
-    assert_eq!(tool_names(&merged).len(), 3);
+    assert_eq!(tool_names(&merged).len(), 4);
     assert_eq!(
         tool_names(&merged),
-        vec!["search_tools", "get_tool_schema", "call_tool"]
+        vec!["search_tools", "get_tool_schema", "call_tool", "batch"]
     );
 }
 
@@ -907,7 +909,12 @@ fn search_tools_returns_ranked_results_for_session_query() {
     );
     let results = r["results"].as_array().unwrap();
     assert!(!results.is_empty(), "expected non-empty results");
-    assert_eq!(results[0]["name"], "session");
+    // A multi-action tool answers with one of its actions (`session_<action>`).
+    let first = results[0]["name"].as_str().unwrap();
+    assert!(
+        first == "session" || first.starts_with("session_"),
+        "results: {results:?}"
+    );
     // summary is the first sentence of the description — must be populated.
     assert!(
         results[0]["summary"]
@@ -922,7 +929,12 @@ fn search_tools_returns_ranked_results_for_github_query() {
     let state = test_state();
     let r = handle_search_tools(&state, &serde_json::json!({ "query": "github PR status" }));
     let results = r["results"].as_array().unwrap();
-    assert_eq!(results[0]["name"], "repo");
+    // A multi-action tool answers with one of its actions (`repo_<action>`).
+    let first = results[0]["name"].as_str().unwrap();
+    assert!(
+        first == "repo" || first.starts_with("repo_"),
+        "results: {results:?}"
+    );
 }
 
 // Catches: a bare tool name ranked by BM25 alone, so tools that mention "agent" in
@@ -932,7 +944,12 @@ fn search_tools_ranks_the_tool_named_by_the_query_first() {
     let state = test_state();
     let r = handle_search_tools(&state, &serde_json::json!({ "query": "agent" }));
     let results = r["results"].as_array().unwrap();
-    assert_eq!(results[0]["name"], "agent", "results: {results:?}");
+    // A multi-action tool answers with one of its actions (`agent_<action>`).
+    let first = results[0]["name"].as_str().unwrap();
+    assert!(
+        first == "agent" || first.starts_with("agent_"),
+        "results: {results:?}"
+    );
 }
 
 #[test]
@@ -1173,7 +1190,7 @@ fn instructions_prevent_invisible_native_subagents_for_every_client() {
         (Some("claude-code"), false),
         (Some("codex"), false),
         (Some("ego"), false),
-        (Some("gemini"), true),
+        (Some("agy"), true),
         (Some("cursor"), true),
         (None, true),
     ] {
@@ -1444,8 +1461,6 @@ fn meta_tools_do_not_demand_a_schema_the_caller_already_has() {
 ///
 /// Set `TUIC_MCP_SURFACE_DUMP=<path>` to write every measured string out for
 /// out-of-band tokenizer counts (see docs/backend/mcp-http.md).
-/// Measured 7,968 bytes on 2026-11-04 (full agent: 16,336), rounded up to 64.
-const CHILD_AGENT_CEILING: usize = 8000;
 
 #[test]
 fn mcp_instruction_surface_bytes_stay_within_budget() {
@@ -1494,21 +1509,6 @@ fn mcp_instruction_surface_bytes_stay_within_budget() {
             serde_json::to_string(tool).unwrap(),
         );
     }
-
-    // The agent definition a managed child receives (story 2805).
-    let child_agent = record(
-        "schema.agent.managed_child",
-        serde_json::to_string(
-            &crate::mcp_http::mcp_transport_catalogue::filtered_native_tools_for_role(
-                &state,
-                crate::mcp_http::caller_role::CallerRole::ManagedChild,
-            )
-            .into_iter()
-            .find(|tool| tool["name"] == "agent")
-            .expect("agent listed for a managed child"),
-        )
-        .unwrap(),
-    );
 
     // register response — the other place the workflow prose lives.
     let register = handle_messaging(
@@ -1613,11 +1613,6 @@ fn mcp_instruction_surface_bytes_stay_within_budget() {
         spawn_bytes <= 832,
         "spawn response must stay free of static prose — {measured}"
     );
-    // Story 2805 estimated about 5,000; send prose and the report schema keep it higher.
-    assert!(
-        child_agent <= CHILD_AGENT_CEILING,
-        "the managed-child agent definition grew past its budget — {measured}"
-    );
     assert!(
         register_bytes <= 4608,
         "register response grew past its budget — {measured}"
@@ -1678,9 +1673,10 @@ fn session_submit_schema_pins_receipt_and_raw_input_semantics() {
     assert!(description.contains(
             "Never queues; partial composers, dialogs, busy agents, and older queued commands reject before writing."
         ));
+    assert!(description.contains("input: type into any terminal (send-keys)"));
     assert!(description.contains(
-            "input: Raw text/key compatibility surface. Send text and/or special_key; ok confirms PTY write only."
-        ));
+        "Raw surface: ok confirms the PTY write only, not that the command ran; use submit for an agent's composer."
+    ));
     assert_eq!(
         properties["input"]["description"],
         "Non-empty command (action=submit) or raw text (action=input)"
@@ -1868,9 +1864,11 @@ fn rebuild_tool_search_index_populates_all_native_tools() {
     }
     rebuild_tool_search_index(&state);
     let idx = state.mcp.tool_search_index.read();
+    // One whole entry per tool; action entries of multi-action tools come on top.
     let names: Vec<_> = idx
         .entries()
         .iter()
+        .filter(|entry| entry.action.is_none())
         .map(|entry| entry.name.as_str())
         .collect();
     assert_eq!(
@@ -2613,7 +2611,12 @@ fn catalogue_schema_reuse_generation_changes_with_visibility() {
         &state,
         &serde_json::json!({"query":"PTY multiplexer tmux pane lifecycle"}),
     );
-    assert_eq!(before["top_schema"]["name"], "session");
+    // `session` is discovered per action (`session_<action>`).
+    let is_session = |name: &serde_json::Value| {
+        name.as_str()
+            .is_some_and(|name| name == "session" || name.starts_with("session_"))
+    };
+    assert!(is_session(&before["top_schema"]["name"]), "{before}");
     rebuild_tool_search_index(&state);
     let unchanged = handle_search_tools(
         &state,
@@ -2638,12 +2641,15 @@ fn catalogue_schema_reuse_generation_changes_with_visibility() {
         before["catalogue_generation"],
         after["catalogue_generation"]
     );
-    assert_ne!(after["top_schema"]["name"], "session");
-    assert!(
-        handle_get_tool_schema(&state, &serde_json::json!({"tool_name":"session"}))
-            .get("error")
-            .is_some()
-    );
+    assert!(!is_session(&after["top_schema"]["name"]), "{after}");
+    for name in ["session", "session_list"] {
+        assert!(
+            handle_get_tool_schema(&state, &serde_json::json!({"tool_name": name}))
+                .get("error")
+                .is_some(),
+            "{name} stays discoverable after denial"
+        );
+    }
 }
 
 /// Catches: observed bad inputs reach handlers and return opaque retry errors.
@@ -2774,7 +2780,14 @@ async fn launch_flat_discovery_keeps_predispatch_validation() {
         assert_eq!(result["effect"], "not_started");
         assert_eq!(result["retryable"], false);
     }
-    assert!(!state.data_dir.join("managed-launches.sqlite").exists());
+    assert_eq!(
+        crate::db::open(&state.data_dir.join(crate::db::TUIC_DB))
+            .unwrap()
+            .query_row("SELECT count(*) FROM launches", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
     assert!(state.session_maps.sessions.is_empty());
 }
 

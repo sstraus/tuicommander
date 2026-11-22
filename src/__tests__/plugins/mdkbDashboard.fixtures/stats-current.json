@@ -1,0 +1,126 @@
+{
+  "embedding": {
+    "selected_model": "AllMiniLML6V2",
+    "current_model": "AllMiniLML6V2",
+    "pending_model": null,
+    "stale": false,
+    "ambiguous": false
+  },
+  "code_embedding": {
+    "selected_model": "AllMiniLML6V2",
+    "current_model": "AllMiniLML6V2",
+    "pending_model": null,
+    "stale": false,
+    "ambiguous": false
+  },
+  "header": {
+    "repo": "proj",
+    "version": "3.14.0",
+    "db_size_bytes": 2060288,
+    "last_updated": 1794745772
+  },
+  "index": {
+    "document_count": 2,
+    "memory_count": 0,
+    "free_page_ratio": 0.0
+  },
+  "collections": {
+    "collections": [
+      {
+        "name": "_root",
+        "path": ".",
+        "pattern": "**/*.md",
+        "doc_count": 2
+      }
+    ]
+  },
+  "memory": {
+    "active_count": 0,
+    "counts_by_type": {},
+    "reminders_due": 0,
+    "reminders_upcoming_7d": 0,
+    "pending_embeddings": 0,
+    "files_unreadable": 0,
+    "entries_unprojected": 0
+  },
+  "code": {
+    "files": 1,
+    "symbols": 2,
+    "relations": 2,
+    "last_indexed": 1794745772,
+    "languages": [
+      {
+        "language": "rust",
+        "files": 1,
+        "symbols": 2
+      }
+    ],
+    "symbols_by_kind": [
+      {
+        "kind": "Function",
+        "count": 2
+      }
+    ],
+    "relations_by_kind": [
+      {
+        "kind": "Uses",
+        "count": 2
+      }
+    ],
+    "top_files": [
+      {
+        "path": "src/lib.rs",
+        "symbols": 2
+      }
+    ]
+  },
+  "sessions": {
+    "total_sessions": 0,
+    "total_calls": 0,
+    "top_tools": []
+  },
+  "hooks": {
+    "telemetry_enabled": false,
+    "slow_events_7d": 0,
+    "events_since": null,
+    "events": [],
+    "drift": {
+      "duplicated": [],
+      "missing": [
+        "SessionStart",
+        "UserPromptSubmit",
+        "PostToolUse",
+        "PostToolUseFailure",
+        "PreToolUse",
+        "Stop"
+      ]
+    },
+    "mining": {
+      "enabled": false,
+      "reason": "mining_enabled = false",
+      "candidate_count": 0,
+      "outcomes_7d": []
+    }
+  },
+  "quarantine": [],
+  "recall": {
+    "prompts_by_mode": {},
+    "bands": [],
+    "holdout": [],
+    "labelled": 0,
+    "insufficient_data": true,
+    "docs": {
+      "prompts": 0,
+      "with_docs": 0,
+      "since": null
+    }
+  },
+  "doctor": [
+    {
+      "id": "hooks.drift",
+      "severity": "error",
+      "message": "hook events not registered, so they never fire: SessionStart, UserPromptSubmit, PostToolUse, PostToolUseFailure, PreToolUse, Stop",
+      "fix": "mdkb setup hooks claude"
+    }
+  ]
+}

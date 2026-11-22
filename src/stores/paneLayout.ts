@@ -506,6 +506,17 @@ function createPaneLayoutStore() {
 			scheduleSave();
 		},
 
+		/** After a tab leaves `groupId`: close that pane if it is now empty, and
+		 *  drop the layout when a single pane is all that remains. The other panes
+		 *  keep their tabs and sizes — taking one tab out of a split must not
+		 *  undo the whole split. */
+		closePaneIfEmpty(groupId: string): void {
+			const group = state.groups[groupId];
+			if (!group || group.tabs.length > 0) return;
+			this.closePane(groupId);
+			if (!this.isSplit()) this.reset();
+		},
+
 		/** Add a tab to a group. `activate=false` docks the tab in the group's tab
 		 *  strip without switching the pane to it — used by background spawns that
 		 *  must not take over what the user is looking at. */

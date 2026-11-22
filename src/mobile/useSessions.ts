@@ -17,6 +17,7 @@ export interface SessionState {
 	usage_limit_pct?: number;
 	shell_state?: string;
 	agent_state?: string;
+	background_work?: boolean;
 	abandoned_since_ms?: number;
 	/** Rust SessionState.stalled: working agent silent past the stall threshold. */
 	stalled?: boolean;

@@ -9,14 +9,17 @@
 
 use super::WorkflowStore;
 use super::catalog::{
-    ActivityDescriptor, DescriptorId, ReusableTarget, WorkflowCatalog, content_digest,
+    ActivityDescriptor, DescriptorId, HandlerRef, ObjectSchema, ReusableTarget, WorkflowCatalog,
+    content_digest,
 };
 use super::neutral_admission::HostRegistry;
-use super::neutral_publication::check_subflow_interface;
+use super::neutral_publication::{
+    NeutralPublication, PublicationPin, PublicationRef, check_subflow_interface,
+};
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 
-pub(super) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS reusable_operations (
+pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS reusable_operations (
     project TEXT NOT NULL,
     namespace TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -141,7 +144,7 @@ impl WorkflowStore {
             params![project, id.namespace, id.name], |row| row.get(0),
         ).map_err(|e| format!("read reusable operation version: {e}"))?;
         if current != expected_version {
-            return Err("stale reusable operation version".into());
+            return Err(crate::workflows::neutral_api::refusal::OPERATION_VERSION_STALE.into());
         }
         let document = serde_json::to_string(&record)
             .map_err(|e| format!("encode reusable operation: {e}"))?;
@@ -215,6 +218,44 @@ impl WorkflowStore {
         }
         Ok(catalog)
     }
+}
+
+/// A published workflow as a reusable subflow operation, built from the exact stored
+/// publication. The digest and interface come from that publication, so a caller names
+/// a publication and never supplies a hash. `host.subflow` v1 is registered by the host's
+/// reusable handler families; saving still checks that registration.
+pub(super) fn published_subflow(
+    id: DescriptorId,
+    child: &NeutralPublication,
+) -> Result<ActivityDescriptor, String> {
+    Ok(ActivityDescriptor {
+        id,
+        purpose: format!(
+            "Run published workflow {} revision {}",
+            child.id, child.revision
+        ),
+        handler: HandlerRef {
+            name: "host.subflow".into(),
+            version: 1,
+        },
+        target: Some(ReusableTarget::Subflow {
+            publication: PublicationPin {
+                reference: PublicationRef {
+                    project: child.project.clone(),
+                    id: child.id.clone(),
+                    revision: child.revision,
+                },
+                sha256: content_digest(child)?,
+            },
+        }),
+        config: ObjectSchema::default(),
+        inputs: child.definition.inputs.clone(),
+        subject: child.definition.subject.clone(),
+        outputs: child.definition.outputs.clone(),
+        outcomes: child.definition.outcomes.clone(),
+        required_capabilities: std::collections::BTreeSet::new(),
+        execution_policies: std::collections::BTreeSet::from(["local".into()]),
+    })
 }
 
 fn decode_operation(

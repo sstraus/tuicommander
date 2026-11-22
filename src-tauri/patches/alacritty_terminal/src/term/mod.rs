@@ -1689,7 +1689,7 @@ impl<T: EventListener> Handler for Term<T> {
         trace!("Pushing `{mode:?}` keyboard mode into the stack");
 
         if self.keyboard_mode_stack.len() >= KEYBOARD_MODE_STACK_MAX_DEPTH {
-            let removed = self.title_stack.remove(0);
+            let removed = self.keyboard_mode_stack.remove(0);
             trace!(
                 "Removing '{removed:?}' from bottom of keyboard mode stack that exceeds its \
                  maximum depth"
@@ -4120,6 +4120,27 @@ mod tests {
         let size = TermSize::new(10, 10);
         term.resize(size);
         assert!(term.damage.full);
+    }
+
+    #[test]
+    fn keyboard_mode_stack_overflow_trims_its_own_stack() {
+        let size = TermSize::new(7, 17);
+        let config = Config {
+            kitty_keyboard: true,
+            ..Config::default()
+        };
+        let mut term = Term::new(config, &size, VoidListener);
+        term.push_title();
+
+        for _ in 0..KEYBOARD_MODE_STACK_MAX_DEPTH + 2 {
+            term.push_keyboard_mode(KeyboardModes::DISAMBIGUATE_ESC_CODES);
+        }
+
+        assert_eq!(
+            term.keyboard_mode_stack.len(),
+            KEYBOARD_MODE_STACK_MAX_DEPTH
+        );
+        assert_eq!(term.title_stack, vec![None]);
     }
 
     #[test]

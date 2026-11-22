@@ -243,9 +243,11 @@ The ACP `Command::NewSession` path in `src-tauri/src/acp/connection.rs` uses an
 ACP connection and request/reply owner. This spike changes neither path and
 claims no live verification of state, questions, tools, children or interrupts.
 
-The runner evidence selects OSC for Step 9 at the transport boundary. Keep
-Windows hook availability honest: the manual installed-agent and hardware
-matrix remains open and is not proved by this replay.
+The runner evidence proves that OSC can reach ConPTY in the tested cells. It
+does not establish OSC as the primary transport for installed-agent hooks.
+Step 9 shipped the named pipe as the primary transport with `CONOUT$` as the
+fallback. The signed-in runs below used the named pipe; they do not certify the
+fallback for a real agent hook.
 
 ## Windows live follow-up on 2026-11-11
 
@@ -268,3 +270,118 @@ Raw evidence and credential-free commands remain under
 `~/Gits/.tmp/tuic-win-20261111/` (`preflight.log`, `artifacts.log`, and the two
 Python command files). Reliable SSH, a runnable Windows artifact or sufficient
 build resources, installed agent CLIs and a desktop login remain necessary.
+
+## Windows live result on 2026-11-20
+
+Host: lab VM, Windows 11 Pro `10.0.26200`, PowerShell 5.1, 1 vCPU, 6 GB RAM, no
+interactive user (`query user`: none). Node v26.13.1, Claude Code 2.1.322, Codex
+0.167.1 — installed, **not signed in**. Artifacts: public v2.1.1 `tuic-remote.exe`
+(SHA-256 `87fe339d…69dd`) and `TUICommander_2.1.1_x64-setup.exe` (SHA-256
+`44b05c94…c242`, silent per-user install; both digests equal the GitHub asset
+digests). No build. Both ran as scheduled tasks under the lab user (SSH session
+children die with the session). The headless daemon ran on loopback with
+`--instance win2631 --credential-file --no-agent-configs --no-automations`; the
+desktop ran in session 0 with `services.server.enabled` set on the VM only
+(restored afterwards). Evidence: `~/Gits/.tmp/tuic-win-20261120/evidence/`.
+
+### Agent launch (2696 criterion 1)
+
+The desktop v2.1.1 build, `tuic.exe` beside the executable, reports hook state
+`notInstalled` (supported) for Claude and Codex. Launch command lines, read from
+`Win32_Process`:
+
+- Claude: `claude.exe hello --settings …\com.tuic.commander\agent-hooks/claude.json
+  --append-system-prompt-file …/instructions-claude.md`.
+- Codex: `codex.cmd -c developer_instructions=… --no-alt-screen -C … -c
+  notify=["C:\…\app\tuic.exe","agent-state","codex-notify","--"]`.
+
+Every command in `claude.json` is `"…\tuic.exe" agent-state <verb> [state]`
+(file retained). No `sh`, no `codex-notify.sh`. So no POSIX hook is injected; the
+Windows `tuic.exe` hooks of 2632-97ef are. The headless `tuic-remote.exe` without
+`tuic.exe` beside it injects nothing (`--append-system-prompt-file` only): the
+unsupported-host path. The 2630 description in `to-test/windows.md` ("reports
+unsupported, hides controls") applies only to that path, not to the desktop.
+Settings (expert mode) shows "Native status signals" for Claude and Codex and
+"Install hooks globally" for Codex (screenshot `ui-10.png`).
+
+### Hook transport and retraction, live
+
+Shell controls in a TUIC PowerShell session (ConPTY, production daemon and
+desktop). A node hook subprocess writes the OSC to `CONOUT$`; the production
+`tuic.exe agent-state state awaiting` helper takes the named pipe. Observed
+`awaiting_input`/`question_confident` from `GET /sessions`:
+
+| Case | Result |
+| --- | --- |
+| awaiting via `CONOUT$`, BEL and ST, fresh shell | set, then cleared by hook idle |
+| awaiting via `tuic.exe agent-state` | set, `question_confident: true`, helper cost 43.9 ms |
+| answer (typed reply), reject (typed `n`) | cleared |
+| shell exit | cleared |
+| stop (session DELETE) | session absent |
+| cancel (Ctrl-C at the prompt) | **not cleared** |
+| awaiting, busy retract, awaiting again (shell still busy) | second awaiting **not raised**; reproduced 3 of 3, with both transports |
+
+The last two are open observations, not claimed defects: cancel is owned by the
+agent's own hook, and a shell has none; the repeated awaiting may be the question
+dedup on an unchanged screen, which a real agent changes between prompts. A real
+agent is needed to decide both. `claude -p … --settings claude.json` stops at
+"Not logged in" before any user hook runs (debug log retained).
+
+### Still unproven
+
+Installed-agent hook events (needs one Claude and one Codex login on the VM),
+Git Bash/cmd cells, Windows 10, the awaiting badge next to a real agent, and
+ego PTY/ACP. The VM cleanup left no task, process, credential file or enabled
+server; the desktop install stays at `C:\Gits\w20261120\app`.
+
+## Windows signed-in agent result on 2026-11-20 (second pass)
+
+Same VM and v2.1.1 desktop (session 0, `services.server.enabled` and a lab-only
+password set for the test, both restored). Claude Code 2.1.322 signed in through
+`CLAUDE_CODE_OAUTH_TOKEN`; Codex 0.167.1 through `codex login --with-api-key`
+(`OPENAI_API_KEY`). Both credentials were removed afterwards (user env, `~/.claude`,
+`~/.codex`, task, config). Driven with `tuic.exe agent spawn` and `tuic.exe mcp
+session` over the named pipe; state read from `session status`. Evidence:
+`~/Gits/.tmp/tuic-win-live2/` (scripts, `shots/`), screenshot
+`evidence/ui-live2-awaiting-tab.png`.
+
+### Findings
+
+| Case (real agent) | Result |
+| --- | --- |
+| Claude, session `--settings` hooks, AskUserQuestion | `awaiting_input`, `native_question` within ~3 s; answer clears to `working`, then `idle` on Stop |
+| Claude permission dialog (`--permission-mode default`) | `awaiting_input`, `native_question`; "Yes" clears, then idle |
+| Reject ("No") and cancel (Esc) | awaiting cleared to `working`, **then stays `working` while Claude sits idle** (60 s+ observed): Claude fires no Stop hook on interrupt (probe hook: `prompt`, no `stop`) and TUIC has no fallback |
+| Ctrl-C and double Ctrl-C at the dialog | dialog stays open in Claude; awaiting stays set — correct, **not a TUIC defect** (open observation 1 settled) |
+| Same command requested twice with an Esc between | second awaiting raised — open observation 2 **not reproduced** with a real agent |
+| `/exit` at the prompt | idle, no stale state |
+| Claude hard-killed while awaiting | PTY `exited: true`, but `awaiting_input` stays set (2 of 2, observed 90 s) |
+| cmd, PowerShell, Git Bash sessions running `claude --settings …claude.json` | awaiting raised and retracted on answer in all three; `/exit` idle |
+| Codex permission dialog (outside-workspace write, `-a on-request`) | `awaiting_input`/`native_question` raised; Esc clears to `working` and then stays `working` (same stuck state); first-run trust and sandbox dialogs raise no awaiting |
+
+### Defect candidates (not fixed; no production code touched)
+
+1. **Multi-line prompt through `claude.cmd`/`cmd.exe` truncates argv.** `tuic.exe
+   agent spawn claude <prompt>` launches `cmd /c claude.cmd "<prompt…>" --settings …`.
+   A newline ends the cmd command, so `claude.exe` received only the first prompt
+   line (140-char command line, "TUICommander Multi-Agent Context") and neither
+   `--settings` nor `--append-system-prompt-file`: no hooks, no instructions.
+   Repro: any managed spawn (the preamble is multi-line) on Windows without
+   `--binary-path`. With `--binary-path …\claude.exe` the arguments arrive intact.
+2. **Stale `working` after an interrupt.** Reject/cancel retracts awaiting but the
+   agent stays `working` until the next prompt; reproduced for Claude (hook-driven)
+   and Codex.
+3. **Stale `awaiting_input` on an exited session** after the agent process dies
+   with a dialog open.
+4. **`session create` with a shell path containing a space fails** on Windows:
+   `CreateProcessW "C:\Program Files\Git\bin\bash.exe\0" … file not found`; the
+   8.3 spelling `C:\PROGRA~1\Git\bin\bash.exe` works.
+5. Claude's auto-updater renamed the running `claude.exe` of the npm install and
+   left no binary (VM-side, not TUIC); restored by copying the `.old` file.
+
+### Not covered
+
+Windows 10, ego PTY/ACP, a native-versus-heuristic badge screenshot (the browser
+mode canvas is black and shows only the tab dot), OSC 7770 from a real agent's hook
+(Claude hooks use the `tuic.exe` pipe helper, not `CONOUT$`), a regression fixture
+(no `.tcap` capture API is reachable without the HTTP token).

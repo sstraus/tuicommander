@@ -20,7 +20,7 @@ export interface AgentAvailability {
 /** Binary name for each agent type */
 const AGENT_BINARIES: Record<AgentType, string> = {
 	claude: "claude",
-	gemini: "gemini",
+	agy: "agy",
 	opencode: "opencode",
 	codex: "codex",
 	amp: "amp",

@@ -6,7 +6,7 @@ import time
 
 AGENTS = {
     "claude": "claude", "codex": "codex", "grok": "grok", "opencode": "opencode",
-    "ego": "ego", "gemini": "gemini", "pi": "pi", "goose": "goose",
+    "ego": "ego", "agy": "agy", "pi": "pi", "goose": "goose",
     "amp": "amp", "cursor": "cursor-agent", "droid": "droid",
     "qwen": "qwen", "crush": "crush", "copilot": "copilot", "kiro": "kiro-cli",
 }
@@ -59,7 +59,7 @@ def write_cwd_files(directory, files, values):
 
 
 def _echoed(prompt):
-    """Gemini's history echoes "What is 10+7?" as "What is 10+7": match without the trailing question mark."""
+    """An agent's history may echo "What is 10+7?" as "What is 10+7": match without the trailing question mark."""
     return prompt.rstrip("?")
 
 

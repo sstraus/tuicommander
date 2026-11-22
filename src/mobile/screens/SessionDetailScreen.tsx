@@ -129,6 +129,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
 		({
 			idle: "Idle",
 			busy: "Working",
+			background: "Background",
 			"sub-tasks": "Sub-tasks",
 			question: "Input",
 			stalled: "Stalled",

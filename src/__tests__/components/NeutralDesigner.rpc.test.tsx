@@ -31,6 +31,8 @@ const fetchReply = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
 		return Response.json(engine.inspection);
 	expect(url.searchParams.get("path")).toBe(authoring.project);
 	switch (action.action) {
+		case "list_runs":
+			return Response.json({ type: "runs", value: [] });
 		case "catalog":
 			return Response.json(authoring.catalog);
 		case "list_drafts":

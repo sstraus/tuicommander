@@ -82,6 +82,48 @@ async fn resetting_tcp_peer_reserves_its_port_and_resets_connections() {
     }
 }
 
+/// Ad-hoc sign a scratch copy of an Apple platform binary: macOS kills a
+/// relocated platform binary unless it is re-signed (verified exit -9).
+#[cfg(target_os = "macos")]
+fn sign_relocated_binary(executable: &std::path::Path) {
+    let signed = std::process::Command::new("/usr/bin/codesign")
+        .args(["--force", "--sign", "-"])
+        .arg(executable)
+        .output()
+        .expect("sign relocated binary");
+    assert!(
+        signed.status.success(),
+        "codesign: {}",
+        String::from_utf8_lossy(&signed.stderr)
+    );
+}
+
+/// `/bin/<name>` for a child whose environment a test reads back by pid.
+/// macOS 27 hides the environment of Apple platform binaries from
+/// `KERN_PROCARGS2`, so on macOS this is a signed copy, made once per process.
+#[cfg(unix)]
+pub(crate) fn env_readable_system_binary(name: &str) -> std::path::PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        static COPIES: std::sync::LazyLock<
+            parking_lot::Mutex<std::collections::HashMap<String, std::path::PathBuf>>,
+        > = std::sync::LazyLock::new(Default::default);
+        let mut copies = COPIES.lock();
+        if let Some(path) = copies.get(name) {
+            return path.clone();
+        }
+        // Kept for the process lifetime; the test root is removed after the run.
+        let dir = tempfile::tempdir_in(test_temp_root()).unwrap().keep();
+        let executable = dir.join(name);
+        std::fs::copy(std::path::Path::new("/bin").join(name), &executable).unwrap();
+        sign_relocated_binary(&executable);
+        copies.insert(name.to_owned(), executable.clone());
+        executable
+    }
+    #[cfg(not(target_os = "macos"))]
+    std::path::Path::new("/bin").join(name)
+}
+
 /// Scratch dir short enough to bind a Unix socket whatever the checkout path.
 #[cfg(unix)]
 pub(crate) fn short_socket_tempdir() -> tempfile::TempDir {
@@ -444,6 +486,12 @@ impl ForegroundIdentityProbe {
         Self::spawn(state, sid, "bash", role, true, true)
     }
 
+    /// Model an updater removing the running image without ending its process.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn unlink_executable(&self, name: &str) {
+        std::fs::remove_file(self._scratch.path().join(name)).unwrap();
+    }
+
     /// Attach the production reader so normal EOF, rather than a manually
     /// injected lifecycle event, removes the probe's live process and identity.
     pub(crate) fn start_reader(&self) {
@@ -514,21 +562,9 @@ impl ForegroundIdentityProbe {
         let scratch = tempfile::tempdir_in(test_temp_root()).unwrap();
         let executable = scratch.path().join(name);
         std::fs::copy("/bin/cat", &executable).unwrap();
-        // macOS kills a relocated Apple platform binary (verified exit -9).
-        // Ad-hoc signing the scratch copy makes it a local identity probe.
+        // Signing the scratch copy makes it a local identity probe.
         #[cfg(target_os = "macos")]
-        {
-            let signed = std::process::Command::new("/usr/bin/codesign")
-                .args(["--force", "--sign", "-"])
-                .arg(&executable)
-                .output()
-                .expect("sign scratch identity probe");
-            assert!(
-                signed.status.success(),
-                "codesign: {}",
-                String::from_utf8_lossy(&signed.stderr)
-            );
-        }
+        sign_relocated_binary(&executable);
         let pair = native_pty_system()
             .openpty(PtySize {
                 rows: 24,

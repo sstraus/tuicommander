@@ -37,6 +37,8 @@ pub(crate) struct Entry {
     /// No active read before this wall-clock instant (ms since the epoch).
     pub backoff_until_ms: Option<u64>,
     pub network_failures: u32,
+    /// Actual consecutive transient reads, not scheduler skips or view refreshes.
+    pub transient_failures: u32,
     pub auth: AuthBlock,
     pub contract_error: Option<String>,
     pub unavailable: Option<String>,
@@ -102,6 +104,7 @@ pub(crate) fn accept(entry: &mut Entry, mut snapshot: QuotaSnapshot) -> bool {
         }
     }
     entry.snapshot = Some(snapshot);
+    entry.transient_failures = 0;
     entry.auth = AuthBlock::Clear;
     entry.contract_error = None;
     entry.unavailable = None;
@@ -120,33 +123,39 @@ pub(crate) fn apply(
         Ok(snapshot) => {
             entry.backoff_until_ms = None;
             entry.network_failures = 0;
+            entry.transient_failures = 0;
             entry.auth = AuthBlock::Clear;
             entry.contract_error = None;
             entry.unavailable = None;
             accept(entry, snapshot);
         }
         Err(QuotaError::RateLimited { retry_after_secs }) => {
+            entry.transient_failures = entry.transient_failures.saturating_add(1);
             let secs = retry_after_secs
                 .unwrap_or(RATE_LIMIT_MIN_SECS)
                 .clamp(RATE_LIMIT_MIN_SECS, RATE_LIMIT_MAX_SECS);
             entry.backoff_until_ms = Some(now_ms + secs * 1000);
         }
         Err(QuotaError::Auth(_)) => {
+            entry.transient_failures = 0;
             entry.auth = fingerprint.map_or(AuthBlock::Blocked, AuthBlock::BlockedAt);
         }
         Err(QuotaError::Network(_)) => {
+            entry.transient_failures = entry.transient_failures.saturating_add(1);
             entry.network_failures = entry.network_failures.saturating_add(1);
             let shift = (entry.network_failures - 1).min(4);
             let secs = (NETWORK_FIRST_SECS << shift).min(NETWORK_MAX_SECS);
             entry.backoff_until_ms = Some(now_ms + secs * 1000);
         }
         Err(QuotaError::Contract(message)) => {
+            entry.transient_failures = 0;
             // A changed schema must not keep showing an old number as current.
             entry.snapshot = None;
             entry.contract_error = Some(message);
             entry.backoff_until_ms = Some(now_ms + cadence_ms);
         }
         Err(QuotaError::Unavailable(reason)) => {
+            entry.transient_failures = 0;
             entry.snapshot = None;
             entry.auth = AuthBlock::Clear;
             entry.contract_error = None;
@@ -154,6 +163,7 @@ pub(crate) fn apply(
             entry.backoff_until_ms = Some(now_ms + cadence_ms);
         }
         Err(QuotaError::Unsupported) => {
+            entry.transient_failures = 0;
             entry.unavailable = Some("no active source".into());
             entry.backoff_until_ms = Some(now_ms + cadence_ms);
         }

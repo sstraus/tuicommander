@@ -133,7 +133,7 @@ scenario metadata and the generated oracle files together.
 
 | Agent | Installation | Capture verification |
 | --- | --- | --- |
-| Gemini | Not found on PATH | Unverified |
+| agy | `/opt/homebrew/bin/agy` 1.5.10 | Unverified: not signed in, so no turn can run; record state captures after a sign-in |
 | Claude | `~/.local/bin/claude` | Unverified: real CLI reports login expired; never logged in automatically |
 | Codex | `/opt/homebrew/bin/codex` | Recorded and replayed real READY turn; fixture `codex-headless-short-20261008` |
 | pi | `/opt/homebrew/bin/pi` | Recorded and replayed READY turn and real question/answer (Gemini 2.5 Flash); fixtures `pi-headless-short-20261008`, `pi-headless-question-20261008` |

@@ -27,6 +27,7 @@ pub use model::*;
 pub use store::StoryStore;
 pub(crate) use store::assemble_plan_view;
 pub(crate) use store::validate_new_story as validate_workflow_proposal;
+pub(crate) use store::{EXTERNAL_LEDGER_SCHEMA, INGEST_SCHEMA, SCHEMA as STORY_SCHEMA};
 pub(crate) use store::{
     ExternalExecution, ExternalTransition, apply_command as evaluate_story_command,
     only_manual_pending,
@@ -73,62 +74,6 @@ mod tests {
             value["stories"][0].get("story").is_none(),
             "story fields are flattened"
         );
-    }
-
-    #[test]
-    fn new_store_sets_schema_version_six() {
-        let dir = tempfile::tempdir().expect("temporary config");
-        let db = dir.path().join("stories.sqlite3");
-
-        StoryStore::open_at(&db).expect("open store");
-
-        let connection = rusqlite::Connection::open(db).expect("open database");
-        let version: i64 = connection
-            .pragma_query_value(None, "user_version", |row| row.get(0))
-            .expect("read schema version");
-        assert_eq!(version, 6);
-    }
-
-    #[test]
-    fn store_rejects_a_newer_schema_version() {
-        let dir = tempfile::tempdir().expect("temporary config");
-        let db = dir.path().join("stories.sqlite3");
-        let connection = rusqlite::Connection::open(&db).expect("open database");
-        connection
-            .pragma_update(None, "user_version", 7)
-            .expect("set future schema version");
-
-        let error = StoryStore::open_at(&db).expect_err("future schema is rejected");
-        assert!(error.contains("newer than supported"), "{error}");
-    }
-
-    #[test]
-    fn version_zero_store_is_upgraded_in_place_with_its_data() {
-        let dir = tempfile::tempdir().expect("temporary config");
-        let db = dir.path().join("stories.sqlite3");
-        let store = StoryStore::open_at(&db).expect("store");
-        let plan = store
-            .create_plan(NewPlan {
-                project: "/project".into(),
-                title: "Pre-version plan".into(),
-                source: "plan.md".into(),
-            })
-            .expect("plan");
-        // Recreate the pre-archive plan layout, then mark it as an unversioned store.
-        rusqlite::Connection::open(&db)
-            .and_then(|conn| conn.execute_batch("ALTER TABLE plans DROP COLUMN revision; ALTER TABLE plans DROP COLUMN archived; PRAGMA user_version=0;"))
-            .expect("mark store as version 0");
-
-        let reopened = StoryStore::open_at(&db).expect("version 0 opens");
-        assert_eq!(
-            reopened.get_plan(&plan.id).expect("plan survives").title,
-            "Pre-version plan"
-        );
-        let version: i64 = rusqlite::Connection::open(&db)
-            .expect("open database")
-            .pragma_query_value(None, "user_version", |row| row.get(0))
-            .expect("read schema version");
-        assert_eq!(version, 6);
     }
 
     #[test]

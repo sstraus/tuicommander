@@ -73,7 +73,7 @@ fn run_hook(command: &str, stdin: &str, socket: Option<&std::path::Path>, tty: &
     assert!(child.wait().unwrap().success());
 }
 
-// Catches: a hook (Claude, Gemini, Codex or Grok) still writes its OSC 7770
+// Catches: a hook (Claude, agy, Codex or Grok) still writes its OSC 7770
 // frames to the tty the agent TUI redraws, where a split write prints them as
 // text over the agent screen (#2749-bee7).
 #[cfg(unix)]
@@ -86,7 +86,7 @@ fn every_hook_posts_its_frames_to_the_tuic_socket_and_not_the_tty() {
     let stdin = r#"{"session_id":"native","hook_event_name":"PreToolUse"}"#;
     let maps = [
         ("claude", claude_hook_map()),
-        ("gemini", gemini_hook_map()),
+        ("agy", agy_hook_map()),
         ("codex", codex_hook_map()),
         ("grok", grok_hook_map()),
     ];

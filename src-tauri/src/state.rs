@@ -998,6 +998,7 @@ pub(crate) fn resolve_choice_prompt_input(state: &AppState, session_id: &str, da
         let mut silence = silence.lock();
         silence.clear_awaiting();
         silence.choice_input_resolved_pending = true;
+        silence.note_dialog_answered();
     }
     state.emit_pty_event(AppEvent::PtyParsed {
         session_id: session_id.to_string(),
@@ -1696,6 +1697,10 @@ pub struct McpSessionMeta {
     /// Grok rejects nested `server__upstream__tool` identifiers, so its MCP
     /// session uses `search_tools` / `get_tool_schema` / `call_tool` instead.
     pub requires_meta_tools: bool,
+    /// Client kind named at `initialize` (`claude`, `codex`, `ego`, `grok`, `cli`,
+    /// `other`). A bridged client names itself only there, so the usage rollup
+    /// falls back to it when a request carries no client identity of its own.
+    pub client_kind: Option<&'static str>,
     /// Whether this session has an active SSE stream (GET /mcp connected)
     pub has_sse_stream: bool,
     /// Which GET /mcp stream currently owns this session. A reconnect can be
@@ -3918,6 +3923,7 @@ impl AppState {
         log_buffer: Arc<Mutex<crate::app_logger::LogRingBuffer>>,
     ) -> Self {
         crate::attachments::cleanup_orphans(&data_dir);
+        crate::db::legacy::remove_retired_files(&data_dir);
         let restorable_terminals: dashmap::DashSet<String> =
             crate::config::load_repositories()["repos"]
                 .as_object()
@@ -3934,7 +3940,7 @@ impl AppState {
                 .collect();
         let session_token = config.services.auth.session_token.clone();
         let push_store = crate::push::PushStore::load(&data_dir);
-        let audit_path = data_dir.join("tunnel_audit.db");
+        let audit_path = data_dir.join(crate::db::TUNNEL_AUDIT_DB);
         let tunnel_audit = Arc::new(parking_lot::Mutex::new(
             crate::tunnels::audit::AuditLog::open(&audit_path)
                 .expect("Failed to open tunnel audit DB"),
@@ -6165,7 +6171,7 @@ pub(crate) mod tests_support {
 
     pub fn make_test_app_state_in(root: &std::path::Path) -> AppState {
         // Unique data dir per call: AppState::new eagerly opens
-        // `data_dir/tunnel_audit.db`, so a shared path makes parallel tests
+        // `data_dir/tunnel_audit.sqlite3`, so a shared path makes parallel tests
         // collide on the SQLite file (concurrent opens → SQLITE_BUSY
         // "database is locked"). The guard keeps every DB isolated and
         // removes it when the state drops, including during panic unwind.

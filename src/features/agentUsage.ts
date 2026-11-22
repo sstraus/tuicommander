@@ -73,7 +73,8 @@ const resetSuffix = (resetsAt: string | null | undefined, now: number) => {
  * is left before the monthly limit (a monthly window as percent left; a credit balance as an
  * amount). Claude extra usage is a pay-as-you-go overage budget, not a subscription limit, so it
  * never makes a segment. Each segment carries the time to its own reset (" -4d").
- * Returns null when the snapshot has no weekly or monthly data.
+ * Falls back to an account-wide unclassified window without inferring its duration.
+ * Returns null when the snapshot has no displayable quota data.
  */
 export function formatAgentUsage(snapshot: QuotaView["snapshot"], now: number): AgentUsageText | null {
 	if (!snapshot) return null;
@@ -97,6 +98,13 @@ export function formatAgentUsage(snapshot: QuotaView["snapshot"], now: number): 
 	} else if (Number.isFinite(credits)) {
 		segments.push(`credits: ${Math.floor(credits)} left`);
 	}
+	if (!segments.length) {
+		const other = windows.find((window) => window.kind === "other" && !window.model);
+		if (other) {
+			segments.push(`${other.label}: ${Math.round(other.used_percent)}%${resetSuffix(other.resets_at, now)}`);
+			used.push(other.used_percent);
+		}
+	}
 	if (!segments.length) return null;
 	const resets = windows
 		.filter((window) => window.resets_at)
@@ -111,7 +119,8 @@ export function formatAgentUsage(snapshot: QuotaView["snapshot"], now: number): 
 	};
 }
 
-const keyId = (key: SubscriptionKey) => JSON.stringify([key.owner, key.provider, key.credential, key.profile ?? null]);
+const keyId = (key: SubscriptionKey) =>
+	JSON.stringify([key.owner, key.provider, key.credential, key.profile ?? null, key.connection ?? null]);
 
 let disposeEffect: (() => void) | null = null;
 
@@ -144,10 +153,24 @@ export function initAgentUsage(): void {
 				const formatted = formatAgentUsage(view.snapshot, Date.now());
 				if (formatted) lastGood.set(account, formatted);
 				const keep = view.state === "stale" || view.state === "backoff" ? lastGood.get(account) : undefined;
+				const stateText: AgentUsageText = {
+					text: view.state === "backoff" ? "updating" : view.state.replaceAll("_", " "),
+					priority: priorityOf(0),
+				};
+				const base: AgentUsageText | null =
+					view.state === "auth_invalid" || view.state === "contract_error"
+						? stateText
+						: (formatted ?? keep ?? (view.snapshot ? null : stateText));
 				const shown =
-					formatted ??
-					keep ??
-					(view.snapshot ? null : { text: view.state.replaceAll("_", " "), priority: priorityOf(0) });
+					view.retry_warning && (view.state === "backoff" || view.state === "fresh" || view.state === "stale")
+						? {
+								text: base && base.text !== "updating" ? `${base.text} · retry` : "retry",
+								tooltip: [base?.tooltip, "Quota refresh failed repeatedly; retry is automatic."]
+									.filter(Boolean)
+									.join("\n"),
+								priority: Math.max(base?.priority ?? 0, 50),
+							}
+						: base;
 				if (!shown) return retract();
 				const label = usageLabel(view.key.provider, agent);
 				const signature = JSON.stringify([sessionId, agent, label, shown.text, shown.tooltip, shown.priority]);

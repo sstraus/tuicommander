@@ -79,14 +79,14 @@ fn canonical(value: Value) -> Value {
     }
 }
 
+/// Managed launch records in `tuic.sqlite3`.
+pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS launches (key TEXT PRIMARY KEY, record TEXT NOT NULL, revision INTEGER NOT NULL, updated_ms INTEGER NOT NULL);";
+
 struct Journal(PathBuf);
 impl Journal {
     fn open(&self) -> Result<Connection, String> {
-        std::fs::create_dir_all(self.0.parent().unwrap()).map_err(|e| e.to_string())?;
-        let db = Connection::open(&self.0).map_err(|e| e.to_string())?;
-        db.busy_timeout(std::time::Duration::from_secs(5))
-            .map_err(|e| e.to_string())?;
-        db.execute_batch("PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS launches (key TEXT PRIMARY KEY, record TEXT NOT NULL, revision INTEGER NOT NULL);")
+        let db = crate::db::open_with(&self.0, &crate::db::TUIC_SCHEMA)?;
+        db.pragma_update(None, "synchronous", "FULL")
             .map_err(|e| e.to_string())?;
         Ok(db)
     }
@@ -94,8 +94,8 @@ impl Journal {
         let db = self.open()?;
         let text = serde_json::to_string(&record).map_err(|e| e.to_string())?;
         db.execute(
-            "INSERT OR IGNORE INTO launches VALUES (?1, ?2, 0)",
-            params![key, text],
+            "INSERT OR IGNORE INTO launches VALUES (?1, ?2, 0, ?3)",
+            params![key, text, crate::db::retention::now_ms()],
         )
         .map_err(|e| e.to_string())?;
         let text: String = db
@@ -125,8 +125,8 @@ impl Journal {
         let changed = self
             .open()?
             .execute(
-                "UPDATE launches SET record=?1, revision=?2 WHERE key=?3 AND revision=?4",
-                params![text, record.revision, key, revision],
+                "UPDATE launches SET record=?1, revision=?2, updated_ms=?5 WHERE key=?3 AND revision=?4",
+                params![text, record.revision, key, revision, crate::db::retention::now_ms()],
             )
             .map_err(|e| e.to_string())?;
         if changed != 1 {
@@ -198,7 +198,7 @@ async fn execute_scoped(
             return Err("launch_id reads cannot include launch mutations".into());
         }
         let _guard = state.launch_transaction_lock.lock().await;
-        let record = Journal(state.data_dir.join("managed-launches.sqlite"))
+        let record = Journal(state.data_dir.join(crate::db::TUIC_DB))
             .get(id)?
             .ok_or("Unknown launch_id")?;
         return Ok(receipt(state, &record));
@@ -247,7 +247,7 @@ async fn execute_scoped(
         .unwrap(),
     );
     let _guard = state.launch_transaction_lock.lock().await;
-    let journal = Journal(state.data_dir.join("managed-launches.sqlite"));
+    let journal = Journal(state.data_dir.join(crate::db::TUIC_DB));
     let mut record = journal.reserve(
         &key,
         Record {
@@ -358,7 +358,8 @@ async fn execute_scoped(
     let mut spawn = request.spawn.clone();
     spawn["action"] = json!("spawn");
     if !require_peer {
-        spawn["capabilities"] = json!(["land", "push", "tag", "children", "progress"]);
+        // Workflow agents never hold `operator`; an explicit empty set records that.
+        spawn["capabilities"] = json!([]);
     }
     spawn["name"] = json!(request.name);
     spawn["keep_open"] = json!(request.keep_open);

@@ -186,6 +186,14 @@ pub(super) fn call_target(params: &Value) -> (&str, &Value) {
 
 /// Catalogue-recognized operation name; unrecognized caller strings stay digested.
 pub(super) fn operation_of(state: &AppState, name: &str, args: &Value) -> String {
+    // An action's discovery name (`agent_send`) counts as that native action.
+    if let Some((tool, action)) = super::action_slices::split_action_tool_name(name) {
+        let mut args = args.clone();
+        if args.is_object() {
+            args["action"] = Value::from(action);
+        }
+        return operation_of(state, tool, &args);
+    }
     // Native/meta catalogue and connected upstream definitions supply safe operation names.
     // Unrecognized caller strings stay digested; bodies are never copied.
     match OPERATIONS.get(name) {

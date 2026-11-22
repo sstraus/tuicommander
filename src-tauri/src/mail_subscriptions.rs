@@ -20,13 +20,8 @@ pub(crate) struct MailSubscriptions {
 }
 
 fn open(path: &Path) -> Result<Connection, String> {
-    let connection =
-        Connection::open(path.join("mail-subscriptions.db")).map_err(|e| e.to_string())?;
-    connection
-        .busy_timeout(std::time::Duration::from_secs(5))
-        .map_err(|e| e.to_string())?;
+    let connection = crate::db::open(&path.join(crate::db::MAIL_DB))?;
     connection.execute_batch("
-        PRAGMA journal_mode=WAL;
         PRAGMA synchronous=FULL;
         CREATE TABLE IF NOT EXISTS mail_heads(recipient TEXT PRIMARY KEY, head INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS mail_events(

@@ -9,6 +9,7 @@ export function CatalogInspector(props: {
 	descriptor: ActivityDescriptor;
 	instance: ActivityInstance;
 	label: string;
+	hideLabel?: boolean;
 	onLabel: (label: string) => void;
 	onChange: (instance: ActivityInstance) => void;
 }) {
@@ -19,14 +20,16 @@ export function CatalogInspector(props: {
 			<p>
 				{props.descriptor.id.namespace} · version {props.descriptor.id.version}
 			</p>
-			<label>
-				Label
-				<Input
-					aria-label="Activity label"
-					value={props.label}
-					onInput={(event) => props.onLabel(event.currentTarget.value)}
-				/>
-			</label>
+			<Show when={!props.hideLabel}>
+				<label>
+					Label
+					<Input
+						aria-label="Activity label"
+						value={props.label}
+						onInput={(event) => props.onLabel(event.currentTarget.value)}
+					/>
+				</label>
+			</Show>
 			<details>
 				<summary>Schema and handler contract</summary>
 				<pre>{JSON.stringify(props.descriptor, null, 2)}</pre>

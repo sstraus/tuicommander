@@ -339,7 +339,7 @@ export async function detectAgentForTerminal(termId: string, source: DetectionSo
 			}
 
 			// Read the agent's leaf PID so the backend can extract env vars
-			// (CLAUDE_CONFIG_DIR, GEMINI_CLI_HOME, CODEX_HOME, HOME) directly from
+			// (CLAUDE_CONFIG_DIR, CODEX_HOME, HOME) directly from
 			// the process's initial environment — the ground-truth source.
 			let agentPid: number | null = null;
 			if (current.sessionId) {

@@ -46,7 +46,7 @@ describe("buildAgentLaunchCommand", () => {
 	});
 
 	it("returns bare binary for non-claude agents even with UUID", () => {
-		expect(buildAgentLaunchCommand("gemini", "abc-123")).toBe("gemini");
+		expect(buildAgentLaunchCommand("agy", "abc-123")).toBe("agy");
 	});
 
 	it("injects --session-id into full command with args", () => {
@@ -84,7 +84,7 @@ describe("prepareAgentLaunchCommand", () => {
 		mockRpc.mockResolvedValueOnce(["run"]).mockResolvedValueOnce(["exec"]).mockResolvedValueOnce([]);
 		expect(await prepareAgentLaunchCommand("opencode run", null, "opencode")).toBe("opencode run");
 		expect(await prepareAgentLaunchCommand("codex exec", null, "codex")).toBe("codex exec");
-		expect(await prepareAgentLaunchCommand("gemini", null, "gemini")).toBe("gemini");
+		expect(await prepareAgentLaunchCommand("agy", null, "agy")).toBe("agy");
 	});
 
 	it("preserves an inline environment assignment while Rust chooses the screen flag", async () => {
@@ -111,10 +111,10 @@ describe("sessionDiscovery in AgentConfig", () => {
 		expect(disc?.resumeWithId("test-uuid")).toBe("claude --resume test-uuid");
 	});
 
-	it("gemini has sessionDiscovery with resumeWithId", () => {
-		const disc = AGENTS.gemini.sessionDiscovery;
+	it("agy has sessionDiscovery with resumeWithId", () => {
+		const disc = AGENTS.agy.sessionDiscovery;
 		expect(disc).not.toBeNull();
-		expect(disc?.resumeWithId("test-uuid")).toBe("gemini --resume test-uuid");
+		expect(disc?.resumeWithId("test-uuid")).toBe("agy --conversation test-uuid");
 	});
 
 	it("codex has sessionDiscovery with resumeWithId", () => {

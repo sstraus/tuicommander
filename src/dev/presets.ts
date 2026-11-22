@@ -202,7 +202,7 @@ export const PRESETS: Record<string, Preset> = {
 		description: "All agents rate limited",
 		rateLimit: [
 			rateLimitFor("claude", 15),
-			rateLimitFor("gemini", 10),
+			rateLimitFor("agy", 10),
 			rateLimitFor("opencode", 20),
 			rateLimitFor("codex", 30),
 		],

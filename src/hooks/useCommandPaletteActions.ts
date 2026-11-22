@@ -94,7 +94,7 @@ export function useCommandPaletteActions(options: CommandPaletteActionOptions): 
 			},
 			{
 				id: "reset-panel-sizes",
-				label: "Reset Panel Sizes",
+				label: "Unsplit Panes / Reset Panel Sizes",
 				category: "Application",
 				keybinding: "",
 				execute: () => options.splitPanes.resetLayout(),

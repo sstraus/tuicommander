@@ -54,6 +54,7 @@ beforeEach(() => {
 });
 
 async function openForm(project: string | (() => string) = "/repo") {
+	storiesUi.reveal({ project: typeof project === "string" ? project : project(), planId: "p1", storyId: null });
 	const view = render(() => (
 		<StoriesDialog project={typeof project === "string" ? project : project()} onClose={() => {}} />
 	));

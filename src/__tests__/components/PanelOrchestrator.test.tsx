@@ -1,10 +1,13 @@
-import { render } from "@solidjs/testing-library";
+import { cleanup, render } from "@solidjs/testing-library";
+import { onCleanup } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Every child panel is stubbed to capture the `visible` prop it receives. The
 // unit under test is PanelOrchestrator's visibility wiring, not the panels
 // themselves.
 const h = vi.hoisted(() => ({
+	disposed: [] as string[],
+	retainGit: undefined as ((retain: boolean) => void) | undefined,
 	fileBrowser: [] as Array<{ visible: unknown }>,
 	gitPanel: [] as Array<{ visible: unknown }>,
 	markdown: [] as Array<{ visible: unknown }>,
@@ -13,11 +16,14 @@ const h = vi.hoisted(() => ({
 vi.mock("../../components/FileBrowserPanel", () => ({
 	FileBrowserPanel: (props: { visible: unknown }) => {
 		h.fileBrowser.push({ visible: props.visible });
+		onCleanup(() => h.disposed.push("files"));
 		return null;
 	},
 }));
 vi.mock("../../components/GitPanel/GitPanel", () => ({
-	GitPanel: (props: { visible: unknown }) => {
+	GitPanel: (props: { visible: unknown; onRetainChange: (retain: boolean) => void }) => {
+		h.retainGit = props.onRetainChange;
+		onCleanup(() => h.disposed.push("git"));
 		h.gitPanel.push({ visible: props.visible });
 		return null;
 	},
@@ -44,6 +50,8 @@ function renderOrchestrator() {
 describe("PanelOrchestrator", () => {
 	beforeEach(() => {
 		h.fileBrowser = [];
+		h.disposed = [];
+		h.retainGit = undefined;
 		h.gitPanel = [];
 		h.markdown = [];
 		uiStore.setFileBrowserPanelVisible(false);
@@ -53,7 +61,42 @@ describe("PanelOrchestrator", () => {
 	});
 
 	afterEach(() => {
+		cleanup();
 		uiStore._testCancelPendingSave();
+		vi.useRealTimers();
+	});
+
+	it("does not mount closed panels or let an old close timer evict a reopened panel", () => {
+		vi.useFakeTimers();
+		renderOrchestrator();
+		expect(h.fileBrowser).toHaveLength(0);
+		expect(h.gitPanel).toHaveLength(0);
+		uiStore.setFileBrowserPanelVisible(true);
+		uiStore.setGitPanelVisible(true);
+		vi.advanceTimersByTime(59_999);
+		expect(h.disposed).toEqual([]);
+		uiStore.setFileBrowserPanelVisible(true);
+		vi.advanceTimersByTime(60_000);
+		expect(h.disposed).toEqual(["git"]);
+		expect(h.fileBrowser).toHaveLength(1);
+		uiStore.setFileBrowserPanelVisible(false);
+		vi.advanceTimersByTime(60_000);
+		expect(h.disposed).toEqual(["git", "files"]);
+		uiStore.setFileBrowserPanelVisible(true);
+		expect(h.fileBrowser).toHaveLength(2);
+	});
+
+	it("does not evict Git while its active tab holds a draft", () => {
+		vi.useFakeTimers();
+		uiStore.setGitPanelVisible(true);
+		renderOrchestrator();
+		h.retainGit!(true);
+		uiStore.setGitPanelVisible(false);
+		vi.advanceTimersByTime(120_000);
+		expect(h.disposed).toEqual([]);
+		h.retainGit!(false);
+		vi.advanceTimersByTime(60_000);
+		expect(h.disposed).toEqual(["git"]);
 	});
 
 	it("shows File Browser when open and no global workspace is active", () => {
@@ -74,7 +117,7 @@ describe("PanelOrchestrator", () => {
 		expect(globalWorkspaceStore.getScope()).toBe(MANUAL_SCOPE);
 
 		renderOrchestrator();
-		expect(h.fileBrowser[0].visible).toBe(false);
+		expect(h.fileBrowser).toHaveLength(0);
 	});
 
 	it("suppresses Git Panel while the manual cross-repo workspace is active", () => {
@@ -83,7 +126,7 @@ describe("PanelOrchestrator", () => {
 		expect(globalWorkspaceStore.getScope()).toBe(MANUAL_SCOPE);
 
 		renderOrchestrator();
-		expect(h.gitPanel[0].visible).toBe(false);
+		expect(h.gitPanel).toHaveLength(0);
 	});
 
 	// Regression test for the bug: a repo with its "auto-consolidate worktrees"

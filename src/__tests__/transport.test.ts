@@ -482,6 +482,14 @@ describe("transport", () => {
 			});
 		});
 
+		it("maps the cross-project Progress list to a POST with its filters in the body", () => {
+			expect(mapCommandToHttp("progress_recent", { input: { unreadOnly: true, kind: "answer" } })).toMatchObject({
+				method: "POST",
+				path: "/progress/recent",
+				body: { unreadOnly: true, kind: "answer" },
+			});
+		});
+
 		it("maps mobile Progress project discovery to its authenticated HTTP route", () => {
 			expect(mapCommandToHttp("progress_projects", {})).toEqual({
 				method: "GET",
@@ -1237,6 +1245,20 @@ describe("transport", () => {
 			});
 			expect(next.path).toBe("/sessions/s1/chat-view");
 			expect(next.body).toEqual({ epoch: 2, fromSeq: 17, pendingTexts: ["secret prompt"] });
+		});
+
+		it("maps the Discussion commands to their routes with encoded ids", () => {
+			const ask = mapCommandToHttp("discussion_ask", { sessionId: "s/1", question: "why?" });
+			expect([ask.method, ask.path, ask.body]).toEqual(["POST", "/sessions/s%2F1/discussion", { question: "why?" }]);
+			expect(mapCommandToHttp("discussion_get", { entryId: 7 }).path).toBe("/discussion/7");
+			const follow = mapCommandToHttp("discussion_follow_up", { entryId: 7, question: "and?" });
+			expect([follow.method, follow.path, follow.body]).toEqual([
+				"POST",
+				"/discussion/7/follow-up",
+				{ question: "and?" },
+			]);
+			const cancel = mapCommandToHttp("discussion_cancel", { entryId: 7 });
+			expect([cancel.method, cancel.path]).toEqual(["POST", "/discussion/7/cancel"]);
 		});
 
 		it("maps chat_view_full_text to a GET on the message path", () => {
@@ -2400,6 +2422,13 @@ describe("transport", () => {
 			expect(readme.transform?.(null)).toBeNull();
 		});
 
+		it("maps the global scratchpad path lookup to the config route", () => {
+			expect(mapCommandToHttp("get_scratchpad_path", {})).toEqual({
+				method: "GET",
+				path: "/config/scratchpad-path",
+			});
+		});
+
 		it("maps the remote home lookup to the machine serving the file browser", () => {
 			expect(mapCommandToHttp("get_home_directory", {})).toEqual({
 				method: "GET",
@@ -3055,7 +3084,7 @@ describe("transport", () => {
 			globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse("false"));
 
 			await rpc("verify_agent_session", {
-				agentType: "gemini",
+				agentType: "agy",
 				sessionId: "af467730-5e79-49d9-8a17-ebd94c99f262",
 				cwd: "/work/project",
 				agentPid: null,
@@ -4552,4 +4581,30 @@ it("maps neutral workflow actions without changing casing or nested mappings", (
 		path: "/workflows/neutral/action?path=%2Frepo%20a",
 		body: action,
 	});
+});
+
+// Catches: a captured local browser origin being overridden by a later remote repository mapping.
+it("keeps an explicit local RPC on the browser backend despite changed repository ownership", async () => {
+	const originalTauri = (globalThis as Record<string, unknown>).__TAURI_INTERNALS__;
+	delete (globalThis as Record<string, unknown>).__TAURI_INTERNALS__;
+	const { rpc } = await import("../transport");
+	setRepoConnectionLookup(() => "changed-host");
+	setRemoteBaseUrlLookup(() => "https://wrong-host.invalid");
+	const fetch = vi.fn().mockResolvedValue(
+		new Response(JSON.stringify({ delivery: "queued" }), {
+			status: 200,
+			headers: { "content-type": "application/json" },
+		}),
+	);
+	vi.stubGlobal("fetch", fetch);
+	try {
+		await rpc("progress_reply", { project: "/same", input: { entryId: 1, requestId: "r", text: "hello" } }, null);
+		expect(String(fetch.mock.calls[0][0])).not.toContain("wrong-host.invalid");
+		expect(String(fetch.mock.calls[0][0])).toContain("/progress/reply?path=%2Fsame");
+	} finally {
+		if (originalTauri !== undefined) (globalThis as Record<string, unknown>).__TAURI_INTERNALS__ = originalTauri;
+		vi.unstubAllGlobals();
+		setRepoConnectionLookup(() => undefined);
+		setRemoteBaseUrlLookup(() => undefined);
+	}
 });

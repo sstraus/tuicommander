@@ -2,6 +2,10 @@
 
 TUICommander detects, monitors, and manages AI coding agents running in your terminals.
 
+On macOS, if an update removes a running agent's executable, detection falls back
+to its current OS process name. A recognized agent name keeps normal input
+readiness checks; TUIC does not trust a stale agent identity or bypass a dialog.
+
 Aider is no longer an agent harness. An `aider` command runs as a plain terminal command. Old settings remain readable, but Aider profiles are excluded from agent pickers and managed peer launches.
 
 ## Supported Agents
@@ -10,7 +14,7 @@ Aider is no longer an agent harness. An `aider` command runs as a plain terminal
 |-------|--------|----------------|-----------------|
 | Claude Code | `claude` | `claude --continue` | `claude --resume $TUIC_SESSION` |
 | Codex CLI | `codex` | `codex resume --last` | `codex resume $TUIC_SESSION` |
-| Gemini CLI | `gemini` | `gemini --resume` | `gemini --resume $TUIC_SESSION` |
+| Antigravity CLI | `agy` | `agy --continue` | `agy --conversation <discovered-id>` |
 | OpenCode | `opencode` | `opencode -c` | — |
 | Amp *(limited support, need more tests)* | `amp` | `amp threads continue` | — |
 | Cursor Agent *(limited support, need more tests)* | `cursor-agent` | `cursor-agent resume` | — |
@@ -39,7 +43,7 @@ absolute bridge path that is missing or not executable.
 
 **Prevent alternate screen** in Settings → AI → Agents is enabled by default for every agent. TUIC applies Claude Code's `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1` and `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` environment controls when enabled. A terminal that enters the alternate screen within its first seconds raises a warning toast naming the session and the fix. Codex and Grok receive `--no-alt-screen` when their installed CLI advertises it in `--help`; OpenCode receives `--mini` when available. On Windows, the probe selects an executable `.exe` or `.cmd` launcher ahead of an extensionless npm shell shim. TUICommander checks the executable with a two-second deadline and shares concurrent checks. A timed-out check is not retried until that binary changes; a quick inconclusive exit is retried after a short cooldown. Older versions still start without an unsupported option. Existing flags are not duplicated. On Unix, the PATH shim also removes repeated native screen flags after shell alias expansion, before the real executable starts. Arguments after `--` stay unchanged. Absolute executable paths bypass this shim. Integration scripts and shim hard links are refreshed when TUIC creates a new shell; an app update does not replace functions already loaded in an existing shell. Rust applies the same policy to structured IPC, HTTP and MCP launches and exports it to new TUIC shells, where zsh, bash and fish wrappers apply it to commands typed manually. `command <agent>` bypasses those wrappers, but not the launch-instructions shim. Reopen an existing shell after changing the setting. In typed OpenCode commands, `--mini` applies to interactive launches (bare, options or a project path), and skips all recorded subcommands and aliases, including `mcp list` and `run`. Goose wrappers omit TUIC `--name` when arguments include `--no-session`, `--name NAME`, `--name=NAME`, `-n NAME`, `-nNAME`, `--path PATH`, `--path=PATH`, `--resume` or `-r`. Normal `session` and `run` launches retain tab naming.
 
-Gemini currently defaults to the primary screen (`ui.useAlternateBuffer: false`), Cursor enables fullscreen only when requested, and pi defaults to regular TUI mode. Other agents without a documented alternate-screen control keep their own defaults. If an agent enters the alternate screen despite these defaults, TUICommander records one warning for that session with the agent name and detected version.
+Cursor enables fullscreen only when requested, and pi defaults to regular TUI mode. Other agents without a documented alternate-screen control keep their own defaults. If an agent enters the alternate screen despite these defaults, TUICommander records one warning for that session with the agent name and detected version.
 
 To allow alternate screen, turn off **Prevent alternate screen** for that agent. The preference applies to new TUIC agent launches and new shells. An explicit `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN` value in a Claude command's environment retains precedence.
 
@@ -61,7 +65,7 @@ TUICommander auto-detects which agent is running in each terminal by matching ou
 
 - **Claude Code**: Middle dot `·` (U+00B7), dingbat asterisks `✢` `✳` `✶` `✻` `✽` (U+2720–273F), or ASCII `*`
 - **Copilot CLI**: Therefore sign `∴` (U+2234), filled circle `●` (U+25CF), empty circle `○` (U+25CB)
-- **Gemini CLI / Amazon Q / Cline**: Braille spinners `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`
+- **Amazon Q / Cline**: Braille spinners `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`
 - **Codex CLI**: Bullets `•` `◦`
 
 When detected:
@@ -104,7 +108,7 @@ When an agent hits a rate limit, TUICommander detects it from terminal output:
 
 - **Status bar warning** — Shows a badge with the number of rate-limited sessions and a countdown timer
 - **Per-session tracking** — Each session's rate limit is tracked independently with automatic cleanup when expired
-- **Provider-specific patterns** — Custom regex for Claude ("overloaded", "rate limit"), Gemini ("429", "quota exceeded"), OpenAI ("too many requests"), and generic patterns
+- **Provider-specific patterns** — Custom regex for Claude ("overloaded", "rate limit"), Google APIs ("429", "quota exceeded"), OpenAI ("too many requests"), and generic patterns
 
 ## Question Detection
 
@@ -190,7 +194,7 @@ session idle. New input and recognized active work can start another turn.
 An open interactive selection dialog restores the question badge even when
 hooks are enabled and another hook cleared it before you answered.
 
-Disable this per agent with **Settings → Agents → Native status signals** to restore screen-only heuristics. Codex, Gemini, Grok, and OpenCode have a separate, explicit **Install hooks globally** toggle.
+Disable this per agent with **Settings → Agents → Native status signals** to restore screen-only heuristics. Codex, Antigravity, Grok, and OpenCode have a separate, explicit **Install hooks globally** toggle.
 
 Instead of inferring busy/idle/waiting from terminal output, TUICommander can drive an agent's status directly from the agent's **own hook system**.
 
@@ -205,7 +209,7 @@ For Claude, `awaiting` also covers **MCP elicitation** — the dialog an MCP ser
 | Agent | Hooks | Status |
 |-------|-------|--------|
 | Claude | `~/.claude/settings.json` | Supported |
-| Gemini | `~/.gemini/settings.json` | Supported |
+| Antigravity | `~/.gemini/config/hooks.json` (TUIC owns only the `tuic-status` hook name) | Supported: busy on `PreInvocation`, idle on `Stop` |
 | Codex | `~/.codex/hooks.json` + `~/.codex/config.toml` (`[features] hooks = true`) | Supported |
 | Grok | `~/.grok/hooks/tuic.json` (own file) | Supported |
 | OpenCode | `~/.config/opencode/plugin/tuic.ts` (Bun/TS plugin) | Supported |
@@ -411,13 +415,13 @@ goose session "fix the bug"                               # wrapper adds --name 
 goose session --name $TUIC_SESSION "fix the bug"          # explicit, wrapper bypassed
 ```
 
-**Gemini CLI session binding:**
+**Antigravity CLI session binding:**
 
-TUICommander discovers Gemini's native session ID from its project-scoped
-transcript metadata; `TUIC_SESSION` is not the Gemini session ID. Current JSONL
-and legacy JSON transcripts are supported. Restore verifies the same project
-before using `gemini --resume <discovered-id>`. Discovery remains heuristic when
-multiple Gemini tabs use the same project.
+TUICommander discovers agy's native conversation ID from the file name in
+`~/.gemini/antigravity-cli/conversations/<id>.db`; `TUIC_SESSION` is not the agy
+conversation ID. Restore verifies the file exists before using
+`agy --conversation <discovered-id>`. The files name no project, so discovery is
+heuristic (newest unclaimed, last five minutes), also with a single tab.
 
 **Custom scripts that persist state per-tab:**
 
@@ -455,7 +459,7 @@ cron scheduler all belonged to TUICommander's own ReAct loop, which was deleted
 in #784-0aec. `ego` runs its own loop over ACP and reaches terminals from
 outside, through the `session` MCP tool family — so none of those controls has a
 TUICommander-side equivalent any more. Nothing on this page below is affected:
-it describes PTY agents (Claude Code, Codex, Gemini, …), which are unchanged.
+it describes PTY agents (Claude Code, Codex, Antigravity, …), which are unchanged.
 
 ## Sleep Prevention
 

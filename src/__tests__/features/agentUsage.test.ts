@@ -242,6 +242,15 @@ it("claude_extra_usage_is_not_a_monthly_limit", () => {
 	expect(formatAgentUsage(snap({ detail: claudeExtraUsage }), NOW)).toBeNull();
 });
 
+// Catches: an unknown account-wide billing period disappears, while model-only
+// limits must not masquerade as account usage and missing quota stays unknown.
+it("unknown_account_period_is_visible_without_invented_duration", () => {
+	const other = { kind: "other", label: "usage", used_percent: 26, resets_at: null, window_seconds: null, model: null };
+	expect(formatAgentUsage(snap({ windows: [other] }), NOW)).toEqual({ text: "usage: 26%", priority: 10 });
+	expect(formatAgentUsage(snap({ windows: [{ ...other, model: "model-only" }] }), NOW)).toBeNull();
+	expect(formatAgentUsage(snap({ windows: [] }), NOW)).toBeNull();
+});
+
 // Catches: reset time dropped from the text (regression of d4529cc706), weekly shown when absent,
 // monthly remaining not shown, and segments other than weekly/monthly leaking into the badge.
 it.each([
@@ -346,6 +355,73 @@ it("backoff_without_snapshot_keeps_the_last_good_text", async () => {
 	handlers.get("provider-quota-changed")?.({
 		payload: { ...view("first", 21), state: "auth_invalid", snapshot: null },
 	});
+	expect(statusBarTicker.getAll()[0]?.text).toBe("auth invalid");
+});
+
+// Catches: a transient credits-read failure replaces the last balance, or a persistent failure stays invisible.
+it("credits_retry_warning_uses_the_registry_threshold_and_clears_on_success", async () => {
+	const credits = view("first", 21);
+	credits.snapshot!.credits = "8418.4673090000";
+	invoke.mockResolvedValue([credits]);
+	setTerminals({ activeId: "a", terminals: { a: { agentType: "claude", sessionId: "first" } } });
+	initAgentUsage();
+	await settle();
+	invoke.mockClear();
+	for (const retry_warning of [false, false, true]) {
+		handlers.get("provider-quota-changed")?.({ payload: { ...credits, state: "backoff", retry_warning } });
+		expect(statusBarTicker.getAll()[0]?.text).toBe(
+			retry_warning ? "7d: 21% · credits: 8418 left · retry" : "7d: 21% · credits: 8418 left",
+		);
+	}
+	// Forced reads can fail while the retained snapshot is still fresh.
+	handlers.get("provider-quota-changed")?.({ payload: { ...credits, retry_warning: true } });
+	expect(statusBarTicker.getAll()[0]?.text).toBe("7d: 21% · credits: 8418 left · retry");
+	handlers.get("provider-quota-changed")?.({ payload: { ...credits, retry_warning: false } });
+	expect(statusBarTicker.getAll()[0]?.text).toBe("7d: 21% · credits: 8418 left");
+	expect(invoke).not.toHaveBeenCalled();
+});
+
+// Catches: a named connection borrows another connection's last good balance during retry.
+it("retry_balance_cache_is_scoped_to_the_full_subscription_key", async () => {
+	const credits = view("first", 21);
+	credits.key.connection = "one";
+	credits.snapshot!.credits = "8418";
+	invoke.mockResolvedValue([credits]);
+	setTerminals({ activeId: "a", terminals: { a: { agentType: "claude", sessionId: "first" } } });
+	initAgentUsage();
+	await settle();
+	const other = { ...credits.key, connection: "two" };
+	handlers.get("provider-quota-changed")?.({ payload: { ...credits, key: other, snapshot: null, state: "backoff" } });
+	handlers.get("provider-quota-binding-changed")?.({ payload: { session_id: "first", key: other } });
+	expect(statusBarTicker.getAll()[0]?.text).toBe("updating");
+});
+
+// Catches: a previously good balance masks an immediate non-transient failure.
+it.each(["auth_invalid", "contract_error"] as const)(
+	"quota_%s_is_visible_even_with_a_previous_balance",
+	async (state) => {
+		const credits = view("first", 21);
+		credits.snapshot!.credits = "8418";
+		invoke.mockResolvedValue([credits]);
+		setTerminals({ activeId: "a", terminals: { a: { agentType: "claude", sessionId: "first" } } });
+		initAgentUsage();
+		await settle();
+		handlers.get("provider-quota-changed")?.({ payload: { ...credits, state, retry_warning: true } });
+		expect(statusBarTicker.getAll()[0]?.text).toBe(state === "auth_invalid" ? "auth invalid" : "contract error");
+	},
+);
+
+// Catches: a cold transient failure shows an error before any balance has been read.
+it("cold_quota_retry_stays_neutral_until_the_registry_warns", async () => {
+	const cold = { ...view("first", 21), state: "backoff" as const, snapshot: null, retry_warning: false };
+	invoke.mockResolvedValue([cold]);
+	setTerminals({ activeId: "a", terminals: { a: { agentType: "claude", sessionId: "first" } } });
+	initAgentUsage();
+	await settle();
+	expect(statusBarTicker.getAll()[0]).toMatchObject({ text: "updating", priority: 10 });
+	handlers.get("provider-quota-changed")?.({ payload: { ...cold, retry_warning: true } });
+	expect(statusBarTicker.getAll()[0]).toMatchObject({ text: "retry", priority: 50 });
+	handlers.get("provider-quota-changed")?.({ payload: { ...cold, state: "auth_invalid" } });
 	expect(statusBarTicker.getAll()[0]?.text).toBe("auth invalid");
 });
 

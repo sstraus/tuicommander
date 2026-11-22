@@ -2,7 +2,7 @@
 use super::neutral_effects::EffectKey;
 use super::{RunStore, native_git::NativeFailure, native_operations::NativeContext};
 use crate::stories::{NewStory, Story, StoryBackend};
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -111,7 +111,7 @@ fn reserve(
     key: &EffectKey,
     request: &CreateRequest,
 ) -> Result<(), String> {
-    let mut conn = Connection::open(ledger.database_path()).map_err(|e| e.to_string())?;
+    let mut conn = crate::db::open(ledger.database_path())?;
     conn.busy_timeout(std::time::Duration::from_secs(30))
         .map_err(|e| e.to_string())?;
     conn.execute_batch(
@@ -198,7 +198,7 @@ fn reconcile_with(
     let request: CreateRequest =
         serde_json::from_value(effect.invocation.inputs["request"].clone())
             .map_err(|e| e.to_string())?;
-    let conn = Connection::open(store.database_path()).map_err(|e| e.to_string())?;
+    let conn = crate::db::open(store.database_path())?;
     let (responsible, payload, original): (String, String, String) = conn.query_row(
         "SELECT responsible,payload,effect FROM native_story_proposal_reservations WHERE run=?1 AND review=?2 AND proposal=?3",
         params![effect.key.fence.run, request.review, request.proposal],

@@ -239,3 +239,51 @@ describe("CanvasTerminal bounded viewport marker planner", () => {
 		expect(buildAnswersTurn(rows, false).answers).toEqual(["💬 Answer"]);
 	});
 });
+
+describe("CanvasTerminal marker plan while a prompt-boundary read is pending", () => {
+	// One turn: a two-row prompt, then output with two marked answers.
+	const turn = snapshots([
+		"❯ Question",
+		"  more question text",
+		"",
+		"⏺ 💬 First answer",
+		...Array.from({ length: 40 }, () => "  continuation"),
+		"⏺ 💬 Second answer",
+		...Array.from({ length: 10 }, () => "  tail"),
+	]);
+	const ROWS = 15;
+	// The paint cache keeps 32 rows above the viewport, as in CanvasTerminal.
+	const cachedFrom = (base: number) => (i: number) => (i < -32 ? null : (turn[base + i] ?? null));
+
+	async function resolvedPlan(base: number) {
+		const boundary = await readMarkerPromptBoundary(0, turn.length, async (from, to) => turn.slice(from, to));
+		return planCanvasMarkers(ROWS, (i) => turn[base + i] ?? null, [-base], {
+			end: boundary!.end - base,
+			resolved: boundary!.resolved,
+		});
+	}
+
+	// Catches: output scrolls the prompt out of the cached window, the pending read paints a plan with no
+	// marked rows, and every answer gutter and hidden marker row flips off and back on (one jump per line).
+	it("keeps the last resolved plan, moved by the scroll, until the read resolves", async () => {
+		const planner = createCanvasMarkerPlanner();
+		const before = planner(ROWS, cachedFrom(30), [-30], undefined, { base: 30, generation: 1 });
+		expect(before.pendingPrompt).toBeUndefined();
+		expect(before.answerMarkers.has(14)).toBe(true);
+
+		const during = planner(ROWS, cachedFrom(34), [-34], undefined, { base: 34, generation: 1 });
+		const expected = await resolvedPlan(34);
+		expect(during.pendingPrompt).toBe(-34);
+		expect([...during.answerMarkers].sort((a, b) => a - b)).toEqual([...expected.answerMarkers].sort((a, b) => a - b));
+		expect([...during.hidden]).toEqual([...expected.hidden]);
+	});
+
+	// Catches: a plan held across a cache reset (clear or reflow) hides rows that no longer hold markers.
+	it("does not hold a plan across a cache generation change", () => {
+		const planner = createCanvasMarkerPlanner();
+		planner(ROWS, cachedFrom(30), [-30], undefined, { base: 30, generation: 1 });
+		const during = planner(ROWS, cachedFrom(34), [-34], undefined, { base: 34, generation: 2 });
+		expect(during.pendingPrompt).toBe(-34);
+		expect([...during.answerMarkers]).toEqual([]);
+	});
+});

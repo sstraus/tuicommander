@@ -51,6 +51,7 @@ const emitEvent = (event: string, payload: unknown) => {
 	for (const handler of [...(listeners.get(event) ?? [])]) handler(payload);
 };
 
+type FileBrowserView = import("../../../components/FileBrowserPanel/FileBrowserPanel").FileBrowserView;
 const { FileBrowserPanel } = await import("../../../components/FileBrowserPanel/FileBrowserPanel");
 const { uiStore } = await import("../../../stores/ui");
 const { mdTabsStore } = await import("../../../stores/mdTabs");
@@ -415,7 +416,107 @@ describe("FileBrowserPanel external transfer refresh", () => {
 	});
 });
 
+describe("FileBrowserPanel scroll restoration", () => {
+	it.each([false, true])("waits for late rows above the anchor (remount: %s)", async (remount) => {
+		listings.set("/repo|.", [dir("first"), dir("second")]);
+		listings.set("/repo|first", [file("prefix.ts", "first/prefix.ts")]);
+		listings.set("/repo|second", [file("anchor.ts", "second/anchor.ts"), file("tail.ts", "second/tail.ts")]);
+		const [visible, setVisible] = createSignal(true);
+		let view: FileBrowserView | undefined;
+		const mount = () =>
+			render(() => (
+				<FileBrowserPanel
+					visible={visible()}
+					repoPath="/repo"
+					initialView={view}
+					onSaveView={(saved) => {
+						view = saved;
+					}}
+					onClose={() => {}}
+					onFileOpen={() => {}}
+				/>
+			));
+		const measure = (container: HTMLElement) => {
+			const content = container.querySelector<HTMLElement>("[data-browser-row]")!.parentElement!;
+			const rows = () => Array.from(content.querySelectorAll<HTMLElement>("[data-browser-row]"));
+			Object.defineProperties(content, {
+				clientHeight: { value: 24, configurable: true },
+				scrollHeight: { get: () => rows().length * 24, configurable: true },
+			});
+			return { content, rows };
+		};
+		const layout = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+			this: HTMLElement,
+		) {
+			if (!this.matches("[data-browser-row]")) return new DOMRect(0, 0, 100, 24);
+			const content = this.parentElement!;
+			const index = Array.from(content.querySelectorAll("[data-browser-row]")).indexOf(this);
+			return new DOMRect(0, 24 * index - content.scrollTop, 100, 24);
+		});
+		try {
+			const first = mount();
+			clickTreeViewButton(first.container);
+			await first.findByText("first");
+			clickRow(first.container, "first");
+			clickRow(first.container, "second");
+			await first.findByText("anchor.ts");
+			await first.findByText("prefix.ts");
+			const original = measure(first.container).content;
+			original.scrollTop = 77; // fourth row (anchor.ts), 5 pixels clipped
+			fireEvent.scroll(original);
+			setVisible(false);
+			original.scrollTop = 0; // the real WebView clamps when the rows disappear
+			if (remount) first.unmount();
+			let release!: (rows: DirEntry[]) => void;
+			const late = new Promise<DirEntry[]>((resolve) => {
+				release = resolve;
+			});
+			mockInvoke.mockImplementation((cmd, args) =>
+				cmd === "list_directory" && args?.subdir === "first" ? late : defaultInvoke(cmd, args),
+			);
+			setVisible(true);
+			const reopened = remount ? mount() : first;
+			await reopened.findByText("anchor.ts");
+			const { content } = measure(reopened.container);
+			expect(content.scrollTop).toBe(0);
+			release([file("added.ts", "first/added.ts"), file("prefix.ts", "first/prefix.ts")]);
+			await waitFor(() => expect(content.scrollTop).toBe(101));
+		} finally {
+			layout.mockRestore();
+		}
+	});
+});
+
 describe("FileBrowserPanel tree cache", () => {
+	it("restores expanded paths after remount but reads fresh children from disk", async () => {
+		listings.set("/repo|.", [dir("src")]);
+		listings.set("/repo|src", [file("old.ts", "src/old.ts")]);
+		let view: FileBrowserView | undefined;
+		const mount = () =>
+			render(() => (
+				<FileBrowserPanel
+					visible={true}
+					repoPath="/repo"
+					initialView={view}
+					onSaveView={(saved) => {
+						view = saved;
+					}}
+					onClose={() => {}}
+					onFileOpen={() => {}}
+				/>
+			));
+		const first = mount();
+		clickTreeViewButton(first.container);
+		await first.findByText("src");
+		clickRow(first.container, "src");
+		await first.findByText("old.ts");
+		first.unmount();
+		listings.set("/repo|src", [file("new.ts", "src/new.ts")]);
+		const second = mount();
+		await second.findByText("new.ts");
+		expect(second.queryByText("old.ts")).toBeNull();
+	});
+
 	// Catches: remote folder descendants losing the panel's actual repository owner.
 	it("exposes the repository connection on the native file-drop surface", () => {
 		const owner = vi.spyOn(repositoriesStore, "getConnectionId").mockReturnValue("mint");

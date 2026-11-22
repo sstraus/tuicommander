@@ -49,7 +49,10 @@ vi.mock("../../components/WorkflowDesigner/WorkflowDesigner", () => ({
 	WorkflowDesigner: () => <div>Designer content</div>,
 }));
 
-beforeEach(() => storiesUi.setVisibility("all"));
+beforeEach(() => {
+	storiesUi.reveal({ project: "/sizing-fixture", planId: "Alpha", storyId: null });
+	storiesUi.setVisibility("all");
+});
 afterEach(cleanup);
 
 it("catches content-derived dialog height when switching between empty stories and a story", async () => {
@@ -91,4 +94,16 @@ it("places the phase selector of a short-title row on its own full-width line", 
 	} finally {
 		sheet.remove();
 	}
+});
+
+// Catches: the view switch slipping back into filters instead of beside New story.
+it("keeps the List/Kanban switch in the Stories heading before New story", async () => {
+	const { findByRole, getByRole } = render(() => <StoriesDialog project="/sizing-fixture" onClose={() => {}} />);
+	const view = await findByRole("tablist", { name: "Story view" });
+	const heading = getByRole("heading", { name: "Stories", level: 3 });
+	const create = getByRole("button", { name: "New story" });
+	expect(heading.parentElement).toContainElement(view);
+	expect(view.parentElement).toBe(create.parentElement);
+	expect(view.compareDocumentPosition(create) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	expect(view.closest(".filters")).toBeNull();
 });

@@ -1,7 +1,7 @@
 mod native_catalog;
 mod native_child;
 pub(crate) use native_catalog::native_operation_catalog;
-mod activity_preset;
+pub(crate) mod activity_preset;
 pub mod catalog;
 pub mod command;
 pub(crate) mod connector;
@@ -48,7 +48,7 @@ pub(crate) mod neutral_control;
 #[cfg(test)]
 mod neutral_control_tests;
 pub(crate) mod neutral_publication;
-mod reusable_operation;
+pub(crate) mod reusable_operation;
 pub(crate) mod review_verdict;
 mod run;
 pub(crate) mod scheduled_trigger;
@@ -57,7 +57,7 @@ pub(crate) mod scope_data;
 mod scope_data_tests;
 mod store;
 pub(crate) mod trigger;
-mod trigger_bindings;
+pub(crate) mod trigger_bindings;
 mod trigger_state;
 
 pub use definition::*;

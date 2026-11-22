@@ -54,12 +54,12 @@ describe("independent settings windows", () => {
 	}
 
 	// Catches: a fresh load followed by copying every stale store-owned field
-	// turns an IDE-only edit into an explicit request to re-enable Gemini (or vice versa).
+	// turns an IDE-only edit into an explicit request to re-enable Antigravity (or vice versa).
 	it.each(["agents then IDE", "IDE then agents"])("preserves both edits in %s save order", async (order) => {
 		const agentsWindow = await openWindow();
 		const ideWindow = await openWindow();
 		const edits = {
-			agents: () => agentsWindow.toggleAgent("gemini"),
+			agents: () => agentsWindow.toggleAgent("agy"),
 			IDE: () => ideWindow.setIde("zed"),
 		};
 		const sequence = order === "agents then IDE" ? [edits.agents, edits.IDE] : [edits.IDE, edits.agents];
@@ -69,7 +69,7 @@ describe("independent settings windows", () => {
 		}
 
 		const reopened = await openWindow();
-		expect(reopened.state.disabledAgents).toEqual(["gemini"]);
+		expect(reopened.state.disabledAgents).toEqual(["agy"]);
 		expect(reopened.state.ide).toBe("zed");
 		expect(packets).toHaveLength(2);
 		const changedFields = packets.map(({ base, config }) =>
@@ -143,14 +143,14 @@ describe("independent settings windows", () => {
 		const ideWindow = await openWindow();
 		ideWindow.setIde("zed");
 		await flushSave();
-		agentsWindow.toggleAgent("gemini");
+		agentsWindow.toggleAgent("agy");
 		await flushSave();
 		agentsWindow.setDefaultFontSize(18);
 		await flushSave();
 
 		const reopened = await openWindow();
 		expect(reopened.state.ide).toBe("zed");
-		expect(reopened.state.disabledAgents).toEqual(["gemini"]);
+		expect(reopened.state.disabledAgents).toEqual(["agy"]);
 		expect(reopened.state.defaultFontSize).toBe(18);
 		expect(disk.font_size).toBe(18);
 	});
@@ -169,12 +169,12 @@ describe("independent settings windows", () => {
 			error.mockRestore();
 		}
 		expect(packets).toHaveLength(0);
-		window.toggleAgent("gemini");
+		window.toggleAgent("agy");
 		await flushSave();
 
 		const reopened = await openWindow();
 		expect(reopened.state.ide).toBe("zed");
-		expect(reopened.state.disabledAgents).toEqual(["gemini"]);
+		expect(reopened.state.disabledAgents).toEqual(["agy"]);
 	});
 
 	// Catches: acknowledging current UI state instead of the saved snapshot loses

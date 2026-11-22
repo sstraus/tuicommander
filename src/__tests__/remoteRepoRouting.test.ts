@@ -430,7 +430,7 @@ describe("a repo registered on a remote machine runs its work there", () => {
 			["load_agents_config", {}],
 			["save_agents_config", { config: { agents: {} } }],
 			["get_agent_hook_state", { agentType: "claude" }],
-			["set_agent_hook_instrumentation", { agentType: "gemini", enabled: true }],
+			["set_agent_hook_instrumentation", { agentType: "agy", enabled: true }],
 			["set_agent_native_status_signals", { agentType: "claude", enabled: false }],
 			["load_mcp_upstreams", {}],
 			["save_mcp_upstreams", { base: { servers: [] }, config: { servers: [] } }],

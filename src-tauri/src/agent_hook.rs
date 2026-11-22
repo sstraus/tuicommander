@@ -1,6 +1,6 @@
 //! Native-agent hook command generation (emit side of hook-based agent state).
 //!
-//! Each supported agent (Claude, Gemini, …) drives its busy/idle/awaiting state
+//! Each supported agent (Claude, Antigravity, …) drives its busy/idle/awaiting state
 //! by running a small shell hook that posts `OSC 7770;state=…` frames to the
 //! local TUIC socket (`post_frames`), with its controlling tty as the fallback. This module generates those hook commands and the per-agent event→state
 //! maps the installer (see `agent_hook_installer`) writes into the agent's
@@ -14,7 +14,7 @@
 //! and never touches user/wiz hooks.
 
 /// Trailing shell comment marking a hook command as TUIC-owned. The installer
-/// keys ownership off this — a valid comment in Claude/Gemini/Codex command
+/// keys ownership off this — a valid comment in Claude/Antigravity/Codex command
 /// fields alike.
 pub(crate) const SENTINEL: &str = "# tuic-managed-hook";
 
@@ -210,18 +210,34 @@ pub(crate) fn claude_hook_map_on(t: &HookTransport) -> Vec<HookEntry> {
     ]
 }
 
-/// Gemini hooks (same shell-hook shape, different event names; v0.26+).
-pub(crate) fn gemini_hook_map() -> Vec<HookEntry> {
-    gemini_hook_map_on(&HookTransport::host_or_posix())
+/// Antigravity CLI (`agy`) lifecycle hooks, from the hook contract embedded in
+/// agy 1.5.10 (`hooks.json`: SessionStart, PreToolUse, PostToolUse,
+/// PreInvocation, PostInvocation, Stop). `PreInvocation` runs before every model
+/// call, so it marks the turn busy; `Stop` fires when the execution loop ends
+/// (including a user cancel), so it marks idle. agy has no permission or
+/// question event, so awaiting stays with the screen adapter.
+///
+/// agy reads each hook's stdout as a JSON result, so the Posix command answers
+/// `{}` (no steps injected, no decision) after the frame is posted.
+///
+/// DEFERRED (2026-11-21) — not yet replayed against a signed-in agy: the
+/// installed binary asked for a login, so the empty-result contract is taken
+/// from its embedded documentation, not from a recorded turn.
+pub(crate) fn agy_hook_map() -> Vec<HookEntry> {
+    agy_hook_map_on(&HookTransport::host_or_posix())
 }
 
-pub(crate) fn gemini_hook_map_on(t: &HookTransport) -> Vec<HookEntry> {
+pub(crate) fn agy_hook_map_on(t: &HookTransport) -> Vec<HookEntry> {
+    let answer = |command: String| match t {
+        HookTransport::Posix => match command.strip_suffix(SENTINEL) {
+            Some(body) => format!("{body}; printf '{{}}' {SENTINEL}"),
+            None => command,
+        },
+        HookTransport::Cli(_) => command,
+    };
     vec![
-        ("BeforeAgent", "", state_hook(t, "prompt")),
-        ("BeforeTool", "", state_hook(t, "busy")),
-        ("AfterAgent", "", state_hook(t, "idle")),
-        ("Notification", "", state_hook(t, "awaiting")),
-        ("SessionEnd", "", state_hook(t, "idle")),
+        ("PreInvocation", "", answer(state_hook(t, "busy"))),
+        ("Stop", "", answer(state_hook(t, "idle"))),
     ]
 }
 
@@ -390,7 +406,6 @@ mod tests {
                 claude_hook_map_on(&HookTransport::Posix),
                 "UserPromptSubmit",
             ),
-            (gemini_hook_map_on(&HookTransport::Posix), "BeforeAgent"),
             (codex_hook_map_on(&HookTransport::Posix), "UserPromptSubmit"),
         ] {
             let (_, _, cmd) = map.iter().find(|(e, _, _)| *e == event).unwrap();
@@ -421,21 +436,21 @@ mod tests {
         assert!(clear.contains("state=busy"), "{clear}");
     }
 
+    // Catches an agy hook that never answers its stdout JSON contract, or that
+    // marks idle on the wrong event.
     #[test]
-    fn gemini_map_has_notification_awaiting_and_afteragent_idle() {
-        let map = gemini_hook_map_on(&HookTransport::Posix);
-        assert!(
-            map.iter()
-                .any(|(e, _, c)| *e == "Notification" && c.contains("state=awaiting"))
-        );
-        assert!(
-            map.iter()
-                .any(|(e, _, c)| *e == "AfterAgent" && c.contains("state=idle"))
-        );
-        assert!(
-            map.iter()
-                .any(|(e, _, c)| *e == "BeforeTool" && c.contains("state=busy"))
-        );
+    fn agy_map_marks_busy_before_invocation_and_idle_on_stop_with_an_empty_result() {
+        let map = agy_hook_map_on(&HookTransport::Posix);
+        let find = |event: &str| map.iter().find(|(e, _, _)| *e == event).unwrap().2.clone();
+        assert!(find("PreInvocation").contains("state=busy"));
+        assert!(find("Stop").contains("state=idle"));
+        for (_, matcher, command) in &map {
+            assert_eq!(*matcher, "");
+            assert!(
+                command.ends_with(&format!("; printf '{{}}' {SENTINEL}")),
+                "{command}"
+            );
+        }
     }
 
     // Catches: a headless agent that another TUIC agent starts from a tool call

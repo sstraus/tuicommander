@@ -273,6 +273,72 @@ describe("canvasTerminalTransport", () => {
 			expect(invoke).toHaveBeenCalledWith("unsubscribe_terminal_grid", { sessionId: "session-1", epoch: 42 });
 		});
 
+		// The desktop backend keeps one grid channel per session: a second
+		// subscription replaces the first. A split pane mounts a second Terminal for
+		// the same session, so the copy left behind must learn it lost the channel.
+		describe("lostGrid", () => {
+			// catches: a replaced instance that still believes it receives frames, so
+			// the terminal left on screen after a split closes stays frozen.
+			it("reports the older instance once a newer one subscribes the same session", async () => {
+				await mockEpochs(1, 2);
+				const flat = new TauriTransport("grid-a");
+				const pane = new TauriTransport("grid-a");
+				await flat.subscribe(vi.fn());
+				expect(flat.lostGrid()).toBe(false);
+				await pane.subscribe(vi.fn());
+				expect(flat.lostGrid()).toBe(true);
+				expect(pane.lostGrid()).toBe(false);
+			});
+
+			// catches: resubscribing that does not take the channel back, so the
+			// reclaim on show would repeat forever without restoring frames.
+			it("clears after the replaced instance resubscribes", async () => {
+				await mockEpochs(1, 2, 3);
+				const flat = new TauriTransport("grid-b");
+				const pane = new TauriTransport("grid-b");
+				await flat.subscribe(vi.fn());
+				await pane.subscribe(vi.fn());
+				await flat.resubscribe();
+				expect(flat.lostGrid()).toBe(false);
+				expect(pane.lostGrid()).toBe(true);
+			});
+
+			// catches: the closing pane's teardown clearing ownership it no longer
+			// has, which would hide the loss from the instance that must reclaim.
+			it("keeps the loss visible when the newer instance unmounts", async () => {
+				await mockEpochs(1, 2);
+				const flat = new TauriTransport("grid-c");
+				const pane = new TauriTransport("grid-c");
+				await flat.subscribe(vi.fn());
+				await pane.subscribe(vi.fn());
+				pane.unsubscribe();
+				expect(flat.lostGrid()).toBe(true);
+			});
+
+			// catches: a reclaim triggered by a subscription still in flight or by
+			// another session, which would wipe and repaint a healthy terminal.
+			it("is false before the first subscription and across sessions", async () => {
+				await mockEpochs(1, 2);
+				const fresh = new TauriTransport("grid-d");
+				expect(fresh.lostGrid()).toBe(false);
+				const other = new TauriTransport("grid-e");
+				await fresh.subscribe(vi.fn());
+				await other.subscribe(vi.fn());
+				expect(fresh.lostGrid()).toBe(false);
+			});
+
+			// catches: an unsubscribed instance reported as having lost the channel.
+			it("is false after the instance unsubscribes itself", async () => {
+				await mockEpochs(1, 2);
+				const a = new TauriTransport("grid-f");
+				const b = new TauriTransport("grid-f");
+				await a.subscribe(vi.fn());
+				await b.subscribe(vi.fn());
+				a.unsubscribe();
+				expect(a.lostGrid()).toBe(false);
+			});
+		});
+
 		it("does not unsubscribe a subscription it never made", async () => {
 			const { invoke } = await import("@tauri-apps/api/core");
 			const transport = new TauriTransport("session-1");

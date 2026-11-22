@@ -863,6 +863,7 @@
 .queueList {
   display: flex;
   flex: 0 0 100%;
+  min-width: 0;
   box-sizing: border-box;
   flex-direction: column;
   gap: 4px;
@@ -995,7 +996,15 @@
 }
 
 
-/* Extended-thinking disclosure (Opus 4.7+ reasoning) */
+/* Public reasoning while the active ACP turn waits for its answer. */
+.transientReasoning {
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Retained thought disclosure for PTY transcripts. */
 .reasoningDisclosure {
   margin: 4px 0;
   border-left: 2px solid var(--border);
@@ -1135,6 +1144,14 @@
 
 .noticeAction {
   margin-top: 8px;
+}
+
+.noticeDetails > summary {
+  cursor: pointer;
+}
+
+.noticeDetails[open] > summary {
+  margin-bottom: 4px;
 }
 
 

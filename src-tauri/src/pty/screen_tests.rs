@@ -1,11 +1,68 @@
+/// Catches: an update unlinks a live agent image and permanently holds its input;
+/// a current shell or unknown image must never inherit a cached agent identity.
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_unlinked_foreground_image_keeps_current_identity() {
+    use crate::state::SpawnRootRole;
+    use crate::test_support::ForegroundIdentityProbe;
+
+    for role in [SpawnRootRole::DirectProgram, SpawnRootRole::Shell] {
+        for name in ["codex", "zsh", "ordinary"] {
+            let state = Arc::new(crate::state::tests_support::make_test_app_state());
+            let sid = "unlinked-foreground-image";
+            let probe = if role == SpawnRootRole::Shell {
+                ForegroundIdentityProbe::shell_root(state.clone(), sid, name)
+            } else {
+                ForegroundIdentityProbe::new(state.clone(), sid, name)
+            };
+            let pid = state
+                .session_maps
+                .sessions
+                .get(sid)
+                .unwrap()
+                .lock()
+                ._child
+                .process_id()
+                .unwrap();
+            assert_eq!(process_name_from_pid(pid).as_deref(), Some(name));
+            let expected = (name == "codex").then_some("codex");
+            assert_eq!(refresh_session_agent(&state, sid).as_deref(), expected);
+            probe.unlink_executable(name);
+            assert_eq!(
+                process_name_from_pid(pid).as_deref(),
+                Some(name),
+                "unlinked {role:?} image {name} must use its current OS name"
+            );
+            assert_eq!(refresh_session_agent(&state, sid).as_deref(), expected);
+            assert!(
+                !state
+                    .session_maps
+                    .session_states
+                    .get(sid)
+                    .unwrap()
+                    .foreground_input_blocked,
+                "unlinked {role:?} image {name} lost known foreground ownership"
+            );
+            drop(probe);
+            assert_eq!(
+                process_name_from_pid(pid),
+                None,
+                "exited image has no identity"
+            );
+        }
+    }
+}
+
 #[test]
 fn test_classify_agent_claude() {
     assert_eq!(classify_agent("claude"), Some("claude"));
 }
 
 #[test]
-fn test_classify_agent_gemini() {
-    assert_eq!(classify_agent("gemini"), Some("gemini"));
+fn test_classify_agent_agy() {
+    assert_eq!(classify_agent("agy"), Some("agy"));
+    // The agy wrapper execs `antigravity`, which is the live process name.
+    assert_eq!(classify_agent("antigravity"), Some("agy"));
 }
 
 #[test]
@@ -236,16 +293,16 @@ fn test_opencode_requires_its_own_frame_and_status_bar() {
 #[test]
 fn test_agent_screen_adapter_baselines() {
     // Claude and Codex have presence-based active markers because both can
-    // freeze or leave a composer visible during long tools. Gemini
+    // freeze or leave a composer visible during long tools. agy
     // remains prompt-based and uses movement to hold BUSY.
     let claude_working = vec!["✻ Cogitating… (12s)".into()];
     let claude_ready = vec!["Answer complete".into(), "❯".into()];
-    let gemini_working_prompt_visible = vec![
+    let agy_working_prompt_visible = vec![
         "⠴ Checking files… (esc to cancel, 14s)".into(),
         "────────────────────────".into(),
         "> Type your message".into(),
     ];
-    let gemini_ready = vec!["> Type your message".into()];
+    let agy_ready = vec!["> Type your message".into()];
     let grok_working = vec![
         "❯ Ask anything".into(),
         "⠹ Responding… 12s [stop]".into(),
@@ -261,11 +318,11 @@ fn test_agent_screen_adapter_baselines() {
         ("claude", claude_working, AgentScreenActivity::Working),
         ("claude", claude_ready, AgentScreenActivity::Ready),
         (
-            "gemini",
-            gemini_working_prompt_visible,
+            "agy",
+            agy_working_prompt_visible,
             AgentScreenActivity::Ready,
         ),
-        ("gemini", gemini_ready, AgentScreenActivity::Ready),
+        ("agy", agy_ready, AgentScreenActivity::Ready),
         ("grok", grok_working, AgentScreenActivity::Working),
         ("grok", grok_ready, AgentScreenActivity::Ready),
     ] {

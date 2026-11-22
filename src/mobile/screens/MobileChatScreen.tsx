@@ -186,6 +186,7 @@ export function MobileChatScreen(props: {
 				<Transcript
 					mobile
 					entries={chat.entries}
+					reasoning={chat.reasoning}
 					messageActions={chat.messageActions}
 					muteIntermediate={settingsStore.state.chatMuteIntermediateText}
 					busy={chat.busy}

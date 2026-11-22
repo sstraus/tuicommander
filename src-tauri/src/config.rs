@@ -290,6 +290,10 @@ use std::path::PathBuf;
 mod repository_registration;
 pub(crate) use repository_registration::register_repository;
 
+#[path = "config_retention.rs"]
+mod retention;
+pub(crate) use retention::RetentionConfig;
+
 #[cfg(test)]
 pub(crate) use tuic_core::config_dir::{
     set_override as set_config_dir_override, without_override as without_config_dir_override,
@@ -735,6 +739,10 @@ pub(crate) struct AuthConfig {
     #[serde(default)]
     #[schemars(extend("x-setting" = {"sensitivity":"public","apply":"service_restart","effect":"Reconfigures the owning service after persistence; a failed apply must report recovery.","operations":["get","set"],"confirmationClass":"execution_authority"}))]
     pub(crate) lan_auth_bypass: bool,
+    /// Require credentials on loopback HTTP connections. Local access is free by default.
+    #[serde(default)]
+    #[schemars(extend("x-setting" = {"sensitivity":"public","apply":"live","effect":"Requires HTTP credentials on loopback connections when enabled; remote authentication is unchanged.","operations":["get","set"],"confirmationClass":"execution_authority"}))]
+    pub(crate) require_local_auth: bool,
     #[serde(default = "default_auth_rate_limit_max")]
     #[schemars(extend("x-setting" = {"sensitivity":"public","apply":"service_restart","effect":"Reconfigures the owning service after persistence; a failed apply must report recovery.","operations":["get","set"],"confirmationClass":"network_exposure"}))]
     pub(crate) auth_rate_limit_max: u32,
@@ -759,6 +767,7 @@ impl Default for AuthConfig {
             session_token_exists: false,
             session_token_duration_secs: default_session_token_duration_secs(),
             lan_auth_bypass: false,
+            require_local_auth: false,
             auth_rate_limit_max: default_auth_rate_limit_max(),
             auth_rate_limit_window_secs: default_auth_rate_limit_window_secs(),
         }
@@ -1014,6 +1023,10 @@ pub(crate) struct AppConfig {
     #[serde(default = "default_attachment_retention_days")]
     #[schemars(extend("x-setting" = {"sensitivity":"public","apply":"live","effect":"Updates attachment retention days for the current owner.","operations":["get","set"],"confirmationClass":"ordinary"}))]
     pub(crate) attachment_retention_days: u32,
+    /// Days closed or dead records stay in the databases (0 keeps them forever).
+    #[serde(default)]
+    #[schemars(extend("x-setting" = {"sensitivity":"public","apply":"live","effect":"Used by the next database cleanup, at startup or on the daily timer.","operations":["get","set"],"confirmationClass":"ordinary"}))]
+    pub(crate) retention: RetentionConfig,
     #[serde(default)]
     #[schemars(extend("x-setting" = {"sensitivity":"public","apply":"live","effect":"Updates services for the current owner.","operations":["get","set"],"confirmationClass":"ordinary"}))]
     pub(crate) services: ServicesConfig,
@@ -1400,6 +1413,7 @@ impl Default for AppConfig {
             default_font_size: 13,
             attachment_max_bytes: default_attachment_max_bytes(),
             attachment_retention_days: default_attachment_retention_days(),
+            retention: RetentionConfig::default(),
             services: ServicesConfig::default(),
             confirm_before_quit: true,
             close_behavior: Default::default(),
@@ -5321,6 +5335,25 @@ pub(crate) fn get_note_images_dir() -> String {
         .to_string()
 }
 
+/// File name of the global scratchpad inside the config directory.
+const SCRATCHPAD_FILE: &str = "scratchpad.md";
+
+/// Return the absolute path of the global scratchpad, one Markdown file shared
+/// by every repository. Creates it empty when missing and never truncates it,
+/// so the editor tab always opens an existing file.
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub(crate) fn get_scratchpad_path() -> Result<String, String> {
+    let dir = config_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create config dir: {e}"))?;
+    let path = dir.join(SCRATCHPAD_FILE);
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("Failed to create scratchpad: {e}"))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -6191,6 +6224,7 @@ mod tests {
             default_font_size: 18,
             attachment_max_bytes: default_attachment_max_bytes(),
             attachment_retention_days: default_attachment_retention_days(),
+            retention: RetentionConfig::default(),
             services: ServicesConfig {
                 server: ServerConfig {
                     enabled: true,
@@ -8298,6 +8332,25 @@ mod tests {
             result.ends_with("note-images"),
             "Should end with note-images, got: {result}"
         );
+    }
+
+    /// Catches: reopening the scratchpad truncates the notes already written.
+    #[test]
+    #[serial_test::serial]
+    fn get_scratchpad_path_creates_the_file_and_keeps_its_content() {
+        let dir = TempDir::new().unwrap();
+        let _guard = set_config_dir_override(dir.path().to_path_buf());
+
+        let path = get_scratchpad_path().unwrap();
+        assert_eq!(
+            std::path::Path::new(&path),
+            dir.path().join("scratchpad.md")
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "");
+
+        std::fs::write(&path, "- remember this\n").unwrap();
+        assert_eq!(get_scratchpad_path().unwrap(), path);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "- remember this\n");
     }
 
     #[cfg(unix)]

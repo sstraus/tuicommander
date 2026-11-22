@@ -188,7 +188,7 @@ async fn remove_detached_checkout(
     let _ = (force, expected_fingerprint);
     let state = state.clone();
     match tokio::task::spawn_blocking(move || {
-        crate::worktree::remove_orphan_checkout(&state, &repo_path, &worktree_path, true, &[], None)
+        crate::worktree::remove_orphan_checkout_explicit(&state, &repo_path, &worktree_path)
     })
     .await
     {
@@ -917,7 +917,12 @@ fn parse_progress_report_input(
 ) -> Result<crate::progress::ProgressReportInput, serde_json::Value> {
     let kind = args["type"]
         .as_str()
-        .ok_or_else(|| serde_json::json!({"error": "progress requires 'type'"}))
+        .ok_or_else(|| {
+            serde_json::json!({"error": format!(
+                "progress requires 'type'; {}",
+                crate::progress::ProgressKind::REPORTABLE_TYPES
+            )})
+        })
         .and_then(|value| {
             crate::progress::ProgressKind::parse_reportable(value)
                 .map_err(|error| serde_json::json!({"error": error}))
@@ -930,6 +935,17 @@ fn parse_progress_report_input(
         kind,
         text,
         step: args["step"].as_str().map(str::to_string),
+        question: args
+            .get("question")
+            .filter(|value| !value.is_null())
+            .map(|value| {
+                serde_json::from_value(value.clone()).map_err(|error| {
+                    serde_json::json!({
+                        "error": crate::progress::invalid_question(&error.to_string())
+                    })
+                })
+            })
+            .transpose()?,
     })
 }
 
@@ -1229,6 +1245,7 @@ pub(super) async fn handle_progress(
         Ok(input) => input,
         Err(error) => return error,
     };
+    let author = resolve_mcp_origin_session(state, mcp_session_id);
     let agent_name = resolve_mcp_origin_session(state, mcp_session_id)
         .and_then(|id| state.peer_agents.get(&id).map(|peer| peer.name.clone()));
     let agent_type = resolve_mcp_origin_agent_type(state, mcp_session_id);
@@ -1239,14 +1256,14 @@ pub(super) async fn handle_progress(
         .map(|(_, session)| session.to_string());
     let state = state.clone();
     run_blocking_handler(move || {
-        match report_progress(
+        match report_progress_with_origin(
             &state,
             workspace_path.as_deref(),
             input,
-            agent_name,
-            agent_type.as_deref(),
+            (agent_name, agent_type.as_deref()),
             pty_id.as_deref(),
             acp_session_id.as_deref(),
+            author.as_deref(),
         ) {
             Ok(receipt) => to_json_or_error(receipt),
             Err(error) => serde_json::json!({"error": error}),
@@ -1267,13 +1284,35 @@ pub(crate) fn report_progress(
     pty_id: Option<&str>,
     acp_session_id: Option<&str>,
 ) -> Result<crate::progress::ProgressReceipt, String> {
-    let submitted = crate::progress::submit_progress_report(
+    report_progress_with_origin(
+        state,
+        workspace_path,
+        input,
+        (agent_name, agent_type),
+        pty_id,
+        acp_session_id,
+        None,
+    )
+}
+
+/// `agent` is the reporting agent's display name and type.
+fn report_progress_with_origin(
+    state: &Arc<AppState>,
+    workspace_path: Option<&str>,
+    input: crate::progress::ProgressReportInput,
+    (agent_name, agent_type): (Option<String>, Option<&str>),
+    pty_id: Option<&str>,
+    acp_session_id: Option<&str>,
+    author: Option<&str>,
+) -> Result<crate::progress::ProgressReceipt, String> {
+    let submitted = crate::progress::submit_progress_report_with_origin(
         state.as_ref(),
         workspace_path,
         input,
         agent_name,
         agent_type,
         pty_id,
+        author,
     )?;
     let blocked_question = (submitted.kind == crate::progress::ProgressKind::Blocked)
         .then(|| (submitted.pty_id.clone(), submitted.text.clone()));

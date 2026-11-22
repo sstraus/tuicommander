@@ -26,6 +26,7 @@ import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { t } from "../../i18n";
 import { invoke } from "../../invoke";
 import { isMacOS } from "../../platform";
+import { isScratchpadPath } from "../../services/scratchpad";
 import { appLogger } from "../../stores/appLogger";
 import { diffTabsStore } from "../../stores/diffTabs";
 import { editorTabsStore } from "../../stores/editorTabs";
@@ -52,6 +53,7 @@ import { navigateEditorTo } from "./editorNavigation";
 import { type GutterChange, gitChangeGutter, setChangesEffect } from "./gitGutter";
 import { type BlameLine, inlineBlame, setBlameEffect, setBlameEnabledEffect } from "./inlineBlame";
 import { detectLanguage, editorWrapKind } from "./languageDetection";
+import { SelectionActions } from "./SelectionActions";
 import { searchOverview } from "./searchOverview";
 import { codeEditorTheme } from "./theme";
 
@@ -228,7 +230,8 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	/** Signal for external content pushes (disk load/reload) — drives createEditorControlledValue */
 	const [code, setCode] = createSignal("");
 	/** Mutable ref tracking live editor value without triggering reactivity on every keystroke */
-	let currentCode = "";
+	const initialDraft = editorTabsStore.get(props.id)?.reloadDraft;
+	let currentCode = initialDraft?.text ?? "";
 	/** Last seen on-disk (mtime, size) — lets checkDiskContent skip the full read when unchanged */
 	let lastStat: DiskStat | null = null;
 	const [savedContent, setSavedContent] = createSignal("");
@@ -253,7 +256,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	/** True when the file changed on disk while editor has unsaved changes */
 	const [diskConflict, setDiskConflict] = createSignal(false);
 	/** Reactive dirty flag — only transitions on save/load, not every keystroke */
-	const [dirty, setDirty] = createSignal(false);
+	const [dirty, setDirty] = createSignal(initialDraft !== undefined);
 	/** Shared <SearchBar> overlay visibility (replaces CodeMirror's built-in panel) */
 	const {
 		visible: searchVisible,
@@ -344,6 +347,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 
 	const loadFile = async (filePath: string, paged: boolean) => {
 		const generation = ++loadGeneration;
+		const draft = editorTabsStore.get(props.id)?.reloadDraft;
 		pagedMode = paged;
 		// Drop the previous file's baseline until the new one is read below.
 		lastStat = null;
@@ -364,10 +368,12 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 			const content = paged ? await readContentInPages(generation) : await readContent();
 			if (generation !== loadGeneration) return;
 			markPerf("editor.load", { file: filePath, length: content.length });
-			currentCode = content;
-			setCode(content);
-			setSavedContent(content);
-			setDirty(false);
+			currentCode = draft?.text ?? content;
+			setCode(currentCode);
+			setSavedContent(content === draft?.text ? content : (draft?.savedContent ?? content));
+			setDirty(currentCode !== savedContent());
+			if (currentCode === savedContent()) editorTabsStore.setReloadDraft(props.id, undefined);
+			setDiskConflict(draft !== undefined && content !== draft.text && content !== draft.savedContent);
 			// Large but under the hard cap: open as normal, warn it may be slow.
 			setLargeFile(content.length > WARN_FILE_BYTES);
 
@@ -395,10 +401,10 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 			const pageable = lastStat === null || lastStat.size <= MAX_EDITOR_FILE_BYTES;
 			setPagesOffered(refused && !paged && !isTauri() && pageable);
 			setError(msg);
-			currentCode = "";
-			setCode("");
-			setSavedContent("");
-			setDirty(false);
+			currentCode = draft?.text ?? "";
+			setCode(currentCode);
+			setSavedContent(draft?.savedContent ?? "");
+			setDirty(draft !== undefined);
 		} finally {
 			if (generation === loadGeneration) setLoading(false);
 		}
@@ -511,8 +517,11 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 
 	const { ref, editorView, createExtension } = createCodeMirror({
 		onValueChange: (value) => {
+			// Initialization installs a document while the loading pane owns input.
+			if (loading()) return;
 			currentCode = value;
 			const nowDirty = value !== savedContent();
+			editorTabsStore.setReloadDraft(props.id, nowDirty ? { text: value, savedContent: savedContent() } : undefined);
 			if (nowDirty !== dirty()) setDirty(nowDirty);
 		},
 	});
@@ -1066,6 +1075,9 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 						"font-size": `${editorTabsStore.state.tabs[props.id]?.fontSize ?? settingsStore.state.defaultFontSize}px`,
 					}}
 				/>
+				<Show when={isExternal() && isScratchpadPath(props.filePath)}>
+					<SelectionActions view={editorView()} />
+				</Show>
 				<EditorSearch
 					visible={searchVisible()}
 					focusToken={searchFocusToken()}

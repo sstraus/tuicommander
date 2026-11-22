@@ -68,7 +68,8 @@ export type AppLogSource =
 	| "panel-sync"
 	| "editor"
 	| "outline"
-	| "references";
+	| "references"
+	| "discussion";
 
 export interface AppLogEntry {
 	id: number;

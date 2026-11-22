@@ -67,7 +67,7 @@
 - [Detection Matrix](./architecture/agents/detection-matrix.md)
 - [Claude Code](./architecture/agents/claude-code.md)
 - [Codex](./architecture/agents/codex.md)
-- [Gemini CLI](./architecture/agents/gemini-cli.md)
+- [Antigravity CLI](./architecture/agents/agy-cli.md)
 - [OpenCode](./architecture/agents/opencode.md)
 - [pi](./architecture/agents/pi.md)
 

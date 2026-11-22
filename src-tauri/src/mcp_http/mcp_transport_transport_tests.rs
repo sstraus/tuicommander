@@ -1093,6 +1093,7 @@ fn busy_claude_mail_probe(
             last_activity: std::time::Instant::now(),
             is_claude_code: true,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: true,
             sse_generation: 0,
             repo_path: None,
@@ -1745,6 +1746,7 @@ async fn proxied_initialize_reuses_eager_live_session_and_keeps_spawn_ready() {
             last_activity: std::time::Instant::now(),
             is_claude_code: true,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: true,
             sse_generation: 0,
             repo_path: None,
@@ -2652,6 +2654,7 @@ fn live_mcp_session(state: &Arc<AppState>, sid: &str) {
             last_activity: std::time::Instant::now(),
             is_claude_code: true,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: false,
             sse_generation: 0,
             repo_path: None,
@@ -2830,6 +2833,7 @@ fn external_claude_channel_probe(
             last_activity: std::time::Instant::now(),
             is_claude_code: true,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: true,
             sse_generation: 0,
             repo_path: None,
@@ -2988,7 +2992,7 @@ async fn a_bridge_session_reused_by_ego_still_lists_the_collapsed_surface() {
     .await;
     assert_eq!(
         ego,
-        ["search_tools", "get_tool_schema", "call_tool", "progress"]
+        ["search_tools", "get_tool_schema", "call_tool", "progress", "batch"]
             .map(String::from)
             .to_vec(),
         "ego named itself in this request's _meta and must get the collapsed surface"
@@ -4875,6 +4879,7 @@ fn insert_sse_session(state: &Arc<AppState>) -> String {
             last_activity: std::time::Instant::now(),
             is_claude_code: false,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: false,
             sse_generation: 0,
             repo_path: None,
@@ -5113,6 +5118,7 @@ fn a_native_tool_call_does_not_read_repo_settings() {
             last_activity: std::time::Instant::now(),
             is_claude_code: false,
             requires_meta_tools: false,
+            client_kind: None,
             // A repo_path is what makes the allowlist lookup reach the disk.
             repo_path: Some("/test/repo".to_string()),
             has_sse_stream: false,
@@ -5978,16 +5984,18 @@ async fn mcp_usage_rollup_counts_rejections_and_stores_no_arguments() {
         .await;
     }
     let report = usage_report(state.clone()).await;
-    let rejected = usage_action(&report, "orchestrator", "ui.design_eval");
+    // The caller never registered an identity: the rollup counts it as unbound,
+    // not as the orchestrator whose full surface it is served.
+    let rejected = usage_action(&report, "unbound", "ui.design_eval");
     assert_eq!(rejected["calls"], 2, "{report}");
     assert_eq!(rejected["invalid_arguments"], 2, "{report}");
     assert_eq!(rejected["application_errors"], 0, "{report}");
-    let listed = usage_action(&report, "orchestrator", "session.list");
+    let listed = usage_action(&report, "unbound", "session.list");
     assert_eq!(listed["calls"], 1);
     assert_eq!(listed["invalid_arguments"], 0);
     assert!(listed["response_bytes_max"].as_u64().unwrap() > 0);
-    let bytes = std::fs::read(dir.path().join("mcp_usage.sqlite3")).unwrap();
-    let wal = std::fs::read(dir.path().join("mcp_usage.sqlite3-wal")).unwrap_or_default();
+    let bytes = std::fs::read(dir.path().join(crate::db::TUIC_DB)).unwrap();
+    let wal = std::fs::read(dir.path().join("tuic.sqlite3-wal")).unwrap_or_default();
     for file in [bytes, wal] {
         let text = String::from_utf8_lossy(&file);
         assert!(
@@ -6658,7 +6666,24 @@ async fn migrated_capability_denials_filter_every_public_surface_without_index_r
             &serde_json::json!({"query":match tool { "agent" => "Managed peers mail", "ui" => "TUIC interaction", _ => unreachable!() }, "limit":1, "schema_byte_budget":65536}),
             caller,
         );
-        assert_eq!(search["top_schema"], schema, "{old}: {search}");
+        // Multi-action tools are discovered per action: the identity query answers
+        // with an allowed action, and asking for the denied action finds nothing.
+        let denied_name = format!("{tool}_{action}");
+        assert_ne!(
+            search["top_schema"]["name"],
+            denied_name.as_str(),
+            "{old}: {search}"
+        );
+        let asked = handle_search_tools_for_session(
+            &state,
+            &serde_json::json!({"query": action.replace('_', " "), "limit": 100, "schema_byte_budget": 65536}),
+            caller,
+        );
+        let leaked = std::iter::once(&asked["top_schema"])
+            .chain(asked["schemas"].as_array().into_iter().flatten())
+            .chain(asked["results"].as_array().into_iter().flatten())
+            .any(|entry| entry["name"] == denied_name.as_str());
+        assert!(!leaked, "{old}: denied action discoverable: {asked}");
         for (name, args) in [
             (tool, serde_json::json!({"action":action})),
             (
@@ -6740,4 +6765,63 @@ async fn agent_spawn_fast_exit_retains_task_and_diagnostics() {
             assert_eq!(output["exit_code"], code, "{output}");
         }
     }
+}
+
+/// Catches: a bridged client (Claude Code, Codex) names itself only at `initialize`,
+/// and every later call through the bridge was counted as client `other`; the
+/// `tuic` command line was counted with the agents; unbound callers were counted
+/// as the orchestrator.
+#[tokio::test]
+async fn usage_attribution_uses_the_client_named_at_initialize() {
+    let state = test_state();
+    let response = mcp_post(
+        State(Arc::clone(&state)),
+        ConnectInfo("127.0.0.1:1".parse().unwrap()),
+        None,
+        HeaderMap::new(),
+        Json(serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                       "clientInfo": {"name": "claude-code", "version": "2"}},
+        })),
+    )
+    .await
+    .into_response();
+    let sid = response
+        .headers()
+        .get(MCP_SESSION_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .expect("session id")
+        .to_owned();
+    let mut bridge = HeaderMap::new();
+    bridge.insert(
+        axum::http::header::USER_AGENT,
+        "tuic-bridge/2.1.1".parse().unwrap(),
+    );
+    let call = serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {}});
+    assert_eq!(
+        usage_client_kind(&state, &bridge, &call, Some(&sid)),
+        "claude"
+    );
+    assert_eq!(usage_client_kind(&state, &bridge, &call, None), "other");
+
+    let named = |name: &str| serde_json::json!({"params": {"_meta": {CLIENT_INFO_META_KEY: {"name": name}}}});
+    assert_eq!(
+        usage_client_kind(&state, &bridge, &named("ego"), Some(&sid)),
+        "ego"
+    );
+    assert_eq!(
+        usage_client_kind(&state, &bridge, &named("tuic-cli"), None),
+        "cli"
+    );
+    assert_eq!(
+        usage_client_kind(&state, &bridge, &named("gemini-cli"), None),
+        "other"
+    );
+
+    assert_eq!(
+        crate::mcp_http::caller_role::rollup_role(&state, Some(&sid)),
+        "unbound",
+        "a caller with no registered identity is not the orchestrator"
+    );
 }

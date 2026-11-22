@@ -1,6 +1,7 @@
 mod account_routes;
 pub(crate) mod acp_mcp;
 mod acp_routes;
+mod action_slices;
 mod agent_routes;
 pub(crate) mod auth;
 mod automation_routes;
@@ -34,12 +35,15 @@ mod settings_routes;
 pub(crate) mod tool_usage;
 mod workflow_neutral_routes;
 pub(crate) use mcp_transport_ancillary::confirm_settings;
+mod mcp_batch;
 mod mcp_transport_catalogue;
 mod mcp_transport_peer;
+pub(crate) use mcp_transport_peer::progress_reply_mail;
 pub(crate) mod mcp_transport_session_agent;
 mod open_markdown_routes;
 pub(crate) mod response_pages;
 
+mod discussion_routes;
 mod mail_routes;
 mod mcp_work_item;
 mod plugin_docs;
@@ -492,6 +496,20 @@ async fn post_progress_report(
     ))
 }
 
+/// POST /progress/reply?path=<original-project> — human-command auth parity.
+async fn post_progress_reply(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<guards::Authenticated>>,
+    Query(q): Query<types::PathQuery>,
+    State(state): State<Arc<AppState>>,
+    Json(input): Json<crate::progress::ProgressReplyInput>,
+) -> Response {
+    if let Err(resp) = guards::require_local_or_auth(&addr, auth.is_some()) {
+        return resp.into_response();
+    }
+    json_result(crate::progress::progress_reply(state, q.path, input).await)
+}
+
 /// Uses the same draft-preserving input transaction as MCP force_retry.
 async fn force_retry_provider_recovery(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -589,6 +607,17 @@ async fn post_progress_list(
         return r;
     }
     json_result(crate::progress::progress_list(&q.path, input))
+}
+
+async fn post_progress_recent(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<guards::Authenticated>>,
+    Json(input): Json<crate::progress::ProgressRecentInput>,
+) -> Response {
+    if let Some(response) = progress_auth(&addr, auth.is_some()) {
+        return response;
+    }
+    json_result(crate::progress::progress_recent(input))
 }
 
 async fn get_progress_projects(
@@ -911,6 +940,7 @@ const API_PREFIXES: &[&str] = &[
     "diagnostics",
     "design-mode",
     "dictation",
+    "discussion",
     "ego",
     "events",
     "exec",
@@ -1103,8 +1133,10 @@ fn shared_routes() -> Router<Arc<AppState>> {
         // the address, a remote caller passes because `basic_auth_middleware`
         // inserts `Authenticated` before the handler runs.
         .route("/progress/report", post(post_progress_report))
+        .route("/progress/reply", post(post_progress_reply))
         .route("/progress/list", post(post_progress_list))
         .route("/progress/projects", get(get_progress_projects))
+        .route("/progress/recent", post(post_progress_recent))
         .route("/progress/delete", post(post_progress_delete))
         .route("/progress/viewed", post(post_progress_viewed))
         .route("/progress/flow", post(post_progress_flow))
@@ -1246,6 +1278,16 @@ fn shared_routes() -> Router<Arc<AppState>> {
         .route(
             "/sessions/{id}/chat-view",
             get(session::chat_view).post(session::chat_view_with_pending),
+        )
+        .route("/sessions/{id}/discussion", post(discussion_routes::ask))
+        .route("/discussion/{entry_id}", get(discussion_routes::get))
+        .route(
+            "/discussion/{entry_id}/follow-up",
+            post(discussion_routes::follow_up),
+        )
+        .route(
+            "/discussion/{entry_id}/cancel",
+            post(discussion_routes::cancel),
         )
         .route(
             "/sessions/{id}/chat-view/messages/{message_id}/full-text",
@@ -2142,6 +2184,10 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route(
             "/config/notes",
             get(config_routes::get_notes).put(config_routes::put_notes),
+        )
+        .route(
+            "/config/scratchpad-path",
+            get(config_routes::get_scratchpad_path),
         )
         // Plugins
         .route("/plugins/list", get(git_routes::list_user_plugins_http))
@@ -4559,6 +4605,9 @@ mod tests {
         let remote = std::net::SocketAddr::from(([203, 0, 113, 1], 4444));
         let local = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
         let state = test_state();
+        // Loopback is free by default; strict mode makes the unauthenticated
+        // loopback case below meaningful for this route.
+        state.config.write().services.auth.require_local_auth = true;
         let token = state.session_token.read().clone();
         let app = build_router(state, true, true);
         let denied = app
@@ -4568,7 +4617,7 @@ mod tests {
             .unwrap();
         assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
 
-        // Loopback HTTP must authenticate in desktop and headless builds alike.
+        // With require_local_auth, loopback HTTP must authenticate in desktop and headless builds alike.
         let denied_local = app
             .clone()
             .oneshot(request(uri("docs/images/chart.png", None), local))
@@ -5332,6 +5381,81 @@ mod tests {
         assert_eq!(reported, host_home.to_string_lossy());
     }
 
+    // Catches an unregistered reply route and accepting a client-selected recipient/project.
+    #[tokio::test]
+    async fn contextual_progress_reply_http_uses_persisted_author() {
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
+        let project = tempfile::tempdir().unwrap();
+        let owner = project
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let state = test_state();
+        let author = "00000000-0000-0000-0000-000000000a11";
+        state.peer_agents.insert(
+            author.into(),
+            crate::state::PeerAgent {
+                tuic_session: author.into(),
+                mcp_session_id: "http-reply-author".into(),
+                name: "author".into(),
+                project: Some(owner.clone()),
+                registered_at: 0,
+            },
+        );
+        let report = crate::progress::ProgressStore::open()
+            .unwrap()
+            .record_report(
+                &owner,
+                &crate::progress::NewProgressEntry {
+                    kind: crate::progress::ProgressKind::Blocked,
+                    text: "Continue the release?".into(),
+                    step: None,
+                    agent_name: Some("author".into()),
+                },
+                None,
+                Some(author),
+                Some(crate::progress::ProgressQuestion::YesNo),
+            )
+            .unwrap();
+        let input =
+            serde_json::json!({"entryId":report.id,"requestId":"http-context","answer":true});
+        let app = build_router(state.clone(), false, true);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!(
+                        "/progress/reply?{}",
+                        url::form_urlencoded::Serializer::new(String::new())
+                            .append_pair("path", &owner)
+                            .finish()
+                    ))
+                    .header("content-type", "application/json")
+                    .extension(ConnectInfo("127.0.0.1:4444".parse::<SocketAddr>().unwrap()))
+                    .body(Body::from(input.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let receipt: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            receipt,
+            serde_json::json!({"entryId":report.id,"requestId":"http-context","delivery":"queued"})
+        );
+        let inbox = state.agent_inbox.get(author).unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert!(inbox[0].content.contains("Continue the release?"));
+        assert!(inbox[0].content.contains("Answer: Yes"));
+    }
+
+    #[cfg(feature = "desktop")]
     /// Half two of the COMMAND_TABLE → router gate (story 643).
     ///
     /// The parity tests in `src/__tests__/transport.test.ts` assert the TABLE;
@@ -5367,7 +5491,6 @@ mod tests {
     /// registered, not that it accepts the method the table declares. Probing
     /// the declared method would run the handler, which is what the technique
     /// exists to avoid.
-    #[cfg(feature = "desktop")]
     #[tokio::test]
     async fn command_table_paths_all_hit_a_registered_route() {
         const PATHS: &str = include_str!("command_table_paths.txt");
@@ -6133,6 +6256,7 @@ mod tests {
                     last_activity,
                     is_claude_code: false,
                     requires_meta_tools: false,
+                    client_kind: None,
                     has_sse_stream: false,
                     sse_generation: 0,
                     repo_path: None,
@@ -6626,7 +6750,7 @@ mod tests {
         let agents = json.as_array().unwrap();
         let names: Vec<&str> = agents.iter().map(|a| a["name"].as_str().unwrap()).collect();
         // The route must report every agent TUIC can launch — an omission makes an installed
-        // agent invisible to an orchestrator, which is how grok and gemini went missing.
+        // agent invisible to an orchestrator, which is how grok and agy went missing.
         assert_eq!(names, crate::agent::KNOWN_AGENT_BINARIES.to_vec());
         assert!(names.contains(&"grok"));
     }
@@ -6868,7 +6992,13 @@ mod tests {
         // mcp_transport::tests::merged_tools_collapse_true_keeps_progress_directly_available.
         assert_eq!(
             names,
-            vec!["search_tools", "get_tool_schema", "call_tool", "progress"]
+            vec![
+                "search_tools",
+                "get_tool_schema",
+                "call_tool",
+                "progress",
+                "batch"
+            ]
         );
         assert!(!state.config.read().collapse_tools);
     }
@@ -7137,6 +7267,7 @@ mod tests {
                 last_activity: now,
                 is_claude_code: false,
                 requires_meta_tools: false,
+                client_kind: None,
                 has_sse_stream: false,
                 sse_generation: 0,
                 repo_path: None,
@@ -7236,6 +7367,7 @@ mod tests {
                 last_activity: std::time::Instant::now() - std::time::Duration::from_secs(60),
                 is_claude_code: true,
                 requires_meta_tools: false,
+                client_kind: None,
                 has_sse_stream: false,
                 sse_generation: 0,
                 repo_path: None,
@@ -7375,6 +7507,7 @@ mod tests {
                 .iter()
                 .copied()
                 .filter(|available| *available != name)
+                .chain(["batch"])
                 .collect();
             let actual: Vec<_> = listed
                 .iter()
@@ -7479,6 +7612,7 @@ mod tests {
             .iter()
             .copied()
             .filter(|name| *name != "debug")
+            .chain(["batch"])
             .collect();
         assert_eq!(
             names, expected,
@@ -10231,7 +10365,12 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         let tools = json["result"]["tools"].as_array().unwrap();
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-        assert_eq!(names, UNCONFIGURED_NATIVE_TOOL_NAMES);
+        let expected: Vec<&str> = UNCONFIGURED_NATIVE_TOOL_NAMES
+            .iter()
+            .copied()
+            .chain(["batch"])
+            .collect();
+        assert_eq!(names, expected);
     }
 
     /// tools/call with upstream-prefixed name returns error (no upstream registered).
@@ -10247,6 +10386,7 @@ mod tests {
                 last_activity: now,
                 is_claude_code: false,
                 requires_meta_tools: false,
+                client_kind: None,
                 has_sse_stream: false,
                 sse_generation: 0,
                 repo_path: None,
@@ -10287,6 +10427,7 @@ mod tests {
                 last_activity: now,
                 is_claude_code: false,
                 requires_meta_tools: false,
+                client_kind: None,
                 has_sse_stream: false,
                 sse_generation: 0,
                 repo_path: None,
@@ -11157,6 +11298,7 @@ mod tests {
                 last_activity: now - std::time::Duration::from_secs(7200),
                 is_claude_code: true,
                 requires_meta_tools: false,
+                client_kind: None,
                 has_sse_stream: false,
                 sse_generation: 0,
                 repo_path: None,
@@ -11229,6 +11371,7 @@ mod tests {
                     last_activity,
                     is_claude_code: true,
                     requires_meta_tools: false,
+                    client_kind: None,
                     has_sse_stream: false,
                     sse_generation: 0,
                     repo_path: None,
@@ -11293,6 +11436,7 @@ mod tests {
                 last_activity: std::time::Instant::now() - std::time::Duration::from_secs(7200),
                 is_claude_code: true,
                 requires_meta_tools: false,
+                client_kind: None,
                 has_sse_stream: false,
                 sse_generation: 0,
                 repo_path: None,
@@ -11348,6 +11492,7 @@ mod tests {
                     last_activity,
                     is_claude_code: true,
                     requires_meta_tools: false,
+                    client_kind: None,
                     has_sse_stream: false,
                     sse_generation: 0,
                     repo_path: None,
@@ -11825,7 +11970,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 
-    // Catches: an old Claude/Gemini agent gets an inaccessible upload with no useful notice.
+    // Catches: an old Claude/agy agent gets an inaccessible upload with no useful notice.
     #[tokio::test]
     async fn attachment_legacy_agent_gets_restart_notice() {
         let state = test_state();

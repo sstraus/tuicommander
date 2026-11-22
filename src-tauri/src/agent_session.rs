@@ -9,7 +9,7 @@
 //! | Agent  | Path                                        | ID format         |
 //! |--------|---------------------------------------------|-------------------|
 //! | claude | `~/.claude/sessions/<pid>.json` (exact), else `~/.claude/projects/<cwd-slug>/<UUID>.jsonl` | `sessionId` field / UUID filename stem |
-//! | gemini | `~/.gemini/tmp/<project>/chats/session-*.{jsonl,json}` | metadata `sessionId` / `projectHash` fields |
+//! | agy    | `~/.gemini/antigravity-cli/conversations/<UUID>.db` (newest unclaimed) | UUID filename stem |
 //! | codex  | `~/.codex/sessions/YYYY/MM/DD/rollout-*-<UUID>.jsonl` | UUID in filename |
 //! | goose  | SQLite `~/Library/Application Support/Block/goose/sessions/sessions.db` | name field (TUIC_SESSION) |
 //! | ego    | `$EGO_HOME/sessions/<UUID>/lease` (`{"pid","heartbeat"}`, exact pid binding), default `~/.ego/sessions` | UUID directory name |
@@ -30,11 +30,11 @@ const SESSION_MAX_AGE: Duration = Duration::from_secs(300);
 /// unclaimed session, or `None` if none can be found.
 ///
 /// # Parameters
-/// - `agent_type`: one of `"claude"`, `"gemini"`, `"codex"`, `"goose"`, `"grok"`
+/// - `agent_type`: one of `"claude"`, `"agy"`, `"codex"`, `"goose"`, `"grok"`
 /// - `cwd`: the terminal's working directory (used to compute project-scoped paths)
 /// - `claimed_ids`: session IDs already assigned to other terminals — excluded from results
 /// - `agent_pid`: PID of the running agent process. When provided, env vars that affect
-///   session storage paths (`CLAUDE_CONFIG_DIR`, `GEMINI_CLI_HOME`, `CODEX_HOME`, `HOME`) are read
+///   session storage paths (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `HOME`) are read
 ///   directly from the process's initial environment — the ground-truth source.
 /// - `env_overrides`: fallback env overrides from the TUIC run config. Only used for keys
 ///   NOT found in the process env (i.e. process env takes precedence).
@@ -117,11 +117,7 @@ fn discover_session_id(
             env.get("CLAUDE_CONFIG_DIR").map(|s| s.as_str()),
             agent_pid,
         ),
-        "gemini" => discover_gemini_session(
-            cwd,
-            claimed_ids,
-            env.get("GEMINI_CLI_HOME").map(|s| s.as_str()),
-        ),
+        "agy" => discover_agy_session(claimed_ids, env.get("HOME").map(|s| s.as_str())),
         "codex" => {
             discover_codex_session(cwd, claimed_ids, env.get("CODEX_HOME").map(|s| s.as_str()))
         }
@@ -142,8 +138,8 @@ fn discover_session_id(
 /// the run config, exactly as before. Adding one means verifying its flags
 /// against the real CLI, not guessing them.
 ///
-/// DEFERRED (2026-09-08) — gemini/codex/grok are exposed to the same config-dir
-/// mismatch (`GEMINI_CLI_HOME`, `CODEX_HOME`) but codex selects a session with a
+/// DEFERRED (2026-09-08) — codex/grok are exposed to the same config-dir
+/// mismatch (`CODEX_HOME`) but codex selects a session with a
 /// `resume` *subcommand* rather than a flag, so the drop rule below does not
 /// transfer. Add them once each CLI's session surface is checked.
 const AGENT_SESSION_FLAGS: &[(&str, &[&str])] = &[(
@@ -293,7 +289,7 @@ fn resolve_env_overrides(
 /// goose has no override).
 const AGENT_ENV_VARS: &[(&str, &[&str])] = &[
     ("claude", &["CLAUDE_CONFIG_DIR"]),
-    ("gemini", &["GEMINI_CLI_HOME"]),
+    ("agy", &["HOME"]),
     ("codex", &["CODEX_HOME"]),
     ("opencode", &["OPENCODE_DATA_DIR"]),
     ("ego", &["EGO_HOME"]),
@@ -472,113 +468,45 @@ fn discover_claude_session(
     )
 }
 
-// ─── Gemini ──────────────────────────────────────────────────────────────────
+// ─── Antigravity (agy) ───────────────────────────────────────────────────────
 
-/// Base directory for Gemini session temp files.
+/// Conversation store of the Antigravity CLI: `<home>/.gemini/antigravity-cli/conversations/<UUID>.db`.
+/// `home` is the agent's own `HOME` when readable, else this user's.
+fn agy_conversations_dir(home: Option<&str>) -> Option<PathBuf> {
+    let home = match home {
+        Some(home) => PathBuf::from(home),
+        None => dirs::home_dir()?,
+    };
+    Some(
+        home.join(".gemini")
+            .join("antigravity-cli")
+            .join("conversations"),
+    )
+}
+
+/// `agy` 1.5.10 keeps one SQLite file per conversation, named by the ID that
+/// `--conversation <id>` accepts and that its JSON output and hook payloads
+/// (`conversationId`) repeat (recorded 2026-11-21). The file names no project or
+/// pid in a column, so this is newest-unclaimed discovery, not a binding.
 ///
-/// When `cli_home` is set (from `GEMINI_CLI_HOME`), uses `<cli_home>/.gemini/tmp/`.
-/// Otherwise defaults to `~/.gemini/tmp/`.
-fn gemini_tmp_dir(cli_home: Option<&str>) -> Option<PathBuf> {
-    if let Some(home) = cli_home {
-        Some(PathBuf::from(home).join(".gemini").join("tmp"))
-    } else {
-        dirs::home_dir().map(|h| h.join(".gemini").join("tmp"))
-    }
+/// DEFERRED (2026-11-21) — exact identity: every agy hook payload carries
+/// `conversationId` and `cwd` (recorded). Forward it through the hook channel, as
+/// the grok adapter does, so two tabs in one project stop depending on mtime.
+/// `presence/<id>.lock` (empty files) may also mark live conversations; its
+/// locking was not verified.
+fn discover_agy_session(claimed_ids: &[String], home: Option<&str>) -> Option<String> {
+    newest_unclaimed_file(
+        &agy_conversations_dir(home)?,
+        agy_conversation_id,
+        claimed_ids,
+        Some(SESSION_MAX_AGE),
+    )
 }
 
-/// Gemini 0.64 uses project slug directories; older versions used path hashes.
-/// Both record SHA-256(projectRoot) as `projectHash` in session metadata, so filter
-/// that metadata rather than guessing a directory name. Verified against the
-/// installed 0.64 bundle and fixtures/gemini/session-0.64.jsonl.
-///
-/// DEFERRED (2026-10-30) — this remains newest-unclaimed discovery within one
-/// project, not exact PID binding. Multiple tabs in the same project remain
-/// ambiguous until a native session hook or registry supplies exact identity.
-fn discover_gemini_session(
-    cwd: &str,
-    claimed_ids: &[String],
-    cli_home: Option<&str>,
-) -> Option<String> {
-    let mut candidates = gemini_session_files(cwd, cli_home, Some(SystemTime::now()));
-    candidates.sort_by_key(|a| std::cmp::Reverse(a.0));
-    candidates
-        .into_iter()
-        .find(|(_, id)| !claimed_ids.contains(id))
-        .map(|(_, id)| id)
-}
-
-/// Shared identity reader for discovery and restore. Restore deliberately has
-/// no age bound: an old saved session can still be resumed.
-fn gemini_session_files(
-    cwd: &str,
-    cli_home: Option<&str>,
-    now: Option<SystemTime>,
-) -> Vec<(SystemTime, String)> {
-    use sha2::{Digest, Sha256};
-
-    let mut candidates = Vec::new();
-    let Some(tmp_dir) = gemini_tmp_dir(cli_home) else {
-        return candidates;
-    };
-    let Ok(projects) = std::fs::read_dir(tmp_dir) else {
-        return candidates;
-    };
-    // Gemini hashes the exact absolute project root, not its canonicalized path.
-    let project_hash = hex::encode(Sha256::digest(cwd.as_bytes()));
-    for project in projects.filter_map(Result::ok) {
-        let Ok(entries) = std::fs::read_dir(project.path().join("chats")) else {
-            continue;
-        };
-        // Only root sessions: nested subagent transcripts are not resume targets.
-        for entry in entries.filter_map(Result::ok) {
-            let path = entry.path();
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if !name.starts_with("session-")
-                || !(name.ends_with(".jsonl") || name.ends_with(".json"))
-            {
-                continue;
-            }
-            let Ok(meta) = entry.metadata() else { continue };
-            if !meta.is_file() {
-                continue;
-            }
-            let Ok(mtime) = meta.modified() else { continue };
-            if now
-                .is_some_and(|now| now.duration_since(mtime).unwrap_or_default() > SESSION_MAX_AGE)
-            {
-                continue;
-            }
-            if let Some(id) = read_gemini_session_id(&path, &project_hash) {
-                candidates.push((mtime, id));
-            }
-        }
-    }
-    candidates
-}
-
-fn read_gemini_session_id(path: &Path, project_hash: &str) -> Option<String> {
-    use std::io::{BufRead, BufReader, Read};
-
-    let contents = if path.extension()?.to_str()? == "jsonl" {
-        let file = std::fs::File::open(path).ok()?;
-        let mut header = String::new();
-        // Only identity metadata is needed. Bound corrupt headers and ignore all
-        // message/upsert/$set rows, including an incomplete concurrent append.
-        BufReader::new(file.take(256 * 1024))
-            .read_line(&mut header)
-            .ok()?;
-        header
-    } else {
-        // Gemini 0.64 still loads legacy JSON, migrating it on resume.
-        std::fs::read_to_string(path).ok()?
-    };
-    let metadata: serde_json::Value = serde_json::from_str(&contents).ok()?;
-    if metadata.get("projectHash")?.as_str()? != project_hash {
-        return None;
-    }
-    let id = metadata.get("sessionId")?.as_str()?;
-    is_uuid(id).then(|| id.to_string())
+fn agy_conversation_id(name: &str) -> Option<String> {
+    name.strip_suffix(".db")
+        .filter(|stem| is_uuid(stem))
+        .map(str::to_string)
 }
 
 // ─── Codex ───────────────────────────────────────────────────────────────────
@@ -602,7 +530,7 @@ fn codex_sessions_dir(codex_home: Option<&str>) -> Option<PathBuf> {
 /// project's rollouts land in the same date tree. So the walk is filtered twice, and
 /// both filters are load-bearing:
 ///
-/// - **age**: `SESSION_MAX_AGE`, per file, matching the Claude/Gemini/Grok siblings.
+/// - **age**: `SESSION_MAX_AGE`, per file, matching the Claude/agy/Grok siblings.
 ///   The date-dir prune alone bounds the walk to 24-48h, which is not a recency check:
 ///   a terminal opened now could bind to a session abandoned this morning.
 /// - **cwd**: the rollout's own recorded working directory must match this session's.
@@ -1025,11 +953,7 @@ pub(crate) fn verify_agent_session(
             &cwd,
             env.get("CLAUDE_CONFIG_DIR").map(|s| s.as_str()),
         ),
-        "gemini" => verify_gemini_session(
-            &session_id,
-            &cwd,
-            env.get("GEMINI_CLI_HOME").map(|s| s.as_str()),
-        ),
+        "agy" => verify_agy_session(&session_id, env.get("HOME").map(|s| s.as_str())),
         "codex" => verify_codex_session(&session_id, env.get("CODEX_HOME").map(|s| s.as_str())),
         "goose" => verify_goose_session(),
         "grok" => verify_grok_session(&session_id, &cwd),
@@ -1051,13 +975,11 @@ fn verify_claude_session(session_id: &str, cwd: &str, config_dir: Option<&str>) 
     project_dir.join(format!("{session_id}.jsonl")).exists()
 }
 
-/// Check both supported Gemini formats within this session's project, without
-/// discovery's recency filter.
-fn verify_gemini_session(session_id: &str, cwd: &str, cli_home: Option<&str>) -> bool {
+/// Check `<conversations>/<uuid>.db` exists, without discovery's recency filter.
+fn verify_agy_session(session_id: &str, home: Option<&str>) -> bool {
     is_uuid(session_id)
-        && gemini_session_files(cwd, cli_home, None)
-            .iter()
-            .any(|(_, id)| id == session_id)
+        && agy_conversations_dir(home)
+            .is_some_and(|dir| dir.join(format!("{session_id}.db")).is_file())
 }
 
 /// Check if any Codex session file has this UUID in its filename.
@@ -1396,11 +1318,32 @@ fn discover_ego_session(agent_pid: Option<u32>, ego_home: Option<&str>) -> Optio
 /// The provider half of `<sessions>/<session_id>/manifest.json`'s `model`
 /// (`provider/model`, split on the first `/` exactly as ego does).
 pub(crate) fn ego_session_provider(sessions_dir: &Path, session_id: &str) -> Option<String> {
-    let manifest =
-        std::fs::read_to_string(sessions_dir.join(session_id).join("manifest.json")).ok()?;
-    let manifest: serde_json::Value = serde_json::from_str(&manifest).ok()?;
-    let (provider, model) = manifest.get("model")?.as_str()?.split_once('/')?;
-    (!provider.is_empty() && !model.is_empty()).then(|| provider.to_string())
+    ego_session_quota_identity(sessions_dir, session_id)
+        .ok()
+        .map(|(provider, _)| provider)
+}
+
+/// The manifest projects the selected account from ego's authoritative run selections.
+/// An invalid account field is not a legacy session and must not select legacy auth.
+pub(crate) fn ego_session_quota_identity(
+    sessions_dir: &Path,
+    session_id: &str,
+) -> Result<(String, Option<String>), &'static str> {
+    let manifest = std::fs::read_to_string(sessions_dir.join(session_id).join("manifest.json"))
+        .map_err(|_| "ego manifest unreadable")?;
+    let manifest: serde_json::Value =
+        serde_json::from_str(&manifest).map_err(|_| "ego manifest invalid")?;
+    let (provider, _) = manifest["model"]
+        .as_str()
+        .and_then(|model| model.split_once('/'))
+        .filter(|(provider, model)| !provider.is_empty() && !model.is_empty())
+        .ok_or("ego model unresolved")?;
+    let connection = match &manifest["connection"] {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(id) if !id.is_empty() => Some(id.clone()),
+        _ => return Err("ego connection invalid"),
+    };
+    Ok((provider.to_owned(), connection))
 }
 
 /// Check if `<sessions>/<session_id>/manifest.json` exists.
@@ -1431,7 +1374,7 @@ fn is_uuid(s: &str) -> bool {
     })
 }
 
-/// Recency of a session entry. For a *file* (Claude/Gemini/Codex `.jsonl`),
+/// Recency of a session entry. For a *file* (Claude/Codex `.jsonl`),
 /// its own mtime. For a session *directory* (grok stores each session as a dir),
 /// the newest of the directory's own mtime and its immediate children's — a
 /// directory's own mtime only tracks entry creation/removal, not writes into
@@ -1951,6 +1894,48 @@ mod tests {
         assert_eq!(ego_session_provider(h, EGO_A), None);
         write(EGO_A, "{}");
         assert_eq!(ego_session_provider(h, EGO_A), None);
+    }
+
+    // Catches: an invalid named-account field silently falls back to legacy credentials.
+    #[test]
+    fn ego_manifest_connection_is_explicit_and_malformed_identity_fails_closed() {
+        let dir = ego_store(&[(EGO_A, 111, 5)]);
+        let path = dir.path().join(EGO_A).join("manifest.json");
+        for connection in [
+            serde_json::json!(""),
+            serde_json::json!(7),
+            serde_json::json!({"id": "account_b"}),
+        ] {
+            fs::write(
+                &path,
+                serde_json::json!({"model": "anthropic/example", "connection": connection})
+                    .to_string(),
+            )
+            .unwrap();
+            assert_eq!(
+                ego_session_quota_identity(dir.path(), EGO_A),
+                Err("ego connection invalid")
+            );
+        }
+        for body in [
+            r#"{"model":"anthropic/example"}"#,
+            r#"{"model":"anthropic/example","connection":null}"#,
+        ] {
+            fs::write(&path, body).unwrap();
+            assert_eq!(
+                ego_session_quota_identity(dir.path(), EGO_A).unwrap(),
+                ("anthropic".into(), None)
+            );
+        }
+        fs::write(
+            &path,
+            r#"{"model":"anthropic/example","connection":"anthropic"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            ego_session_quota_identity(dir.path(), EGO_A).unwrap(),
+            ("anthropic".into(), Some("anthropic".into()))
+        );
     }
 
     /// Catches: ego missing from the env table, so a session under a custom
@@ -2610,167 +2595,65 @@ mod tests {
         assert!(result.is_none());
     }
 
-    // Catches the legacy-only extension filter using a real Gemini 0.64 transcript.
+    // Catches binding to a non-conversation file or a stale conversation, and a
+    // claimed ID being handed to a second tab.
     #[test]
-    fn gemini_jsonl_recorded_session_is_discovered_and_verified() {
+    fn agy_discovers_the_newest_unclaimed_fresh_conversation_only() {
         let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-        let chats = dir.path().join(".gemini/tmp/repo/chats");
-        fs::create_dir_all(&chats).unwrap();
-        fs::write(
-            chats.join("session-recorded.jsonl"),
-            include_str!("fixtures/gemini/session-0.64.jsonl"),
-        )
-        .unwrap();
-        let cwd = "/Users/stefano.straus/Gits/.tmp/live-tuic/repo";
-        let id = "1c1a1f22-6455-4886-9644-ccf7bdd191f2";
+        let store = dir.path().join(".gemini/antigravity-cli/conversations");
+        fs::create_dir_all(&store).unwrap();
         let home = dir.path().to_str().unwrap();
-        let env = HashMap::from([("GEMINI_CLI_HOME".to_string(), home.to_string())]);
+        let stale = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        let fresh = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+        let claimed = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+        for name in [stale, fresh, claimed] {
+            fs::write(store.join(format!("{name}.db")), b"x").unwrap();
+        }
+        fs::write(store.join("not-a-uuid.db"), b"x").unwrap();
+        fs::write(store.join(format!("{fresh}.pb")), b"x").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(store.join(format!("{stale}.db")))
+            .unwrap()
+            .set_times(
+                fs::FileTimes::new().set_modified(SystemTime::now() - Duration::from_secs(600)),
+            )
+            .unwrap();
+        fs::File::options()
+            .write(true)
+            .open(store.join(format!("{claimed}.db")))
+            .unwrap()
+            .set_times(
+                fs::FileTimes::new().set_modified(SystemTime::now() + Duration::from_secs(5)),
+            )
+            .unwrap();
+
         assert_eq!(
-            discover_session_id("gemini", cwd, &[], None, &env),
-            Some(id.to_string())
+            discover_agy_session(&[claimed.into()], Some(home)),
+            Some(fresh.into())
+        );
+        assert_eq!(
+            discover_agy_session(&[claimed.into(), fresh.into()], Some(home)),
+            None,
+            "the stale conversation must not be a discovery target"
+        );
+        let env = HashMap::from([("HOME".to_string(), home.to_string())]);
+        assert!(
+            verify_agy_session(stale, Some(home)),
+            "restore has no age bound"
         );
         assert!(verify_agent_session(
-            "gemini".into(),
-            id.into(),
-            cwd.into(),
+            "agy".into(),
+            stale.into(),
+            "/p".into(),
             None,
             env
         ));
-    }
-
-    // Catches cross-project binding in discovery AND restore, even in a shared store.
-    #[test]
-    fn gemini_rejects_recorded_session_from_other_project() {
-        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-        let chats = dir.path().join(".gemini/tmp/repo/chats");
-        fs::create_dir_all(&chats).unwrap();
-        fs::write(
-            chats.join("session-recorded.jsonl"),
-            include_str!("fixtures/gemini/session-0.64.jsonl"),
-        )
-        .unwrap();
-        let home = dir.path().to_str().unwrap();
-        let id = "1c1a1f22-6455-4886-9644-ccf7bdd191f2";
-        assert_eq!(
-            discover_gemini_session("/other/project", &[], Some(home)),
-            None
-        );
-        assert!(!verify_gemini_session(id, "/other/project", Some(home)));
-    }
-
-    // Catches whole-file JSONL parsing and lost claimed-ID exclusion.
-    #[test]
-    fn gemini_claims_and_partial_append_preserve_header_identity() {
-        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-        let chats = dir.path().join(".gemini/tmp/repo/chats");
-        fs::create_dir_all(&chats).unwrap();
-        let fixture = include_str!("fixtures/gemini/session-0.64.jsonl");
-        fs::write(
-            chats.join("session-partial.jsonl"),
-            format!("{fixture}{{\"id\":"),
-        )
-        .unwrap();
-        let cwd = "/Users/stefano.straus/Gits/.tmp/live-tuic/repo";
-        let id = "1c1a1f22-6455-4886-9644-ccf7bdd191f2";
-        let home = dir.path().to_str().unwrap();
-        assert_eq!(
-            discover_gemini_session(cwd, &[], Some(home)),
-            Some(id.into())
-        );
-        assert_eq!(discover_gemini_session(cwd, &[id.into()], Some(home)), None);
-        assert!(verify_gemini_session(id, cwd, Some(home)));
-    }
-
-    // Catches accepting arbitrary files, malformed identity, or a message's ID
-    // instead of the metadata header. Corrupt inputs are derived from the fixture.
-    #[test]
-    fn gemini_invalid_metadata_and_non_session_files_are_not_resume_targets() {
-        let fixture = include_str!("fixtures/gemini/session-0.64.jsonl");
-        let id = "1c1a1f22-6455-4886-9644-ccf7bdd191f2";
-        let cases = [
-            ("session-bad.jsonl", fixture.replacen(id, "not-a-uuid", 1)),
-            ("session-bad.jsonl", format!("not json\n{fixture}")),
-            (
-                "session-bad.jsonl",
-                fixture.lines().skip(1).collect::<Vec<_>>().join("\n"),
-            ),
-            (
-                "session-bad.jsonl",
-                fixture.replace("projectHash", "missingHash"),
-            ),
-            ("session-backup.jsonl.bak", fixture.into()),
-            ("unrelated.jsonl", fixture.into()),
-        ];
-        for (name, content) in cases {
-            let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-            let chats = dir.path().join(".gemini/tmp/repo/chats");
-            fs::create_dir_all(&chats).unwrap();
-            fs::write(chats.join(name), content).unwrap();
-            let home = dir.path().to_str().unwrap();
-            let cwd = "/Users/stefano.straus/Gits/.tmp/live-tuic/repo";
-            assert_eq!(
-                discover_gemini_session(cwd, &[], Some(home)),
-                None,
-                "{name}"
-            );
-            assert!(!verify_gemini_session(id, cwd, Some(home)), "{name}");
-        }
-    }
-
-    // ── gemini discovery mtime bound ──
-
-    #[test]
-    fn test_discover_gemini_session_filters_stale_by_mtime() {
-        let dir = TempDir::new().unwrap();
-        let chats = dir
-            .path()
-            .join(".gemini")
-            .join("tmp")
-            .join("projhash")
-            .join("chats");
-        fs::create_dir_all(&chats).unwrap();
-        let cli_home = dir.path().to_str().unwrap();
-
-        let project_hash = "be7b2e02c1f5c85794ac2bec544a84e413d478e171af2024b281a80ba59d0d0f";
-        let stale_uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
-        let stale = chats.join("session-stale.json");
-        fs::write(
-            &stale,
-            format!(r#"{{"sessionId":"{stale_uuid}","projectHash":"{project_hash}"}}"#),
-        )
-        .unwrap();
-        // Backdate well beyond the 300s bound.
-        let old = SystemTime::now() - Duration::from_secs(10 * 60);
-        fs::File::options()
-            .write(true)
-            .open(&stale)
-            .unwrap()
-            .set_times(fs::FileTimes::new().set_modified(old))
-            .unwrap();
-
-        // Only a stale file present → filtered out, nothing discovered.
-        assert!(
-            discover_gemini_session("/whatever", &[], Some(cli_home)).is_none(),
-            "stale gemini session must be filtered by mtime"
-        );
-        assert!(verify_gemini_session(
-            stale_uuid,
-            "/whatever",
-            Some(cli_home)
+        assert!(!verify_agy_session("not-a-uuid", Some(home)));
+        assert!(!verify_agy_session(
+            "dddddddd-dddd-dddd-dddd-dddddddddddd",
+            Some(home)
         ));
-
-        // Add a fresh file → it (and only it) is discovered.
-        let fresh_uuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
-        fs::write(
-            chats.join("session-fresh.json"),
-            format!(r#"{{"sessionId":"{fresh_uuid}","projectHash":"{project_hash}"}}"#),
-        )
-        .unwrap();
-        assert_eq!(
-            discover_gemini_session("/whatever", &[], Some(cli_home)),
-            Some(fresh_uuid.to_string()),
-            "fresh gemini session should be discovered, stale ignored"
-        );
     }
 
     // ── codex date-subtree pruning ──
@@ -3064,7 +2947,7 @@ mod tests {
     }
 
     /// The date-dir prune bounds the walk to 24-48h, which is NOT a recency check:
-    /// a session abandoned this morning still sits in today's dir. Claude, Gemini and
+    /// a session abandoned this morning still sits in today's dir. Claude, agy and
     /// Grok all reject candidates older than SESSION_MAX_AGE per file; Codex did not.
     #[test]
     fn test_discover_codex_session_rejects_a_stale_session_in_todays_dir() {

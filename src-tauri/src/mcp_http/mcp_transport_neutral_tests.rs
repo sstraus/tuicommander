@@ -68,12 +68,19 @@ fn neutral_transport_schema_keeps_typed_definitions_and_private_effect_observati
         "expected_revision",
         "input_bindings",
         "approved",
+        "resolve_mutation",
+        "evidence",
         "NeutralDefinition",
         "ActivityDescriptor",
     ] {
         assert!(encoded.contains(field), "missing {field}");
     }
-    for forbidden in ["\"observe\"", "\"grants\"", "\"capability_grants\""] {
+    for forbidden in [
+        "\"observe\"",
+        "\"grants\"",
+        "\"capability_grants\"",
+        "\"stop_proof\"",
+    ] {
         assert!(!encoded.contains(forbidden), "private command {forbidden}");
     }
     assert!(

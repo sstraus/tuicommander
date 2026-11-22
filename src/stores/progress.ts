@@ -2,14 +2,24 @@ import { batch, createSignal } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { invoke } from "../invoke";
 import { showNativeNotice } from "../services/nativeNotifications";
+import { owningConnectionFor } from "../transport";
+import { type RemoteEventPayload, remoteEventOrigin } from "../utils/remoteEventOrigin";
 import { notificationsStore } from "./notifications";
 import { repositoriesStore } from "./repositories";
 import { terminalsStore } from "./terminals";
 import { toastsStore } from "./toasts";
 
-export type ProgressKind = "done" | "blocked" | "intent" | "delegated" | "message";
+export type ProgressKind = "done" | "blocked" | "intent" | "delegated" | "message" | "question" | "answer";
+
+/** Host trace kinds: stored for Flow, hidden from the default list. */
+export const ACTIVITY_KINDS: readonly ProgressKind[] = ["intent", "delegated", "message"];
 
 export interface ProgressEntry {
+	/** Client-owned backend scope; null is the local connection, never inferred at reply time. */
+	originConnectionId?: string | null;
+	question?: { kind: "yes_no" };
+	replyTargetAvailable?: boolean;
+	answered?: boolean;
 	id: number;
 	project: string;
 	ptyId?: string;
@@ -23,7 +33,7 @@ export interface ProgressEntry {
 	targetName?: string;
 }
 
-export type FlowState = "busy" | "idle" | "awaiting" | "closed" | "running" | "done";
+export type FlowState = "busy" | "idle" | "awaiting" | "closed" | "running" | "done" | "interrupted";
 
 export interface FlowParticipant {
 	id: string;
@@ -92,7 +102,7 @@ export interface ProgressList {
 	lastViewedMs?: number;
 }
 
-export interface ProgressRecordedPayload {
+export interface ProgressRecordedPayload extends RemoteEventPayload {
 	repo_path: string;
 	payload: { entry: ProgressEntry };
 }
@@ -113,7 +123,10 @@ const [dialogVisible, setDialogVisible] = createSignal(false);
 const [requestedProject, setRequestedProject] = createSignal<string | null>(null);
 const [selectedPtyId, setSelectedPtyId] = createSignal<string | null>(null);
 const [blockedOnly, setBlockedOnly] = createSignal(false);
-const [progressOnly, setProgressOnly] = createSignal(false);
+/** Bumped on every live entry, from any project (the cross-project view re-reads). */
+const [liveRevision, setLiveRevision] = createSignal(0);
+/** Show the host trace (intent, delegated, message) in the list. Off by default. */
+const [showActivity, setShowActivity] = createSignal(false);
 const [view, setView] = createSignal<ProgressView>("list");
 
 function messageOf(error: unknown): string {
@@ -169,19 +182,20 @@ export function createProgressStore() {
 		const epoch = older ? listEpoch : ++listEpoch;
 		const ptyId = selectedPtyId();
 		const blocked = blockedOnly();
-		const human = progressOnly();
+		const activity = showActivity();
 		const isCurrent = () =>
 			epoch === listEpoch &&
 			requestedProject() === project &&
 			selectedPtyId() === ptyId &&
 			blockedOnly() === blocked &&
-			progressOnly() === human;
+			showActivity() === activity;
 		setState("projects", project, { loading: true, error: null, ...(!older ? { nextCursor: null } : {}) });
 		try {
+			const originConnectionId = owningConnectionFor("progress_list", { project }) ?? null;
 			const page = await invoke<ProgressList>("progress_list", {
 				project,
 				input: {
-					...(human ? { progressOnly: true } : {}),
+					includeActivity: activity,
 					blockedOnly: blocked,
 					...(ptyId ? { ptyId } : {}),
 					limit: 100,
@@ -189,6 +203,7 @@ export function createProgressStore() {
 				},
 			});
 			if (!isCurrent()) return;
+			page.entries = page.entries.map((entry) => ({ ...entry, originConnectionId }));
 			const frozen = freezeDivider ? (state.projects[project]?.dividerMs ?? page.lastViewedMs) : page.lastViewedMs;
 			setState("projects", project, {
 				loading: false,
@@ -370,7 +385,10 @@ export function createProgressStore() {
 	}
 
 	function presentLive(payload: ProgressRecordedPayload): void {
-		const entry = payload.payload.entry;
+		const origin = remoteEventOrigin(payload);
+		if (payload.__tuic_origin !== undefined && !origin) return;
+		const entry = { ...payload.payload.entry, originConnectionId: origin?.connection ?? null };
+		setLiveRevision((n) => n + 1);
 		const project = payload.repo_path;
 		const showing = dialogVisible() && requestedProject() === project;
 		let onScreen = true;
@@ -384,7 +402,8 @@ export function createProgressStore() {
 		// An `intent:` is what the agent set out to do, and a hand-off is one
 		// agent talking to another — neither is an outcome. They belong in the
 		// journal and not in the user's face: no toast, and no bell count.
-		if (entry.type !== "done" && entry.type !== "blocked") return;
+		// A question is the user's own: no toast. Its answer is an outcome.
+		if (entry.type !== "done" && entry.type !== "blocked" && entry.type !== "answer") return;
 		if (!onScreen) setArrivedSinceOpen((count) => count + 1);
 		const projectName =
 			repositoriesStore.get(payload.repo_path)?.displayName ??
@@ -402,7 +421,7 @@ export function createProgressStore() {
 		// Blocked means the agent is waiting on the user. Keep its warning card
 		// even when routine completion popups are muted; collection and native
 		// notification preferences remain independent of this transient-card control.
-		if (popupsMuted() && entry.type === "done") return;
+		if (popupsMuted() && entry.type !== "blocked") return;
 		toastsStore.add(
 			// The repo badge already names the project (it is passed below), so a
 			// title of "<project> · <step>" printed it twice and spent half the
@@ -415,13 +434,16 @@ export function createProgressStore() {
 			// for the user's attention.
 			false,
 			{ label: "Open Progress", onClick: () => open(payload.repo_path, entry.ptyId ?? null) },
-			undefined,
+			entry.question?.kind === "yes_no" ? 0 : undefined,
 			payload.repo_path,
 			entry.ptyId,
 			false,
-			entry.type === "done"
-				? { dismissGroup: "progress-done", secondaryAction: { label: "Mute", onClick: mutePopups } }
-				: {},
+			{
+				progress: entry,
+				...(entry.type !== "blocked"
+					? { dismissGroup: "progress-done", secondaryAction: { label: "Mute", onClick: mutePopups } }
+					: {}),
+			},
 		);
 	}
 
@@ -434,10 +456,11 @@ export function createProgressStore() {
 		requestedProject,
 		selectedPtyId,
 		selectPty,
-		progressOnly,
-		setProgressOnly: (value: boolean) => {
-			if (value === progressOnly()) return;
-			setProgressOnly(value);
+		liveRevision,
+		showActivity,
+		setShowActivity: (value: boolean) => {
+			if (value === showActivity()) return;
+			setShowActivity(value);
 			const project = requestedProject();
 			if (project) {
 				setState("projects", project, "entries", []);
@@ -495,7 +518,7 @@ export function createProgressStore() {
 				setRequestedProject(null);
 				setSelectedPtyId(null);
 				setBlockedOnly(false);
-				setProgressOnly(false);
+				setShowActivity(false);
 				setArrivedSinceOpen(0);
 				setPopupsMuted(false);
 				visitedScopes.clear();

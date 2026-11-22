@@ -13,6 +13,9 @@ include!("mcp_transport_transport_tests.rs");
 #[path = "mcp_transport_reconnect_fixture_tests.rs"]
 mod reconnect_fixture_tests;
 include!("mcp_transport_catalogue_tests.rs");
+include!("action_slices_tests.rs");
+include!("session_input_read_tests.rs");
+include!("recipient_candidates_tests.rs");
 include!("mcp_transport_peer_tests.rs");
 #[cfg(unix)]
 include!("mcp_transport_peer_identity_tests.rs");

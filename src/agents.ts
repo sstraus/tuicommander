@@ -1,7 +1,7 @@
 /** Supported agent types */
 export type AgentType =
 	| "claude"
-	| "gemini"
+	| "agy"
 	| "opencode"
 	| "codex"
 	| "amp"
@@ -17,7 +17,7 @@ export type AgentType =
 /** Runtime array for validating backend strings against AgentType */
 export const AGENT_TYPES: readonly AgentType[] = [
 	"claude",
-	"gemini",
+	"agy",
 	"opencode",
 	"codex",
 	"amp",
@@ -103,20 +103,20 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
 			prompt: [/^\s*\d+[.)]\s+.+$/gm, /\[y\/n\]/i, /select an option/i],
 		},
 	},
-	gemini: {
-		type: "gemini",
-		name: "Gemini CLI",
-		binary: "gemini",
-		description: "Google's Gemini CLI",
+	agy: {
+		type: "agy",
+		name: "Antigravity CLI",
+		binary: "agy",
+		description: "Google's Antigravity CLI (agy)",
 		interactivePromptArg: true,
-		defaultHeadlessTemplate: 'gemini "{prompt}"',
-		resumeCommand: "gemini --resume",
+		defaultHeadlessTemplate: 'agy -p "{prompt}"',
+		resumeCommand: "agy --continue",
 		ctrlEnterSequence: "\x1b[13;5u",
-		sessionDiscovery: { resumeWithId: (id) => `gemini --resume ${id}` },
+		sessionDiscovery: { resumeWithId: (id) => `agy --conversation ${id}` },
 		spawnArgs: (prompt, options = {}) => {
 			const args: string[] = [];
 			if (options.model) args.push("--model", options.model);
-			args.push(prompt);
+			args.push("-i", prompt);
 			return args;
 		},
 		outputFormat: "text",
@@ -457,7 +457,7 @@ export const LIMITED_SUPPORT_LABEL = "limited support, need more tests";
 /** Which agents support MCP configuration */
 export const MCP_SUPPORT: Record<AgentType, boolean> = {
 	claude: true,
-	gemini: true,
+	agy: true,
 	opencode: true,
 	codex: true,
 	amp: true,
@@ -479,11 +479,11 @@ export const MCP_SUPPORT: Record<AgentType, boolean> = {
  * Agent adapters for hook state instrumentation. Availability is host-specific:
  * Settings must also read get_agent_hook_state on the owning machine; native
  * Windows reports unsupported regardless of these adapter declarations.
- * Claude/Gemini/Grok/Codex use settings-hooks; OpenCode uses a code-extension plugin.
+ * Claude/Antigravity/Grok/Codex use settings-hooks; OpenCode uses a code-extension plugin.
  */
 export const HOOK_SUPPORT: Record<AgentType, boolean> = {
 	claude: true,
-	gemini: true,
+	agy: true,
 	opencode: true,
 	codex: true,
 	amp: false,
@@ -502,7 +502,7 @@ export const HOOK_SUPPORT: Record<AgentType, boolean> = {
 /** Agent display info for UI */
 export const AGENT_DISPLAY: Record<AgentType, { icon: string; color: string; foreground: string }> = {
 	claude: { icon: "C", color: "#d97706", foreground: "var(--identity-on-light)" },
-	gemini: { icon: "G", color: "#4285f4", foreground: "var(--identity-on-light)" },
+	agy: { icon: "G", color: "#4285f4", foreground: "var(--identity-on-light)" },
 	opencode: { icon: "O", color: "#10a37f", foreground: "var(--identity-on-light)" },
 	codex: { icon: "X", color: "#ffffff", foreground: "var(--identity-on-light)" },
 	amp: { icon: "A", color: "#ff5543", foreground: "var(--identity-on-light)" },

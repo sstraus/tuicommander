@@ -154,3 +154,18 @@ tuic_unix_socket_path_max() {
   esac
   printf '%s\n' "$_tuic_path_max"
 }
+
+# PATH without the directories that hold an mbx executable. With mbx installed
+# the wrapper refuses a host temp dir over the mbx socket budget; shell tests of
+# the wrapper's path logic nest their fake host temp dir deeper than that.
+tuic_path_without_mbx() {
+  _tuic_out=""
+  _tuic_rest="$1:"
+  while [ -n "$_tuic_rest" ]; do
+    _tuic_dir=${_tuic_rest%%:*}
+    _tuic_rest=${_tuic_rest#*:}
+    [ -x "$_tuic_dir/mbx" ] && continue
+    _tuic_out=${_tuic_out:+$_tuic_out:}$_tuic_dir
+  done
+  printf '%s\n' "$_tuic_out"
+}

@@ -94,17 +94,17 @@ describe("NewSessionSheet", () => {
 		expect(view.getByRole("combobox", { name: "Agent" })).toHaveProperty("value", "codex");
 	});
 
-	it("offers installed ego but not absent gemini instead of a hardcoded agent list", async () => {
+	it("offers installed ego but not absent agy instead of a hardcoded agent list", async () => {
 		// Catches: the mobile sheet ignores binary detection and offers only its hardcoded trio.
 		vi.mocked(rpc).mockResolvedValueOnce({
 			ego: { path: "/usr/local/bin/ego", version: null },
-			gemini: { path: null, version: null },
+			agy: { path: null, version: null },
 			git: { path: "/usr/bin/git", version: null },
 			api: { path: "/not-a-cli", version: null },
 		});
 		const view = render(() => <NewSessionSheet repos={REPOS} onDismiss={() => {}} />);
 		await waitFor(() => expect(view.getByRole("option", { name: "ego" })).toBeTruthy());
-		expect(view.queryByRole("option", { name: /gemini/i })).toBeNull();
+		expect(view.queryByRole("option", { name: /agy/i })).toBeNull();
 		expect(view.queryByRole("option", { name: "Git" })).toBeNull();
 		expect(view.queryByRole("option", { name: "External API" })).toBeNull();
 		expect(view.getByRole("combobox", { name: "Agent" })).toHaveProperty("value", "ego");

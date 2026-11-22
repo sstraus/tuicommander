@@ -3,6 +3,7 @@ import { shortenHomePath } from "../../platform";
 import { appLogger } from "../../stores/appLogger";
 import { githubStore } from "../../stores/github";
 import { globalWorkspaceStore } from "../../stores/globalWorkspace";
+import { waitingCountForRepo } from "../../stores/needsYou";
 import type { RepositoryState, WorkspaceState } from "../../stores/repositories";
 import { repositoriesStore } from "../../stores/repositories";
 import { type TerminalState, terminalsStore } from "../../stores/terminals";
@@ -49,7 +50,7 @@ import {
 	type SubagentRow,
 	subagentRows,
 } from "../../utils/sidebarRich";
-import { terminalVisualState } from "../../utils/terminalVisualState";
+import { showsBackgroundWork, terminalVisualState } from "../../utils/terminalVisualState";
 import type { ContextMenuItem } from "../ContextMenu";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import { createAgentLaunchMenu } from "../ContextMenu/createAgentLaunchMenu";
@@ -71,6 +72,7 @@ const BRANCH_ICON_CLASSES: Record<string, string> = {
 	error: s.branchIconError,
 	question: s.branchIconQuestion,
 	activity: s.branchIconActivity,
+	background: s.branchIconBackground,
 	unseen: s.branchIconUnseen,
 	idle: s.branchIconIdle,
 };
@@ -98,6 +100,7 @@ export interface BranchIconProps {
 	hasError?: boolean;
 	hasQuestion?: boolean;
 	hasBusy?: boolean;
+	hasBackground?: boolean;
 	hasUnseen?: boolean;
 	branchHasTerminals?: boolean;
 }
@@ -119,7 +122,7 @@ export const BranchIcon: Component<BranchIconProps> = (props) => {
 	const iconShape = () => branchIconShape(props);
 
 	/** Single source of truth for icon color — priority cascade.
-	 *  Error > question > busy > unseen > idle > base.
+	 *  Error > question > busy > background > unseen > idle > base.
 	 *  A branch with no open terminal is idle (grey), even when other branches
 	 *  in the same repo have tabs open — the base color (yellow for main, green
 	 *  for worktree) means "has an open tab here, nothing special happening". */
@@ -127,6 +130,7 @@ export const BranchIcon: Component<BranchIconProps> = (props) => {
 		if (props.hasError) return "error";
 		if (props.hasQuestion) return "question";
 		if (props.hasBusy) return "activity";
+		if (props.hasBackground) return "background";
 		if (props.hasUnseen) return "unseen";
 		if (props.branchHasTerminals === false) return "idle";
 		if (props.isMainBranch) return "main";
@@ -134,7 +138,10 @@ export const BranchIcon: Component<BranchIconProps> = (props) => {
 	};
 
 	return (
-		<span class={cx(s.branchIcon, BRANCH_ICON_CLASSES[colorClass()])}>
+		<span
+			class={cx(s.branchIcon, BRANCH_ICON_CLASSES[colorClass()])}
+			title={colorClass() === "background" ? t("tabBar.backgroundWork", "Background work") : undefined}
+		>
 			{(() => {
 				switch (iconShape()) {
 					case "error":
@@ -313,7 +320,8 @@ const SubagentList: Component<{ rows: SubagentRow[] }> = (props) => {
 	const [open, setOpen] = createSignal(false);
 	const [returnedOpen, setReturnedOpen] = createSignal(false);
 	const running = () => props.rows.filter((row) => row.running);
-	const returned = () => props.rows.filter((row) => !row.running);
+	const interrupted = () => props.rows.filter((row) => row.interrupted);
+	const returned = () => props.rows.filter((row) => !row.running && !row.interrupted);
 	const folded = () => running().length > SUBAGENT_COLLAPSE_AFTER && !open();
 	return (
 		<Show when={props.rows.length > 0}>
@@ -332,11 +340,15 @@ const SubagentList: Component<{ rows: SubagentRow[] }> = (props) => {
 						</Button>
 					}
 				>
-					<For each={[...running(), ...(returnedOpen() ? returned() : [])]}>
+					<For each={[...running(), ...interrupted(), ...(returnedOpen() ? returned() : [])]}>
 						{(row) => (
 							<div class={s.subagentRow} data-tooltip={row.title} data-tooltip-pos="bottom">
 								<span class={cx(s.branchTabState, row.running && s.branchTabState_working)}>
-									{row.running ? t("sidebar.subagentRunning", "Running") : t("sidebar.subagentDone", "Returned")}
+									{row.running
+										? t("sidebar.subagentRunning", "Running")
+										: row.interrupted
+											? t("sidebar.subagentInterrupted", "Interrupted")
+											: t("sidebar.subagentDone", "Returned")}
 								</span>
 								<span class={s.branchTabLine}>{row.title}</span>
 								<span class={s.subagentMeta}>
@@ -517,7 +529,8 @@ const BranchTabList: Component<{ terminalIds: string[]; repoPath: string }> = (p
 	});
 	const subagents = (term: TerminalState) =>
 		subagentRows(progressStore.sidebarFlow(props.repoPath), term.sessionId, clock());
-	const renderTab = (id: string, nested: boolean): JSX.Element => {
+	const tLabelBackground = () => t("tabBar.backgroundWork", "Background work");
+	const renderTab = (id: string): JSX.Element => {
 		const term = () => terminalsStore.get(id);
 		const isActive = () => terminalsStore.state.activeId === id;
 		// The row shows the tab title, as the tab bar does; what the agent is
@@ -533,110 +546,126 @@ const BranchTabList: Component<{ terminalIds: string[]; repoPath: string }> = (p
 			const d = detail();
 			return d ? `${t.name}: ${d}` : t.name;
 		};
-		const dotClass = () => {
+		const dotState = () => {
 			const t = term();
-			if (!t) return s.branchTabDot;
-			const visual = terminalVisualState({
+			if (!t) return "default";
+			const background = showsBackgroundWork(t.shellState, t.backgroundWork);
+			return terminalVisualState({
 				error: t.awaitingInput === "error",
 				question: t.awaitingInput === "question",
 				stalled: t.stalled === true,
-				busy: (t.sessionId != null && rateLimitStore.isRateLimited(t.sessionId)) || terminalsStore.isBusy(id),
+				busy:
+					(t.sessionId != null && rateLimitStore.isRateLimited(t.sessionId)) ||
+					(!background && terminalsStore.isBusy(id)),
+				background,
 				unseen: t.unseen,
 				idle: t.shellState === "idle",
 			});
+		};
+		const dotClass = () => {
 			const visualClass = {
 				error: s.branchTabDotError,
 				question: s.branchTabDotQuestion,
 				stalled: s.branchTabDotStalled,
 				busy: s.branchTabDotBusy,
+				background: s.branchTabDotBackground,
 				unseen: s.branchTabDotUnseen,
 				idle: s.branchTabDotIdle,
 				default: undefined,
-			}[visual];
+			}[dotState()];
 			return cx(s.branchTabDot, visualClass);
 		};
 
 		return (
 			<Show when={(!idleIds().includes(id) || idleExpanded()) && term()}>
 				{(t) => (
-					<>
-						<button
-							data-control-layout="row"
-							class={cx(
-								s.branchTabItem,
-								isActive() && s.active,
-								rich() && agentRow(t()).state === "working" && s.branchTabItemRich,
-								nested && s.branchTabNested,
-							)}
-							onClick={() => navigateToTerminal(id)}
-							onContextMenu={(event) => {
-								event.stopPropagation();
-								setMenuTerminalId(id);
-								sessionMenu.open(event);
-							}}
-							aria-label={accessibleLabel()}
-							data-tooltip={[
-								rich() ? accessibleLabel() : `${t().name} · ${agentTooltip(t())}`,
-								t().agentType === "ego" ? t().agentProvider : null,
-							]
-								.filter(Boolean)
-								.join(" · ")}
-							data-tooltip-pos="bottom"
-						>
-							<span class={dotClass()} aria-hidden="true" />
-							<Show
-								when={t().agentType}
-								fallback={
-									<span class={s.branchAgentIcon} aria-hidden="true">
-										<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
-											<path d="M1 3l5 5-5 5h2l5-5-5-5H1zm7 9h7v2H8v-2z" />
-										</svg>
-									</span>
-								}
+					<div class={s.branchTabNode}>
+						<div class={s.branchTabHead}>
+							<button
+								data-control-layout="row"
+								class={cx(
+									s.branchTabItem,
+									isActive() && s.active,
+									rich() && agentRow(t()).state === "working" && s.branchTabItemRich,
+								)}
+								onClick={() => navigateToTerminal(id)}
+								onContextMenu={(event) => {
+									event.stopPropagation();
+									setMenuTerminalId(id);
+									sessionMenu.open(event);
+								}}
+								aria-label={accessibleLabel()}
+								data-tooltip={[
+									dotState() === "background"
+										? `${t().name} · ${tLabelBackground()}`
+										: rich()
+											? accessibleLabel()
+											: `${t().name} · ${agentTooltip(t())}`,
+									t().agentType === "ego" ? t().agentProvider : null,
+								]
+									.filter(Boolean)
+									.join(" · ")}
+								data-tooltip-pos="bottom"
 							>
-								{(agent) => (
-									<span class={s.branchAgentIcon} aria-hidden="true">
-										<AgentIcon agent={agent()} provider={t().agentProvider} size={14} />
-									</span>
-								)}
-							</Show>
-							<Show when={activity()}>{(label) => <span class={s.branchAgentActivity}>{label()}</span>}</Show>
-							<Show when={terminalsStore.getSubAgentTag(id)}>
-								{(parent) => (
-									<SubAgentIcon parent={parent()} class={s.branchSubAgentTag} iconClass={s.branchSubAgentIcon} />
-								)}
-							</Show>
-							<Show when={t().abandonedSinceMs}>
-								<span class={s.branchAgentActivity}>Abandoned</span>
-							</Show>
-							<span class={s.branchAgentTime}>
-								{compactActivityAge(t().abandonedSinceMs ?? t().lastActivityAt, clock())}
-							</span>
-							{/* Rich: what the agent is doing, in words, under the tab title. */}
-							<Show when={rich() && agentRow(t()).state === "working" ? agentRow(t()) : null}>
-								{(facts) => (
-									<span class={s.branchTabDetail}>
-										<span class={cx(s.branchTabState, s[`branchTabState_${facts().state}`])}>
-											{AGENT_STATE_LABEL[facts().state]()}
+								<span class={dotClass()} aria-hidden="true" />
+								<Show
+									when={t().agentType}
+									fallback={
+										<span class={s.branchAgentIcon} aria-hidden="true">
+											<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+												<path d="M1 3l5 5-5 5h2l5-5-5-5H1zm7 9h7v2H8v-2z" />
+											</svg>
 										</span>
-										<Show
-											when={t().agentType}
-											fallback={
-												<Show when={facts().line}>{(line) => <span class={s.branchTabLine}>{line()}</span>}</Show>
-											}
-										>
-											<span class={cx(s.branchTabLine, s.branchTabIntent)}>{facts().line}</span>
-										</Show>
-									</span>
-								)}
+									}
+								>
+									{(agent) => (
+										<span class={s.branchAgentIcon} aria-hidden="true">
+											<AgentIcon agent={agent()} provider={t().agentProvider} size={14} />
+										</span>
+									)}
+								</Show>
+								<Show when={activity()}>{(label) => <span class={s.branchAgentActivity}>{label()}</span>}</Show>
+								<Show when={terminalsStore.getSubAgentTag(id)}>
+									{(parent) => (
+										<SubAgentIcon parent={parent()} class={s.branchSubAgentTag} iconClass={s.branchSubAgentIcon} />
+									)}
+								</Show>
+								<Show when={t().abandonedSinceMs}>
+									<span class={s.branchAgentActivity}>Abandoned</span>
+								</Show>
+								<span class={s.branchAgentTime}>
+									{compactActivityAge(t().abandonedSinceMs ?? t().lastActivityAt, clock())}
+								</span>
+								{/* Rich: what the agent is doing, in words, under the tab title. */}
+								<Show when={rich() && agentRow(t()).state === "working" ? agentRow(t()) : null}>
+									{(facts) => (
+										<span class={s.branchTabDetail}>
+											<span class={cx(s.branchTabState, s[`branchTabState_${facts().state}`])}>
+												{AGENT_STATE_LABEL[facts().state]()}
+											</span>
+											<Show
+												when={t().agentType}
+												fallback={
+													<Show when={facts().line}>{(line) => <span class={s.branchTabLine}>{line()}</span>}</Show>
+												}
+											>
+												<span class={cx(s.branchTabLine, s.branchTabIntent)}>{facts().line}</span>
+											</Show>
+										</span>
+									)}
+								</Show>
+							</button>
+							<Show when={rich()}>
+								<CrossRepoChildren parent={t()} repoPath={props.repoPath} />
+								<SubagentList rows={subagents(t())} />
 							</Show>
-						</button>
+						</div>
 						<Show when={rich()}>
-							<CrossRepoChildren parent={t()} repoPath={props.repoPath} />
-							<SubagentList rows={subagents(t())} />
-							<For each={childrenOf(id)}>{(child) => renderTab(child, true)}</For>
+							<div class={s.branchTabChildren}>
+								<For each={childrenOf(id)}>{(child) => renderTab(child)}</For>
+							</div>
 						</Show>
-					</>
+					</div>
 				)}
 			</Show>
 		);
@@ -650,7 +679,7 @@ const BranchTabList: Component<{ terminalIds: string[]; repoPath: string }> = (p
 				visible={sessionMenu.visible()}
 				onClose={sessionMenu.close}
 			/>
-			<For each={topLevel()}>{(id) => renderTab(id, false)}</For>
+			<For each={topLevel()}>{(id) => renderTab(id)}</For>
 			<Show when={idleIds().length > 0}>
 				<Button
 					size="compact"
@@ -807,7 +836,12 @@ export const BranchItem: Component<{
 	const hasQuestion = () => props.branch.terminals.some((id) => terminalsStore.get(id)?.awaitingInput === "question");
 
 	// Debounced busy — centralized in terminalsStore with 2s hold
-	const hasBusy = () => props.branch.terminals.some((id) => terminalsStore.isBusy(id));
+	const isBackground = (id: string) => {
+		const term = terminalsStore.get(id);
+		return showsBackgroundWork(term?.shellState, term?.backgroundWork);
+	};
+	const hasBusy = () => props.branch.terminals.some((id) => !isBackground(id) && terminalsStore.isBusy(id));
+	const hasBackground = () => props.branch.terminals.some(isBackground);
 
 	const hasUnseen = () => props.branch.terminals.some((id) => terminalsStore.get(id)?.unseen);
 
@@ -957,6 +991,7 @@ export const BranchItem: Component<{
 			hasError={hasError()}
 			hasQuestion={hasQuestion()}
 			hasBusy={hasBusy()}
+			hasBackground={hasBackground()}
 			hasUnseen={hasUnseen()}
 			branchHasTerminals={props.branch.terminals.length > 0}
 		/>
@@ -1131,6 +1166,7 @@ export const BranchItem: Component<{
 				<Show when={swipeOpen()}>{renderActions(true)}</Show>
 				<div
 					class={cx(s.branchItem, props.isActive && s.active)}
+					data-sidebar-branch={props.branch.branchName}
 					onClick={() => props.onSelect()}
 					onContextMenu={ctxMenu.open}
 				>
@@ -1504,6 +1540,7 @@ export const RepoSection: Component<{
 }> = (props) => {
 	const [idleOpen, setIdleOpen] = createSignal(false);
 	const expanded = () => (props.idleSummary ? idleOpen() : props.repo.expanded);
+	const needsYouCount = () => waitingCountForRepo(props.repo.path);
 	const toggleExpanded = () => (props.idleSummary ? setIdleOpen((value) => !value) : props.onToggle());
 	const workingCount = createMemo(() => {
 		const ids = new Set(Object.values(props.repo.workspaces).flatMap((workspace) => workspace.terminals));
@@ -1725,7 +1762,7 @@ export const RepoSection: Component<{
 			>
 				<Show when={props.repo.collapsed}>
 					<span
-						class={s.repoInitials}
+						class={cx(s.repoInitials, needsYouCount() > 0 && s.repoInitialsNeedsYou)}
 						onClick={(e) => {
 							e.stopPropagation();
 							props.onToggleCollapsed();
@@ -1740,6 +1777,11 @@ export const RepoSection: Component<{
 					<span class={s.repoName} style={props.nameColor ? { color: props.nameColor } : undefined}>
 						{props.repo.displayName}
 					</span>
+					<Show when={!expanded() && needsYouCount() > 0}>
+						<span class={cx(s.richChip, s.needsYouChip)} data-testid="repo-needs-you-count">
+							{t("needsYou.title", "{count} need you", { count: String(needsYouCount()) })}
+						</span>
+					</Show>
 					<Show when={props.repo.detachedWorktrees?.length}>
 						<span class={s.richChip} data-testid="detached-worktree-count">
 							{props.repo.detachedWorktrees?.length} {t("sidebar.detached", "detached")}

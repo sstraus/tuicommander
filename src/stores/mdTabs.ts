@@ -6,6 +6,8 @@ import { branchKeyFor, repositoriesStore, resolveRepoPathFor } from "./repositor
 import { type BaseTab, createTabManager } from "./tabManager";
 import { terminalsStore } from "./terminals";
 
+// DEFERRED (2026-11-19) — keep the existing native MCP recovery path until its
+// callers migrate to shared tab recovery; general snapshots already retain these tabs.
 const MCP_RELOAD_KEY = "tui-commander-mcp-markdown-reload";
 
 // Zoom bounds mirror the terminal zoom (useTerminalLifecycle) for consistency.

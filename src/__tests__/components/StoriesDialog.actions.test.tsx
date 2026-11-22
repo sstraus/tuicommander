@@ -28,6 +28,8 @@ const story = {
 };
 
 beforeEach(() => {
+	// This subject exercises an explicitly selected plan, not the project-wide landing view.
+	storiesUi.reveal({ project: "/actions", planId: "p1", storyId: null });
 	storiesUi.setVisibility("all");
 	storiesUi.setStoryType("all");
 	storiesUi.setView("list");

@@ -37,9 +37,9 @@ Constraints:
 - `id` must match directory name exactly, non-empty
 - `main` must be a filename only (no path separators or `..`)
 - `minAppVersion` must be <= current app version (current: 0.3.x)
-- `capabilities`: subset of `pty:write`, `pty:read`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `ui:context-menu`, `ui:sidebar`, `ui:file-icons`, `ui:file-preview`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `fs:write`, `fs:rename`, `fs:scan`, `fs:delete`, `exec:cli`, `git:read`
+- `capabilities`: subset of `pty:write`, `pty:read`, `ui:markdown`, `ui:sound`, `ui:panel`, `ui:ticker`, `ui:context-menu`, `ui:sidebar`, `ui:file-icons`, `ui:file-preview`, `net:http`, `credentials:read`, `invoke:read_file`, `invoke:list_markdown_files`, `fs:read`, `fs:list`, `fs:watch`, `fs:write`, `fs:rename`, `fs:scan`, `fs:delete`, `exec:cli`, `git:read`, `stories:read`
 - `allowedUrls`: non-empty URL patterns required for `net:http` (supports `*` wildcard for path prefix matching); manifests with an empty or omitted list are rejected
-- `agentTypes`: optional array of agent type strings. When set, output watchers and structured event handlers only fire for terminals running a matching agent. Omit or use `[]` for universal plugins. Valid terminal values: `claude`, `gemini`, `opencode`, `codex`, `amp`, `cursor`, `goose`, `grok`, `droid`, `pi`, `ego`, `git`.
+- `agentTypes`: optional array of agent type strings. When set, output watchers and structured event handlers only fire for terminals running a matching agent. Omit or use `[]` for universal plugins. Valid terminal values: `claude`, `agy`, `opencode`, `codex`, `amp`, `cursor`, `goose`, `grok`, `droid`, `pi`, `ego`, `git`.
 - `binaries`: optional array of CLI binary names this plugin may execute via `exec:cli` (e.g. `["rtk", "mdkb"]`). The on-disk manifest is the source of truth — binaries not declared here are rejected.
 - `providers`: optional account providers this plugin may use with `httpFetch({account})`; requires `net:http`. An entry is either a core provider id (only `"github"`) or a token-only descriptor that core registers when the plugin loads and removes when it unloads (accounts and credentials stay): `{ "id": "jira", "label": "Jira", "kinds": ["basic", "bearer"], "verify": { "path": "/rest/api/3/myself", "loginPointer": "/displayName" } }`. `kinds` accepts `bearer` and `basic`; `verify.path` is a path under the site URL that the account Test calls, and `loginPointer` is the JSON Pointer of the viewer name in its response. An id may appear once; a declared descriptor must not use a core id.
 - Module default export must have `id`, `onload(host)`, `onunload()`
@@ -197,10 +197,10 @@ Plugin packages are external desktop ES modules; browser/PWA clients do not impo
 These inventories are checked against the capability validator, the host object and the injected stylesheet. The API sections below explain how to use them. CSS names are class tokens: use a leading dot in selectors, not in HTML class attributes.
 
 ### Capability inventory
-`credentials:read`, `exec:cli`, `fs:delete`, `fs:list`, `fs:read`, `fs:rename`, `fs:scan`, `fs:watch`, `fs:write`, `git:read`, `invoke:list_markdown_files`, `invoke:read_file`, `net:http`, `pty:read`, `pty:write`, `ui:context-menu`, `ui:file-icons`, `ui:file-preview`, `ui:markdown`, `ui:panel`, `ui:sidebar`, `ui:sound`, `ui:ticker`.
+`credentials:read`, `exec:cli`, `fs:delete`, `fs:list`, `fs:read`, `fs:rename`, `fs:scan`, `fs:watch`, `fs:write`, `git:read`, `stories:read`, `invoke:list_markdown_files`, `invoke:read_file`, `net:http`, `pty:read`, `pty:write`, `ui:context-menu`, `ui:file-icons`, `ui:file-preview`, `ui:markdown`, `ui:panel`, `ui:sidebar`, `ui:sound`, `ui:ticker`.
 
 ### Host method inventory
-`addItem`, `clearTicker`, `deleteBuildArtifact`, `execCli`, `getActiveRepo`, `getActiveRepoPath`, `getActiveTerminalSessionId`, `getClaudeProjectDir`, `getGitBranches`, `getGitDiff`, `getPrNotifications`, `getRecentCommits`, `getRemotes`, `getRepoPathForSession`, `getRepos`, `getSessionCwd`, `getSettings`, `getTerminalState`, `githubPrAction`, `githubReviewThreads`, `httpFetch`, `invoke`, `linkItem`, `listDirectory`, `log`, `onStateChange`, `openEditorTab`, `openMarkdownFile`, `openMarkdownFileBackground`, `openMarkdownPanel`, `openPanel`, `playNotificationSound`, `readCredential`, `readFile`, `readFileBase64`, `fileSize`, `readFileRange`, `readFileTail`, `readFiles`, `readSessionOutput`, `registerCommand`, `registerContextMenuAction`, `registerDashboard`, `registerFileIconProvider`, `registerFilePreview`, `registerMarkdownProvider`, `registerOutputWatcher`, `registerSection`, `registerSidebarPanel`, `registerStructuredEventHandler`, `registerTerminalAction`, `registerUrlResolver`, `registerWorkItemProvider`, `removeItem`, `renamePath`, `scanBuildArtifacts`, `sendAgentInput`, `sendAgentInputIfEmpty`, `setTicker`, `settings`, `startWork`, `trimBuildArtifact`, `unlinkItem`, `updateItem`, `watchPath`, `writeFile`, `writeFileBase64`, `writePty`.
+`addItem`, `clearTicker`, `deleteBuildArtifact`, `execCli`, `getActiveRepo`, `getActiveRepoPath`, `getActiveTerminalSessionId`, `getClaudeProjectDir`, `getGitBranches`, `getGitDiff`, `getPrNotifications`, `getRecentCommits`, `getRemotes`, `getRepoPathForSession`, `getRepos`, `getSessionCwd`, `getSettings`, `getStoryCount`, `watchStoryCount`, `getTerminalState`, `githubPrAction`, `githubReviewThreads`, `httpFetch`, `invoke`, `linkItem`, `listDirectory`, `log`, `onStateChange`, `openEditorTab`, `openMarkdownFile`, `openMarkdownFileBackground`, `openMarkdownPanel`, `openPanel`, `playNotificationSound`, `readCredential`, `readFile`, `readFileBase64`, `fileSize`, `readFileRange`, `readFileTail`, `readFiles`, `readSessionOutput`, `registerCommand`, `registerContextMenuAction`, `registerDashboard`, `registerFileIconProvider`, `registerFilePreview`, `registerMarkdownProvider`, `registerOutputWatcher`, `registerSection`, `registerSidebarPanel`, `registerStructuredEventHandler`, `registerTerminalAction`, `registerUrlResolver`, `registerWorkItemProvider`, `removeItem`, `renamePath`, `scanBuildArtifacts`, `sendAgentInput`, `sendAgentInputIfEmpty`, `setTicker`, `settings`, `startWork`, `trimBuildArtifact`, `unlinkItem`, `updateItem`, `watchPath`, `writeFile`, `writeFileBase64`, `writePty`.
 
 ### Base CSS class inventory
 `badge`, `badge-accent`, `badge-error`, `badge-muted`, `badge-p1`, `badge-p2`, `badge-p3`, `badge-success`, `badge-warning`, `btn`, `btn-danger`, `btn-primary`, `card`, `critical`, `danger`, `dash-header`, `dash-meter`, `dash-meter-fill`, `dash-section`, `dash-section-hint`, `dash-section-title`, `dash-stat`, `dash-stat-grid`, `dash-stat-label`, `dash-stat-sub`, `dash-stat-value`, `dash-subtitle`, `dash-title`, `dashboard`, `empty-state`, `error`, `filter-bar`, `hint`, `num`, `ok`, `primary`, `show`, `success`, `toast`, `warn`.
@@ -257,6 +257,18 @@ host.addItem({
 host.updateItem(id: string, updates: Partial<ActivityItem>)
 host.removeItem(id: string)
 ```
+
+### Selected-backend story count
+
+`host.getStoryCount(repoPath)` requires `stories:read` and a registered repository.
+Returns `{project,backend,generation,openCount}`: all non-archived plans and open,
+non-archived stories, with no type filter, from the same selected-backend project
+projection as Plans and Stories. No story content or arbitrary actions are exposed.
+`host.watchStoryCount(repoPath, callback)` returns `Promise<Disposable>` and
+invalidates on story/backend/workflow/repository changes and owning-host resync.
+Subscribe before reading, reread after each invalidation, dispose when switching
+repositories. Unload disposes automatically. Read failures reject; clear stale
+counts instead of falling back to native data or filesystem inference.
 
 ### Tier 2: Read-Only State (always available)
 

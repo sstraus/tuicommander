@@ -1,4 +1,4 @@
-import { terminalVisualState } from "../../utils/terminalVisualState";
+import { showsBackgroundWork, terminalVisualState } from "../../utils/terminalVisualState";
 import type { SessionStatus } from "../components/StatusBadge";
 import type { SessionInfo } from "../useSessions";
 
@@ -10,11 +10,13 @@ export function deriveStatus(session: SessionInfo): SessionStatus {
 	const s = session.state;
 	if (!s) return "idle";
 	if (s.rate_limited) return "rate-limited";
+	const background = showsBackgroundWork(s.shell_state, s.background_work);
 	const visual = terminalVisualState({
 		error: !!s.last_error,
 		question: s.awaiting_input || s.agent_state === "awaiting_input",
 		stalled: s.stalled === true,
-		busy: s.shell_state === "busy" || s.agent_state === "working" || (s.active_sub_tasks ?? 0) > 0,
+		busy: !background && (s.shell_state === "busy" || s.agent_state === "working" || (s.active_sub_tasks ?? 0) > 0),
+		background,
 		unseen: session.unseen ?? s.agent_state === "completed",
 		idle: s.shell_state === "idle" || s.agent_state === "idle",
 	});

@@ -2,12 +2,11 @@ use super::model::{
     CRITERIA_INCOMPLETE, NewPlan, NewStory, Plan, PlanState, PlanView, Story, StoryCommand,
     StoryOrigin, StoryPatch, StoryRead, StoryStatus, StoryTransition, StoryTransitionActor,
 };
-use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
-use std::time::Duration;
 use uuid::Uuid;
 
 mod amendments;
@@ -23,14 +22,69 @@ mod records;
 mod transitions;
 mod workflow_proposals;
 pub(crate) use external_ledger::{ExternalExecution, ExternalTransition};
+pub(crate) const EXTERNAL_LEDGER_SCHEMA: &str = external_ledger::SCHEMA;
+pub(crate) const INGEST_SCHEMA: &str = ingest::SCHEMA;
 pub(crate) use transitions::{apply_command, only_manual_pending};
 
 pub(super) use ingest::IngestVersion;
 use records::*;
 
-const STORE_FILE: &str = "stories.sqlite3";
-const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-const SCHEMA_VERSION: i64 = 6;
+/// Story tables in `tuic.sqlite3`; installed by [`crate::db::TUIC_SCHEMA`].
+pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS plans (
+        id TEXT PRIMARY KEY,
+        project TEXT NOT NULL,
+        title TEXT NOT NULL,
+        source TEXT NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 1,
+        archived INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS plans_by_project ON plans(project);
+    CREATE TABLE IF NOT EXISTS stories (
+        id TEXT PRIMARY KEY,
+        plan_id TEXT NOT NULL REFERENCES plans(id),
+        document TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN
+          ('backlog','ready','in_progress','review','qa','done','blocked','wontfix')),
+        revision INTEGER NOT NULL,
+        claim_session TEXT
+    );
+    CREATE INDEX IF NOT EXISTS stories_by_plan ON stories(plan_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS one_story_per_session
+      ON stories(claim_session) WHERE claim_session IS NOT NULL;
+    CREATE TABLE IF NOT EXISTS story_notes (
+        id TEXT PRIMARY KEY,
+        story_id TEXT NOT NULL REFERENCES stories(id),
+        document TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS notes_by_story ON story_notes(story_id);
+    CREATE TABLE IF NOT EXISTS workflow_story_proposals (
+        run_id TEXT NOT NULL,
+        proposal_key TEXT NOT NULL,
+        story_id TEXT NOT NULL REFERENCES stories(id),
+        input_sha256 TEXT NOT NULL,
+        PRIMARY KEY(run_id, proposal_key)
+    );
+    CREATE TABLE IF NOT EXISTS workflow_plan_proposals (
+        run_id TEXT NOT NULL,
+        proposal_key TEXT NOT NULL,
+        plan_id TEXT NOT NULL REFERENCES plans(id),
+        payload TEXT NOT NULL,
+        PRIMARY KEY(run_id, proposal_key)
+    );
+    CREATE TABLE IF NOT EXISTS archive_history (
+        entity_id TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        archived INTEGER NOT NULL,
+        actor_json TEXT NOT NULL,
+        PRIMARY KEY(entity_id, revision)
+    );
+    CREATE TABLE IF NOT EXISTS story_transitions (
+        story_id TEXT NOT NULL REFERENCES stories(id),
+        revision INTEGER NOT NULL,
+        command_json TEXT NOT NULL,
+        actor_json TEXT NOT NULL,
+        PRIMARY KEY(story_id, revision)
+    );";
 
 #[derive(Debug)]
 pub struct StoryStore {
@@ -40,12 +94,12 @@ pub struct StoryStore {
 impl StoryStore {
     /// The owning host stores story data beside its configuration, never in a repository.
     pub fn open() -> Result<Self, String> {
-        Self::open_at(&crate::config::config_dir().join(STORE_FILE))
+        Self::open_at(&crate::db::path(crate::db::TUIC_DB))
     }
 
     /// Session teardown is common even when no story has ever been created.
     pub fn release_closed_session(session: &str) -> Result<usize, String> {
-        let path = crate::config::config_dir().join(STORE_FILE);
+        let path = crate::db::path(crate::db::TUIC_DB);
         if !path.exists() {
             return Ok(0);
         }
@@ -59,8 +113,7 @@ impl StoryStore {
 
     /// Check for a claim without opening the schema or acquiring a write transaction.
     fn session_has_claim(path: &Path, session: &str) -> Result<bool, String> {
-        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .map_err(|e| format!("open story store read-only: {e}"))?;
+        let conn = crate::db::open_read_only(path)?;
         conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM stories WHERE claim_session=?1)
                OR EXISTS(SELECT 1 FROM external_story_execution WHERE claim_session=?1)",
@@ -87,141 +140,8 @@ impl StoryStore {
     }
 
     fn open_connection(path: &Path) -> Result<Connection, String> {
-        let mut conn = Connection::open(path).map_err(|e| format!("open story store: {e}"))?;
-        conn.busy_timeout(BUSY_TIMEOUT)
-            .map_err(|e| format!("set story store timeout: {e}"))?;
-        conn.pragma_update(None, "journal_mode", "WAL")
-            .map_err(|e| format!("enable story store WAL: {e}"))?;
-        crate::sqlite_once::hold_open(path);
-        conn.pragma_update(None, "foreign_keys", "ON")
-            .map_err(|e| format!("enable story store foreign keys: {e}"))?;
-        let version: i64 = conn
-            .pragma_query_value(None, "user_version", |row| row.get(0))
-            .map_err(|e| format!("read story schema version: {e}"))?;
-        if version > SCHEMA_VERSION {
-            return Err(format!(
-                "story schema version {version} is newer than supported version {SCHEMA_VERSION}"
-            ));
-        }
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS plans (
-                id TEXT PRIMARY KEY,
-                project TEXT NOT NULL,
-                title TEXT NOT NULL,
-                source TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS plans_by_project ON plans(project);
-            CREATE TABLE IF NOT EXISTS stories (
-                id TEXT PRIMARY KEY,
-                plan_id TEXT NOT NULL REFERENCES plans(id),
-                document TEXT NOT NULL,
-                status TEXT NOT NULL CHECK(status IN
-                  ('backlog','ready','in_progress','review','qa','done','blocked','wontfix')),
-                revision INTEGER NOT NULL,
-                claim_session TEXT
-            );
-            CREATE INDEX IF NOT EXISTS stories_by_plan ON stories(plan_id);
-            CREATE UNIQUE INDEX IF NOT EXISTS one_story_per_session
-              ON stories(claim_session) WHERE claim_session IS NOT NULL;
-            CREATE TABLE IF NOT EXISTS workflow_story_proposals (
-                run_id TEXT NOT NULL,
-                proposal_key TEXT NOT NULL,
-                story_id TEXT NOT NULL REFERENCES stories(id),
-                input_sha256 TEXT NOT NULL,
-                PRIMARY KEY(run_id, proposal_key)
-            );
-            CREATE TABLE IF NOT EXISTS workflow_plan_proposals (
-                run_id TEXT NOT NULL,
-                proposal_key TEXT NOT NULL,
-                plan_id TEXT NOT NULL REFERENCES plans(id),
-                payload TEXT NOT NULL,
-                PRIMARY KEY(run_id, proposal_key)
-            );
-            CREATE TABLE IF NOT EXISTS archive_history (
-                entity_id TEXT NOT NULL,
-                revision INTEGER NOT NULL,
-                archived INTEGER NOT NULL,
-                actor_json TEXT NOT NULL,
-                PRIMARY KEY(entity_id, revision)
-            );
-            CREATE TABLE IF NOT EXISTS story_transitions (
-                story_id TEXT NOT NULL REFERENCES stories(id),
-                revision INTEGER NOT NULL,
-                command_json TEXT NOT NULL,
-                actor_json TEXT NOT NULL,
-                PRIMARY KEY(story_id, revision)
-            );
-            ",
-        )
-        .map_err(|e| format!("prepare story schema: {e}"))?;
-        conn.execute_batch(external_ledger::SCHEMA)
-            .map_err(|e| format!("prepare external story ledger: {e}"))?;
-        if version < SCHEMA_VERSION {
-            // SQLite cannot alter a CHECK constraint. Keep stored documents byte-identical.
-            conn.pragma_update(None, "foreign_keys", "OFF")
-                .map_err(|e| format!("disable foreign keys for story schema: {e}"))?;
-            let tx = immediate(&mut conn)?;
-            let current: i64 = tx
-                .pragma_query_value(None, "user_version", |row| row.get(0))
-                .map_err(|e| format!("read locked story schema: {e}"))?;
-            if current > SCHEMA_VERSION {
-                return Err(format!(
-                    "story schema version {current} is newer than supported version {SCHEMA_VERSION}"
-                ));
-            }
-            if current < 2 {
-                tx.execute_batch(
-                    "CREATE TABLE stories_qa (
-                        id TEXT PRIMARY KEY,
-                        plan_id TEXT NOT NULL REFERENCES plans(id),
-                        document TEXT NOT NULL,
-                        status TEXT NOT NULL CHECK(status IN
-                          ('backlog','ready','in_progress','review','qa','done','blocked','wontfix')),
-                        revision INTEGER NOT NULL,
-                        claim_session TEXT
-                    );
-                    INSERT INTO stories_qa SELECT * FROM stories;
-                    DROP TABLE stories;
-                    ALTER TABLE stories_qa RENAME TO stories;
-                    CREATE INDEX stories_by_plan ON stories(plan_id);
-                    CREATE UNIQUE INDEX one_story_per_session
-                      ON stories(claim_session) WHERE claim_session IS NOT NULL;"
-                ).map_err(|e| format!("expand story QA status constraint: {e}"))?;
-            }
-            if current < 3 {
-                tx.execute_batch(
-                    "CREATE TABLE IF NOT EXISTS story_notes (
-                        id TEXT PRIMARY KEY,
-                        story_id TEXT NOT NULL REFERENCES stories(id),
-                        document TEXT NOT NULL
-                    );
-                    CREATE INDEX IF NOT EXISTS notes_by_story ON story_notes(story_id);",
-                )
-                .map_err(|e| format!("add story note schema: {e}"))?;
-            }
-            if current < 4 {
-                tx.execute_batch(
-                    "ALTER TABLE plans ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;",
-                )
-                .map_err(|e| format!("add plan revision: {e}"))?;
-            }
-            if current < 5 {
-                tx.execute_batch(
-                    "ALTER TABLE plans ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;",
-                )
-                .map_err(|e| format!("add plan archive metadata: {e}"))?;
-            }
-            if current < 6 {
-                ingest::migrate(&tx)?;
-            }
-            tx.pragma_update(None, "user_version", SCHEMA_VERSION)
-                .map_err(|e| format!("save story schema version: {e}"))?;
-            tx.commit()
-                .map_err(|e| format!("commit story schema: {e}"))?;
-            conn.pragma_update(None, "foreign_keys", "ON")
-                .map_err(|e| format!("restore story foreign keys: {e}"))?;
-        }
-        Ok(conn)
+        crate::db::open_with(path, &crate::db::TUIC_SCHEMA)
+            .map_err(|e| format!("open story store: {e}"))
     }
 
     pub fn create_plan(&self, input: NewPlan) -> Result<Plan, String> {

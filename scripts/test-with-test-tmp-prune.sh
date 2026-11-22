@@ -6,6 +6,10 @@
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
+# These fixtures nest the fake host temp dir past the mbx socket budget, and
+# they test the wrapper's path logic, not mbx: run without it.
+PATH="$(. "$root/scripts/test-tmp-lib.sh" && tuic_path_without_mbx "$PATH")"
+export PATH
 base="$(. "$root/scripts/test-tmp-lib.sh" && tuic_test_tmp_root "$root")"
 fixture="$(mktemp -d "${base%/}/tuic-prune-test.XXXXXX")"
 cleanup() {

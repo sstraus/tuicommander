@@ -1022,7 +1022,7 @@ pub(crate) fn supports_no_alt_screen(agent_type: &str, path: &str) -> bool {
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
             );
-            if help_advertises_flag(&help, flag) {
+            if help_advertises_flag(&help, crate::agent_hook_launch::screen_flag_option(flag)) {
                 Ok(true)
             } else if output.status.success() && !help.trim().is_empty() {
                 Ok(false)
@@ -1072,7 +1072,7 @@ pub(crate) fn supports_no_alt_screen(agent_type: &str, path: &str) -> bool {
 pub(crate) const KNOWN_AGENT_BINARIES: &[&str] = &[
     "claude",
     "codex",
-    "gemini",
+    "agy",
     "grok",
     "opencode",
     "amp",
@@ -1337,7 +1337,7 @@ fn get_binary_version(path: &str) -> Option<String> {
 
 /// Whether an agent's CLI accepts a bare positional prompt as its first argument.
 ///
-/// Only Claude's CLI does. codex/gemini/goose require a subcommand or an
+/// Only Claude's CLI does. codex/agy/goose require a subcommand or an
 /// explicit flag, and hand a bare prompt straight to their clap parser, which
 /// rejects it with a usage error and exits with code 2. Spawn paths use this to
 /// fail fast instead of launching a process that dies immediately with no report.
@@ -1360,7 +1360,10 @@ pub(crate) fn default_prompt_args(agent_type: &str) -> Option<Vec<String>> {
         // is preserved by merge_mcp_params_into_args's claude flags-first rule.)
         "claude" => &["{prompt}"],
         // Positional prompt (interactive with the task pre-filled).
-        "gemini" | "codex" | "opencode" | "grok" | "amp" | "cursor" | "droid" => &["{prompt}"],
+        "codex" | "opencode" | "grok" | "amp" | "cursor" | "droid" | "ego" => &["{prompt}"],
+        // agy 1.5.10: `-i/--prompt-interactive` runs the prompt, then stays
+        // interactive; the help lists no positional prompt.
+        "agy" => &["-i", "{prompt}"],
         // Goose 1.49: `session` takes no positional prompt (exit 2); `run -s -t`
         // runs the text, then stays interactive.
         "goose" => &["run", "-s", "-t", "{prompt}"],
@@ -1453,7 +1456,9 @@ pub(crate) async fn spawn_agent(
         },
         move || {
             // Build agent command
-            let mut cmd = CommandBuilder::new(&spawn_binary_path);
+            let mut cmd = CommandBuilder::new(crate::windows_launch::resolve_launch_program(
+                &spawn_binary_path,
+            ));
             crate::pty::sanitize_pty_parent_env(&mut cmd);
 
             let mut launch_args = Vec::new();
@@ -1969,7 +1974,7 @@ mod tests {
     fn only_claude_accepts_a_bare_prompt() {
         assert!(agent_accepts_bare_prompt("claude"));
         // Every other known agent CLI would exit with code 2 on a bare prompt.
-        for agent in ["codex", "gemini", "goose", "opencode", "amp"] {
+        for agent in ["codex", "agy", "goose", "opencode", "amp"] {
             assert!(
                 !agent_accepts_bare_prompt(agent),
                 "{agent} must not be treated as accepting a bare prompt"
@@ -1980,15 +1985,17 @@ mod tests {
     #[test]
     fn default_prompt_args_cover_known_agents() {
         // Positional-prompt agents.
-        for agent in [
-            "gemini", "codex", "opencode", "grok", "amp", "cursor", "droid",
-        ] {
+        for agent in ["codex", "opencode", "grok", "amp", "cursor", "droid", "ego"] {
             assert_eq!(
                 default_prompt_args(agent),
                 Some(vec!["{prompt}".to_string()]),
                 "{agent} should get a positional prompt template"
             );
         }
+        assert_eq!(
+            default_prompt_args("agy"),
+            Some(vec!["-i".to_string(), "{prompt}".to_string()])
+        );
         // Goose 1.49: `goose session <prompt>` exits 2 (unrecognized subcommand);
         // `run -s -t` runs the text and stays interactive.
         assert_eq!(
@@ -1996,7 +2003,7 @@ mod tests {
             Some(["run", "-s", "-t", "{prompt}"].map(String::from).to_vec())
         );
         // Every template must contain the placeholder so substitution works.
-        for agent in ["gemini", "codex", "goose"] {
+        for agent in ["agy", "codex", "goose"] {
             assert!(
                 default_prompt_args(agent)
                     .unwrap()

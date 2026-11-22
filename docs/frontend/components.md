@@ -389,6 +389,8 @@ mouse interactions keep their existing behavior.
 
 Branch rows keep the status icon separate from the always-visible agents disclosure button. Clicking status selects the workspace; the chevron toggles its agents.
 
+The Command Palette uses `revealRepoInSidebar` to expand and scroll to the selected repository. The reveal path uses the same repository filter as the sidebar and clears it only when the filter excludes the target.
+
 **Features:**
 - Expandable/collapsible repository entries
 - Icon-only collapsed mode
@@ -653,6 +655,8 @@ Ideas panel with per-repo filtering and terminal integration.
 
 ### StoriesDialog (`StoriesDialog/`)
 
+The **List / Kanban** switch sits in the Stories column header, immediately before **New story**. Status, type and archive filters stay below it.
+
 Choose **All plans** in the Plans column to show stories from every non-archived plan together in List or Kanban. Each story row and card shows its plan title. Status, type and archived-story filters apply to the combined view. **Archived plans** switches the combined view to archived plans only, as it does for a single-plan view. Select a specific plan to filter back and enable plan editing or story creation. Story detail, status actions, workflow starts and run history use the selected story’s own plan; dependency choices stay inside that plan.
 
 Archive and restore controls send the selected record revision to the shared native service. Independent Archived plans and Archived stories toggles select archived records; Rust projects list ids and Kanban columns. Archived details stay readable, but work actions and new-story creation under archived plans are unavailable until restoration. Ownership refusals use the existing error banner.
@@ -723,6 +727,8 @@ Native SolidJS component (not a plugin) showing Claude API usage data. Displayed
 
 Quota presentation is fed by `providerQuotaStore`: the initial `get_provider_quotas` response includes each key's `session_ids`. The store subscribes to quota and binding events before it applies that response. Session changes select cached entries; they do not start a provider read. A native agent badge accepts only its own registry owner and provider; an ego badge accepts only the ego owner. A previous agent's binding on the same PTY cannot supply quota text or a dashboard action while reconciliation is pending. An explicit refresh cannot store a different subscription's response under the requested key. Claude plan and extra-usage sections use the optional typed `detail` response, while quota bars use the registry windows. The local session statistics and timeline still refresh separately.
 
+The remaining-credits ticker keeps the last good quota during transient read failures. The first two actual failed reads stay quiet; from the third, it adds `retry`. Without a previous value it shows `updating` before that threshold. A successful read or newer passive quota clears the warning. Authentication and response-contract errors remain immediate. This display policy does not change provider reads, retry timing or cooldowns.
+
 ### CodexUsageDashboard (`CodexUsageDashboard/`)
 
 Native dashboard for the official Codex App Server account snapshot. Shows rate
@@ -736,7 +742,11 @@ Codex quota bars and typed provider detail come from the same registry store. Ba
 Native dashboard for Grok Build's `_x.ai/billing` ACP extension. Shows the
 current billing-period percentage, subscription tier, period end, on-demand
 used/cap amounts, and prepaid balance. It shares the usage-dashboard visual
-system and never turns an absent provider value into zero.
+system and never turns an absent provider value into zero. Billing detail remains
+available when the provider omits its optional usage percentage; no quota window
+is invented. An unknown Grok period appears as `usage` without an inferred duration.
+Reusing the dashboard for another session or the host refreshes its selected data
+immediately and discards replies from a previous selection.
 
 ## UI Primitives (`components/ui/`)
 
@@ -925,6 +935,8 @@ GitHub Tasks boards (#1846-55d7): the optional provider `listBoards(signal)` por
 
 TasksDetail provides Follow task / Unfollow task in its toolbar. Settings → Notifications has a Tasks section with an independent default-off OS notice preference.
 
+`PanelOrchestrator` wraps the inline File Browser and Git views in `RetainedPanel`. To opt in another panel, pass its effective `visible` flag to both the wrapper and the child, plus `retain` while eviction would lose unfinished work. The wrapper cancels pending eviction on reopen or disposal and never mounts a panel before first use. Keep small restorable values in the parent, outside the retained subtree, and scope repository state by filesystem root. Keep DOM, live requests, listings and caches inside the child. Detached window owners do not use the retention wrapper. File Browser restores the viewport by row identity and offset after expanded listings settle, even when a quick reopen reuses the mounted instance.
+
 FileBrowserPanel subscribes to successful folder-drop completion and routes it through its existing mutation refresh. The subscription is scoped to the filesystem root and owning connection, and is removed when the panel unmounts.
 
 External changes use nonrecursive directory watches for the current listing and each visible expanded tree node. The panel reconciles this set without restarting unchanged watches, invalidates the changed relative cache key, and reloads cached children when their watch resumes after a collapse or hidden panel. Watches stop when their directory leaves the visible tree, during search, or when the panel closes. This path does not depend on Git status or repository revisions. The backend shares one native watch per absolute path and counts successful acquisitions across IPC and HTTP consumers, so one panel releasing a path does not stop another panel's watch.
@@ -1085,3 +1097,9 @@ The Stories dialog run history expands **Inspect delivery and cost** on demand. 
 - `AgentHealthView` (Activity Dashboard, including detached windows) renders health entries only: Failed, Stalled, Input stalled and Blocked. A missing live stage alone is not a health warning, even for a managed agent. Detached navigation is routed back to the main window.
 
 The bounded correction-region section renders the backend-generated criteria, selected activity, correction limit and full input/output/control/loop/subflow contract. It opens the exact selected child publication read only and validates before adopting the generated definition. Retained inspection displays consumed corrections from the durable correction loop iteration, excluding the initial attempt; there is no independent UI budget counter.
+
+`RunList` opens active/recent neutral runs from `NeutralInspection`. `RunGraph`
+renders the exact retained graph and Rust-authored node states, independently of
+the editable draft or event page. `workflowApprovals` reconciles retained pending
+questions and attention entries; `WorkflowApprovalHost` mounts in both desktop
+application overlays and the mobile shell and submits the existing fenced answers.

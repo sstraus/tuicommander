@@ -1,7 +1,7 @@
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { createEffect, createMemo, For, Show } from "solid-js";
 import type { WorkItem, WorkItemGroup, WorkItemRef, WorkItemTone } from "../../../types/work-items.gen";
-import { formatRelativeTime } from "../../../utils/formatRelativeTime";
+import { formatElapsedShort } from "../../../utils/time";
 import s from "./tasksList.module.css";
 
 interface TaskRowsProps {
@@ -28,7 +28,7 @@ const assigneeLabel = (item: WorkItem) =>
 	item.assignees.length
 		? `${item.assignees[0]?.name}${item.assignees.length > 1 ? ` +${item.assignees.length - 1}` : ""}`
 		: "Unassigned";
-const age = (updatedAt: string) => formatRelativeTime(Math.max(0, Date.now() - Date.parse(updatedAt)));
+const age = (updatedAt: string) => formatElapsedShort(Math.max(0, Date.now() - Date.parse(updatedAt)));
 
 type DisplayRow = { kind: "group"; group: WorkItemGroup } | { kind: "item"; item: WorkItem; groupId: string };
 

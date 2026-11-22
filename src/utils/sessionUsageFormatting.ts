@@ -46,3 +46,13 @@ export function formatQuotaWindowDetails(quota: QuotaWindow, timeZone?: string):
 	const reset = quota.resets_at ? formatUsageTime(quota.resets_at, timeZone) : null;
 	return `${window} window: ${quota.used_percent}% used${reset ? `, resets ${reset} local` : ""}`;
 }
+
+/** Compact token counts: 25241643691 -> "25.2B". Raw digits are unreadable. */
+export function formatTokens(n: number | null): string {
+	if (n === null || !Number.isFinite(n)) return "--";
+	const abs = Math.abs(n);
+	if (abs >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+	if (abs >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+	if (abs >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+	return String(n);
+}

@@ -14,10 +14,63 @@ use sha2::{Digest, Sha256};
 pub struct ToolEntry {
     /// Tool name (e.g., "session", "okm__get_claudecode_overview")
     pub name: String,
+    /// The one action this entry covers, for a tool discovered per action.
+    pub action: Option<String>,
     /// One-line description (first sentence)
     pub summary: String,
-    /// Full tool definition (name + description + inputSchema)
+    /// Full tool definition (name + description + inputSchema), or one action's slice
     pub definition: Value,
+    /// Whether ranking and name terms can reach the entry. A tool discovered per
+    /// action keeps an unranked whole entry for exact `select:` and schema lookup.
+    pub ranked: bool,
+}
+
+/// One document to index.
+#[derive(Debug, Clone)]
+pub struct IndexDoc {
+    definition: Value,
+    action: Option<String>,
+    ranked: bool,
+    /// Ranking text, when it differs from the definition's description.
+    text: Option<String>,
+    /// Result summary, when the description's first sentence does not tell entries apart.
+    summary: Option<String>,
+}
+
+impl IndexDoc {
+    /// A whole tool that ranking can reach.
+    pub fn whole(definition: Value) -> Self {
+        Self {
+            definition,
+            action: None,
+            ranked: true,
+            text: None,
+            summary: None,
+        }
+    }
+
+    /// A whole tool that only exact selection and schema lookup can reach.
+    pub fn unranked(definition: Value) -> Self {
+        Self {
+            definition,
+            action: None,
+            ranked: false,
+            text: None,
+            summary: None,
+        }
+    }
+
+    /// One action of a tool, ranked on that action's own text: directives every
+    /// action shares do not tell actions apart, so they stay out of the ranking.
+    pub fn action(definition: Value, action: &str, text: String, summary: String) -> Self {
+        Self {
+            definition,
+            action: Some(action.to_owned()),
+            ranked: true,
+            text: Some(text),
+            summary: Some(summary),
+        }
+    }
 }
 
 /// BM25 search index over MCP tool definitions.
@@ -43,21 +96,42 @@ impl ToolSearchIndex {
     ///
     /// Each object is expected to have `name` (string) and `description` (string) fields.
     pub fn build(tools: &[Value]) -> Self {
-        let mut entries = Vec::with_capacity(tools.len());
-        let mut corpus = Vec::with_capacity(tools.len());
+        Self::build_docs(tools.iter().cloned().map(IndexDoc::whole).collect())
+    }
 
-        for tool in tools {
-            let name = tool["name"].as_str().unwrap_or("").to_string();
-            let desc = tool["description"].as_str().unwrap_or("").to_string();
-            let summary = first_sentence(&desc);
+    /// Build from explicit documents, some of them per action.
+    pub fn build_docs(docs: Vec<IndexDoc>) -> Self {
+        let generation = Self::docs_generation(&docs);
+        let mut entries = Vec::with_capacity(docs.len());
+        let mut corpus = Vec::with_capacity(docs.len());
 
-            // BM25 corpus entry: combine name and description for searchability
-            corpus.push(format!("{} {}", name, desc));
+        for doc in docs {
+            let name = doc.definition["name"].as_str().unwrap_or("").to_string();
+            let desc = doc.definition["description"]
+                .as_str()
+                .unwrap_or("")
+                .to_string();
+            let summary = doc.summary.clone().unwrap_or_else(|| first_sentence(&desc));
+
+            // BM25 corpus entry: combine name and description for searchability.
+            // An action document adds its action words; an unranked one is empty.
+            corpus.push(match (&doc.action, doc.ranked) {
+                (_, false) => String::new(),
+                (Some(action), true) => format!(
+                    "{} {} {}",
+                    name,
+                    action.replace('_', " "),
+                    doc.text.as_deref().unwrap_or(&desc)
+                ),
+                (None, true) => format!("{} {}", name, desc),
+            });
 
             entries.push(ToolEntry {
                 name,
+                action: doc.action,
                 summary,
-                definition: tool.clone(),
+                definition: doc.definition,
+                ranked: doc.ranked,
             });
         }
 
@@ -66,8 +140,22 @@ impl ToolSearchIndex {
         Self {
             engine,
             entries,
-            generation: Self::catalogue_generation(tools),
+            generation,
         }
+    }
+
+    /// Content identity of a document set; equal to [`Self::catalogue_generation`]
+    /// for whole tools only.
+    pub fn docs_generation(docs: &[IndexDoc]) -> String {
+        if docs.iter().all(|doc| doc.action.is_none() && doc.ranked) {
+            let tools: Vec<Value> = docs.iter().map(|doc| doc.definition.clone()).collect();
+            return Self::catalogue_generation(&tools);
+        }
+        let identity: Vec<Value> = docs
+            .iter()
+            .map(|doc| serde_json::json!([doc.definition, doc.action, doc.ranked]))
+            .collect();
+        Self::catalogue_generation(&identity)
     }
 
     /// Opaque content identity. Rebuilding an unchanged catalogue preserves admissions.
@@ -89,12 +177,18 @@ impl ToolSearchIndex {
         }
         let query = query.trim();
         if let Some(name) = query.strip_prefix("select:") {
-            return self
-                .entries
-                .iter()
-                .find(|e| e.name == name)
-                .into_iter()
-                .collect();
+            let name = name.trim();
+            let exact = self.entries.iter().find(|e| e.name == name);
+            // An action entry is named `<tool>_<action>`; `select:<tool>.<action>`,
+            // `<tool>/<action>` and `<tool> <action>` name the same entry.
+            let action = || {
+                let (tool, action) = name.rsplit_once(['.', '/', ' '])?;
+                let (tool, action) = (tool.trim(), action.trim());
+                self.entries.iter().find(|e| {
+                    e.action.as_deref() == Some(action) && e.name == format!("{tool}_{action}")
+                })
+            };
+            return exact.or_else(action).into_iter().collect();
         }
 
         let mut required = Vec::new();
@@ -109,24 +203,46 @@ impl ToolSearchIndex {
             // A word that is a tool's exact name selects that tool first: BM25 alone
             // ranks short descriptions that mention the word ("agent") above the
             // tool's own longer description.
-            let mut results: Vec<&ToolEntry> = self
-                .entries
-                .iter()
-                .filter(|e| optional.iter().any(|w| w.eq_ignore_ascii_case(&e.name)))
-                .take(limit)
-                .collect();
-            let ranked: Vec<SearchResult<u32>> = self.engine.search(query, limit);
-            for entry in ranked
+            // A query word naming the tool, or all words of an action's name,
+            // outranks description matches: BM25 alone ranks short descriptions that
+            // mention the word above the entry it names. Equal keys keep BM25 order;
+            // unscored named entries follow in catalogue order.
+            let words: Vec<String> = optional.iter().map(|w| w.to_lowercase()).collect();
+            let key = |e: &ToolEntry| -> usize {
+                // An action entry `<tool>_<action>` answers to its tool's name.
+                let tool_name = e
+                    .action
+                    .as_deref()
+                    .and_then(|action| e.name.strip_suffix(&format!("_{action}")))
+                    .unwrap_or(&e.name)
+                    .to_lowercase();
+                let tool = usize::from(words.contains(&tool_name));
+                let action = e.action.as_deref().map_or(0, |action| {
+                    let parts: Vec<String> = action.split('_').map(str::to_lowercase).collect();
+                    if parts.iter().all(|part| words.contains(part)) {
+                        parts.len()
+                    } else {
+                        0
+                    }
+                });
+                tool + action
+            };
+            let ranked: Vec<&ToolEntry> = self
+                .engine
+                .search(query, self.entries.len())
                 .into_iter()
-                .filter_map(|r| self.entries.get(r.document.id as usize))
-            {
-                if results.len() == limit {
-                    break;
-                }
+                .filter_map(|r: SearchResult<u32>| self.entries.get(r.document.id as usize))
+                .filter(|e| e.ranked)
+                .collect();
+            let mut results: Vec<&ToolEntry> = ranked.clone();
+            for entry in self.entries.iter().filter(|e| e.ranked && key(e) > 0) {
                 if !results.iter().any(|e| std::ptr::eq(*e, entry)) {
                     results.push(entry);
                 }
             }
+            // Stable: BM25 order, then catalogue order, within one key.
+            results.sort_by_key(|e| std::cmp::Reverse(key(e)));
+            results.truncate(limit);
             return results;
         }
 
@@ -135,7 +251,7 @@ impl ToolSearchIndex {
             .iter()
             .map(|entry| {
                 let name = entry.name.to_lowercase();
-                required.iter().all(|term| name.contains(term))
+                entry.ranked && required.iter().all(|term| name.contains(term))
             })
             .collect();
         let rank_query = if optional.is_empty() {
@@ -175,7 +291,7 @@ impl ToolSearchIndex {
     pub fn get_schema(&self, name: &str) -> Option<&Value> {
         self.entries
             .iter()
-            .find(|e| e.name == name)
+            .find(|e| e.name == name && e.action.is_none())
             .map(|e| &e.definition)
     }
 

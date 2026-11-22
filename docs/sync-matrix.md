@@ -81,6 +81,7 @@ When adding a new `app.emit(event_name, payload)` call, document it here and lis
 | `provider-quota-changed` | `QuotaView` | `provider_quota_transport.rs`, desktop emit and `/events` | `providerQuotaStore` |
 | `provider-quota-binding-changed` | `{session_id, key}`; null key retracts the binding | `provider_quota_transport.rs`, desktop emit and `/events` | `providerQuotaStore` |
 |-------|---------|-------------|-------------------|
+| `stories-changed` | `{repo_path, payload}` | Story connector watcher/poller; desktop plus SSE | Story views and PluginHost count watchers reread the selected-backend projection |
 | `boss-attention-changed` | `{}` | Typed report, input and story mutations, and a changed Fabbrica read (`fabbrica_attention.rs` poller); desktop plus SSE. Remote authoritative reseeds retain origin ownership. | `waitingItemsStore` rereads while retained (App bell sync, Plans and Stories, Activity Dashboard health); reconnect and repository revisions also refresh |
 | `ideas-changed` | `{}` | Planner and UI notes mutations after persistence; desktop plus `/events` SSE | `ideasStore.hydrate()` reloads after local writes; reconnect also reloads |
 | `ai-chat-selection-changed` | `{}` | Config transaction after shared AI Chat selection changes; desktop plus `/events` SSE | `createAiChatSelectionSync` rereads the host selection on invalidation and reconnect; `useAcpChat` adopts without echo writes |
@@ -105,8 +106,8 @@ When adding a new `app.emit(event_name, payload)` call, document it here and lis
 | `ctrl-tab` | `"next"` \| `"prev"` | `native_keys.rs` — macOS only; the `NSEvent` is swallowed so AppKit cannot also cycle tabs | `useNativeMenuBridge.ts` → tab switch |
 | `native-key-down` | `{ key: "F13".."F20", cmd, ctrl, alt, shift }` | `native_keys.rs` — macOS only, scoped to the `main` window; the event is passed through (nothing native to suppress) | `useNativeKeyCombo.ts`, attached only while a shortcut recorder is open |
 | `mcp-toast` | `{ title, message, level, sound, urgency, origin_repo_path?, origin_session_id?, __tuic_origin?: { connection, name } }` | `mcp_transport.rs` — `ui action=toast`; derives origin from the calling MCP session rather than accepting caller-supplied scope. `origin_session_id` is the caller's TUIC session, absent for an unbound caller | `useAppInit.ts` → repository-scoped Messages bell item, even when transient mirroring is disabled; `urgency=urgent` additionally shows a transient card (upper-right container, never over the composer), `normal` or an absent urgency also shows a card when an origin session is present and not being viewed (inactive terminal or unfocused document), controlled by the default-on per-client **Show cards from other terminals** setting; no origin stays bell only, and a mirrored urgent notice keeps its `[connection]` label on the card; consecutive identical notices from the same origin and connection id within five seconds deduplicate both the item and requested sound; mirrored titles/messages must be string/string-or-null or the notice is discarded with a content-free debug log. The explicit Open terminal action resolves `origin_session_id` at click time. `remote_mirror.rs` forwards connected remote toasts on both transports, adds the locally saved connection name to the origin marker, and resolves the remote peer to its PTY UUID. Mirrored notices are labelled with that name and navigate only within the owning connection; disconnected frames are dropped |
-| `progress-recorded` | `{ repo_path, payload: { entry: { id, project, ptyId?, type, text, ... } } }` | `mcp_transport.rs emit_progress_entry()` after the SQLite transaction commits; dual-emitted to the desktop window and `event_bus` → `/events` SSE | `progressStore` refreshes the selected PTY or aggregate and routes the toast to that source |
-| `workflow-run-changed` | `{ repo_path, payload: { runId, sequence } }` | `workflows/run/api.rs emit_run_cursor()` after neutral run progress; dual-emitted to the desktop window and `event_bus` → `/events` SSE. It is a cursor wake hint, not a replacement for event replay | `NeutralInspection.tsx` rereads the inspected neutral run |
+| `progress-recorded` | `{ repo_path, payload: { entry: { id, project, ptyId?, type, text, question?, replyTargetAvailable?, answered?, ... } } }` | `mcp_transport.rs emit_progress_entry()` after the SQLite transaction commits; dual-emitted to the desktop window and `event_bus` → `/events` SSE | `progressStore` refreshes the selected PTY or aggregate and retains the mirrored `__tuic_origin.connection` for reply routing, draft identity and toast deduplication |
+| `workflow-run-changed` | `{ repo_path, payload: { runId, sequence } }` | `workflows/run/api.rs emit_run_cursor()` after neutral run progress; dual-emitted to the desktop window and `event_bus` → `/events` SSE. It is a cursor wake hint, not a replacement for event replay | `NeutralInspection.tsx` refreshes the run list and selected run; `workflowApprovals.ts` reconciles pending dialogs and attention entries |
 | `stories-changed` | `{ repo_path, payload: { rescan, ids, error? } }` | `story_adapter/binding.rs paths_changed()` when the repo watcher sees a change under a running external story adapter's `watch_paths` and `changes` answers; `event_bus` → `/events` SSE only (no desktop emit, no frontend consumer yet) | none yet |
 | `ui-tab` | `{id,title,html,url?,pinned,focus,origin_repo_path?,opener_tuic_session?}` | MCP UI tab handler; desktop emit plus SSE with the same optional stable caller identity | `useAppInit.ts` stores the opener on native Markdown tabs; desktop publication carries it to mobile Markdown menu metadata |
 | `mcp-confirm` | `{ request_id, title, message, origin_repo_path?, origin_session_id? }` | `mcp_transport.rs` — `ui action=confirm`, dual-emitted, plus a mobile push. It used to be a native OS dialog, which no remote human could answer; every client now gets the request and the first answer wins | `McpConfirmHost.tsx` (mounted by BOTH `ApplicationOverlays.tsx` and `MobileApp.tsx`) → `stores/mcpConfirm.ts` queue → `ConfirmDialog`; remote confirmations retain the origin connection, show its locally saved host name, route answers to that daemon, and clear on disconnect. Resolution is scoped by connection and request id |
@@ -183,6 +184,7 @@ When changing the tool list, tool handlers, `disabled_native_tools`, upstream al
 | `src-tauri/src/mcp_http/mcp_transport.rs` | Tool definitions, `merged_tool_definitions`, `searchable_tool_definitions`, meta-tool handlers (`search_tools`, `get_tool_schema`, `call_tool`), `build_mcp_instructions` |
 | `src-tauri/src/mcp_proxy/registry.rs` | `aggregated_tools`, `proxy_tool_call` (filter is enforced on BOTH — discovery no longer gates dispatch under `collapse_tools`) |
 | `src-tauri/src/tool_search.rs` | BM25 `ToolSearchIndex` backing `search_tools` / `get_tool_schema` |
+| `src-tauri/src/mcp_http/action_slices.rs` | Per-action description segments, field maps and slices of `agent`/`session`/`repo`/`ui` served by `search_tools` / `get_tool_schema` |
 | `docs/backend/mcp-http.md` | Lazy Tool Discovery section, meta-tool table, filter-enforcement note |
 | `src-tauri/src/mcp_http/plugin_docs.rs` | AI plugin guide references to MCP worktree inputs |
 | `src-tauri/crates/tuic-cli/` | CLI callers of renamed or removed native actions |
@@ -369,7 +371,7 @@ When modifying tunnel profiles, supervisor, audit logging, backoff, or tunnel UI
 | `src-tauri/src/tunnels/agent.rs` | SSH agent socket discovery |
 | `src-tauri/src/tunnels/port.rs` | Local port availability check |
 | `src-tauri/src/tunnels/backoff.rs` | BackoffCalculator (delays, jitter, max retries) |
-| `src-tauri/src/tunnels/audit.rs` | AuditLog SQLite schema, insert/query/rotate |
+| `src-tauri/src/tunnels/audit.rs` | AuditLog SQLite schema, insert/query; retention lives in `db/retention.rs` |
 | `src-tauri/src/tunnels/supervisor.rs` | TunnelSupervisor lifecycle and reconnect loop |
 | `src-tauri/src/tunnels/storage.rs` | ProfileStore: TOML load/save (global + per-repo) |
 | `src-tauri/src/tunnels/manager.rs` | TunnelManager: orchestrates supervisors |
@@ -436,12 +438,20 @@ that describes a machine rather than this app:
 
 ### Project Progress (storage)
 
+When adding or changing a SQLite store, a table, a database file or a retention rule:
+
+| File | What to update |
+|------|----------------|
+| `src-tauri/src/db/mod.rs`, `db/tuic.rs` | `docs/backend/persistence.md` (file and table inventory), `AGENTS.md` Persistence rule if the layout changes |
+| `src-tauri/src/db/legacy.rs` | `docs/backend/persistence.md` Retired files |
+| `src-tauri/src/db/retention.rs`, `db/retention/instances.rs`, `config.rs` `RetentionConfig` | `docs/backend/persistence.md` Tables and retention, `docs/backend/config.md` Database retention |
+
 When modifying the project-owned Progress store, its ownership resolution, or
 its Git-exclude/watcher interaction:
 
 | File | What to update |
 |------|----------------|
-| `src-tauri/src/progress/store.rs` | Schema, migrations, recovery, and SQLite locking behavior |
+| `src-tauri/src/progress/store.rs` | Schema, recovery, and SQLite locking behavior; `docs/backend/persistence.md` |
 | `src-tauri/src/progress/ownership.rs` | Registered and nested workspace ownership resolution |
 | `src-tauri/src/progress/model.rs` | Entry kinds, which of them are reportable, and validation limits |
 | `src-tauri/src/progress/service.rs` | The `progress_tracking` gate and the shared record/list/delete core |

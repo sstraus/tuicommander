@@ -24,6 +24,22 @@ beforeEach(() => {
 		const action = args?.action as Record<string, unknown>;
 		requests.push(action);
 		switch (action.action) {
+			case "list_runs":
+				return {
+					type: "runs",
+					value: [
+						{
+							id: engine.inspection.value.snapshot.run.id,
+							name: "Retained workflow",
+							publication: { project: "/repo", id: "flow", revision: 1 },
+							status: { type: "running" },
+							current_node: "start",
+							waiting_on_approval: false,
+							started_ms: 1,
+							updated_ms: 2,
+						},
+					],
+				};
 			case "catalog":
 				return engine.catalog;
 			case "list_drafts":
@@ -78,8 +94,8 @@ it("shows the retained engine path and output8 from its ledger without executing
 	await ready();
 	const snapshot = engine.inspection.value.snapshot;
 	const runId = snapshot.run.id;
-	fireEvent.input(screen.getByRole("textbox", { name: "Run ID" }), { target: { value: runId } });
-	fireEvent.click(screen.getByRole("button", { name: "Inspect retained run" }));
+	fireEvent.click(screen.getByRole("tab", { name: "Preview & runs" }));
+	fireEvent.click(await screen.findByRole("button", { name: /Retained workflow · revision 1/ }));
 	const retained = await screen.findByRole("region", { name: "Retained run" });
 	const blocks = retained.querySelectorAll("pre");
 	expect(JSON.parse(blocks[0].textContent ?? "null")).toEqual({

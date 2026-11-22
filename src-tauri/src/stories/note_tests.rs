@@ -180,61 +180,6 @@ fn story_notes_reject_stale_invalid_or_cross_project_requests_without_appending(
     });
 }
 
-// Catches a pre-note store failing to acquire notes or losing existing records on upgrade.
-#[test]
-fn story_notes_upgrade_v1_and_v2_without_rewriting_existing_story_documents() {
-    for version in [1, 2] {
-        let config = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
-        let db = config.path().join("stories.sqlite3");
-        let store = StoryStore::open_at(&db).unwrap();
-        let plan = store
-            .create_plan(NewPlan {
-                project: config.path().to_string_lossy().into_owned(),
-                title: "Existing".into(),
-                source: "plan.md".into(),
-            })
-            .unwrap();
-        let story = store
-            .create_story(NewStory {
-                plan_id: plan.id,
-                title: "Existing".into(),
-                criteria: vec!["Done".into()],
-                priority: 1,
-                story_type: None,
-                origin: StoryOrigin::Native,
-                file_scope: vec![],
-            })
-            .unwrap();
-        drop(store);
-        // Restore the pre-note table set. QA tests separately cover the old CHECK constraint.
-        let legacy = rusqlite::Connection::open(&db).unwrap();
-        legacy
-            .execute_batch("DROP TABLE story_notes; ALTER TABLE plans DROP COLUMN revision; ALTER TABLE plans DROP COLUMN archived;")
-            .unwrap();
-        legacy.pragma_update(None, "user_version", version).unwrap();
-        drop(legacy);
-        let upgraded = StoryStore::open_at(&db).unwrap();
-        assert_eq!(upgraded.get_story(&story.id).unwrap(), story);
-        assert_eq!(
-            upgraded.list_notes(&story.id).unwrap(),
-            Vec::<StoryNote>::new()
-        );
-        let note = upgraded
-            .add_note(
-                &story.id,
-                story.revision,
-                "After upgrade",
-                StoryTransitionActor::Human,
-                vec![],
-            )
-            .unwrap();
-        drop(upgraded);
-        let reopened = StoryStore::open_at(&db).unwrap();
-        assert_eq!(reopened.get_story(&story.id).unwrap(), story);
-        assert_eq!(reopened.list_notes(&story.id).unwrap(), vec![note]);
-    }
-}
-
 // Catches treating the character limit as a byte limit or destroying note formatting.
 #[test]
 fn story_notes_preserve_text_at_the_unicode_character_limit() {

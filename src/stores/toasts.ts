@@ -1,5 +1,6 @@
 import { createStore } from "solid-js/store";
 import { activityStore } from "./activityStore";
+import type { ProgressEntry } from "./progress";
 
 let shouldMirrorToBell = () => true;
 
@@ -16,6 +17,8 @@ export interface Toast {
 	createdAt: number;
 	/** Distinct messages grouped into this transient card. Bell entries stay separate. */
 	count?: number;
+	/** Immutable report context for inline replies, independent of current repo. */
+	progress?: ProgressEntry;
 	repoPath?: string;
 	/** Backend session that raised this toast. Set for MCP `ui action=toast`,
 	 *  where it is what makes the toast clickable: a repo holds many tabs, so
@@ -137,6 +140,7 @@ function createToastsStore() {
 	const [state, setState] = createStore<{ toasts: Toast[] }>({ toasts: [] });
 	const dismissTimers = new Map<number, ReturnType<typeof setTimeout>>();
 	const durations = new Map<number, number>();
+	const retained = new Map<number, number>();
 	const queued: Toast[] = [];
 	let lastBellNotice: (Toast & { connectionId?: string }) | undefined;
 
@@ -149,7 +153,7 @@ function createToastsStore() {
 	function armDismissTimer(id: number, remove: (id: number) => void): void {
 		clearDismissTimer(id);
 		const duration = durations.get(id) ?? 0;
-		if (duration > 0)
+		if (duration > 0 && !retained.has(id))
 			dismissTimers.set(
 				id,
 				setTimeout(() => remove(id), duration),
@@ -207,18 +211,26 @@ function createToastsStore() {
 			repoPath?: string,
 			sessionId?: string,
 			mirrorInBell = true,
-			options: Pick<Toast, "secondaryAction" | "dismissGroup"> = {},
+			options: Pick<Toast, "secondaryAction" | "dismissGroup" | "progress"> = {},
 		) {
 			if (
-				this.hasVisible(title, message, level, repoPath) ||
-				queued.some(
-					(item) =>
-						item.title === title &&
-						item.message === message &&
-						item.level === level &&
-						item.repoPath === repoPath &&
-						item.sessionId === sessionId,
-				)
+				(options.progress
+					? [...state.toasts, ...queued].some(
+							(item) =>
+								item.progress?.id === options.progress?.id &&
+								item.repoPath === repoPath &&
+								(item.progress?.originConnectionId ?? null) === (options.progress?.originConnectionId ?? null),
+						)
+					: this.hasVisible(title, message, level, repoPath)) ||
+				(!options.progress &&
+					queued.some(
+						(item) =>
+							item.title === title &&
+							item.message === message &&
+							item.level === level &&
+							item.repoPath === repoPath &&
+							item.sessionId === sessionId,
+					))
 			) {
 				return -1;
 			}
@@ -236,6 +248,8 @@ function createToastsStore() {
 			};
 			const group = state.toasts.find(
 				(item) =>
+					!item.progress &&
+					!toast.progress &&
 					item.title === title &&
 					item.level === level &&
 					item.repoPath === repoPath &&
@@ -250,7 +264,7 @@ function createToastsStore() {
 			if (overflow) {
 				// Errors take a slot ahead of informational cards. Domain-specific
 				// cards cannot rely on the Messages bell, so retain them visibly or queued.
-				const displaced = state.toasts.find((item) => item.level !== "error");
+				const displaced = state.toasts.find((item) => item.level !== "error" && !retained.has(item.id));
 				if (displaced && (level === "error" || !mirrorInBell)) {
 					clearDismissTimer(displaced.id);
 					queued.push(displaced);
@@ -275,8 +289,28 @@ function createToastsStore() {
 			return id;
 		},
 
+		/** Prevent automatic expiry/overflow while replying; explicit dismissal still wins. */
+		retain(id: number): () => void {
+			retained.set(id, (retained.get(id) ?? 0) + 1);
+			clearDismissTimer(id);
+			let released = false;
+			return () => {
+				if (released) return;
+				released = true;
+				const count = retained.get(id) ?? 0;
+				if (count > 1) retained.set(id, count - 1);
+				else {
+					retained.delete(id);
+					if (state.toasts.some((item) => item.id === id)) armDismissTimer(id, (toastId) => this.remove(toastId));
+				}
+			};
+		},
+
 		/** Remove queued cards first, so dismissing a visible card cannot reveal a muted one. */
 		removeGroup(group: string) {
+			// Explicit Mute means dismiss all completion cards, including retained ones.
+			// Drafts and in-flight replies remain shared with the journal; retaining
+			// a card only prevents automatic expiry/overflow, not a user dismissal.
 			const pending = queued.filter((toast) => toast.dismissGroup === group);
 			for (const toast of pending) {
 				clearDismissTimer(toast.id);
@@ -288,6 +322,7 @@ function createToastsStore() {
 
 		remove(id: number) {
 			clearDismissTimer(id);
+			retained.delete(id);
 			durations.delete(id);
 			const pendingIndex = queued.findIndex((item) => item.id === id);
 			if (pendingIndex >= 0) queued.splice(pendingIndex, 1);

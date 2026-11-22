@@ -407,7 +407,7 @@ fn hibernate_observation(state: &AppState, id: &str) -> Option<Observation> {
         Some(
             "claude"
                 | "codex"
-                | "gemini"
+                | "agy"
                 | "grok"
                 | "ego"
                 | "goose"

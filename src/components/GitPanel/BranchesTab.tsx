@@ -45,6 +45,7 @@ export function remoteUrlToGitHub(remoteUrl: string): string | null {
 }
 
 export interface BranchesTabProps {
+	onRetainChange?: (retain: boolean) => void;
 	repoPath: string | null;
 }
 
@@ -204,6 +205,8 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
 	// Generic confirm dialog state
 	const [dialog, setDialog] = createSignal<DialogKind | null>(null);
+	createEffect(() => props.onRetainChange?.(Boolean(creating() || renamingBranch() || dirtyCheckout() || dialog())));
+	onCleanup(() => props.onRetainChange?.(false));
 
 	// Container ref for focus management
 	let containerRef: HTMLDivElement | undefined;

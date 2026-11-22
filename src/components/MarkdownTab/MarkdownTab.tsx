@@ -580,10 +580,18 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 	const reviewAgents = createMemo(() => {
 		const tab = props.tab;
 		if (tab.type !== "file") return [];
-		return repositoryReviewAgents(
-			terminalsStore.getIds().map((id) => terminalsStore.get(id)),
-			tab.repoPath,
-		);
+		const terminals = terminalsStore.getIds().map((id) => terminalsStore.get(id));
+		// A file outside every registered repository has no owning repo to match:
+		// every live agent is a valid reviewer.
+		if (!tab.repoPath) {
+			return terminals
+				.filter((terminal) => terminal?.sessionId && terminal.agentType)
+				.map((terminal) => ({
+					sessionId: terminal!.sessionId!,
+					label: terminal!.name ?? terminal!.sessionId!,
+				}));
+		}
+		return repositoryReviewAgents(terminals, tab.repoPath);
 	});
 
 	createEffect(() => {

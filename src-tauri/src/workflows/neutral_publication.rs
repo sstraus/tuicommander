@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 type ResolvedValues = (BTreeMap<String, Value>, Option<BTreeMap<String, Value>>);
 
-pub(super) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS neutral_workflow_publications (
+pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS neutral_workflow_publications (
     project TEXT NOT NULL,
     id TEXT NOT NULL,
     revision INTEGER NOT NULL CHECK(revision > 0),
@@ -544,8 +544,11 @@ fn read_verified(
     let row: Option<(String, String)> = conn.query_row("SELECT document,sha256 FROM neutral_workflow_publications WHERE project=?1 AND id=?2 AND revision=?3", params![reference.project, reference.id, reference.revision], |row| Ok((row.get(0)?, row.get(1)?))).optional().map_err(|e| format!("read neutral publication: {e}"))?;
     let (document, digest) = row.ok_or_else(|| {
         format!(
-            "neutral publication not found: {}:{}@{}",
-            reference.project, reference.id, reference.revision
+            "{}{}:{}@{}",
+            crate::workflows::neutral_api::refusal::PUBLICATION_NOT_FOUND,
+            reference.project,
+            reference.id,
+            reference.revision
         )
     })?;
     let value: Value = serde_json::from_str(&document).map_err(|e| {

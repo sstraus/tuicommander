@@ -17,21 +17,15 @@ pub(crate) struct IngestVersion {
     pub revision: i64,
 }
 
-/// Install inside the schema migration transaction. The triggers share the
-/// mutation's commit/rollback boundary, including writes from workflow callers.
-pub(super) fn migrate(tx: &rusqlite::Transaction<'_>) -> Result<(), String> {
-    tx.execute_batch(
-        "CREATE TABLE IF NOT EXISTS story_ingest (
+/// Ingest ledger and its triggers. The triggers share the mutation's
+/// commit/rollback boundary, including writes from workflow callers.
+pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS story_ingest (
             id TEXT PRIMARY KEY,
             project TEXT NOT NULL,
             revision INTEGER NOT NULL CHECK(typeof(revision)='integer' AND revision>0),
             updated_at TEXT NOT NULL,
             deleted INTEGER NOT NULL DEFAULT 0
         );
-        INSERT OR IGNORE INTO story_ingest(id,project,revision,updated_at)
-          SELECT s.id,p.project,s.revision + (SELECT count(*) FROM story_notes n WHERE n.story_id=s.id),
-                 strftime('%Y-%m-%dT%H:%M:%fZ','now')
-          FROM stories s JOIN plans p ON p.id=s.plan_id;
         CREATE TRIGGER IF NOT EXISTS story_ingest_insert AFTER INSERT ON stories BEGIN
           INSERT INTO story_ingest(id,project,revision,updated_at)
             SELECT NEW.id,p.project,NEW.revision,strftime('%Y-%m-%dT%H:%M:%fZ','now')
@@ -50,9 +44,7 @@ pub(super) fn migrate(tx: &rusqlite::Transaction<'_>) -> Result<(), String> {
         CREATE TRIGGER IF NOT EXISTS story_ingest_note AFTER INSERT ON story_notes BEGIN
           UPDATE story_ingest SET revision=revision+1,
             updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=NEW.story_id;
-        END;",
-    ).map_err(|error| format!("prepare story ingest ledger: {error}"))
-}
+        END;";
 
 impl StoryStore {
     /// Lightweight inventory, including tombstones. Bodies are read one at a time.

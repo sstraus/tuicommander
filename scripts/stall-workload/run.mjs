@@ -28,7 +28,7 @@ const git = (...args) => {
 	return result.stdout.trim();
 };
 const refs = {
-	main: git("rev-parse", process.env.STALL_MAIN ?? "main"),
+	main: git("rev-parse", process.env.STALL_MAIN ?? "master"),
 	"pre-fix": git("rev-parse", process.env.STALL_PRE_FIX ?? "950715de69"),
 };
 for (const [label, ref] of Object.entries(refs)) {

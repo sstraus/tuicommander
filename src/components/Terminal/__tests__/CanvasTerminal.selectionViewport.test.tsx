@@ -8,6 +8,9 @@ import CanvasTerminal, { type CanvasTerminalRef } from "../CanvasTerminal";
 const harness = vi.hoisted(() => ({
 	frame: undefined as ((data: ArrayBuffer) => void) | undefined,
 	paint: vi.fn(),
+	invoke: vi.fn(),
+	searchMatches: [] as { row: number; col_start: number; col_end: number }[],
+	fill: vi.fn(),
 }));
 vi.mock("../canvasTerminalTransport", async (original) => ({
 	...(await original<typeof import("../canvasTerminalTransport")>()),
@@ -18,8 +21,14 @@ vi.mock("../canvasTerminalTransport", async (original) => ({
 		unsubscribe() {},
 		onEvent: async () => {},
 		ackFrame() {},
-		invoke: async (command: string) =>
-			command === "terminal_get_styled_rows" ? new ArrayBuffer(0) : command === "terminal_search" ? [] : null,
+		invoke: async (command: string, args: unknown) => {
+			harness.invoke(command, args);
+			return command === "terminal_get_styled_rows"
+				? new ArrayBuffer(0)
+				: command === "terminal_search"
+					? harness.searchMatches
+					: null;
+		},
 	}),
 }));
 // Observe the component's renderer boundary, not a replacement scroll/selection implementation.
@@ -63,6 +72,9 @@ beforeEach(() => {
 	setPerfDebug(false);
 	vi.spyOn(appLogger, "info").mockImplementation(() => {});
 	harness.paint.mockClear();
+	harness.invoke.mockClear();
+	harness.fill.mockClear();
+	harness.searchMatches = [];
 	harness.frame = undefined;
 	rafs = new Map();
 	let sequence = 0;
@@ -88,6 +100,10 @@ beforeEach(() => {
 	const context = new Proxy(
 		{
 			canvas: document.createElement("canvas"),
+			fillStyle: "",
+			fillRect(this: { fillStyle: string }, ...rect: number[]) {
+				harness.fill(this.fillStyle, ...rect);
+			},
 			measureText: () => ({ width: 10, actualBoundingBoxAscent: 12, actualBoundingBoxDescent: 4 }),
 		},
 		{
@@ -212,3 +228,71 @@ it.each([
 	expect(paints.length).toBeGreaterThan(0);
 	for (const paint of paints) expect(paint[2].viewportTop).toBe(scrolledTop);
 });
+
+// Catches search navigation leaving the smooth-scroll cache in charge of the canvas,
+// or a pending wheel flush overwriting the requested match before its frame arrives.
+it.each([
+	{ navigation: "find", index: 1, offset: 50, anchor: 50 },
+	{ navigation: "next", index: 2, offset: 11, anchor: 89 },
+	{ navigation: "previous", index: 0, offset: 91, anchor: 9 },
+])(
+	"shows and highlights the selected match after smooth scroll ($navigation)",
+	async ({ navigation, index, offset, anchor }) => {
+		const id = terminalsStore.add({
+			sessionId: "search-navigation",
+			cwd: "/test",
+			name: "Search navigation",
+			fontSize: 14,
+			awaitingInput: null,
+		});
+		terminalId = id;
+		let ref: CanvasTerminalRef | undefined;
+		const mounted = render(() => (
+			<CanvasTerminal sessionId="search-navigation" terminalId={id} onRef={(value) => (ref = value)} />
+		));
+		dispose = mounted.unmount;
+		await waitFor(() => expect(harness.frame).toBeTypeOf("function"));
+		harness.searchMatches = [10, 50, 90].map((row) => ({ row, col_start: 0, col_end: 4 }));
+		harness.frame!(frame(50));
+		flushFrame();
+		await ref!.searchFind("text");
+		flushFrame();
+		await Promise.resolve();
+		const canvas = mounted.container.querySelector<HTMLCanvasElement>("canvas[tabindex]")!;
+		canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -200, bubbles: true, cancelable: true }));
+		flushFrame();
+		flushFrame();
+		expect(harness.paint.mock.calls.at(-1)![2].viewportTop).toBeLessThan(50);
+		// Leave another wheel flush queued at the moment the user selects a result.
+		canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: 20, bubbles: true, cancelable: true }));
+		harness.invoke.mockClear();
+		const result =
+			navigation === "find"
+				? await ref!.searchFind("text")
+				: navigation === "next"
+					? ref!.searchNext()
+					: ref!.searchPrev();
+		expect(result).toEqual({ index, count: 3 });
+		await Promise.resolve();
+		flushFrame();
+		await Promise.resolve();
+		flushFrame();
+		expect(harness.invoke.mock.calls.filter(([command]) => command.startsWith("terminal_scroll"))).toEqual([
+			["terminal_scroll_to_anchor", { sessionId: "search-navigation", anchor }],
+		]);
+		// The backend has reached the requested result; render its actual wire frame.
+		harness.frame!(frame(offset));
+		await Promise.resolve();
+		await Promise.resolve();
+		harness.paint.mockClear();
+		harness.fill.mockClear();
+		flushFrame();
+		flushFrame();
+		expect(harness.paint.mock.calls.at(-1)![2].viewportTop).toBe(anchor);
+		const highlights = harness.fill.mock.calls.filter(([color]) => color === "#e8984c");
+		expect(highlights.length).toBeGreaterThan(0);
+		// The 14px test font has a 19px cell: underline is at y=17 on row 0,
+		// or y=36 on row 1 for the centered off-screen results.
+		expect(highlights.at(-1)![2]).toBe(navigation === "find" ? 17 : 36);
+	},
+);

@@ -64,7 +64,7 @@ it("returns unbound Codex to CLI with the backend binding reason", async () => {
 
 // Catches: broadening the mobile gate exposes unsupported adapters or ended PTYs.
 it.each([
-	["gemini", true],
+	["agy", true],
 	["codex", false],
 	["grok", false],
 ])("hides Chat for %s with live session %s", (agent, exists) => {

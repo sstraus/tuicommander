@@ -15,7 +15,38 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  pointer-events: auto;
+  /* The container is as wide as its widest card and padded; its empty space
+     must not swallow clicks meant for the controls underneath. Only the cards
+     (and the scrollbar wheel path through them) take pointer events. */
+  pointer-events: none;
+}
+
+/* A modal dialog is centred. Its primary controls sit on the right, in the
+   header (Save, Validate, Close) and in the footer (Cancel, OK), so a stack
+   anchored on the right covers them on a narrow window. While one is open the
+   stack moves to the bottom-left, narrower, which clears both right-aligned
+   rows. */
+:global(body:has([role="dialog"][aria-modal="true"])) .container {
+  top: auto;
+  right: auto;
+  left: 8px;
+  bottom: calc(var(--status-bar-height, 28px) + 8px);
+  max-height: 40vh;
+}
+
+:global(body:has([role="dialog"][aria-modal="true"])) .toast {
+  max-width: min(480px, calc(60vw - 16px));
+}
+
+/* A surface whose bottom-left holds controls (the workflow Designer palette)
+   asks for the stack at the bottom centre instead, over its canvas. */
+:global(body:has([data-toast-placement="center"])) .container {
+  top: auto;
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--status-bar-height, 28px) + 8px);
+  max-height: 40vh;
 }
 
 .toast {
@@ -159,4 +190,9 @@
     opacity: 1;
     transform: translateX(0);
   }
+}
+
+.toast > :global([data-progress-reply="composer"]) {
+  grid-column: 2;
+  min-width: 0;
 }

@@ -33,6 +33,7 @@ vi.mock("../../../components/Terminal/CanvasTerminal", () => ({
 			focus: () => {},
 			refresh: () => {},
 			resubscribe: async () => {},
+			lostGrid: () => false,
 			getSelectionText: () => "",
 			searchFind: async () => ({ index: -1, count: 0 }),
 			searchNext: () => ({ index: -1, count: 0 }),

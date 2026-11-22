@@ -1,0 +1,34 @@
+.reply {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  cursor: default;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.hint {
+  color: var(--fg-muted);
+  font-size: var(--font-xs);
+}
+
+.error {
+  color: var(--error);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.composer {
+  flex: 1 0 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}

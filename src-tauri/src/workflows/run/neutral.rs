@@ -12,9 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) const CONTRACT_VERSION: u32 = 1;
 
-pub(super) fn prepare_db(conn: &Connection) -> Result<(), String> {
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS neutral_workflow_runs (
+pub(super) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS neutral_workflow_runs (
             id TEXT PRIMARY KEY, project TEXT NOT NULL, request_id TEXT NOT NULL,
             request_hash TEXT NOT NULL, contract_version INTEGER NOT NULL,
             UNIQUE(project,request_id)
@@ -25,13 +23,15 @@ pub(super) fn prepare_db(conn: &Connection) -> Result<(), String> {
             event_json TEXT NOT NULL, sha256 TEXT NOT NULL,
             PRIMARY KEY(run_id,sequence), UNIQUE(run_id,command_id)
         );
+        CREATE TABLE IF NOT EXISTS neutral_run_summaries (
+            run_id TEXT PRIMARY KEY REFERENCES neutral_workflow_runs(id), project TEXT NOT NULL,
+            active INTEGER NOT NULL, sequence INTEGER NOT NULL, value_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS neutral_run_summaries_project ON neutral_run_summaries(project, active);
         CREATE TABLE IF NOT EXISTS neutral_effect_resources (
             resource TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES neutral_workflow_runs(id),
             effect_id TEXT NOT NULL
-        );",
-    )
-    .map_err(|e| format!("prepare neutral run schema: {e}"))
-}
+        );";
 
 /// Generic limits do not encode story creation, review or compiler policy.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -246,6 +246,7 @@ impl RuntimeOwner {
             "INSERT INTO neutral_workflow_events(run_id,sequence,command_id,event_json,sha256) VALUES (?1,1,?2,?3,?4)",
             params![run.id, event.command_id, document, content_digest(&event)?],
         ).map_err(|e| format!("save neutral start event: {e}"))?;
+        super::neutral_summaries::record_start(&tx, &run, event.at_ms)?;
         tx.commit()
             .map_err(|e| format!("commit neutral start: {e}"))?;
         self.publish_neutral_cursor(&run.request.publication.project, &run.id, 1);
@@ -307,7 +308,7 @@ fn start_receipt(
     match row {
         None => Ok(None),
         Some((_, old_hash)) if old_hash != hash => {
-            Err("neutral request identity was reused with different arguments".into())
+            Err(crate::workflows::neutral_api::refusal::REQUEST_IDENTITY_REUSED.into())
         }
         Some((id, _)) => read_run(conn, &id).map(Some),
     }

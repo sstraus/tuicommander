@@ -431,6 +431,8 @@ describe("initApp", () => {
 		vi.resetModules();
 		const { mdTabsStore: reloaded } = await import("../../stores/mdTabs");
 		reloaded.restoreAfterReload();
+		// Match initApp: pane selection is applied after all domain snapshots.
+		(await import("../../stores/tabReload")).restoreNonTerminalTabsAfterReload();
 		expect(reloaded.getActive()).toMatchObject({
 			mcpUiId: "boss-digest",
 			filePath: "/Users/boss/Gits/digest.md",

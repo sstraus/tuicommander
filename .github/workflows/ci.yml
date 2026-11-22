@@ -107,6 +107,11 @@ jobs:
       - name: Remote daemon release workflow contracts
         run: python3 .github/workflows/tests/test-remote-daemon-release.py
 
+      - name: Linux desktop release workflow contracts
+        run: |
+          python3 .github/workflows/tests/test-linux-desktop-release.py
+          node --test .github/workflows/tests/test-website-downloads.mjs
+
       - name: Frontend shard workflow contracts
         run: python3 .github/workflows/tests/test-frontend-shards.py
 
@@ -411,6 +416,15 @@ jobs:
           fetch-depth: 0
           # See the rust job: include_str! reaches into the `plugins` submodule.
           submodules: recursive
+
+      # MSVC 14.52 (VS 18) rejects any Clang older than 22 with a static_assert
+      # (STL1000) in yvals_core.h, so bindgen's libclang parse of the
+      # webrtc-audio-processing headers fails. bindgen only reads declarations:
+      # use MSVC's documented opt-out for that check.
+      - name: Let bindgen parse the VS 18 STL (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: echo "BINDGEN_EXTRA_CLANG_ARGS=-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH" >> "$GITHUB_ENV"
 
       # Keep the Windows build/target dir short (C:/t): whisper.cpp's nested
       # CMake TryCompile paths can exceed the 260-char MAX_PATH that MSBuild's

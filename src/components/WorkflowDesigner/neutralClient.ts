@@ -1,8 +1,8 @@
 import { invoke } from "../../invoke";
 import { HttpRpcError } from "../../transport";
-import type { ActivityDescriptor, ActivityInstance, JsonValue, ObjectSchema } from "./catalogTypes";
+import type { ActivityDescriptor, ActivityInstance, DescriptorId, JsonValue, ObjectSchema } from "./catalogTypes";
 import type { InputBindings } from "./MappingFields";
-import type { Inspection, Preview } from "./neutralInspectionTypes";
+import type { Approval, Inspection, Preview, RunView } from "./neutralInspectionTypes";
 import type {
 	NeutralTriggerBinding,
 	TriggerAdmission,
@@ -110,8 +110,10 @@ export interface NeutralReplies {
 	validation: { valid: boolean; diagnostics: Diagnostic[] };
 	publication: NeutralPublication;
 	preset: ActivityPreset;
+	operation: ActivityDescriptor;
 	preview: Preview;
 	inspection: Inspection;
+	runs: RunView[];
 	schema: ObjectSchema;
 	trigger_bindings: NeutralTriggerBinding[];
 	trigger_binding: NeutralTriggerBinding;
@@ -155,7 +157,39 @@ export type NeutralAction =
 	| { action: "clone_publication"; id: string; revision: number; name: string }
 	| { action: "save_preset"; id: string; expected_revision: number; instance: ActivityInstance }
 	| { action: "get_preset"; id: string; revision: number }
-	| { action: "inspect"; run_id: string; after_sequence: number; limit: number };
+	| { action: "inspect"; run_id: string; after_sequence: number; limit: number }
+	| { action: "list_runs" }
+	| {
+			action: "answer";
+			run_id: string;
+			command_id: string;
+			expected_sequence: number;
+			key: Approval["key"];
+			revision: number;
+			approved: boolean;
+	  }
+	| {
+			action: "operator_answer";
+			run_id: string;
+			command_id: string;
+			expected_sequence: number;
+			key: Approval["key"];
+			revision: number;
+			answer: { request: JsonValue; accept: boolean; reason: string };
+	  }
+	/** The backend reads the publication and pins its digest; the caller never sends one. */
+	| { action: "save_subflow"; expected_version: number; id: DescriptorId; publication: PublicationRef }
+	| {
+			action: "start";
+			request: {
+				publication: PublicationRef;
+				/** A fresh id per click; the backend returns the same run for a retried id. */
+				request_id: string;
+				inputs: Record<string, JsonValue>;
+				subject: Record<string, JsonValue> | null;
+				limits: { max_activations: number; max_concurrency: number; max_duration_ms: number };
+			};
+	  };
 export function neutralClient(project: () => string) {
 	return async <K extends keyof NeutralReplies>(action: NeutralAction, expected: K): Promise<NeutralReplies[K]> => {
 		const reply = await invoke<{ type: string; value: NeutralReplies[K] }>("workflow_neutral_action", {

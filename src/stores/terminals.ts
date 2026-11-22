@@ -119,7 +119,7 @@ export interface TerminalData {
 	isRemote: boolean; // Runs on a configured remote connection, not merely created through HTTP/MCP
 	isExternallyCreated: boolean; // Created via HTTP/MCP; owns cleanup, tab decoration and completion policy
 	exactAgentSessionId?: string | null; // Live backend hook evidence, never restored from persistence
-	agentSessionId: string | null; // Discovered agent session ID for exact resume (claude, gemini, codex, grok)
+	agentSessionId: string | null; // Discovered agent session ID for exact resume (claude, agy, codex, grok)
 	restoredIdentity?: boolean; // Saved terminal identity; not a newly minted root.
 	tuicSession: string | null; // Stable tab UUID — injected as TUIC_SESSION env var, persists across restarts
 	suggestedActions: string[] | null; // Follow-up suggestions from suggest: token

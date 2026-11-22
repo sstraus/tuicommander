@@ -146,3 +146,33 @@ export function stepReattachPhase(
 	if (!visible) return { phase: { visible: false, sawDetach: prev.sawDetach }, resubscribe: false };
 	return { phase: { visible: true, sawDetach: false }, resubscribe: needsGridResubscribe(prev, visible, detached) };
 }
+
+/** Where one `Terminal` instance is mounted, and the state that decides whether it is on screen. */
+export interface TerminalVisibilityInput {
+	/** A floating window: its only terminal is always on screen. */
+	alwaysVisible: boolean;
+	/** Mounted inside a split pane, not in the flat terminal list. */
+	paneHosted: boolean;
+	/** The terminal is the active one in the terminals store. */
+	active: boolean;
+	detached: boolean;
+	/** The split is on and this terminal belongs to one of its panes. */
+	inPaneGroup: boolean;
+	/** The split is on and this terminal is the tab its pane shows. */
+	activeInPaneGroup: boolean;
+}
+
+/**
+ * Whether this `Terminal` instance is the one on screen.
+ *
+ * A terminal in a split pane is mounted twice: once in the flat list (always
+ * mounted, hidden while the split owns the tab) and once in its pane. Only one
+ * of the two may count as visible. When both did, both initialised and
+ * subscribed the session's grid, and the desktop backend keeps one grid channel
+ * per session: the hidden copy could take the frames, and the shown one froze.
+ */
+export function isTerminalVisible(input: TerminalVisibilityInput): boolean {
+	if (input.alwaysVisible) return true;
+	if (input.paneHosted) return input.activeInPaneGroup;
+	return input.active && !input.detached && !input.inPaneGroup;
+}

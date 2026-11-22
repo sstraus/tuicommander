@@ -19,9 +19,10 @@ import { Button } from "../ui/Button";
 import { CountBadge } from "../ui/CountBadge";
 import { GlobalWorkspaceEntry } from "./GlobalWorkspaceEntry";
 import { GroupSection } from "./GroupSection";
-import { hasLiveHarness } from "./liveHarness";
+import { NeedsYouBanner } from "./NeedsYouBanner";
 import { ParkedReposPopover } from "./ParkedReposPopover";
 import { RepoSection } from "./RepoSection";
+import { clearRepoFilters, repoIsActive, sidebarRepoFilter } from "./repoFilter";
 import s from "./Sidebar.module.css";
 import { StaleTempRepairPopover } from "./StaleTempRepairPopover";
 import { sidebarTextStep } from "./sidebarTextStep";
@@ -76,22 +77,10 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 		return layout.ungrouped.length > 0 || layout.groups.some((g) => g.repos.length > 0);
 	});
 
-	// Repo filter lives in uiStore (session-only). When active, only repos with at
-	// least one open terminal are shown. The toggle is the toolbar filter icon next
-	// to the sidebar collapse button; here we only read + render the filtered list.
-	const repoIsActive = (repo: RepositoryState) => Object.values(repo.workspaces).some((b) => b.terminals.length > 0);
-
-	// Layout after applying the repo filter. In "active" mode, empty groups are
-	// dropped entirely so no orphaned group header is left behind.
-	const repoHasHarness = (repo: RepositoryState) =>
-		Object.values(repo.workspaces).some((b) => hasLiveHarness(b.terminals));
+	// Drop empty groups when filtering so no orphaned header is left behind.
 	const filteredLayout = createMemo(() => {
 		const layout = groupedLayout();
-		const keep = uiStore.state.repoFilterHarnessOnly
-			? repoHasHarness
-			: uiStore.state.repoFilterActiveOnly
-				? repoIsActive
-				: null;
+		const keep = sidebarRepoFilter();
 		if (!keep) return layout;
 		// Re-spreading unconditionally would throw away the wrapper identity
 		// getGroupedLayout works to preserve, rebuilding every row the filter
@@ -112,11 +101,6 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 		const layout = filteredLayout();
 		return layout.ungrouped.length > 0 || layout.groups.some((g) => g.repos.length > 0);
 	});
-
-	const clearRepoFilters = () => {
-		uiStore.setRepoFilterActiveOnly(false);
-		uiStore.setRepoFilterHarnessOnly(false);
-	};
 
 	const countRepos = (layout: { groups: Array<{ repos: unknown[] }>; ungrouped: unknown[] }) =>
 		layout.ungrouped.length + layout.groups.reduce((n, g) => n + g.repos.length, 0);
@@ -377,6 +361,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 		</Show>
 	);
 
+	let contentRef: HTMLDivElement | undefined;
 	return (
 		<SidebarDensityContext.Provider value={density}>
 			<aside
@@ -386,8 +371,9 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 				data-density={density()}
 				data-text-step={sidebarTextStep(uiStore.state.sidebarWidth)}
 			>
+				<NeedsYouBanner scroller={() => contentRef} />
 				{/* Content */}
-				<div class={s.content}>
+				<div class={s.content} ref={contentRef}>
 					{/* Repo filter status — only rendered while the "active only" filter is
 				    engaged (toggled from the toolbar icon). Keeps it unmistakable that
 				    repos are hidden, so nobody panics, while taking zero space at rest. */}

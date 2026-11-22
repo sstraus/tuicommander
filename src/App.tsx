@@ -871,6 +871,7 @@ const App: Component = () => {
 							}}
 							onDetachTab={handleDetachTab}
 							onReattachTab={handleReattachTab}
+							onUnsplit={splitPanes.resetLayout}
 							onFocusDetachedTab={handleFocusDetachedTab}
 							getWorktreeTargets={gitOps.getWorktreeTargets}
 							onMoveToWorktree={gitOps.moveTerminalToWorktree}

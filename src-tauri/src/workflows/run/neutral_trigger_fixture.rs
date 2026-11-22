@@ -170,8 +170,7 @@ pub(crate) fn install_github_issue_binding(repository: &str) -> tempfile::TempDi
     let mut draft = f.draft.clone();
     draft.resource_prefix = format!("github:{repository}/");
     f.enable_without_baseline(draft, 0);
-    let target =
-        rusqlite::Connection::open(crate::config::config_dir().join("workflows.sqlite3")).unwrap();
+    let target = crate::db::open(&crate::db::path(crate::db::TUIC_DB)).unwrap();
     target
         .execute(
             "ATTACH DATABASE ?1 AS fixture",

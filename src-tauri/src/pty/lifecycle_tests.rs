@@ -266,7 +266,7 @@ fn test_tool_error_different_line_fires_after_first() {
     s.last_output_at = std::time::Instant::now()
         - SILENCE_TOOL_ERROR_THRESHOLD
         - std::time::Duration::from_millis(100);
-    let _ = s.check_tool_error();
+    let _ = s.check_tool_error(true);
     s.clear_tool_error_on_recovery();
 
     // A different error appears in a later turn — must still fire.
@@ -275,7 +275,7 @@ fn test_tool_error_different_line_fires_after_first() {
         - SILENCE_TOOL_ERROR_THRESHOLD
         - std::time::Duration::from_millis(100);
     assert_eq!(
-        s.check_tool_error(),
+        s.check_tool_error(true),
         Some("Error: Exit code 128".to_string()),
         "distinct error text must not be suppressed by prior surface"
     );
@@ -313,7 +313,10 @@ fn test_tool_error_mark_is_idempotent_while_pending() {
     s.last_output_at = std::time::Instant::now()
         - SILENCE_TOOL_ERROR_THRESHOLD
         - std::time::Duration::from_millis(100);
-    assert_eq!(s.check_tool_error(), Some("Error: Exit code 1".to_string()));
+    assert_eq!(
+        s.check_tool_error(true),
+        Some("Error: Exit code 1".to_string())
+    );
 }
 
 // --- Suggest backend-gating tests ---
@@ -360,7 +363,7 @@ fn test_tool_error_suppressed_while_spinner_active() {
         - SILENCE_TOOL_ERROR_THRESHOLD
         - std::time::Duration::from_millis(100);
     assert!(
-        s.check_tool_error().is_none(),
+        s.check_tool_error(true).is_none(),
         "spinner active means agent still working — no notification"
     );
 }
@@ -1028,7 +1031,7 @@ fn replay_sanitized_agent_trace(agent: &str, steps: &[SanitizedTraceStep]) -> Si
                 let rows = match agent {
                     "codex" => vec!["sanitized final".into(), "› sanitized prompt".into()],
                     "claude" => vec!["sanitized final".into(), "❯".into()],
-                    "gemini" => vec!["> Type your message".into()],
+                    "agy" => vec!["> Type your message".into()],
                     _ => Vec::new(),
                 };
                 if detect_agent_screen_activity(Some(agent), &rows) == AgentScreenActivity::Ready {

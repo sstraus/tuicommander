@@ -2,6 +2,9 @@
 
 ## File Browser Panel
 
+The inline panel stays ready for one minute after closing. After that it releases its file listings and reloads them on reopening, remembering your location and expanded folders. On reopening, the File Browser returns the same top file or folder to its previous position once the tree has loaded. If that row no longer exists, it uses the nearest available scroll position. Detached windows are unaffected.
+
+
 Drop files from Finder onto a folder or empty panel space to transfer them into that directory. A remote repository always receives a copy over its connected daemon; your Mac originals stay in place. Confirm directory recursion before copying folders. Existing destination names are skipped, as with local drops. Uploads are limited to 256 MiB (including archive overhead) and 10,000 entries per top-level source; symlinks and special files are not uploaded. The remote destination must be inside a registered repository. Executable scripts keep their safe permission bits, and filenames follow the destination platform rules. Slow uploads continue while data arrives; 30 seconds without data aborts the transfer.
 
 Toggle with `Cmd+E` or the folder icon in the status bar. The file browser shows the directory tree of the active repository (or linked worktree when on a worktree branch).

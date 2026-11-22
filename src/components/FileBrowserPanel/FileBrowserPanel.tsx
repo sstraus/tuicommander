@@ -38,7 +38,53 @@ import { FileIcon } from "./FileIcon";
 import { fileTooltip, formatSize, getStatusClass } from "./fileUtils";
 import { TreeNode } from "./TreeNode";
 
+type SearchMode = "filename" | "content";
+type SortMode = "name" | "date";
+type FileClipboard = { entry: Pick<DirEntry, "name" | "path">; mode: "copy" | "cut"; sourceRoot: string };
+
+interface ScrollPosition {
+	top: number;
+	anchor?: { path: string; offset: number };
+}
+
+function readScroll(content: HTMLDivElement): ScrollPosition {
+	const top = content.scrollTop;
+	const edge = content.getBoundingClientRect().top + content.clientTop;
+	const rows = content.querySelectorAll<HTMLElement>("[data-browser-row]");
+	let low = 0;
+	let high = rows.length;
+	while (low < high) {
+		const mid = (low + high) >>> 1;
+		if (rows[mid].getBoundingClientRect().bottom <= edge) low = mid + 1;
+		else high = mid;
+	}
+	const row = rows[low];
+	return {
+		top,
+		anchor: row ? { path: row.dataset.browserRow!, offset: row.getBoundingClientRect().top - edge } : undefined,
+	};
+}
+
+export interface FileBrowserView {
+	root: string | null;
+	subdir: string;
+	query: string;
+	searchMode: SearchMode;
+	sortBy: SortMode;
+	options: [boolean, boolean, boolean];
+	expanded: Set<string>;
+	selectedPath: string | undefined;
+	scroll: ScrollPosition;
+	clipboard: FileClipboard | null;
+	searchNonce: number;
+	rootToSubdir: Map<string, string>;
+	rootToSearchQuery: Map<string, string>;
+}
+
 export interface FileBrowserPanelProps {
+	initialView?: FileBrowserView;
+	onSaveView?: (view: FileBrowserView) => void;
+	onRetainChange?: (retain: boolean) => void;
 	visible: boolean;
 	repoPath: string | null;
 	/** Effective filesystem root (worktree path when on a linked worktree) */
@@ -84,13 +130,16 @@ const ContentModeIcon = () => (
 
 export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 	const mode = () => props.mode ?? "inline";
+	const view = props.initialView;
+	const root = () => uiStore.state.fileBrowserExternalRoot || props.fsRoot || props.repoPath;
+	const restored = view?.root === root() ? view : undefined;
 	const [entries, setEntries] = createSignal<DirEntry[]>([]);
 	const [loading, setLoading] = createSignal(false);
 	const [error, setError] = createSignal<string | null>(null);
-	const [currentSubdir, setCurrentSubdir] = createSignal(".");
+	const [currentSubdir, setCurrentSubdir] = createSignal(restored?.subdir ?? ".");
 	const [selectedIndex, setSelectedIndex] = createSignal(0);
 	const [refreshTrigger, setRefreshTrigger] = createSignal(0);
-	const [searchQuery, setSearchQuery] = createSignal("");
+	const [searchQuery, setSearchQuery] = createSignal(restored?.query ?? "");
 	const fb = useFileBrowser();
 	/**
 	 * Effective filesystem root.
@@ -100,14 +149,14 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 	 * > props.repoPath. When external root is set, git status/ignore integration is
 	 * best-effort — list_directory still works because it canonicalizes repo_path.
 	 */
-	const root = () => uiStore.state.fileBrowserExternalRoot || props.fsRoot || props.repoPath;
-
 	// The external folder belongs to the repository it was opened from: picking
 	// another repository or worktree returns the browser to it.
 	createEffect(
 		on(
 			() => [props.repoPath, props.fsRoot],
-			() => uiStore.setFileBrowserExternalRoot(null),
+			() => {
+				if (!props.onSaveView) uiStore.setFileBrowserExternalRoot(null);
+			},
 			{ defer: true },
 		),
 	);
@@ -156,15 +205,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 	// File clipboard state for copy/cut/paste. `sourceRoot` is the repo the entry
 	// was copied from — captured so paste works across different repos (entry.path
 	// is relative to its own repo, not the paste destination's).
-	const [clipboard, setClipboard] = createSignal<{
-		entry: DirEntry;
-		mode: "copy" | "cut";
-		sourceRoot: string;
-	} | null>(null);
+	const [clipboard, setClipboard] = createSignal<FileClipboard | null>(view?.clipboard ?? null);
 
-	// Search mode: "filename" (default) or "content" (full-text grep)
-	type SearchMode = "filename" | "content";
-	const [searchMode, setSearchMode] = createSignal<SearchMode>("filename");
+	const [searchMode, setSearchMode] = createSignal<SearchMode>(view?.searchMode ?? "filename");
 	const [contentSearching, setContentSearching] = createSignal(false);
 	/**
 	 * Content matches, grouped by file path and built incrementally: a streamed
@@ -207,13 +250,12 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		filesSkipped: number;
 		truncated: boolean;
 	}>({ filesSearched: 0, filesSkipped: 0, truncated: false });
-	const [caseSensitive, setCaseSensitive] = createSignal(false);
-	const [useRegex, setUseRegex] = createSignal(false);
-	const [wholeWord, setWholeWord] = createSignal(false);
+	const [caseSensitive, setCaseSensitive] = createSignal(view?.options[0] ?? false);
+	const [useRegex, setUseRegex] = createSignal(view?.options[1] ?? false);
+	const [wholeWord, setWholeWord] = createSignal(view?.options[2] ?? false);
 
 	// Sort mode: "name" (default, dirs first + alpha) or "date" (dirs first + newest first)
-	type SortMode = "name" | "date";
-	const [sortBy, setSortBy] = createSignal<SortMode>("name");
+	const [sortBy, setSortBy] = createSignal<SortMode>(view?.sortBy ?? "name");
 	const [sortDropdownOpen, setSortDropdownOpen] = createSignal(false);
 
 	// Scroll position cache: saves scrollTop + selectedIndex per subdir path
@@ -222,21 +264,33 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 	// the directory they were browsing instead of resetting to root. The panel
 	// instance persists across repo switches (only props.repoPath changes), so a
 	// component-scoped map survives. (#72)
-	const rootToSubdir = new Map<string, string>();
+	const rootToSubdir = view?.rootToSubdir ?? new Map<string, string>();
 	// Per-root search filter memory: the filter is scoped to each repo, never shared
 	// across them. Saved/restored alongside the subdir on root switch. (#72)
-	const rootToSearchQuery = new Map<string, string>();
+	const rootToSearchQuery = view?.rootToSearchQuery ?? new Map<string, string>();
 	let contentRef: HTMLDivElement | undefined;
 	let searchInputRef: HTMLInputElement | undefined;
 	let pendingScrollRestore: string | null = null;
+	let scroll = restored?.scroll ?? { top: 0 };
+	let pendingReopenScroll: ScrollPosition | undefined;
+	let shown = false;
+	const cancelReopenScroll = () => {
+		pendingReopenScroll = undefined;
+	};
+	createEffect(() => {
+		const visible = props.visible;
+		pendingReopenScroll = visible && !shown && scroll.top > 0 ? scroll : undefined;
+		shown = visible;
+	});
+	let restoreSelection = restored?.selectedPath;
+	let selectedPath = restoreSelection;
+	let searchNonce = view?.searchNonce ?? 0;
 
-	// Cmd+Shift+F (toggle-file-browser-content-search) bumps this nonce. Enter
-	// content-search mode and focus the input. Guard the initial 0 so a fresh
-	// mount doesn't force content mode; the panel instance persists (hidden via
-	// CSS, not unmounted) so this fires even when re-triggered while open.
+	// Cmd+Shift+F bumps this nonce. Do not replay a consumed request on remount.
 	createEffect(() => {
 		const nonce = uiStore.state.fileBrowserContentSearchNonce;
-		if (nonce === 0) return;
+		if (nonce === searchNonce) return;
+		searchNonce = nonce;
 		if (untrack(searchMode) !== "content") {
 			setSearchMode("content");
 			setSearchResults([]); // clear filename-mode results
@@ -246,6 +300,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 	});
 
 	const changeSubdir = (newSubdir: string) => {
+		cancelReopenScroll();
 		if (contentRef) {
 			scrollCache.set(currentSubdir(), { scrollTop: contentRef.scrollTop, selectedIndex: selectedIndex() });
 		}
@@ -260,7 +315,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
 	// Tree view state
 	const viewMode = () => uiStore.state.fileBrowserViewMode;
-	const [expandedDirs, setExpandedDirs] = createSignal<Set<string>>(new Set());
+	const [expandedDirs, setExpandedDirs] = createSignal<Set<string>>(restored?.expanded ?? new Set());
 	const [treeCache, setTreeCache] = createSignal<Map<string, DirEntry[]>>(new Map());
 
 	const toggleExpand = (path: string) => {
@@ -290,7 +345,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 	 * `mode`/`searching` are passed in (already tracked by the effect); tree-state
 	 * reads here are untracked to avoid re-triggering on our own expand/load.
 	 */
-	const revealActiveFile = async (rel: string, mode: string, searching: boolean) => {
+	const revealActiveFile = async (rel: string, mode: string, searching: boolean, cancelled: () => boolean) => {
 		const fsRoot = root();
 		if (fsRoot && mode === "tree" && !searching) {
 			const parts = rel.split("/");
@@ -299,7 +354,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 				acc = acc ? `${acc}/${parts[i]}` : parts[i];
 				if (!treeCache().has(acc)) {
 					try {
-						onChildrenLoaded(acc, await fb.listDirectory(fsRoot, acc));
+						const children = await fb.listDirectory(fsRoot, acc);
+						if (cancelled()) return;
+						onChildrenLoaded(acc, children);
 					} catch (err) {
 						appLogger.debug("app", "reveal: listDirectory failed", { path: acc, error: String(err) });
 						return;
@@ -310,6 +367,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		}
 		// Let the newly-expanded rows render, then scroll the active row into view.
 		requestAnimationFrame(() => {
+			if (cancelled() || pendingReopenScroll) return;
 			contentRef?.querySelector(`.${s.entryActive}`)?.scrollIntoView({ block: "nearest" });
 		});
 	};
@@ -319,26 +377,30 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		const mode = viewMode();
 		const searching = !!searchQuery().trim();
 		if (!rel || !props.visible) return;
-		untrack(() => void revealActiveFile(rel, mode, searching));
+		let cancelled = false;
+		onCleanup(() => {
+			cancelled = true;
+		});
+		untrack(() => void revealActiveFile(rel, mode, searching, () => cancelled));
 	});
 
 	// Directory watcher revision — bumped when dir-changed event arrives
 	const [dirRevision, setDirRevision] = createSignal(0);
 
 	// Track repoPath changes to reset subdir synchronously before fetching
-	let lastRepoPath: string | null = null;
+	let lastRepoPath: string | null = restored?.root ?? null;
 	// Generation counter: incremented on every effect run so stale async fetches are discarded
 	let fetchGeneration = 0;
 
 	// Load entries when visible, repo changes, subdir changes, or repo content changes
 	createEffect(() => {
+		const gen = ++fetchGeneration;
 		if (!props.visible || !root()) {
 			setEntries([]);
 			return;
 		}
 
 		const fsRoot = root()!;
-		const gen = ++fetchGeneration;
 
 		// Restore subdir when root changes (merged from separate effect to avoid double fetch)
 		if (fsRoot !== lastRepoPath) {
@@ -354,6 +416,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 				);
 			}
 			lastRepoPath = fsRoot;
+			scroll = { top: 0 };
+			cancelReopenScroll();
+			selectedPath = restoreSelection = undefined;
 			scrollCache.clear();
 			// Tree state is keyed by repo-relative path, so it would otherwise show the
 			// previous repo's children under a same-named node in the new one.
@@ -512,7 +577,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
 	// Debounced recursive filename search — only fires in filename mode
 	createEffect(() => {
-		if (searchMode() !== "filename") return;
+		if (!props.visible || searchMode() !== "filename") return;
 		const q = searchQuery().trim();
 		const fsRoot = root();
 
@@ -523,25 +588,31 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		}
 
 		setSearching(true);
+		let cancelled = false;
 		const timer = setTimeout(async () => {
 			try {
 				const results = await fb.searchFiles(fsRoot, q);
+				if (cancelled) return;
 				setSearchResults(results);
 				setSelectedIndex(0);
 			} catch (err) {
+				if (cancelled) return;
 				appLogger.error("app", "File search failed", err);
 				setSearchResults([]);
 			} finally {
-				setSearching(false);
+				if (!cancelled) setSearching(false);
 			}
 		}, 200);
 
-		onCleanup(() => clearTimeout(timer));
+		onCleanup(() => {
+			cancelled = true;
+			clearTimeout(timer);
+		});
 	});
 
 	// Content search — fires when in content mode and query changes
 	createEffect(() => {
-		if (searchMode() !== "content") return;
+		if (!props.visible || searchMode() !== "content") return;
 		const q = searchQuery().trim();
 		const fsRoot = root();
 
@@ -623,6 +694,96 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		if (sortBy() === "name") return raw; // already sorted by name from Rust
 		// Sort by date: dirs first, then newest first
 		return raw.toSorted((a, b) => (b.is_dir ? 1 : 0) - (a.is_dir ? 1 : 0) || b.modified_at - a.modified_at);
+	});
+
+	createEffect(() => {
+		if (!props.visible) return;
+		const list = filteredEntries();
+		if (list.length === 0) return;
+		if (restoreSelection) {
+			setSelectedIndex(
+				Math.max(
+					0,
+					list.findIndex((entry) => entry.path === restoreSelection),
+				),
+			);
+			restoreSelection = undefined;
+		}
+		selectedPath = list[selectedIndex()]?.path;
+	});
+
+	// Wait for the restored expanded tree, not merely enough rows to reach the
+	// old pixel offset. Late children above the anchor change its position.
+	const treeReady = () => {
+		if (viewMode() !== "tree" || searchQuery().trim()) return true;
+		const expanded = expandedDirs();
+		const cache = treeCache();
+		const loaded = (list: DirEntry[]): boolean =>
+			list.every((entry) => {
+				if (!entry.is_dir || !expanded.has(entry.path)) return true;
+				const children = cache.get(entry.path);
+				return children !== undefined && loaded(children);
+			});
+		return loaded(entries());
+	};
+	const restoreViewport = () => {
+		const saved = pendingReopenScroll;
+		const content = contentRef;
+		if (!saved || !content || !props.visible) return;
+		const row =
+			saved.anchor &&
+			Array.from(content.querySelectorAll<HTMLElement>("[data-browser-row]")).find(
+				(entry) => entry.dataset.browserRow === saved.anchor?.path,
+			);
+		const top =
+			row && saved.anchor
+				? content.scrollTop +
+					row.getBoundingClientRect().top -
+					content.getBoundingClientRect().top -
+					content.clientTop -
+					saved.anchor.offset
+				: saved.top;
+		content.scrollTop = Math.max(0, Math.min(top, content.scrollHeight - content.clientHeight));
+		cancelReopenScroll();
+		scroll = readScroll(content);
+	};
+	createEffect(() => {
+		if (!props.visible || !pendingReopenScroll || loading() || searching() || contentSearching() || !treeReady())
+			return;
+		const frame = requestAnimationFrame(restoreViewport);
+		onCleanup(() => cancelAnimationFrame(frame));
+	});
+	createEffect(() => {
+		if (!props.visible || !pendingReopenScroll) return;
+		// Failed/unreachable children must not keep a restore pending forever.
+		const timer = setTimeout(restoreViewport, 5000);
+		onCleanup(() => clearTimeout(timer));
+	});
+
+	createEffect(() => props.onRetainChange?.(renameDialogVisible() || deleteDialogVisible() || createDialogVisible()));
+	onCleanup(() => {
+		props.onRetainChange?.(false);
+		if (!props.onSaveView) return;
+		if (lastRepoPath) {
+			rootToSubdir.set(lastRepoPath, currentSubdir());
+			rootToSearchQuery.set(lastRepoPath, searchQuery());
+		}
+		const clip = clipboard();
+		props.onSaveView({
+			root: lastRepoPath,
+			subdir: currentSubdir(),
+			query: searchQuery(),
+			searchMode: searchMode(),
+			sortBy: sortBy(),
+			options: [caseSensitive(), useRegex(), wholeWord()],
+			expanded: expandedDirs(),
+			selectedPath,
+			scroll,
+			clipboard: clip && { ...clip, entry: { name: clip.entry.name, path: clip.entry.path } },
+			searchNonce,
+			rootToSubdir,
+			rootToSearchQuery,
+		});
 	});
 
 	/**
@@ -1207,6 +1368,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
 			// Don't capture navigation keys when typing in the search input
 			if (isInputFocused) return;
+			if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key)) cancelReopenScroll();
 
 			if (list.length === 0) return;
 
@@ -1500,7 +1662,16 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 				</div>
 			</Show>
 
-			<div class={p.content} ref={contentRef} onContextMenu={handleEmptyAreaContextMenu}>
+			<div
+				class={p.content}
+				ref={contentRef}
+				onScroll={(event) => {
+					if (props.visible && !pendingReopenScroll) scroll = readScroll(event.currentTarget);
+				}}
+				onWheel={cancelReopenScroll}
+				onTouchMove={cancelReopenScroll}
+				onContextMenu={handleEmptyAreaContextMenu}
+			>
 				<Show when={loading() || (searching() && searchMode() === "filename")}>
 					<div class={s.empty}>
 						{searching() ? t("fileBrowser.searching", "Searching\u2026") : t("fileBrowser.loading", "Loading...")}
@@ -1523,6 +1694,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 							<div class={s.contentGroup}>
 								<div
 									class={s.contentGroupHeader}
+									data-browser-row={`group:${group.path}`}
 									onClick={() => {
 										if (root() && group.matches.length > 0) {
 											props.onFileOpen(root()!, group.path, group.matches[0].line_number);
@@ -1538,6 +1710,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 									{(match) => (
 										<div
 											class={s.contentMatch}
+											data-browser-row={`match:${match.path}:${match.line_number}:${match.match_start}`}
 											onClick={() => {
 												if (root()) {
 													props.onFileOpen(root()!, match.path, match.line_number);
@@ -1652,6 +1825,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 													s.entryCut,
 											)}
 											data-drop-target={entry.is_dir ? "folder" : undefined}
+											data-browser-row={entry.path}
 											data-abs-path={entry.is_dir ? absPath() : undefined}
 											onPointerDown={(e) => handlePointerDragStart(absPath(), e)}
 											onClick={() => {

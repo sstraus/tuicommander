@@ -1826,16 +1826,10 @@ pub fn start_dictation(
     // input device and the language all come from this snapshot.
     let config = get_dictation_config();
     let whisper_model = resolve_model(&config.model);
-    let transcriber_arc = ensure_transcriber(Some(&app), &dictation, whisper_model)?;
 
-    // Always emit backend info so the frontend gets it even when model is reused
-    let _ = app.emit(
-        "dictation-backend-info",
-        serde_json::json!({
-            "backend": transcribe::backend_label(),
-        }),
-    );
-
+    // Open the microphone before loading the model. A cold load takes seconds,
+    // and the user is already speaking while holding the key: capture buffers
+    // that speech so the streaming session transcribes it once the model is in.
     // Start audio capture using the configured device (or system default)
     let device_name = config.device.as_deref().filter(|s| !s.is_empty());
     let mut capture = audio::AudioCapture::start_with_device(device_name).map_err(|e| {
@@ -1871,6 +1865,23 @@ pub fn start_dictation(
     }
     *audio_slot = Some(capture);
     drop(audio_slot);
+
+    let transcriber_arc = match ensure_transcriber(Some(&app), &dictation, whisper_model) {
+        Ok(transcriber) => transcriber,
+        Err(e) => {
+            // Close the microphone opened above; the guard resets the flags.
+            dictation.audio.lock().take();
+            return Err(e);
+        }
+    };
+
+    // Always emit backend info so the frontend gets it even when model is reused
+    let _ = app.emit(
+        "dictation-backend-info",
+        serde_json::json!({
+            "backend": transcribe::backend_label(),
+        }),
+    );
 
     // Start streaming session
     let lang = if config.language == "auto" {

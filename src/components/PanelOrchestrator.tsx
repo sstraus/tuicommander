@@ -1,4 +1,4 @@
-import { type Component, createEffect, createSignal, lazy, Show, Suspense } from "solid-js";
+import { type Component, createEffect, createSignal, lazy, on, Show, Suspense } from "solid-js";
 import { diffTabsStore } from "../stores/diffTabs";
 import { globalWorkspaceStore, MANUAL_SCOPE } from "../stores/globalWorkspace";
 import { progressStore } from "../stores/progress";
@@ -13,12 +13,14 @@ import {
 } from "../utils/sendToActiveTerminal";
 import { AutomationsHost } from "./AutomationsDialog/AutomationsHost";
 import { FileBrowserPanel } from "./FileBrowserPanel";
-import { GitPanel } from "./GitPanel/GitPanel";
+import type { FileBrowserView } from "./FileBrowserPanel/FileBrowserPanel";
+import { GitPanel, type GitPanelView } from "./GitPanel/GitPanel";
 import { IdeasPanel } from "./IdeasPanel";
 import { MarkdownPanel } from "./MarkdownPanel";
 import { OutlinePanel } from "./OutlinePanel";
 import { ProgressDialog } from "./ProgressDialog";
 import { ReferencesPanel } from "./ReferencesPanel";
+import { RetainedPanel } from "./RetainedPanel";
 
 const StoriesDialog = lazy(() =>
 	import("./StoriesDialog/StoriesDialog").then((module) => ({ default: module.StoriesDialog })),
@@ -49,6 +51,22 @@ function manualWorkspaceActive(): boolean {
 }
 
 export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
+	const filesVisible = () => uiStore.state.fileBrowserPanelVisible && !manualWorkspaceActive();
+	const gitVisible = () => uiStore.state.gitPanelVisible && !manualWorkspaceActive();
+	const [retainFiles, setRetainFiles] = createSignal(false);
+	const [retainGit, setRetainGit] = createSignal(false);
+	let fileView: FileBrowserView | undefined;
+	let gitView: GitPanelView | undefined;
+	// Keep this ownership rule alive even when the inline view is evicted.
+	createEffect(
+		on(
+			() => [props.repoPath, props.fsRoot],
+			() => {
+				if (!uiStore.isDetached("file-browser")) uiStore.setFileBrowserExternalRoot(null);
+			},
+			{ defer: true },
+		),
+	);
 	const [aiChatRequested, setAiChatRequested] = createSignal(uiStore.state.aiChatPanelVisible);
 	createEffect(() => {
 		if (uiStore.state.aiChatPanelVisible) setAiChatRequested(true);
@@ -57,13 +75,20 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
 		<>
 			<AutomationsHost />
 			<Show when={!uiStore.isDetached("file-browser")}>
-				<FileBrowserPanel
-					visible={uiStore.state.fileBrowserPanelVisible && !manualWorkspaceActive()}
-					repoPath={props.repoPath}
-					fsRoot={props.fsRoot}
-					onClose={() => uiStore.toggleFileBrowserPanel()}
-					onFileOpen={props.onFileOpen}
-				/>
+				<RetainedPanel visible={filesVisible()} retain={retainFiles()}>
+					<FileBrowserPanel
+						visible={filesVisible()}
+						initialView={fileView}
+						onSaveView={(view) => {
+							fileView = view;
+						}}
+						onRetainChange={setRetainFiles}
+						repoPath={props.repoPath}
+						fsRoot={props.fsRoot}
+						onClose={() => uiStore.toggleFileBrowserPanel()}
+						onFileOpen={props.onFileOpen}
+					/>
+				</RetainedPanel>
 			</Show>
 
 			<Show when={!uiStore.isDetached("markdown")}>
@@ -94,14 +119,22 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
 			</Show>
 
 			<Show when={!uiStore.isDetached("git")}>
-				<GitPanel
-					visible={uiStore.state.gitPanelVisible && !manualWorkspaceActive()}
-					repoPath={props.repoPath}
-					fsRoot={props.fsRoot}
-					onClose={() => uiStore.toggleGitPanel()}
-					requestedTab={uiStore.state.gitPanelRequestedTab}
-					onOpenDiff={diffTabsStore.add.bind(diffTabsStore)}
-				/>
+				<RetainedPanel visible={gitVisible()} retain={retainGit()}>
+					<GitPanel
+						visible={gitVisible()}
+						initialView={gitView}
+						onSaveView={(view) => {
+							gitView = view;
+						}}
+						onRetainChange={setRetainGit}
+						repoPath={props.repoPath}
+						fsRoot={props.fsRoot}
+						onClose={() => uiStore.toggleGitPanel()}
+						requestedTab={uiStore.state.gitPanelRequestedTab}
+						requestId={uiStore.state.gitPanelRequestId}
+						onOpenDiff={diffTabsStore.add.bind(diffTabsStore)}
+					/>
+				</RetainedPanel>
 			</Show>
 
 			<Show when={settingsStore.isAiChatEnabled() && !uiStore.isDetached("ai-chat") && aiChatRequested()}>

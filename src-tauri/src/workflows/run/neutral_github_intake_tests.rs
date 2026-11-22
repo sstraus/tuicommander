@@ -32,7 +32,7 @@ async fn enabled_neutral_issue_binding_receives_issue() {
         .unwrap()
         .execute(
             "VACUUM INTO ?1",
-            [f._dir.path().join("workflows.sqlite3").to_str().unwrap()],
+            [f._dir.path().join(crate::db::TUIC_DB).to_str().unwrap()],
         )
         .unwrap();
     let _config = crate::config::set_config_dir_override(f._dir.path().to_path_buf());
@@ -106,7 +106,7 @@ async fn no_enabled_issue_source_does_not_fetch_or_start_intake() {
         .unwrap()
         .execute(
             "VACUUM INTO ?1",
-            [f._dir.path().join("workflows.sqlite3").to_str().unwrap()],
+            [f._dir.path().join(crate::db::TUIC_DB).to_str().unwrap()],
         )
         .unwrap();
     let _config = crate::config::set_config_dir_override(f._dir.path().to_path_buf());

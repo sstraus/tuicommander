@@ -990,6 +990,81 @@ describe("AIChatPanel: transcript actions", () => {
 		expect(mockOpenFile).toHaveBeenCalledWith("/repo/tuicommander/results/worker.md");
 	});
 
+	// Catches: a long card (for example the compaction summary) rendered in full,
+	// so one notice fills the whole transcript.
+	it("shows only the first line of a multi-line card and keeps the rest in a closed disclosure", async () => {
+		const { container } = await renderPanel();
+		await settle();
+		feed({
+			kind: "sessionUpdate",
+			update: {
+				sessionUpdate: "agent_message_chunk",
+				content: { type: "text", text: "Conversation compacted\n\n# Objective\n\nImplement the update" },
+				_meta: { ego: { salience: "card" } },
+			},
+		});
+		await settle();
+		const card = container.querySelector('[aria-label="Notice"]') as HTMLElement;
+		const details = card.querySelector("details") as HTMLDetailsElement;
+		expect(details).not.toBeNull();
+		expect(details.open).toBe(false);
+		expect(details.textContent).toContain("# Objective");
+		expect(details.textContent).toContain("Implement the update");
+		const summaryLine = card.querySelector("summary")?.textContent ?? "";
+		expect(summaryLine).toContain("Conversation compacted");
+		expect(summaryLine).not.toContain("# Objective");
+	});
+
+	// Catches: a one-line card hidden behind a disclosure it does not need.
+	it("shows a one-line card in full without a disclosure", async () => {
+		const { container } = await renderPanel();
+		await settle();
+		feed({
+			kind: "sessionUpdate",
+			update: {
+				sessionUpdate: "agent_message_chunk",
+				content: { type: "text", text: "Worker finished: RESULT" },
+				_meta: { ego: { salience: "card" } },
+			},
+		});
+		await settle();
+		const card = container.querySelector('[aria-label="Notice"]') as HTMLElement;
+		expect(card.querySelector("details")).toBeNull();
+		expect(card.textContent).toContain("Worker finished: RESULT");
+	});
+
+	// Catches: the action button of a multi-line card moved inside the closed
+	// disclosure, so it is hidden or dead until the operator expands the card.
+	it("keeps the action of a collapsed multi-line card visible and working", async () => {
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "load_config") return { ai_chat_sessions: {} };
+			if (command === "acp_workspace_root") return CHAT_ROOT;
+			if (command === "resolve_terminal_path") return { absolute_path: "/repo/tuicommander/results/worker.md" };
+			return undefined;
+		});
+		const { container } = await renderPanel();
+		await settle();
+		feed({
+			kind: "sessionUpdate",
+			update: {
+				sessionUpdate: "agent_message_chunk",
+				content: { type: "text", text: "Worker finished: RESULT\nChanged 3 files\nAll checks passed" },
+				_meta: { ego: { salience: "card", action: { kind: "open_result", path: "results/worker.md" } } },
+			},
+		});
+		await settle();
+		const card = container.querySelector('[aria-label="Notice"]') as HTMLElement;
+		const details = card.querySelector("details") as HTMLDetailsElement;
+		expect(details.open).toBe(false);
+		const button = [...card.querySelectorAll("button")].find((item) => item.textContent === "Open result");
+		expect(button).toBeDefined();
+		expect(details.contains(button!)).toBe(false);
+		button!.click();
+		await settle();
+		expect(mockOpenFile).toHaveBeenCalledWith("/repo/tuicommander/results/worker.md");
+		expect(details.open).toBe(false);
+	});
+
 	// Catches: breaking non-ego or older ego sessions.
 	it("renders an update without _meta as an assistant message, not a card", async () => {
 		const { container } = await renderPanel();
@@ -6198,6 +6273,26 @@ it("closes the detached window from its header", async () => {
 });
 
 describe("AIChatPanel: ACP slash commands", () => {
+	it.each(["name", "retry", "compact", "fork", "pause", "resume"])(
+		"dispatches advertised /%s with arguments when no host handler owns it — catches arbitrary reserved-name suppression",
+		async (name) => {
+			const { container } = await renderPanel();
+			acpStore.applySnapshot({
+				...acpStore.connection(CONNECTION)!,
+				capabilities: { ...snapshot().capabilities!, egoCompactVersion: null, egoHoldVersion: null, fork: false },
+			});
+			feed({
+				kind: "sessionUpdate",
+				update: {
+					sessionUpdate: "available_commands_update",
+					availableCommands: [{ name, description: "Agent command" }],
+				},
+			});
+			await typeAndSend(container, `/${name} exact arguments`);
+			expect(client.prompt).toHaveBeenCalledWith(CONNECTION, SESSION, `/${name} exact arguments`, [], ROOT);
+		},
+	);
+
 	const offer = () => feed({ kind: "sessionUpdate", update: recordedCommands });
 	const type = (container: HTMLElement, text: string) => {
 		const input = container.querySelector("textarea")!;
@@ -6319,7 +6414,7 @@ describe("AIChatPanel: ACP slash commands", () => {
 		expect(client.forkSession).not.toHaveBeenCalled();
 		expect(client.compact).not.toHaveBeenCalled();
 	});
-	it("clears only the composer and reports existing usage — catches local actions becoming model turns", async () => {
+	it("reports existing usage without a model turn — catches usage sent as a prompt", async () => {
 		const { container } = await renderPanel();
 		feed({
 			kind: "sessionUpdate",
@@ -6327,13 +6422,89 @@ describe("AIChatPanel: ACP slash commands", () => {
 		});
 		await typeAndSend(container, "/usage");
 		expect(container.textContent).toContain("Context 100 / 400 tokens (25%) · USD 2");
+		expect(client.prompt).not.toHaveBeenCalled();
+	});
+	it("resets context through New even when clear is advertised — catches draft-only clear or slash prompt fallback", async () => {
+		const { container } = await renderPanel();
+		feed({
+			kind: "sessionUpdate",
+			update: {
+				sessionUpdate: "available_commands_update",
+				availableCommands: [{ name: "clear", description: "Agent clear" }],
+			},
+		});
+		feed({ kind: "sessionUpdate", update: { sessionUpdate: "usage_update", used: 100, size: 400 } });
+		type(container, "/clear");
+		const menu = container.querySelector('[aria-label="Slash commands"]')!;
+		expect(menu.querySelectorAll('[role="option"]')).toHaveLength(1);
+		expect(menu.textContent).toContain("Clear agent context by starting a new conversation");
+		const before = client.newSession.mock.calls.length;
+		client.newSession.mockImplementationOnce(() => openSession(SECOND_SESSION));
 		await typeAndSend(container, "/clear");
+		expect(client.newSession).toHaveBeenCalledTimes(before + 1);
+		expect(client.newSession).toHaveBeenLastCalledWith(CONNECTION, CHAT_ROOT);
+		expect(aiChatTabs.active("global")).toBe(SECOND_SESSION);
 		expect(container.querySelector("textarea")!.value).toBe("");
-		// Catches: /clear succeeds without visible feedback, or claims agent context was removed.
-		expect(container.querySelector('[role="status"]')?.textContent).toContain(
-			"Composer and attachments cleared. Conversation history and agent context are unchanged.",
-		);
+		expect(acpTranscript.usage(SECOND_SESSION)).toBeNull();
 		expect(acpTranscript.usage(SESSION)?.used).toBe(100);
+		expect(acpStore.attachment(CONNECTION, SESSION)).not.toBeNull();
+		expect(client.deleteSession).not.toHaveBeenCalled();
+		expect(client.prompt).not.toHaveBeenCalled();
+		await typeAndSend(container, "A fresh start");
+		expect(client.prompt).toHaveBeenCalledWith(CONNECTION, SECOND_SESSION, "A fresh start", [], ROOT);
+	});
+	it("retains clear when disconnected — catches unavailable reset deleting attachments", async () => {
+		const { container } = await renderPanel();
+		await typeAndSend(container, "/quit");
+		aiChatDraft.stageFile({ name: "notes.txt", path: "/repo/notes.txt" });
+		const before = client.newSession.mock.calls.length;
+		await typeAndSend(container, "/clear");
+		expect(client.newSession).toHaveBeenCalledTimes(before);
+		expect(container.querySelector("textarea")!.value).toBe("/clear");
+		expect(aiChatDraft.files()).toHaveLength(1);
+		expect(container.textContent).toContain("Open a conversation before clearing context.");
+		expect(client.prompt).not.toHaveBeenCalled();
+	});
+	it.each(["prompting", "cancelling", "paused", "pause_pending"] as const)(
+		"retains clear and attachments while %s — catches resetting an occupied conversation",
+		async (state) => {
+			const { container } = await renderPanel();
+			acpStore.applySnapshot(snapshot({ attachments: [attachment({ state })] }));
+			aiChatDraft.stageFile({ name: "notes.txt", path: "/repo/notes.txt" });
+			const before = client.newSession.mock.calls.length;
+			await typeAndSend(container, "/clear");
+			expect(client.newSession).toHaveBeenCalledTimes(before);
+			expect(container.querySelector("textarea")!.value).toBe("/clear");
+			expect(aiChatDraft.files()).toHaveLength(1);
+			expect(container.textContent).toContain("Wait for the current turn to finish before clearing context.");
+			expect(client.prompt).not.toHaveBeenCalled();
+		},
+	);
+	it("retains clear on reset failure and prevents duplicate pending resets — catches eager draft loss", async () => {
+		const { container } = await renderPanel();
+		let reject!: (error: Error) => void;
+		client.newSession.mockImplementationOnce(
+			() =>
+				new Promise((_resolve, fail) => {
+					reject = fail;
+				}),
+		);
+		aiChatDraft.stageFile({ name: "notes.txt", path: "/repo/notes.txt" });
+		const before = client.newSession.mock.calls.length;
+		type(container, "/clear");
+		const send = container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!;
+		// Two clicks before New replaces the composer with the starting view.
+		send.click();
+		send.click();
+		await settle();
+		expect(client.newSession).toHaveBeenCalledTimes(before + 1);
+		expect(aiChatDraft.files()).toHaveLength(1);
+		reject(new Error("reset unavailable"));
+		await settle();
+		expect(aiChatTabs.active("global")).toBe(SESSION);
+		expect(container.querySelector("textarea")!.value).toBe("/clear");
+		expect(aiChatDraft.files()).toHaveLength(1);
+		expect(container.textContent).toContain("reset unavailable");
 		expect(client.prompt).not.toHaveBeenCalled();
 	});
 	it("starts a new conversation without sending /new — catches new action becoming a model turn", async () => {
@@ -6605,6 +6776,147 @@ it("leaves starting when a shared selection arrives during a cold launch", async
 	await settle();
 	await settle();
 	expect(view.container.textContent).not.toContain("Connecting conversation…");
+});
+
+describe("AIChatPanel: local sending receipts", () => {
+	it("shows Sending before the receipt and only backend-confirmed queue controls — catches the disappearing delayed submission", async () => {
+		const { container } = await renderPanel();
+		acpStore.applySnapshot(
+			snapshot({
+				attachments: [
+					attachment({
+						state: "prompting",
+						activeTurn: { turnId: "running", state: "running", stopReason: null, usage: null },
+					}),
+				],
+			}),
+		);
+		let accept!: (id: string) => void;
+		client.prompt.mockImplementationOnce(
+			() =>
+				new Promise<string>((resolve) => {
+					accept = resolve;
+				}),
+		);
+		await typeAndSend(container, "visible while sending");
+		expect(container.querySelector('[aria-label="Sending prompts"]')?.textContent).toContain("visible while sending");
+		expect(container.textContent).toContain("Sending…");
+		expect(container.querySelector('[aria-label^="Cancel queued prompt"]')).toBeNull();
+		accept("queued-receipt");
+		await settle();
+		expect(container.querySelector('[aria-label="Sending prompts"]')?.textContent).toContain("visible while sending");
+		expect(container.querySelector('[aria-label="Queued prompts"]')).toBeNull();
+		feed({
+			kind: "promptQueueChanged",
+			queuedPrompts: [{ turnId: "queued-receipt", summary: "visible while sending" }],
+		});
+		await settle();
+		expect(container.querySelector('[aria-label="Sending prompts"]')).toBeNull();
+		expect(container.querySelector('[aria-label="Queued prompts"]')?.textContent).toContain("visible while sending");
+		expect(client.prompt).toHaveBeenCalledTimes(1);
+	});
+
+	it("retains rejected payload for retry without replacing newer typing — catches failed sends losing recoverable content", async () => {
+		const { container } = await renderPanel();
+		let reject!: (error: Error) => void;
+		client.prompt.mockImplementationOnce(
+			() =>
+				new Promise<string>((_, fail) => {
+					reject = fail;
+				}),
+		);
+		await typeAndSend(container, "recover this submission");
+		const textarea = container.querySelector("textarea")!;
+		textarea.value = "newer draft";
+		textarea.dispatchEvent(new Event("input", { bubbles: true }));
+		reject(new Error("submission refused"));
+		await settle();
+		expect(textarea.value).toBe("newer draft");
+		expect(container.querySelector('[aria-label="Sending prompts"]')?.textContent).toContain("recover this submission");
+		const retry = container.querySelector('[aria-label="Retry sending recover this submission"]') as HTMLButtonElement;
+		expect(retry).not.toBeNull();
+		retry.click();
+		await settle();
+		expect(client.prompt).toHaveBeenLastCalledWith(CONNECTION, SESSION, "recover this submission", [], ROOT);
+		expect(textarea.value).toBe("newer draft");
+		feed({ kind: "turnStarted" }, SESSION, "turn-1");
+		await settle();
+		expect(container.querySelector('[aria-label="Sending prompts"]')).toBeNull();
+	});
+
+	it("retries the captured file payload without consuming new attachments — catches failure recovery dropping or stealing files", async () => {
+		const { container } = await renderPanel();
+		aiChatDraft.stageFile({ name: "original.txt", path: "/uploads/original.txt" });
+		client.prompt.mockRejectedValueOnce(new Error("submission refused"));
+		await typeAndSend(container, "original file request");
+		aiChatDraft.stageFile({ name: "new.txt", path: "/uploads/new.txt" });
+		(container.querySelector('[aria-label="Retry sending original file request"]') as HTMLButtonElement).click();
+		await settle();
+		expect(client.prompt).toHaveBeenLastCalledWith(CONNECTION, SESSION, "original file request", [], ROOT, [
+			{ name: "original.txt", path: "/uploads/original.txt" },
+		]);
+		expect(aiChatDraft.files()).toEqual([{ name: "new.txt", path: "/uploads/new.txt" }]);
+	});
+
+	it("keeps delayed failure with its source tab — catches a failed send leaking into another session", async () => {
+		const { container } = await renderPanel();
+		let reject!: (error: Error) => void;
+		client.prompt.mockImplementationOnce(
+			() =>
+				new Promise<string>((_, fail) => {
+					reject = fail;
+				}),
+		);
+		await typeAndSend(container, "source tab payload");
+		client.newSession.mockImplementationOnce(() => openSession(SECOND_SESSION));
+		(container.querySelector('button[aria-label="New chat tab"]') as HTMLButtonElement).click();
+		await settle();
+		const textarea = container.querySelector("textarea")!;
+		textarea.value = "other tab draft";
+		textarea.dispatchEvent(new Event("input", { bubbles: true }));
+		reject(new Error("source failure"));
+		await settle();
+		expect(textarea.value).toBe("other tab draft");
+		expect(container.querySelector('[aria-label="Sending prompts"]')).toBeNull();
+		expect(container.textContent).not.toContain("source failure");
+		(container.querySelector(`button[aria-label="Close chat tab ${SECOND_SESSION}"]`) as HTMLButtonElement).click();
+		await settle();
+		expect(container.querySelector('[aria-label="Sending prompts"]')?.textContent).toContain("source tab payload");
+	});
+
+	it("remembers settlement before a delayed receipt even after a later outcome — catches stale pending after fast consecutive turns", async () => {
+		const { container } = await renderPanel();
+		let accept!: (id: string) => void;
+		client.prompt.mockImplementationOnce(
+			() =>
+				new Promise<string>((resolve) => {
+					accept = resolve;
+				}),
+		);
+		await typeAndSend(container, "fast settled before receipt");
+		feed({ kind: "turnStarted" }, SESSION, "early-turn");
+		feed({ kind: "turnSettled", stopReason: "end_turn", usage: null }, SESSION, "early-turn");
+		await settle();
+		feed({ kind: "turnStarted" }, SESSION, "later-turn");
+		feed({ kind: "turnSettled", stopReason: "end_turn", usage: null }, SESSION, "later-turn");
+		accept("early-turn");
+		await settle();
+		expect(container.querySelector('[aria-label="Sending prompts"]')).toBeNull();
+		expect(client.prompt).toHaveBeenCalledTimes(1);
+	});
+
+	it("removes fast accepted receipts without inventing a queue — catches phantom queued sends", async () => {
+		const { container } = await renderPanel();
+		client.prompt.mockImplementationOnce(async () => {
+			feed({ kind: "turnStarted" }, SESSION, "turn-1");
+			feed({ kind: "turnSettled", stopReason: "end_turn", usage: null }, SESSION, "turn-1");
+			return "turn-1";
+		});
+		await typeAndSend(container, "accepted immediately");
+		expect(container.querySelector('[aria-label="Sending prompts"]')).toBeNull();
+		expect(container.querySelector('[aria-label="Queued prompts"]')).toBeNull();
+		expect(client.prompt).toHaveBeenCalledTimes(1);
+	});
 });
 
 describe("queued prompt recall", () => {
@@ -6909,4 +7221,31 @@ it("message actions reread backend marks after a stale receipt", async () => {
 	} finally {
 		dispose();
 	}
+});
+
+// Catches: the desktop panel forgets to wire the transient accessor, or shows two busy rows.
+it("wires dispatched reasoning through the chat controller and suppresses the generic working row", async () => {
+	const { container } = await renderPanel();
+	feed({ kind: "promptSent", text: "Question" }, SESSION, "reasoning-turn");
+	feed({ kind: "turnStarted" }, SESSION, "reasoning-turn");
+	await settle();
+	expect(container.querySelector('[aria-label="Turn reasoning"] em')?.textContent).toBe("Processing…");
+	expect(container.querySelector('[aria-label="Working…"]')).toBeNull();
+	feed(
+		{
+			kind: "sessionUpdate",
+			update: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "Inspect the input." } },
+		},
+		SESSION,
+		"reasoning-turn",
+	);
+	await settle();
+	expect(container.querySelector('[aria-label="Turn reasoning"] em')?.textContent).toBe("Inspect the input.");
+	acpStore.markStopped(CONNECTION);
+	await settle();
+	expect(container.querySelector('[aria-label="Turn reasoning"]')).toBeNull();
+	// Losing the stream hides presentation, not the public transcript evidence.
+	expect(
+		acpTranscript.entries(SESSION).some((entry) => entry.kind === "thought" && entry.text === "Inspect the input."),
+	).toBe(true);
 });

@@ -21,6 +21,10 @@
   color: var(--activity);
 }
 
+.background {
+  color: var(--activity);
+}
+
 .question {
   background: color-mix(in srgb, var(--attention) 15%, transparent);
   color: var(--attention);

@@ -361,10 +361,78 @@ mod tests {
         }
     }
 
-    /// Catches TCP loopback or the legacy LAN preference granting unauthenticated writes.
+    /// Catches: missing config restoring mandatory local login, IPv6 being excluded,
+    /// or a spoofed forwarding header granting a network peer local admission.
     #[tokio::test]
-    async fn local_http_still_requires_credentials() {
+    async fn loopback_http_is_free_by_default_and_local_auth_is_opt_in() {
+        let mut auth: crate::config::AuthConfig = serde_json::from_str("{}").unwrap();
+        assert!(
+            !auth.require_local_auth,
+            "existing configs must keep local access"
+        );
+        for require_local_auth in [false, true] {
+            auth.require_local_auth = require_local_auth;
+            let state = state();
+            state.config.write().services.auth = auth.clone();
+            let app = super::super::build_router(state, true, true);
+            for (peer, default_status, strict_status) in [
+                ("127.0.0.1:12345", StatusCode::OK, StatusCode::UNAUTHORIZED),
+                ("[::1]:12345", StatusCode::OK, StatusCode::UNAUTHORIZED),
+                (
+                    "192.168.1.12:12345",
+                    StatusCode::UNAUTHORIZED,
+                    StatusCode::UNAUTHORIZED,
+                ),
+                (
+                    "100.64.0.3:12345",
+                    StatusCode::UNAUTHORIZED,
+                    StatusCode::UNAUTHORIZED,
+                ),
+            ] {
+                let peer: SocketAddr = peer.parse().unwrap();
+                for token in [false, true] {
+                    let mut req = request(
+                        "/api/auth/session-token",
+                        "127.0.0.1:9876",
+                        None,
+                        token,
+                        [127, 0, 0, 1],
+                    );
+                    *req.method_mut() = axum::http::Method::GET;
+                    req.extensions_mut().insert(ConnectInfo(peer));
+                    req.headers_mut()
+                        .insert("x-forwarded-for", HeaderValue::from_static("127.0.0.1"));
+                    let response = app.clone().oneshot(req).await.unwrap();
+                    let expected = if token {
+                        StatusCode::OK
+                    } else if require_local_auth {
+                        strict_status
+                    } else {
+                        default_status
+                    };
+                    assert_eq!(
+                        response.status(),
+                        expected,
+                        "{peer} strict={require_local_auth} token={token}"
+                    );
+                    if expected == StatusCode::OK {
+                        let body = axum::body::to_bytes(response.into_body(), 1024)
+                            .await
+                            .unwrap();
+                        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+                        assert_eq!(body["token"], "boundary-token");
+                    }
+                }
+            }
+        }
+    }
+
+    /// Catches: opt-in local authentication or remote authentication being bypassed
+    /// on write routes by the obsolete LAN preference.
+    #[tokio::test]
+    async fn explicit_local_auth_and_remote_auth_require_credentials() {
         let state = state();
+        state.config.write().services.auth.require_local_auth = true;
         state.config.write().services.auth.lan_auth_bypass = true;
         let app = super::super::build_router(state, true, true);
         for peer in [[127, 0, 0, 1], [192, 168, 1, 12]] {

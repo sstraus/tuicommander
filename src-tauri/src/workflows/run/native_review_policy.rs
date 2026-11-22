@@ -19,7 +19,7 @@ pub(super) fn policy(instance: &ActivityInstance) -> Result<ReviewAdmissionPolic
 }
 
 fn connect(store: &RunStore) -> Result<Connection, String> {
-    let conn = Connection::open(store.database_path()).map_err(|e| e.to_string())?;
+    let conn = crate::db::open(store.database_path())?;
     conn.busy_timeout(std::time::Duration::from_secs(30))
         .map_err(|e| e.to_string())?;
     conn.execute_batch(

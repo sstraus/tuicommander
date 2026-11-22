@@ -1,7 +1,7 @@
 //! Provider quota registry: one entry per subscription, one policy for every owner.
 //!
 //! A quota belongs to a credential, and the program that owns the credential
-//! (`claude-code`, `codex-cli`, `grok-cli`, `gemini-cli`, `ego`, `pi`) is its
+//! (`claude-code`, `codex-cli`, `grok-cli`, `ego`, `pi`) is its
 //! reader. Each owner is one [`QuotaOwner`] adapter with up to two sources:
 //!
 //! - **passive** ([`QuotaOwner::observed`] or [`QuotaRegistry::observe`]): a
@@ -62,7 +62,7 @@ pub(crate) type Fingerprint = String;
 /// Two sessions on the same credential share one key and one read.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub(crate) struct SubscriptionKey {
-    /// Credential owner: `claude-code`, `codex-cli`, `grok-cli`, `gemini-cli`, `ego`, `pi`.
+    /// Credential owner: `claude-code`, `codex-cli`, `grok-cli`, `ego`, `pi`.
     pub owner: String,
     /// Subscription provider: `anthropic`, `openai-codex`, `xai`, `google`, `github-copilot`.
     pub provider: String,
@@ -72,6 +72,9 @@ pub(crate) struct SubscriptionKey {
     /// Named CLI profile when it changes the live configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
+    /// Stable named ego account, separate from its vendor and display name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection: Option<String>,
 }
 
 impl SubscriptionKey {
@@ -85,6 +88,7 @@ impl SubscriptionKey {
             provider: provider.into(),
             credential: credential.into(),
             profile: None,
+            connection: None,
         }
     }
 }
@@ -94,6 +98,9 @@ impl fmt::Display for SubscriptionKey {
         write!(f, "{}:{}:{}", self.owner, self.provider, self.credential)?;
         if let Some(profile) = &self.profile {
             write!(f, ":profile={profile}")?;
+        }
+        if let Some(connection) = &self.connection {
+            write!(f, ":connection={connection}")?;
         }
         Ok(())
     }
@@ -130,14 +137,14 @@ fn label(kind: WindowKind, window_seconds: Option<i64>) -> String {
         (WindowKind::Other, Some(s)) if s >= DAY => format!("{}d", (s + DAY / 2) / DAY),
         (WindowKind::Other, Some(s)) if s >= HOUR => format!("{}h", (s + HOUR / 2) / HOUR),
         (WindowKind::Other, Some(s)) => format!("{}m", ((s + 30) / 60).max(1)),
-        (WindowKind::Other, None) => "credits".into(),
+        (WindowKind::Other, None) => "usage".into(),
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct QuotaWindow {
     pub kind: WindowKind,
-    /// Short display label derived from the duration (`5h`, `7d`, `2d`, `credits`).
+    /// Short display label derived from the duration (`5h`, `7d`, `2d`, or `usage` if unknown).
     pub label: String,
     /// Percent used. May exceed 100 for spend limits.
     pub used_percent: f64,
@@ -244,6 +251,9 @@ pub(crate) enum QuotaState {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct QuotaView {
     pub key: SubscriptionKey,
+    /// Presentation warning after three consecutive transient reads; never changes retry policy.
+    #[serde(default)]
+    pub retry_warning: bool,
     /// Initial client binding inventory; subsequent changes have their own event.
     pub session_ids: Vec<String>,
     pub snapshot: Option<QuotaSnapshot>,
@@ -378,6 +388,11 @@ impl QuotaRegistry {
     /// Register (or replace) the adapter for one owner id.
     pub(crate) fn register_owner(&self, owner: Arc<dyn QuotaOwner>) {
         self.owners.write().insert(owner.owner(), owner);
+    }
+
+    /// Register a built-in owner unless one with its name is already registered.
+    pub(crate) fn register_default_owner(&self, owner: Arc<dyn QuotaOwner>) {
+        self.owners.write().entry(owner.owner()).or_insert(owner);
     }
 
     /// Bind a session to the key of the credential it uses. Rebinding replaces
@@ -646,8 +661,10 @@ impl QuotaRegistry {
     }
 
     fn view_of(&self, key: &SubscriptionKey, entry: &Entry, now_ms: u64) -> QuotaView {
+        let state = policy::state(entry, now_ms, self.cadence_ms());
         QuotaView {
             key: key.clone(),
+            retry_warning: entry.transient_failures >= 3,
             session_ids: {
                 let mut ids: Vec<_> = self
                     .bindings
@@ -659,7 +676,7 @@ impl QuotaRegistry {
                 ids
             },
             snapshot: entry.snapshot.clone(),
-            state: policy::state(entry, now_ms, self.cadence_ms()),
+            state,
         }
     }
 }

@@ -32,7 +32,7 @@
 ## Key Features
 
 - **Terminal Management** — Tabbed terminals with split panes, drag-and-drop reordering, and per-branch isolation via Git worktrees
-- **AI Agent Support** — Auto-detect Claude Code, Codex, Gemini CLI and more. Monitor progress, costs, and active subtasks in real time
+- **AI Agent Support** — Auto-detect Claude Code, Codex, Antigravity CLI and more. Monitor progress, costs, and active subtasks in real time
 - **Git Worktrees** — Each branch gets its own working directory. Create, merge, archive, and batch-manage worktrees from the UI
 - **GitHub Integration** — PR badges, CI status rings, merge from the UI, post-merge cleanup, and notification bell for PR events
 - **Plugin System** — Extend TUICommander with JavaScript plugins. Full API for terminals, git, notifications, and status bar widgets

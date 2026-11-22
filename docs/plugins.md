@@ -713,6 +713,28 @@ Check `trimmable_bytes > 0` before offering it. It resolves with the bytes it ac
 const reclaimed = await host.trimBuildArtifact("/Users/me/project/target", ["/Users/me/project"]);
 ```
 
+### Story count (capability-gated)
+
+#### host.getStoryCount(repoPath) -> Promise<StoryCountSnapshot>
+
+Available from app 2.1.2. Deploy the matching host before Stories Ticker 1.1.0;
+older hosts do not enforce `minAppVersion` and cannot load `stories:read` plugins.
+
+Requires `stories:read` and a registered repository. Returns `{project, backend,
+generation, openCount}` from the selected story backend. The count uses the same
+project projection as Plans and Stories: all non-archived plans, open non-archived
+stories and no story-type filter. This fixed aggregate call exposes no story
+content and grants no arbitrary story action access. Backend failure rejects;
+there is no native or filesystem fallback.
+
+#### host.watchStoryCount(repoPath, callback) -> Promise<Disposable>
+
+Requires `stories:read`. Subscribe before the initial count read. The callback
+invalidates the snapshot after story, backend-selection, workflow or repository
+changes, or a transport resync on the repository's owning host. Reread with
+`getStoryCount`; dispose when switching repositories. Plugin unload also disposes
+the subscription. Clear stale presentation on read failure.
+
 ### Tier 3c: Status Bar Ticker (capability-gated)
 
 The status bar has a shared ticker area that rotates messages from multiple plugins. Messages are grouped by priority tier:
@@ -1370,6 +1392,7 @@ Capabilities gate access to Tier 3 and Tier 4 methods. Declare them in `manifest
 | `invoke:read_file` | `host.invoke("read_file", ...)` | Can read files on disk |
 | `invoke:list_markdown_files` | `host.invoke("list_markdown_files", ...)` | Can list directory contents |
 | `fs:read` | `host.readFile()`, `host.readFiles()`, `host.readFileBase64()`, `host.readFileTail()` | Can read any file the user can access (10 MiB default; binary reads may request up to the 512 MiB host ceiling) |
+| `stories:read` | `host.getStoryCount()`, `host.watchStoryCount()` | Read the selected backend open-story aggregate for registered repositories |
 | `fs:list` | `host.listDirectory()` | Can list any directory the user can access |
 | `fs:watch` | `host.watchPath()` | Can watch any path the user can access for changes |
 | `fs:write` | `host.writeFile()`, `host.writeFileBase64()` | Can atomically write files within `$HOME` (10 MiB default; binary writes may request up to the 512 MiB host ceiling) |
@@ -1417,7 +1440,7 @@ TUICommander polls the foreground process of each terminal's PTY every 3 seconds
 | Process name | Agent type |
 |-------------|-----------|
 | `claude` | `"claude"` |
-| `gemini` | `"gemini"` |
+| `agy`, `antigravity` | `"agy"` |
 | `opencode` | `"opencode"` |
 | `codex` | `"codex"` |
 | `amp` | `"amp"` |
@@ -1445,17 +1468,17 @@ Agent detection is polled, not instant. When a user launches `claude` in a termi
 }
 ```
 
-This plugin's output watchers will only fire when the terminal is running Claude Code. If the user switches to a plain shell or runs Gemini, the watchers are silently skipped.
+This plugin's output watchers will only fire when the terminal is running Claude Code. If the user switches to a plain shell or runs Antigravity, the watchers are silently skipped.
 
 ### Example: Multi-agent plugin
 
 ```json
 {
-  "agentTypes": ["claude", "gemini", "codex"]
+  "agentTypes": ["claude", "agy", "codex"]
 }
 ```
 
-Targets Claude, Gemini, and Codex terminals. All other terminals are ignored.
+Targets Claude, Antigravity, and Codex terminals. All other terminals are ignored.
 
 ## Content URI Format
 
@@ -2070,7 +2093,7 @@ config supplies the command and env. The prompt sits inside an `<untrusted-conte
 block, control bytes removed, capped at 12000 characters. `delivery: "draft"`
 (default) waits for the agent's composer and types the prompt there, leaving Enter to
 the user. `"submit"` starts the agent with the prompt as its first message, quoted as
-one POSIX shell argument after a `--` option terminator, for claude, codex, gemini and grok
+one POSIX shell argument after a `--` option terminator, for claude, codex, agy and grok
 (their `--help` lists a positional prompt for an interactive session and they honour `--`); other agents (pi has no `--`
 handling), prompts over 16384
 characters and cmd/PowerShell shells get the prompt typed and submitted instead. `link` links the item to the

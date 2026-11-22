@@ -102,6 +102,7 @@ vi.mock("../../stores/repoSettings", () => ({
 
 vi.mock("../../stores/terminals", () => ({
 	terminalsStore: {
+		getIds: vi.fn(() => []),
 		get: mockTerminalsGet,
 		getSubAgentTag: mockGetSubAgentTag,
 		isBusy: vi.fn(() => false),

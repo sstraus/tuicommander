@@ -62,3 +62,32 @@ it("catches shared Git view tabs losing keyboard selection and changes remount",
 	expect(changes).toHaveAttribute("aria-selected", "true");
 	expect(h.changes.at(-1)?.repoPath).toBe("/repo");
 });
+
+it("restores the manually selected tab without replaying an old shortcut, but honors a new identical request", async () => {
+	const { fireEvent, screen } = await import("@solidjs/testing-library");
+	type View = import("../../components/GitPanel/GitPanel").GitPanelView;
+	let view: View | undefined;
+	const mount = (requestId: number) =>
+		render(() => (
+			<GitPanel
+				visible={true}
+				repoPath="/repo"
+				requestedTab="log"
+				requestId={requestId}
+				initialView={view}
+				onSaveView={(saved) => {
+					view = saved;
+				}}
+				onClose={() => {}}
+			/>
+		));
+	const first = mount(1);
+	expect(screen.getByRole("tab", { name: "Log" })).toHaveAttribute("aria-selected", "true");
+	fireEvent.click(screen.getByRole("tab", { name: "Changes" }));
+	first.unmount();
+	const second = mount(1);
+	expect(screen.getByRole("tab", { name: "Changes" })).toHaveAttribute("aria-selected", "true");
+	second.unmount();
+	mount(2);
+	expect(screen.getByRole("tab", { name: "Log" })).toHaveAttribute("aria-selected", "true");
+});

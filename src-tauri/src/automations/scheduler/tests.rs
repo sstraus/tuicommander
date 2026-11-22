@@ -63,7 +63,7 @@ fn latest_only_inclusive_grace_and_durable_cursor_prevent_replay() {
         .unwrap();
     owner
         .store()
-        .prune(now("2027-10-09T12:00:00Z").timestamp_millis(), Some(1))
+        .prune(now("2027-10-09T12:00:00Z").timestamp_millis(), 1)
         .unwrap();
     drop(owner);
     let owner =
@@ -336,10 +336,7 @@ fn once_waits_for_due_time_and_remains_consumed_after_restart_and_retention() {
         RunStatus::Interrupted
     );
     let later = now("2027-10-09T12:00:00Z");
-    owner
-        .store()
-        .prune(later.timestamp_millis(), Some(1))
-        .unwrap();
+    owner.store().prune(later.timestamp_millis(), 1).unwrap();
     assert_eq!(
         tick(owner.store(), &cfg, later).unwrap(),
         [] as [crate::automations::run::AutomationRun; 0]

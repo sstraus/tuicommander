@@ -71,7 +71,9 @@ import { adoptSuspendedSession } from "../../utils/suspendedSessions";
 describe("TabBar", () => {
 	beforeEach(async () => {
 		vi.useFakeTimers();
-		vi.mocked(invoke).mockReset().mockResolvedValue(undefined);
+		vi.mocked(invoke)
+			.mockReset()
+			.mockImplementation(async (command) => (command === "list_active_sessions" ? [] : undefined));
 		await (await import("../../stores/activityStore")).activityStore.hydrate();
 		vi.mocked(listen).mockReset().mockResolvedValue(vi.fn());
 		localStorage.clear();
@@ -576,6 +578,31 @@ describe("TabBar", () => {
 		const tabs = container.querySelectorAll(".tab");
 		expect(tabs[0].classList.contains("shellIdle")).toBe(false);
 		expect(tabs[1].classList.contains("shellIdle")).toBe(true);
+	});
+
+	it("does not show the idle or unseen dot until background work settles", () => {
+		const id = addTerminal({ name: "Agent" });
+		terminalsStore.setActive(addTerminal({ name: "Other" }));
+		terminalsStore.update(id, { shellState: "idle", backgroundWork: true, unseen: true });
+		const { container } = render(() => (
+			<TabBar
+				onTabSelect={() => {}}
+				onTabClose={() => {}}
+				onCloseOthers={() => {}}
+				onCloseToRight={() => {}}
+				onNewTab={() => {}}
+			/>
+		));
+		const tab = container.querySelector(`[data-tab-id="${id}"]`)!;
+		expect(tab.getAttribute("title")).toContain("Background work");
+		expect(tab.classList.contains("shellBackground")).toBe(true);
+		expect(tab.classList.contains("shellIdle")).toBe(false);
+		expect(tab.classList.contains("shellUnseen")).toBe(false);
+		terminalsStore.update(id, { awaitingInput: "question" });
+		expect(tab.classList.contains("awaitingInput")).toBe(true);
+		expect(tab.classList.contains("shellBackground")).toBe(false);
+		terminalsStore.update(id, { awaitingInput: null, backgroundWork: false });
+		expect(tab.classList.contains("shellUnseen")).toBe(true);
 	});
 
 	it("active tab with shellState 'idle' has 'shellIdle' class", () => {
@@ -1584,16 +1611,115 @@ describe("TabBar", () => {
 	});
 
 	describe("context menu", () => {
+		const renderIdentifierMenu = () =>
+			render(() => (
+				<TabBar
+					onTabSelect={() => {}}
+					onTabClose={() => {}}
+					onCloseOthers={() => {}}
+					onCloseToRight={() => {}}
+					onNewTab={() => {}}
+				/>
+			));
+		const settleIdentity = async () => {
+			for (let n = 0; n < 5; n++) await Promise.resolve();
+		};
+
+		// Catches: losing the stored alias while backend identity is pending, suspended, or exited.
+		it.each(["pending", "suspended", "exited"] as const)(
+			"keeps the tab alias copyable with %s identity",
+			async (state) => {
+				const id = addTerminal({ sessionId: state === "suspended" ? null : "durable-session" });
+				terminalsStore.update(id, {
+					alias: "durable-alias",
+					suspended: state === "suspended",
+					shellState: state === "exited" ? "exited" : "idle",
+				});
+				let finish: ((rows: unknown) => void) | undefined;
+				vi.mocked(invoke).mockImplementation(async (command) =>
+					command === "list_active_sessions"
+						? new Promise((resolve) => {
+								finish = resolve;
+							})
+						: undefined,
+				);
+				const view = renderIdentifierMenu();
+				fireEvent.contextMenu(view.container.querySelector(`[data-tab-id="${id}"]`)!);
+				fireEvent.click(view.getByText("Alias: durable-alias"));
+				expect(mockWriteClipboard).toHaveBeenLastCalledWith("durable-alias");
+				finish?.([]);
+				await settleIdentity();
+			},
+		);
+
+		// Catches: stale results from the previously right-clicked tab leaking into a new menu.
+		it("ignores late identity from another tab and another connection", async () => {
+			const first = addTerminal({ name: "First", sessionId: "old-session" });
+			const second = addTerminal({ name: "Second", sessionId: "new-session" });
+			let finishOld!: (rows: unknown) => void;
+			let finishNew!: (rows: unknown) => void;
+			const oldRequest = new Promise((resolve) => {
+				finishOld = resolve;
+			});
+			const newRequest = new Promise((resolve) => {
+				finishNew = resolve;
+			});
+			let requests = 0;
+			vi.mocked(invoke).mockImplementation(async (command) =>
+				command === "list_active_sessions" ? (++requests === 1 ? oldRequest : newRequest) : undefined,
+			);
+			const view = renderIdentifierMenu();
+			fireEvent.contextMenu(view.container.querySelector(`[data-tab-id="${first}"]`)!);
+			fireEvent.contextMenu(view.container.querySelector(`[data-tab-id="${second}"]`)!);
+			finishNew([
+				{ session_id: "new-session", alias: "wrong-host", connection_id: "remote-other" },
+				{ session_id: "new-session", alias: "new-alias" },
+			]);
+			await settleIdentity();
+			finishOld([{ session_id: "old-session", alias: "old-alias" }]);
+			await settleIdentity();
+			expect(view.queryByText("Alias: old-alias")).toBeNull();
+			expect(view.queryByText("Alias: wrong-host")).toBeNull();
+			fireEvent.click(view.getByText("Alias: new-alias"));
+			expect(mockWriteClipboard).toHaveBeenLastCalledWith("new-alias");
+			await settleIdentity();
+		});
+
+		// Catches: copying an old identity after the owning terminal switches sessions.
+		it("drops old identity on session replacement and hides unavailable identifiers", async () => {
+			const id = addTerminal({ sessionId: "old-session" });
+			let finish!: (rows: unknown) => void;
+			vi.mocked(invoke).mockImplementation(async (command) =>
+				command === "list_active_sessions"
+					? new Promise((resolve) => {
+							finish = resolve;
+						})
+					: undefined,
+			);
+			const view = renderIdentifierMenu();
+			fireEvent.contextMenu(view.container.querySelector(`[data-tab-id="${id}"]`)!);
+			terminalsStore.update(id, { sessionId: null });
+			finish([{ session_id: "old-session", alias: "stale-alias" }]);
+			await settleIdentity();
+			expect(
+				Array.from(view.container.querySelectorAll(".menu .label"), (node) => node.textContent).filter((label) =>
+					/Alias:|Session:|Copy (alias|session|process)/.test(label ?? ""),
+				),
+			).toEqual([]);
+		});
+
 		// Catches: copying identifiers for the active tab instead of the clicked tab.
-		it("copies all identifiers for the right-clicked terminal", async () => {
-			addTerminal({ name: "First", sessionId: "first-session" });
-			const second = addTerminal({ name: "Second", sessionId: "second-session" });
+		it("shows one value-bearing action per tab identifier without PID or duplicate commands", async () => {
+			const first = addTerminal({ name: "First", sessionId: "first-session" });
+			const second = addTerminal({ name: "Second", sessionId: "a1223344-5566-7788-99aa-bbccddeeff00" });
+			terminalsStore.setActive(first);
+			terminalsStore.update(second, { alias: "two" });
 			const addToast = vi.spyOn(toastsStore, "add").mockImplementation(() => 0);
 			vi.mocked(invoke).mockImplementation(async (command) =>
 				command === "list_active_sessions"
 					? [
 							{ session_id: "first-session", child_pid: 11, alias: "one" },
-							{ session_id: "second-session", child_pid: 22, alias: "two" },
+							{ session_id: "a1223344-5566-7788-99aa-bbccddeeff00", child_pid: 22, alias: "two" },
 						]
 					: undefined,
 			);
@@ -1606,10 +1732,16 @@ describe("TabBar", () => {
 					onNewTab={() => {}}
 				/>
 			));
+			fireEvent.contextMenu(view.container.querySelector(`[data-tab-id="${second}"]`)!);
+			for (let n = 0; n < 5; n++) await Promise.resolve();
+			const labels = Array.from(view.container.querySelectorAll(".menu .label"), (node) => node.textContent);
+			expect(labels.filter((label) => /Alias:|Session:|Copy (alias|session|process)/.test(label ?? ""))).toEqual([
+				"Session: a1223344-5566-7788-99aa-bbccddeeff00",
+				"Alias: two",
+			]);
 			for (const [label, value] of [
-				["Copy session ID", "second-session"],
-				["Copy process ID", "22"],
-				["Copy alias", "two"],
+				["Session: a1223344-5566-7788-99aa-bbccddeeff00", "a1223344-5566-7788-99aa-bbccddeeff00"],
+				["Alias: two", "two"],
 			]) {
 				fireEvent.contextMenu(view.container.querySelector(`[data-tab-id="${second}"]`)!);
 				for (let n = 0; n < 5; n++) await Promise.resolve();
@@ -1660,6 +1792,53 @@ describe("TabBar", () => {
 			expect(item).toBeDefined();
 			fireEvent.click(item!);
 			expect(onDetachTab).toHaveBeenCalledExactlyOnceWith(id);
+		});
+
+		describe("Unsplit Panes", () => {
+			afterEach(() => paneLayoutStore.reset());
+			const menuLabels = (container: HTMLElement) =>
+				Array.from(container.querySelectorAll(".menu .item .label")).map((n) => n.textContent);
+			const renderWith = (onUnsplit: () => void) =>
+				render(() => (
+					<TabBar
+						onTabSelect={() => {}}
+						onTabClose={() => {}}
+						onCloseOthers={() => {}}
+						onCloseToRight={() => {}}
+						onNewTab={() => {}}
+						onUnsplit={onUnsplit}
+					/>
+				));
+
+			// catches: a split with no visible way back to one pane (the reset lived
+			// only in the palette, under "Reset Panel Sizes").
+			it("offers Unsplit Panes on a terminal tab while a split is on and runs it", () => {
+				const id = addTerminal({ name: "Tab 1" });
+				const group = paneLayoutStore.createGroup();
+				paneLayoutStore.addTab(group, { id, type: "terminal" });
+				paneLayoutStore.setRoot({ type: "leaf", id: group });
+				paneLayoutStore.split(group, "vertical");
+				expect(paneLayoutStore.isSplit()).toBe(true);
+				const onUnsplit = vi.fn();
+				const { container } = renderWith(onUnsplit);
+				fireEvent.contextMenu(container.querySelector(`[data-tab-id="${id}"]`)!);
+				const item = Array.from(container.querySelectorAll(".menu .item")).find(
+					(node) => node.querySelector(".label")?.textContent === "Unsplit Panes",
+				);
+				expect(item).toBeDefined();
+				fireEvent.click(item!);
+				expect(onUnsplit).toHaveBeenCalledOnce();
+			});
+
+			// catches: an Unsplit item shown when there is nothing to merge.
+			it("does not offer Unsplit Panes without a split", () => {
+				const id = addTerminal({ name: "Tab 1" });
+				expect(paneLayoutStore.isSplit()).toBe(false);
+				const { container } = renderWith(vi.fn());
+				fireEvent.contextMenu(container.querySelector(`[data-tab-id="${id}"]`)!);
+				expect(menuLabels(container)).toContain("Rename Tab");
+				expect(menuLabels(container)).not.toContain("Unsplit Panes");
+			});
 		});
 
 		it("right-click opens context menu", () => {

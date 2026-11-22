@@ -87,6 +87,13 @@ pub(crate) enum NeutralAction {
         expected_version: u32,
         descriptor: ActivityDescriptor,
     },
+    /// Register an exact publication of this project as a reusable subflow activity.
+    /// The backend reads the publication and pins its digest and interface.
+    SaveSubflow {
+        expected_version: u32,
+        id: super::super::catalog::DescriptorId,
+        publication: super::super::neutral_publication::PublicationRef,
+    },
     SaveChildDispatch {
         /// Absent: the cohort is a run-time input of stories this run created.
         #[serde(default)]
@@ -116,6 +123,7 @@ pub(crate) enum NeutralAction {
     DeliveryRuns {
         story: String,
     },
+    ListRuns {},
     Inspect {
         run_id: String,
         after_sequence: i64,
@@ -146,6 +154,16 @@ pub(crate) enum NeutralAction {
         key: super::super::run::NeutralEffectKey,
         revision: u64,
         approved: bool,
+    },
+    /// Reconcile an uncertain mutation in an ended run. Keeps its original
+    /// uncertainty and procedure; never resumes or repeats the mutation.
+    ResolveMutation {
+        run_id: String,
+        command_id: String,
+        expected_sequence: i64,
+        key: super::super::run::NeutralEffectKey,
+        /// Record how the retained reconciliation procedure was completed.
+        evidence: String,
     },
 }
 
@@ -207,6 +225,7 @@ pub(crate) enum NeutralReply {
     Inspection(Value),
     Events(Value),
     DeliveryRuns(Vec<Value>),
+    Runs(Vec<Value>),
 }
 
 /// Designer renders this boundary; publishing still uses the normal draft API.

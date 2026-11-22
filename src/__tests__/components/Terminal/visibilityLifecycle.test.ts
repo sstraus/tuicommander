@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	isTerminalVisible,
 	latestIntersectionVisibility,
 	needsGridResubscribe,
 	REATTACH_PHASE_INITIAL,
@@ -365,5 +366,49 @@ describe("stepReattachPhase", () => {
 		expect(needsGridResubscribe({ visible: false, sawDetach: false }, true, false)).toBe(false);
 		expect(needsGridResubscribe({ visible: false, sawDetach: true }, false, false)).toBe(false);
 		expect(needsGridResubscribe({ visible: false, sawDetach: true }, true, true)).toBe(false);
+	});
+});
+
+describe("isTerminalVisible", () => {
+	const base = {
+		alwaysVisible: false,
+		paneHosted: false,
+		active: false,
+		detached: false,
+		inPaneGroup: false,
+		activeInPaneGroup: false,
+	};
+
+	// catches: the flat-list copy of a split terminal counted as visible, so both
+	// copies subscribed the session's single grid channel and the pane froze.
+	it("hides the flat-list copy while its tab is in a split pane", () => {
+		expect(isTerminalVisible({ ...base, active: true, inPaneGroup: true, activeInPaneGroup: true })).toBe(false);
+	});
+
+	// catches: the pane copy shown for a tab its pane is not showing.
+	it("shows the pane copy only when its pane shows that tab", () => {
+		expect(isTerminalVisible({ ...base, paneHosted: true, inPaneGroup: true, activeInPaneGroup: true })).toBe(true);
+		expect(isTerminalVisible({ ...base, paneHosted: true, active: true, inPaneGroup: true })).toBe(false);
+	});
+
+	// catches: a split rule leaking into the unsplit layout, hiding every terminal.
+	it("shows the active flat-list terminal when there is no split", () => {
+		expect(isTerminalVisible({ ...base, active: true })).toBe(true);
+		expect(isTerminalVisible({ ...base })).toBe(false);
+	});
+
+	// catches: a terminal outside every pane (an orphan) hidden while a split is on.
+	it("shows the flat-list copy of an active terminal outside every pane", () => {
+		expect(isTerminalVisible({ ...base, active: true, inPaneGroup: false })).toBe(true);
+	});
+
+	// catches: the main window drawing a terminal that lives in a floating window.
+	it("hides a detached terminal in the main window", () => {
+		expect(isTerminalVisible({ ...base, active: true, detached: true })).toBe(false);
+	});
+
+	// catches: the floating window losing its only terminal to the split rules.
+	it("always shows the floating-window terminal", () => {
+		expect(isTerminalVisible({ ...base, alwaysVisible: true, inPaneGroup: true })).toBe(true);
 	});
 });

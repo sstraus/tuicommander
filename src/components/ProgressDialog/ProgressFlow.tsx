@@ -10,6 +10,7 @@ const STATE_LABEL: Record<FlowState, string> = {
 	closed: "closed",
 	running: "running",
 	done: "done",
+	interrupted: "interrupted",
 };
 
 /// The word printed before an arrow's label. The arrow's direction already

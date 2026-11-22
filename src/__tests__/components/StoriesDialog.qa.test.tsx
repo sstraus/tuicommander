@@ -30,6 +30,8 @@ const statuses = ["backlog", "ready", "in_progress", "review", "qa", "blocked", 
 let story = { ...qa };
 
 beforeEach(() => {
+	// This subject exercises an explicitly selected plan, not the project-wide landing view.
+	storiesUi.reveal({ project: "/qa-test", planId: "plan", storyId: null });
 	storiesUi.setVisibility("all");
 	storiesUi.setStoryType("all");
 	storiesUi.setView("list");

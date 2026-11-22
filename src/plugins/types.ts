@@ -332,6 +332,14 @@ export interface ArtifactEntry {
 // Capabilities
 // ---------------------------------------------------------------------------
 
+/** Aggregate from the selected story backend; never includes story content. */
+export interface StoryCountSnapshot {
+	project: string;
+	backend: string;
+	generation: string | null;
+	openCount: number;
+}
+
 /** Known capability strings for external plugins */
 export type PluginCapability =
 	| "pty:write"
@@ -353,6 +361,7 @@ export type PluginCapability =
 	| "ui:ticker"
 	| "exec:cli"
 	| "git:read"
+	| "stories:read"
 	| "ui:context-menu"
 	| "ui:sidebar"
 	| "ui:file-icons"
@@ -608,6 +617,11 @@ export interface PluginHost {
 	 * Fires on agent start/stop, branch change, shell state change, and awaiting-input change.
 	 * Returns a Disposable to unsubscribe.
 	 */
+	/** Read the selected backend's open, non-archived all-plan count. Requires stories:read. */
+	getStoryCount(repoPath: string): Promise<StoryCountSnapshot>;
+	/** Invalidate on repository/story/workflow changes and reconnect. Auto-disposed on unload. */
+	watchStoryCount(repoPath: string, callback: () => void): Promise<Disposable>;
+
 	onStateChange(callback: (event: StateChangeEvent) => void): Disposable;
 
 	// -- Tier 2b: Git read (capability-gated) --

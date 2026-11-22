@@ -80,12 +80,12 @@ const DEFAULTS = {
 };
 
 /** Per-agent override rows: label, the agent whose row carries it, a stored override. */
-const OVERRIDES: Array<[string, "claude" | "gemini", Record<string, unknown>]> = [
+const OVERRIDES: Array<[string, "claude" | "agy", Record<string, unknown>]> = [
 	["Close idle managed child after", "claude", { idle_close_minutes: 0 }],
 	["Native status signals", "claude", { native_status_signals: false }],
-	["Prevent alternate screen", "gemini", { prevent_alt_screen: false }],
+	["Prevent alternate screen", "agy", { prevent_alt_screen: false }],
 	["Accept workspace trust for managed spawns", "claude", { skip_trust_dialog: false }],
-	["Install hooks globally", "gemini", { hook_instrumentation: true }],
+	["Install hooks globally", "agy", { hook_instrumentation: true }],
 	["Track agent intent", "claude", { intent_tab_title: false }],
 	["Collect progress", "claude", { progress_tracking: false }],
 	["Show suggested follow-ups", "claude", { suggest_followups: false }],
@@ -101,7 +101,7 @@ async function setup(agents: Record<string, unknown> = {}) {
 }
 
 /** Render the tab and expand one agent's row, where the per-agent controls live. */
-function renderExpanded(agent: "claude" | "gemini" | "codex" | "ego" = "claude") {
+function renderExpanded(agent: "claude" | "agy" | "codex" | "ego" = "claude") {
 	const result = render(() => <AgentsTab />);
 	const header = [...result.container.querySelectorAll("[role='button']")].find((el) =>
 		el.textContent?.includes(AGENTS[agent].name),
@@ -389,7 +389,7 @@ describe("AgentsTab expert controls", () => {
 	it("shows native scrollback prevention for an agent without a CLI flag", async () => {
 		await setup();
 		uiStore.setSettingsExpertMode(true);
-		const { container } = renderExpanded("gemini");
+		const { container } = renderExpanded("agy");
 		await waitFor(() => expect(has(container, "Prevent alternate screen")).toBe(true));
 		const label = [...container.querySelectorAll("label")].find((el) =>
 			el.textContent?.includes("Prevent alternate screen"),
@@ -397,7 +397,7 @@ describe("AgentsTab expert controls", () => {
 		const checkbox = container.querySelector(`#${label?.htmlFor}`) as HTMLInputElement;
 		expect(checkbox.checked).toBe(true);
 		fireEvent.click(checkbox);
-		expect(agentConfigsStore.getPreventAltScreen("gemini")).toBe(false);
+		expect(agentConfigsStore.getPreventAltScreen("agy")).toBe(false);
 	});
 
 	it("keeps managed trust acceptance on by default and saves an explicit opt-out", async () => {

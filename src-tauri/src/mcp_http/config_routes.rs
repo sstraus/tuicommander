@@ -471,6 +471,10 @@ pub(super) async fn get_notes() -> impl IntoResponse {
     }
 }
 
+pub(super) async fn get_scratchpad_path() -> axum::response::Response {
+    json_result(crate::config::get_scratchpad_path())
+}
+
 pub(super) async fn put_notes(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,

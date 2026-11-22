@@ -90,8 +90,58 @@ export async function readMarkerPromptBoundary(
 	return { end: stop, resolved: false };
 }
 
-/** Reuse a plan while every row generation it inspected is unchanged. */
-export function createCanvasMarkerPlanner(): typeof planCanvasMarkers {
+/** Where a plan's viewport-relative rows sit: the absolute top row and the row-cache generation. */
+export interface MarkerPlanAnchor {
+	base: number;
+	generation: number;
+}
+
+/** `plan` with every viewport-relative row moved by `shift`. */
+function shiftMarkerPlan(plan: MarkerPlan, shift: number): MarkerPlan {
+	if (shift === 0) return plan;
+	return {
+		hidden: new Set([...plan.hidden].map((row) => row + shift)),
+		answerMarkers: new Set([...plan.answerMarkers].map((row) => row + shift)),
+		key: `${plan.key}@${shift}`,
+		blocks: plan.blocks.map((block) => ({ ...block, row: block.row + shift })),
+	};
+}
+
+/**
+ * Reuse a plan while every row generation it inspected is unchanged.
+ *
+ * With an `anchor`, a plan that waits for an offscreen prompt boundary returns
+ * the last resolved plan of the same cache generation, moved by the scroll since
+ * then, and keeps `pendingPrompt` so the caller still starts the read. Painting
+ * the pending plan itself would show every hidden marker row and drop every
+ * answer gutter until the read lands, then repaint them: two jumps for each
+ * output row that scrolls the prompt further out of the cache.
+ */
+export function createCanvasMarkerPlanner(): (
+	rows: number,
+	getRow: (i: number) => RowSnapshot | null,
+	prompts?: readonly number[],
+	boundary?: PromptBoundary,
+	anchor?: MarkerPlanAnchor,
+) => MarkerPlan {
+	const plan = createCachedCanvasMarkerPlanner();
+	let resolved: { plan: MarkerPlan; rows: number; anchor: MarkerPlanAnchor } | undefined;
+	return (rows, getRow, prompts = [], boundary, anchor) => {
+		const fresh = plan(rows, getRow, prompts, boundary);
+		if (!anchor) return fresh;
+		if (fresh.pendingPrompt === undefined) {
+			resolved = { plan: fresh, rows, anchor };
+			return fresh;
+		}
+		if (!resolved || resolved.rows !== rows || resolved.anchor.generation !== anchor.generation) return fresh;
+		return {
+			...shiftMarkerPlan(resolved.plan, resolved.anchor.base - anchor.base),
+			pendingPrompt: fresh.pendingPrompt,
+		};
+	};
+}
+
+function createCachedCanvasMarkerPlanner(): typeof planCanvasMarkers {
 	let previous: MarkerPlan | undefined;
 	let previousRows = -1;
 	let previousPrompt: number | undefined;

@@ -45,19 +45,22 @@ export function dropZoneAt(rect: Rect, x: number, y: number): PaneDropZone {
 
 /** The part of `rect` that the dropped tab will occupy. */
 export function zonePreviewRect(rect: Rect, zone: PaneDropZone): Rect {
-	const halfW = rect.width / 2;
-	const halfH = rect.height / 2;
+	// Read each field explicitly: `rect` is usually a DOMRect, whose geometry is in
+	// prototype getters, so `{ ...rect }` would copy nothing.
+	const { left, top, width, height } = rect;
+	const halfW = width / 2;
+	const halfH = height / 2;
 	switch (zone) {
 		case "left":
-			return { ...rect, width: halfW };
+			return { left, top, width: halfW, height };
 		case "right":
-			return { ...rect, left: rect.left + halfW, width: halfW };
+			return { left: left + halfW, top, width: halfW, height };
 		case "top":
-			return { ...rect, height: halfH };
+			return { left, top, width, height: halfH };
 		case "bottom":
-			return { ...rect, top: rect.top + halfH, height: halfH };
+			return { left, top: top + halfH, width, height: halfH };
 		default:
-			return rect;
+			return { left, top, width, height };
 	}
 }
 

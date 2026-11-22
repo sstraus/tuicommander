@@ -268,3 +268,31 @@ describe("development backend mismatch boundary", () => {
 		expect(_inflight_TEST_ONLY.size).toBe(0);
 	});
 });
+
+describe("recorded backend ownership", () => {
+	afterEach(() => {
+		routing.owner = undefined;
+		routing.rpc.mockReset();
+		mockTauriInvoke.mockReset();
+	});
+	// Catches: a local report following changed repository ownership onto another host.
+	it("pins local IPC even when the repository now resolves to a remote host", async () => {
+		routing.owner = "new-owner";
+		mockTauriInvoke.mockResolvedValueOnce({ delivery: "queued" });
+		await invoke("progress_reply", { project: "/same", input: { entryId: 1 } }, null);
+		expect(mockTauriInvoke).toHaveBeenCalledWith("progress_reply", { project: "/same", input: { entryId: 1 } });
+		expect(routing.rpc).not.toHaveBeenCalled();
+	});
+	// Catches: a mirrored report rerouting by the currently registered repository instead of its original backend.
+	it("pins the recorded remote host instead of the repository's current owner", async () => {
+		routing.owner = "new-owner";
+		routing.rpc.mockResolvedValueOnce({ delivery: "queued" });
+		await invoke("progress_reply", { project: "/same", input: { entryId: 1 } }, "original-host");
+		expect(routing.rpc).toHaveBeenCalledWith(
+			"progress_reply",
+			{ project: "/same", input: { entryId: 1 } },
+			"original-host",
+		);
+		expect(mockTauriInvoke).not.toHaveBeenCalled();
+	});
+});

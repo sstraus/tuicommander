@@ -6,9 +6,9 @@
 //! the agent's settings file via the installer.
 //!
 //! Only agents whose hook shape is a JSON settings-hook are wired here (A1: Claude,
-//! Gemini). Codex/Grok/OpenCode arrive in later stories with their own adapters.
+//! Antigravity). Codex/Grok/OpenCode arrive in later stories with their own adapters.
 
-use crate::agent_hook::{HookEntry, claude_hook_map, gemini_hook_map};
+use crate::agent_hook::{HookEntry, agy_hook_map, claude_hook_map};
 use crate::agent_hook_installer::{self, InstallState};
 use std::path::{Path, PathBuf};
 
@@ -17,13 +17,13 @@ use std::path::{Path, PathBuf};
 fn hook_map_for(agent_type: &str) -> Option<Vec<HookEntry>> {
     match agent_type {
         "claude" => Some(claude_hook_map()),
-        "gemini" => Some(gemini_hook_map()),
+        "agy" => Some(agy_hook_map()),
         _ => None,
     }
 }
 
-/// The settings file an agent reads its hooks from. Claude/Gemini merge into a
-/// shared `settings.json`; Grok owns its own `~/.grok/hooks/tuic.json`.
+/// The settings file an agent reads its hooks from. Claude merges into a
+/// shared `settings.json`, agy into a named section of `~/.gemini/config/hooks.json`; Grok owns its own `~/.grok/hooks/tuic.json`.
 fn hook_settings_path(agent_type: &str) -> Option<PathBuf> {
     #[cfg(test)]
     if let Some(root) = crate::agent_test::test_root() {
@@ -32,7 +32,7 @@ fn hook_settings_path(agent_type: &str) -> Option<PathBuf> {
     let home = dirs::home_dir()?;
     match agent_type {
         "claude" => Some(home.join(".claude/settings.json")),
-        "gemini" => Some(home.join(".gemini/settings.json")),
+        "agy" => Some(home.join(".gemini/config/hooks.json")),
         "grok" => Some(home.join(".grok/hooks/tuic.json")),
         "codex" => Some(
             std::env::var_os("CODEX_HOME")
@@ -59,7 +59,7 @@ fn codex_config_toml(hooks_path: &Path) -> Option<PathBuf> {
 }
 
 /// Install/uninstall the hooks at an explicit path. Path-injected for testing.
-/// Dispatches by the agent's strategy: Claude/Gemini merge into a shared file;
+/// Dispatches by the agent's strategy: Claude merges into a shared file, agy owns one named section;
 /// Grok owns its whole file.
 pub(crate) fn apply_at(
     agent_type: &str,
@@ -67,12 +67,26 @@ pub(crate) fn apply_at(
     enabled: bool,
 ) -> Result<(), String> {
     match agent_type {
-        "claude" | "gemini" => {
+        "claude" => {
             let map = hook_map_for(agent_type).expect("merge agent has a hook map");
             if enabled {
                 agent_hook_installer::install(settings_path, &map, None)
             } else {
                 agent_hook_installer::uninstall(settings_path)
+            }
+        }
+        "agy" => {
+            if enabled {
+                agent_hook_installer::install_named(
+                    settings_path,
+                    agent_hook_installer::NAMED_HOOK,
+                    &crate::agent_hook::agy_hook_map(),
+                )
+            } else {
+                agent_hook_installer::uninstall_named(
+                    settings_path,
+                    agent_hook_installer::NAMED_HOOK,
+                )
             }
         }
         "grok" => {
@@ -153,8 +167,15 @@ pub(crate) fn state_at(agent_type: &str, settings_path: &Path) -> InstallState {
     if agent_type == "pi" {
         return crate::agent_hook_pi::pi_extension_state(settings_path);
     }
+    if agent_type == "agy" {
+        return agent_hook_installer::named_install_state(
+            settings_path,
+            agent_hook_installer::NAMED_HOOK,
+            &agy_hook_map(),
+        );
+    }
     let map = match agent_type {
-        "claude" | "gemini" => hook_map_for(agent_type),
+        "claude" => hook_map_for(agent_type),
         "grok" => Some(crate::agent_hook::grok_hook_map()),
         _ => None,
     };
@@ -308,7 +329,7 @@ mod tests {
             .build()
             .unwrap();
         crate::agent_test::with_test_profile(dir.path(), || {
-            for agent in ["claude", "codex", "gemini", "grok", "opencode", "pi"] {
+            for agent in ["claude", "codex", "agy", "grok", "opencode", "pi"] {
                 let settings = hook_settings_path(agent).unwrap();
                 std::fs::create_dir_all(settings.parent().unwrap()).unwrap();
                 std::fs::write(&settings, b"user-owned").unwrap();
@@ -346,7 +367,7 @@ mod tests {
     #[test]
     fn agent_test_hook_toggle_refuses_before_persistence_and_shared_writes() {
         // Bug caught: a named instance still rewrites shared hooks and persists a lying flag.
-        for agent in ["claude", "gemini", "grok", "codex", "opencode", "pi"] {
+        for agent in ["claude", "agy", "grok", "codex", "opencode", "pi"] {
             for enabled in [true, false] {
                 let dir = TempDir::new_in(crate::test_support::test_temp_root()).unwrap();
                 let config = dir.path().join("instance");
@@ -426,14 +447,44 @@ mod tests {
         assert_eq!(state_at("unknown-agent", &path), InstallState::NotInstalled);
     }
 
+    // Catches agy hooks clobbering or deleting a sibling named hook in the shared
+    // `hooks.json`, and an uninstall that leaves TUIC's section behind.
     #[test]
-    fn config_agent_hook_gemini_uses_its_own_map() {
+    fn config_agent_hook_agy_owns_only_its_named_section() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("settings.json");
-        apply_at("gemini", &path, true).unwrap();
-        assert_eq!(state_at("gemini", &path), InstallState::Installed);
-        // Same file judged against Claude's map: different command multiset → outdated.
-        assert_eq!(state_at("claude", &path), InstallState::Outdated);
+        let path = dir.path().join("hooks.json");
+        let sibling = serde_json::json!({
+            "other-status": { "Stop": [ { "type": "command", "command": "echo mine" } ] }
+        });
+        std::fs::write(&path, serde_json::to_vec(&sibling).unwrap()).unwrap();
+
+        apply_at("agy", &path, true).unwrap();
+        assert_eq!(state_at("agy", &path), InstallState::Installed);
+        let root: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(root["other-status"], sibling["other-status"]);
+        assert_eq!(root["tuic-status"]["PreInvocation"][0]["type"], "command");
+        assert_eq!(root["tuic-status"]["Stop"][0]["timeout"], 10);
+        // Same file judged against Claude's map: no `hooks` object → not installed.
+        assert_eq!(state_at("claude", &path), InstallState::NotInstalled);
+
+        apply_at("agy", &path, false).unwrap();
+        assert_eq!(state_at("agy", &path), InstallState::NotInstalled);
+        let root: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(root, sibling);
+    }
+
+    // Catches overwriting a user's own hook that happens to carry TUIC's name.
+    #[test]
+    fn config_agent_hook_agy_refuses_a_foreign_section_with_its_name() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("hooks.json");
+        let foreign = r#"{"tuic-status":{"Stop":[{"type":"command","command":"echo user"}]}}"#;
+        std::fs::write(&path, foreign).unwrap();
+        assert!(apply_at("agy", &path, true).is_err());
+        apply_at("agy", &path, false).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), foreign);
     }
 
     /// Every reader resolves an absent flag to the same value as the default
@@ -448,13 +499,13 @@ mod tests {
         let flag = || {
             crate::config::load_agents_config()
                 .agents
-                .get("gemini")
+                .get("agy")
                 .and_then(|s| s.hook_instrumentation)
         };
 
-        persist_flag("gemini", true).unwrap();
+        persist_flag("agy", true).unwrap();
         assert_eq!(flag(), Some(true));
-        persist_flag("gemini", false).unwrap();
+        persist_flag("agy", false).unwrap();
         assert_eq!(
             flag(),
             None,

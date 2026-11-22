@@ -29,6 +29,7 @@ interface FileEntry {
 }
 
 export interface ChangesTabProps {
+	onRetainChange?: (retain: boolean) => void;
 	repoPath: string | null;
 	/** Repo key for store operations (getRevision). Falls back to repoPath. */
 	storeRepoPath?: string | null;
@@ -157,6 +158,12 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 	const { canExecute: canExecPrompt, executeSmartPrompt } = smartPrompts;
 	const [generating, setGenerating] = createSignal(false);
 	let generateGeneration = 0;
+	createEffect(() =>
+		props.onRetainChange?.(
+			Boolean(commitMsg() || isAmend() || committing() || generating() || confirmDiscard() || confirmDiscardAll()),
+		),
+	);
+	onCleanup(() => props.onRetainChange?.(false));
 
 	// Listen for generated commit messages from headless smart prompts
 	const handleCommitMsg = (e: Event) => {

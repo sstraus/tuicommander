@@ -83,6 +83,7 @@ afterEach(() => {
 });
 
 it("catches ignoring the Rust projection or resetting combined filters when switching view and reopening", async () => {
+	storiesUi.reveal({ project: "/filter-test", planId: "plan", storyId: null });
 	const first = render(() => <StoriesDialog project="/filter-test" onClose={() => {}} />);
 	const storyList = within(first.getByRole("region", { name: "Stories" }));
 	await storyList.findByRole("button", { name: /Closed task/ });
@@ -106,6 +107,7 @@ it("catches ignoring the Rust projection or resetting combined filters when swit
 	fireEvent.click(board.getByRole("button", { name: /Open feature/ }));
 	expect(within(first.getByRole("region", { name: "Story details" })).getByText("Open criterion")).toBeTruthy();
 	first.unmount();
+	storiesUi.reveal({ project: "/filter-test", planId: "plan", storyId: null });
 	const reopened = render(() => <StoriesDialog project="/filter-test" onClose={() => {}} />);
 	expect((reopened.getByLabelText("Status") as HTMLSelectElement).value).toBe("open");
 	expect((reopened.getByLabelText("Story type") as HTMLSelectElement).value).toBe("feature");
@@ -129,6 +131,7 @@ it("catches ignoring the Rust projection or resetting combined filters when swit
 });
 
 it("catches treating the untyped filter as all types or sending it as a fabricated story kind", async () => {
+	storiesUi.reveal({ project: "/filter-test", planId: "plan", storyId: null });
 	const ui = render(() => <StoriesDialog project="/filter-test" onClose={() => {}} />);
 	await ui.findByRole("button", { name: /Open feature/ });
 	fireEvent.change(ui.getByLabelText("Story type"), { target: { value: "untyped" } });
@@ -151,6 +154,7 @@ it("catches dropping an explicitly selected story type from the create request",
 		if (action?.action === "create_story") return { type: "story", value: ready };
 		return original(command, args);
 	});
+	storiesUi.reveal({ project: "/filter-test", planId: "plan", storyId: null });
 	const ui = render(() => <StoriesDialog project="/filter-test" onClose={() => {}} />);
 	await ui.findByRole("button", { name: /Open feature/ });
 	fireEvent.click(ui.getByRole("button", { name: "New story" }));
@@ -180,6 +184,7 @@ it("catches dropping an explicitly selected story type from the create request",
 });
 
 it("catches a hand-rolled view switch bypassing the shared form controls", async () => {
+	storiesUi.reveal({ project: "/filter-test", planId: "plan", storyId: null });
 	const ui = render(() => <StoriesDialog project="/filter-test" onClose={() => {}} />);
 	await ui.findByRole("button", { name: /Open feature/ });
 	const tabs = within(ui.getByRole("tablist", { name: "Story view" }));
@@ -194,7 +199,8 @@ it("catches a hand-rolled view switch bypassing the shared form controls", async
 	expect(tabs.queryByRole("button")).toBeNull();
 });
 
-it("catches All plans staying selected-plan-only or losing plan ownership after a card action", async () => {
+it("catches the default landing selecting only the first plan or losing plan ownership after a card action", async () => {
+	storiesUi.setVisibility("open");
 	const secondPlan = { ...plan, id: "second", title: "Second plan" };
 	const secondStory = { ...ready, id: "second-story", planId: "second", title: "Second feature" };
 	const original = vi.mocked(invoke).getMockImplementation()!;
@@ -217,9 +223,17 @@ it("catches All plans staying selected-plan-only or losing plan ownership after 
 	});
 	const ui = render(() => <StoriesDialog project="/filter-test" onClose={() => {}} />);
 	await ui.findByRole("button", { name: /Open feature/ });
-	fireEvent.click(ui.getByRole("button", { name: "All plans" }));
+	expect(ui.getByRole("button", { name: "All plans" })).toHaveAttribute("aria-current", "true");
 	const list = within(ui.getByRole("region", { name: "Stories" }));
 	await list.findByRole("button", { name: /Second feature/ });
+	expect(invoke).toHaveBeenCalledWith("story_action_command", {
+		project: "/filter-test",
+		action: {
+			action: "project_story_view",
+			archived_plans: false,
+			filter: { visibility: "open", storyType: null, untypedOnly: false },
+		},
+	});
 	expect(list.getByRole("button", { name: /Open feature/ }).textContent).toContain("Filter plan");
 	expect(list.getByRole("button", { name: /Second feature/ }).textContent).toContain("Second plan");
 	expect(ui.getByRole("button", { name: "New story" })).toBeDisabled();
@@ -257,4 +271,9 @@ it("catches All plans staying selected-plan-only or losing plan ownership after 
 	await waitFor(() => expect(ui.getByRole("button", { name: "All plans" })).toHaveAttribute("aria-current", "true"));
 	fireEvent.click(ui.getByRole("button", { name: "Second plan" }));
 	await waitFor(() => expect(board.queryByRole("button", { name: /Open feature/ })).toBeNull());
+	ui.unmount();
+	const reopened = render(() => <StoriesDialog project="/filter-test" onClose={() => {}} />);
+	await reopened.findByRole("button", { name: /Open feature/ });
+	expect(reopened.getByRole("button", { name: "All plans" })).toHaveAttribute("aria-current", "true");
+	expect(reopened.getByRole("button", { name: /Second feature/ })).toBeTruthy();
 });

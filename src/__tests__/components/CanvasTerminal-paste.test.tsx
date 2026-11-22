@@ -107,6 +107,11 @@ describe("CanvasTerminal paste precedence", () => {
 		expect(writes()).toEqual(["\x16"]);
 	});
 
+	it("forwards a copied non-image file as Ctrl+V so the agent reads the pasteboard", () => {
+		paste(null, "video/quicktime");
+		expect(writes()).toEqual(["\x16"]);
+	});
+
 	it("keeps Finder image filename pastes as Ctrl+V rather than typing the path", () => {
 		paste("/Users/Boss/Pictures/clip.png");
 		expect(writes()).toEqual(["\x16"]);

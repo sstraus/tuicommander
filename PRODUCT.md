@@ -6,7 +6,7 @@ product
 
 ## Users
 
-Developers running multiple AI coding agents (Claude Code, Codex, Cursor, Gemini CLI) in parallel. Users who need to monitor agent status (rate limits, questions, idle/working), review diffs, merge PRs, and track usage without switching windows. Power users who value precision and efficiency over hand-holding.
+Developers running multiple AI coding agents (Claude Code, Codex, Cursor, Antigravity CLI) in parallel. Users who need to monitor agent status (rate limits, questions, idle/working), review diffs, merge PRs, and track usage without switching windows. Power users who value precision and efficiency over hand-holding.
 
 ## Product Purpose
 

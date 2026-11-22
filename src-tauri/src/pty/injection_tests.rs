@@ -2428,7 +2428,7 @@ async fn stable_ready_ticks_do_not_rearm_not_started_mail_wake() {
 /// repaint after Enter, rather than the master's successful write, settles it.
 #[cfg(unix)]
 #[test]
-fn queued_prompt_disappearing_after_enter_confirms_gemini() {
+fn queued_prompt_disappearing_after_enter_confirms_agy() {
     struct RecordingChannel(std::sync::mpsc::Sender<Vec<u8>>);
 
     impl std::io::Write for RecordingChannel {
@@ -2442,7 +2442,7 @@ fn queued_prompt_disappearing_after_enter_confirms_gemini() {
         }
     }
 
-    let agent_type = "gemini";
+    let agent_type = "agy";
     let state = crate::state::tests_support::make_test_app_state();
     let sid = format!("prompt-gone-{agent_type}");
     agent_session(&state, &sid, SHELL_IDLE);
@@ -3194,7 +3194,7 @@ fn agent_submission_keeps_ctrl_u_gap_and_brackets_a_long_single_line_codex_wake(
 fn long_single_line_payload_framing_and_known_agent_gaps() {
     let long = "x".repeat(1000);
     for agent in [
-        "gemini",
+        "agy",
         "opencode",
         "goose",
         "grok",

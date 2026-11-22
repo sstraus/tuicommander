@@ -537,6 +537,63 @@ describe("paneLayoutStore", () => {
 		});
 	});
 
+	describe("closePaneIfEmpty", () => {
+		const threePanes = () => {
+			const g1 = store.createGroup();
+			store.setRoot({ type: "leaf", id: g1 });
+			store.addTab(g1, { id: "t1", type: "terminal" });
+			const g2 = store.split(g1, "vertical")!;
+			store.addTab(g2, { id: "t2", type: "terminal" });
+			const g3 = store.split(g2, "horizontal")!;
+			store.addTab(g3, { id: "t3", type: "terminal" });
+			return { g1, g2, g3 };
+		};
+
+		// catches: taking one tab out of a split resetting every pane (the old
+		// "any group empty -> reset" rule after a detach or a move).
+		it("closes only the emptied pane and keeps the other panes and their tabs", () => {
+			testInScope(() => {
+				const { g1, g2, g3 } = threePanes();
+				store.removeTab(g3, "t3");
+				store.closePaneIfEmpty(g3);
+				expect(store.isSplit()).toBe(true);
+				expect(allLeafIds(store.getRoot()!).sort()).toEqual([g1, g2].sort());
+				expect(store.state.groups[g1].tabs.map((t) => t.id)).toEqual(["t1"]);
+				expect(store.state.groups[g2].tabs.map((t) => t.id)).toEqual(["t2"]);
+				expect(store.state.groups[g3]).toBeUndefined();
+			});
+		});
+
+		// catches: a one-pane "split" left behind (a leaf root with a group), which
+		// the next edge drop would treat as unsplit and orphan.
+		it("drops the layout when a single pane remains", () => {
+			testInScope(() => {
+				const g1 = store.createGroup();
+				store.setRoot({ type: "leaf", id: g1 });
+				store.addTab(g1, { id: "t1", type: "terminal" });
+				const g2 = store.split(g1, "vertical")!;
+				store.addTab(g2, { id: "t2", type: "terminal" });
+				store.removeTab(g2, "t2");
+				store.closePaneIfEmpty(g2);
+				expect(store.isSplit()).toBe(false);
+				expect(store.getRoot()).toBeNull();
+				expect(store.state.groups).toEqual({});
+			});
+		});
+
+		// catches: a pane that still holds tabs being closed with them.
+		it("leaves a pane that still has tabs untouched", () => {
+			testInScope(() => {
+				const { g2 } = threePanes();
+				store.addTab(g2, { id: "t4", type: "terminal" });
+				store.removeTab(g2, "t4");
+				store.closePaneIfEmpty(g2);
+				expect(allLeafIds(store.getRoot()!)).toHaveLength(3);
+				expect(store.state.groups[g2].tabs.map((t) => t.id)).toEqual(["t2"]);
+			});
+		});
+	});
+
 	describe("closePane", () => {
 		it("removes a leaf and flattens", () => {
 			testInScope(() => {

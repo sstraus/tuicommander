@@ -8,7 +8,7 @@ import { applyCommentBlockMetadata, ContentRenderer, stripEventHandlers } from "
 import { appLogger } from "../../stores/appLogger";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { stripAnsi } from "../../utils/stripAnsi";
-import { findTweakCommentBlocks, insertTweakBlockComment } from "../../utils/tweakComments";
+import { findTweakCommentBlocks, insertTweakBlockComment, toggleCheckbox } from "../../utils/tweakComments";
 
 vi.mock("../../utils/openUrl", () => ({ handleOpenUrl: vi.fn(), openConfirmedLink: vi.fn() }));
 
@@ -454,6 +454,19 @@ describe("ContentRenderer", () => {
 			expect(checkbox?.dataset.sourceLine).toBe("2");
 			fireEvent.click(checkbox!);
 			expect(onToggle).toHaveBeenCalledWith(2, "x");
+		});
+
+		// Catches: a task inside a blockquote renders a checkbox but is not counted, so every
+		// later checkbox toggles the line of its predecessor.
+		it("maps checkboxes inside and after a blockquote to their own source lines", () => {
+			const onToggle = vi.fn();
+			const md = "> - [ ] Quoted\n> - [x] Quoted done\n\n- [ ] After";
+			const { container } = render(() => <ContentRenderer content={md} onCheckboxToggle={onToggle} />);
+			const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+			expect([...checkboxes].map((cb) => cb.dataset.sourceLine)).toEqual(["0", "1", "3"]);
+			fireEvent.click(checkboxes[2]);
+			expect(onToggle).toHaveBeenCalledWith(3, "x");
+			expect(toggleCheckbox(md, 1, " ")).toBe("> - [ ] Quoted\n> - [ ] Quoted done\n\n- [ ] After");
 		});
 
 		it("renders checkboxes as enabled input elements with data-source-line", () => {

@@ -1,6 +1,7 @@
-import { type Component, For, Show } from "solid-js";
+import { type Component, For, onCleanup, Show } from "solid-js";
 import { type Toast, toastsStore } from "../../stores/toasts";
 import { onClickKeyDown } from "../../utils/a11y";
+import { ProgressReply } from "../ProgressDialog/ProgressReply";
 // Mobile shares this list; the UI barrel eagerly loads desktop renderers and stores.
 import { Button } from "../ui/Button";
 import styles from "./ToastContainer.module.css";
@@ -16,6 +17,29 @@ interface ToastListProps {
 	/** Px to keep clear on the right, e.g. for a docked panel. */
 	rightInset?: number;
 }
+
+const ProgressToastReply: Component<{ toast: Toast; part: "controls" | "composer" }> = (props) => {
+	let release: (() => void) | undefined;
+	const activeChanged = (active: boolean) => {
+		if (active && !release) release = toastsStore.retain(props.toast.id);
+		else if (!active) {
+			release?.();
+			release = undefined;
+		}
+	};
+	onCleanup(() => release?.());
+	return (
+		<Show when={props.toast.progress}>
+			{(entry) => (
+				<ProgressReply
+					entry={entry()}
+					part={props.part}
+					onActiveChange={props.part === "controls" ? activeChanged : undefined}
+				/>
+			)}
+		</Show>
+	);
+};
 
 /** Shared toast presentation. Navigation stays in the shell-specific wrapper. */
 export const ToastList: Component<ToastListProps> = (props) => {
@@ -56,9 +80,11 @@ export const ToastList: Component<ToastListProps> = (props) => {
 								{toast.message && <span class={styles.message}>{toast.message}</span>}
 							</span>
 							<span class={styles.actions}>
+								<ProgressToastReply toast={toast} part="controls" />
 								<For each={toastActions(toast)}>
 									{(action) => (
 										<Button
+											size={toast.progress ? "compact" : undefined}
 											variant={action === toast.action ? "primary" : "secondary"}
 											onClick={(event) => {
 												event.stopPropagation();
@@ -72,6 +98,7 @@ export const ToastList: Component<ToastListProps> = (props) => {
 									)}
 								</For>
 							</span>
+							<ProgressToastReply toast={toast} part="composer" />
 						</div>
 					)}
 				</For>

@@ -174,3 +174,11 @@ data of the real config folder. Only a restart loads it.
 - [ ] Plans and Stories has no Run history and no Start story workflow button;
       Workflows opens the neutral Designer only.
 - [ ] Automations shows no PR review, issue intake or triage settings.
+
+## One `tuic.sqlite3` and data cleanup (stories 3104-2fd1, 3105-d266, 3106-327c, 2026-11-21) — **Rust, needs a `make dev` restart**
+
+- [ ] After the restart the config folder holds only `tuic.sqlite3`, `progress.sqlite3`, `automation_runs.sqlite3`, `workflow_runs.sqlite3`, `mail.sqlite3` and `tunnel_audit.sqlite3` (plus `-wal`/`-shm`); no `.db`, `.sqlite` or `*.legacy-workflows.bak` remains.
+- [ ] `GET /logs?source=db` shows one `Removed retired database files: …` line (including `ai-sessions/`) and one `Cleanup removed N from <store>` line per store.
+- [ ] `instances/*` folders older than 3 days are gone; a running `make agent-test` instance keeps its folder.
+- [ ] `captures/` keeps only the last 14 days; `mcp-bridge/` keeps the current revision plus the last 7 days; agents still start.
+- [ ] A day later, `agent-capabilities/` and `bg-wakes/` keep the files of open and suspended tabs; a root tab restored after the restart keeps `operator`.

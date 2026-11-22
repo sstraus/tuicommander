@@ -16,7 +16,7 @@ unknown forms stay as terminal output until they have a real capture and test.
 |---|---|---|
 | `claude` | Ink AskUserQuestion: title, numbered options separated by description rows, column-zero `Enter to select` footer | `navigate-enter`: arrows move the highlight, Enter submits, Esc cancels. Claude 2.1.280 capture `src-tauri/src/fixtures/agent_prompts/claude-askuser-esc-20260929.tcap`; the older permission menu is documented in [Claude Code](claude-code.md). |
 | `codex` | Queued `request_user_input`: title and numbered choices under `• Queued follow-up inputs`; a separate command approval panel exists | Numbered key for ordinary options; `Other` navigates to notes. Captures and limits in [Codex](codex.md). |
-| `gemini` | No interactive permission UI in the v0.34.0 workspace-restriction observation | No captured question-option contract; see [Gemini CLI](gemini-cli.md). |
+| `agy` | No interactive permission UI in the v0.34.0 workspace-restriction observation | No captured question-option contract; see [Antigravity CLI](agy-cli.md). |
 | `opencode` | Framed `△ Permission required` with inline `Allow once / Allow always / Reject` | Navigation and Enter shown in the footer, but no captured mobile option contract. See [OpenCode](opencode.md). |
 | `pi` | Permission and menu screens are reported | Specific question rows and selection bytes not captured; see [pi](pi.md). |
 | `amp`, `cursor`, `goose`, `grok`, `droid` | No question-option capture in this repository | Unknown; no agent-specific mobile choice parser is enabled. |
@@ -32,7 +32,7 @@ safe substitute for a multi-option question.
 
 ### 1. Identity & Rendering
 
-| Property | Claude Code | Codex CLI | Gemini CLI | OpenCode |
+| Property | Claude Code | Codex CLI | Antigravity CLI (unverified) | OpenCode |
 |----------|------------|-----------|------------|----------|
 | **Version tested** | v2.1.81 | v0.116.0+ (re-verified) | v0.34.0 | v1.2.20 |
 | **Date tested** | 2026-03-21 | 2026-04-19 | 2026-03-22 | 2026-03-22 |
@@ -44,7 +44,7 @@ safe substitute for a multi-option question.
 
 ### 2. Prompt Line
 
-| Property | Claude Code | Codex CLI | Gemini CLI | OpenCode |
+| Property | Claude Code | Codex CLI | Antigravity CLI (unverified) | OpenCode |
 |----------|------------|-----------|------------|----------|
 | **Prompt char** | `❯` (U+276F) | `›` (U+203A, bold) | `>` (purple, rgb 215,175,255) | None (framed `┃` box) |
 | **Prompt background** | None | Dark gray (rgb 57,57,57) | Dark gray (rgb 65,65,65) | Dark (rgb 30,30,30) |
@@ -54,7 +54,7 @@ safe substitute for a multi-option question.
 
 ### 3. Separator Lines
 
-| Property | Claude Code | Codex CLI | Gemini CLI | OpenCode |
+| Property | Claude Code | Codex CLI | Antigravity CLI (unverified) | OpenCode |
 |----------|------------|-----------|------------|----------|
 | **Uses separators** | Yes | Partially | Yes | No (uses `┃╹▀`) |
 | **Separator chars** | `─` (U+2500) | `─` (U+2500) | `─` (U+2500) | `┃` `╹` `▀` (vertical frame) |
@@ -65,7 +65,7 @@ safe substitute for a multi-option question.
 
 ### 4. Status / Chrome Lines
 
-| Property | Claude Code | Codex CLI | Gemini CLI | OpenCode |
+| Property | Claude Code | Codex CLI | Antigravity CLI (unverified) | OpenCode |
 |----------|------------|-----------|------------|----------|
 | **Mode line** | `⏵⏵ <mode>` (last row) | None | None | Mode in prompt box (`Build`/`Plan`) |
 | **Status line(s)** | 0-N below separator | 1 line below prompt | 2-row status bar (4 columns) | Right panel (context, cost, LSP) |
@@ -75,7 +75,7 @@ safe substitute for a multi-option question.
 
 ### 5. Spinner / Working Indicators
 
-| Property | Claude Code | Codex CLI | Gemini CLI | OpenCode |
+| Property | Claude Code | Codex CLI | Antigravity CLI (unverified) | OpenCode |
 |----------|------------|-----------|------------|----------|
 | **Spinner chars** | `✶✻✳✢·` (U+2720-273F) | `•` (U+2022) | `⠋⠙⠹⠸⠴⠦⠧⠇` (braille) | `■⬝` (progress bar) |
 | **Spinner color** | White | Standard | Blue/green (varies) | Standard |
@@ -87,7 +87,7 @@ safe substitute for a multi-option question.
 
 ### 6. Interactive Menus
 
-| Property | Claude Code | Codex CLI | Gemini CLI | OpenCode |
+| Property | Claude Code | Codex CLI | Antigravity CLI (unverified) | OpenCode |
 |----------|------------|-----------|------------|----------|
 | **Permission prompt** | Multiselect (`❯ 1. Yes`) | Not observed (sandbox) | None (model-level refusal) | `△ Permission required` inline |
 | **Selection char** | `❯` (blue) | Not observed | N/A | `⇆ select` |
@@ -98,7 +98,7 @@ safe substitute for a multi-option question.
 
 ### 7. System Messages
 
-| Property | Claude Code | Codex CLI | Gemini CLI | OpenCode |
+| Property | Claude Code | Codex CLI | Antigravity CLI (unverified) | OpenCode |
 |----------|------------|-----------|------------|----------|
 | **Output prefix** | `⏺` (white/green/red) | `•` (U+2022) | `✦` (U+2726, purple) | None (inline in panel) |
 | **Tool call display** | `⏺` + verb | `• Ran <cmd>` (shell), `• Called` + `└ fn()` (MCP) | `╭───╮ ✓ ToolName ╰───╯` box | `→` read / `←` write |
@@ -120,7 +120,7 @@ How to force each UI state for analysis and testing.
 |-------|----------------|-----------------|
 | Claude Code | `claude --permission-mode default` | `claude --permission-mode bypassPermissions` |
 | Codex CLI | `codex -a untrusted` | `codex` (suggest mode, default) |
-| Gemini CLI | `gemini` (default, workspace-restricted) | `gemini --sandbox=false` (unconfirmed) |
+| Antigravity CLI (unverified) | `agy` (default) | `agy --sandbox` (unconfirmed) |
 | OpenCode | Unknown | Unknown |
 
 ### Procedure B: Trigger permission/approval prompt
@@ -129,7 +129,7 @@ How to force each UI state for analysis and testing.
 |-------|--------|-----------------|
 | Claude Code (default mode) | "create a file /tmp/test.txt with hello" | Multiselect: Yes/Yes+allow/No |
 | Codex CLI (untrusted) | Same | Not observed — auto-approves in sandbox |
-| Gemini CLI | "create a file /tmp/test.txt with hello" | Text refusal (workspace restriction) |
+| Antigravity CLI (unverified) | "create a file /tmp/test.txt with hello" | Text refusal (workspace restriction) |
 | OpenCode | Access external directory | `△ Permission required` with `Allow once / Allow always / Reject` |
 
 ### Procedure C: Trigger interactive menus
@@ -141,8 +141,8 @@ How to force each UI state for analysis and testing.
 | Claude Code | `/status` | Settings panel with search box |
 | Codex CLI | `/model` | Model selector |
 | Codex CLI | `/mcp` | MCP server list |
-| Gemini CLI | `/settings` | Settings panel (unconfirmed) |
-| Gemini CLI | `/stats` | Usage stats |
+| Antigravity CLI (unverified) | `/settings` | Settings panel (unconfirmed) |
+| Antigravity CLI (unverified) | `/stats` | Usage stats |
 
 ### Procedure D: Observe working state
 

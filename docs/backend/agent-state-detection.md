@@ -4,6 +4,17 @@ These rules moved here from `AGENTS.md` to keep that file inside the
 32,768-byte project-instruction budget. They stay binding for every agent;
 `AGENTS.md` keeps a summary and a link to this page.
 
+## Process identity after a macOS agent update
+
+The foreground probe normally resolves a PID with `proc_pidpath`. An updater can
+unlink the executable while the process still runs, so that call returns
+`ENOENT`. In that case, TUIC reads the current kernel process name with
+`proc_name` and applies the same agent classifier. It never substitutes a cached
+agent identity. A shell or unknown name is not promoted to an agent, and a dead
+PID still has no identity. Foreground/root ownership and composer readiness
+checks remain unchanged. This fallback does not recover a missing executable
+path when only that path, rather than the process name, identifies the agent.
+
 ## The bottom zone is not agent output — never parse it
 
 Below an agent's input box sits a status line **the user configures**: a Claude
@@ -47,6 +58,15 @@ lowest empty prompt row (`lowest_input_box_row`). Never widen the loose
 | `parse_slash_menu` | Claude Code v2.1+ renders autocomplete items *below* the prompt chrome |
 | `parse_choice_prompt` | scans bottom-up for a strict dialog shape (title + ≥2 numbered options) |
 | question dedup screen-absence check (`pty.rs`) | asks "is this prompt still visible anywhere", not "is this content" |
+
+## A failed tool call is an error only when the turn ends on it
+
+`Error: Exit code N` (Claude Code's failed tool row) arms a candidate in
+`SilenceState`. Real output after it clears the candidate. The silence timer
+raises `tool-error` (red badge, **Needs you**) only after the tool-error silence
+threshold **and** an idle shell: an agent often thinks longer than the threshold
+after a failed call and then continues by itself, which is not a wait for the
+user. The candidate stays parked while the shell is busy.
 
 ## Agent state detection — capture before you theorise
 
@@ -127,7 +147,9 @@ busy/idle; screens, timers, shell OSC 133 and descendants cannot override it.
 Configuration alone does not select this rule. Agents without a delivered native
 busy keep the screen/process/silence fallback; a completion-only notifier does
 not establish a complete turn source. Foreground identity withdrawal
-retires native authority. Ego includes its owned children and background execs in
+retires native authority. The interface shows a ready composer with `background_work` as Background
+without changing busy/idle authority, mail, or input routing.
+Ego includes its owned children and background execs in
 its coarse busy signal, so for ego its `agent-event` turn frames own busy and idle
 once `session_start` is seen: `turn_start` is busy, `turn_end` is idle. A coarse
 busy outside a turn is owned work: `agent_state` working with `background_work`,
@@ -207,6 +229,22 @@ whatever sets it owns nothing until something retracts it. These paths clear it:
 `question-cleared` is the backstop that catches the rest. It never touches a
 confident question: grok repaints while it waits, so "not on screen this tick"
 is not proof of an answer.
+
+**Cancelling or rejecting a dialog ends the turn with no Stop hook** (Claude; Codex
+likewise). The user's written answer (`resolve_choice_prompt_input` →
+`note_dialog_answered`) or Esc (`note_interrupt_requested`) is a claim valid for
+30 s. While it holds, an `Interrupted` screen (Claude `⎿ Interrupted · What should
+Claude do instead?` above the composer, Codex `■ Conversation interrupted`)
+releases native busy through `banner_interrupted` in `try_timer_idle_transition`.
+The claim is **not consumed by the first tick**: that tick may only arm the
+foreground probe, and a consumed claim left native busy stuck forever. A banner
+alone never releases busy; it must follow a written answer or Esc
+(`claude-2627-permission-{deny,escape}.tcap`, #3099-6f4e).
+
+**Process exit clears awaiting.** `publish_session_exit` emits
+`protocol-question-cleared` (`source=process-exit`) when the badge is set: a dead
+process answers no dialog, and no screen repaint or hook arrives to retract it
+(#3100-cafa, `process_exit_clears_a_confident_awaiting_badge`).
 
 **Dialog recovery requires an active agent identity.** After foreground observation returns to the shell, a retained Ink footer or question title above its prompt is history, not a live dialog. Both full-screen recovery and silence-timer chat heuristics require that identity. Never re-arm awaiting from shell output just because that footer remains visible (`claude-question-exit-2091.tcap`).
 

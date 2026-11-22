@@ -30,7 +30,7 @@ vi.mock("../../stores/terminals", () => ({
 	},
 }));
 
-type Kind = "done" | "blocked" | "intent" | "delegated" | "message";
+type Kind = "done" | "blocked" | "intent" | "delegated" | "message" | "question" | "answer";
 
 function entry(
 	id: number,
@@ -73,7 +73,7 @@ describe("progressStore", () => {
 		expect(store.state.projects["/repo"].entries.map((item) => item.id)).toEqual([3, 2, 1]);
 		expect(invokeMock).toHaveBeenCalledWith("progress_list", {
 			project: "/repo",
-			input: { blockedOnly: false, limit: 100, cursor: 2 },
+			input: { includeActivity: false, blockedOnly: false, limit: 100, cursor: 2 },
 		});
 	});
 
@@ -109,7 +109,7 @@ describe("progressStore", () => {
 	});
 
 	// Catches: a pending older page leaking into a changed filter or a reopened scope.
-	it.each(["blocked", "human", "pty", "project", "reopen"])(
+	it.each(["blocked", "activity", "pty", "project", "reopen"])(
 		"discards an older page after a %s selection reset",
 		async (change) => {
 			invokeMock.mockResolvedValue({ ...list([entry(3, 300)]), nextCursor: 3 });
@@ -127,7 +127,7 @@ describe("progressStore", () => {
 			const older = store.loadOlder();
 			invokeMock.mockResolvedValue({ ...list([entry(9, 900)]), nextCursor: null });
 			if (change === "blocked") store.setBlockedOnly(true);
-			if (change === "human") store.setProgressOnly(true);
+			if (change === "activity") store.setShowActivity(true);
 			if (change === "pty") store.selectPty("pty-b");
 			if (change === "project") {
 				store.open("/other", null);
@@ -174,7 +174,7 @@ describe("progressStore", () => {
 		await store.loadOlder();
 		expect(invokeMock).toHaveBeenLastCalledWith("progress_list", {
 			project: "/repo",
-			input: { blockedOnly: true, ptyId: "pty-b", limit: 100, cursor: 3 },
+			input: { includeActivity: false, blockedOnly: true, ptyId: "pty-b", limit: 100, cursor: 3 },
 		});
 		expect(store.state.projects["/repo"].entries.map((item) => item.id)).toEqual([3, 2]);
 		expect(store.state.projects["/repo"].error).toBeNull();
@@ -191,14 +191,14 @@ describe("progressStore", () => {
 		await vi.waitFor(() =>
 			expect(invokeMock).toHaveBeenCalledWith("progress_list", {
 				project: "/repo",
-				input: { blockedOnly: false, ptyId: "pty-a", limit: 100 },
+				input: { includeActivity: false, blockedOnly: false, ptyId: "pty-a", limit: 100 },
 			}),
 		);
 		store.selectPty("pty-b");
 		await vi.waitFor(() =>
 			expect(invokeMock).toHaveBeenCalledWith("progress_list", {
 				project: "/repo",
-				input: { blockedOnly: false, ptyId: "pty-b", limit: 100 },
+				input: { includeActivity: false, blockedOnly: false, ptyId: "pty-b", limit: 100 },
 			}),
 		);
 		expect(store.selectedPtyId()).toBe("pty-b");
@@ -289,7 +289,7 @@ describe("progressStore", () => {
 		expect(invokeMock).toHaveBeenCalledTimes(1);
 		expect(invokeMock).toHaveBeenCalledWith("progress_list", {
 			project: "/repo",
-			input: { blockedOnly: false, ptyId: "pty-a", limit: 100 },
+			input: { includeActivity: false, blockedOnly: false, ptyId: "pty-a", limit: 100 },
 		});
 	});
 
@@ -305,7 +305,7 @@ describe("progressStore", () => {
 		await vi.waitFor(() =>
 			expect(invokeMock).toHaveBeenCalledWith("progress_list", {
 				project: "/repo",
-				input: { blockedOnly: true, ptyId: "pty-a", limit: 100 },
+				input: { includeActivity: false, blockedOnly: true, ptyId: "pty-a", limit: 100 },
 			}),
 		);
 	});
@@ -334,6 +334,20 @@ describe("progressStore", () => {
 		store.presentLive({ repo_path: "/repo", payload: { entry: entry(3, 300, "delegated") } });
 		store.presentLive({ repo_path: "/repo", payload: { entry: entry(4, 400, "message") } });
 		expect(toastAdd).toHaveBeenCalledTimes(1);
+	});
+
+	// Catches: the user's own question toasting back at them, or an answer to a
+	// side question arriving silently while the user works elsewhere.
+	it("toasts an answer and stays quiet for the user's own question", async () => {
+		invokeMock.mockResolvedValue(list([]));
+		const { createProgressStore } = await import("../../stores/progress");
+		const store = createProgressStore();
+
+		store.presentLive({ repo_path: "/repo", payload: { entry: entry(1, 100, "question") } });
+		expect(toastAdd).not.toHaveBeenCalled();
+		store.presentLive({ repo_path: "/repo", payload: { entry: entry(2, 200, "answer") } });
+		expect(toastAdd).toHaveBeenCalledTimes(1);
+		expect(toastAdd.mock.calls[0][2]).toBe("info");
 	});
 
 	it("reads the Flow for the scope on screen and follows a PTY switch", async () => {

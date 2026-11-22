@@ -111,10 +111,51 @@ fn a_bound_project_reads_and_writes_its_adapter_store_not_sqlite() {
     assert_eq!(notes["value"][0]["text"], "checked by hand", "{notes}");
 }
 
+// Catches: the ticker aggregate using retained SQLite rows instead of the
+// selected external project projection, or ignoring an explicit native override.
+#[test]
+fn open_count_tracks_selected_external_and_native_stores() {
+    let bound = bind_reference();
+    let project = bound.project();
+    let store = StoryStore::open().unwrap();
+    let plan = store
+        .create_plan(crate::stories::NewPlan {
+            project: project.to_string_lossy().into_owned(),
+            title: "Retained native".into(),
+            source: "native.md".into(),
+        })
+        .unwrap();
+    for title in ["Native one", "Native two"] {
+        store
+            .create_story(crate::stories::NewStory {
+                plan_id: plan.id.clone(),
+                title: title.into(),
+                criteria: vec!["Verified".into()],
+                priority: 2,
+                story_type: None,
+                origin: crate::stories::StoryOrigin::Native,
+                file_scope: vec![],
+            })
+            .unwrap();
+    }
+    act(&project, json!({"action":"create_story","input":{
+        "planId":"default","title":"External open","criteria":["Verified"],"priority":2,"origin":{"type":"native"},"fileScope":[]
+    }})).unwrap();
+    let count = act(&project, json!({"action":"open_story_count"})).unwrap();
+    assert_eq!(count["value"]["openCount"], 1);
+    assert_eq!(count["value"]["backend"], "external:tuic-reference");
+    assert!(count["value"]["generation"].is_string());
+    assert!(count["value"].get("stories").is_none());
+    super::binding::set_override(&project, "native").unwrap();
+    let native = act(&project, json!({"action":"open_story_count"})).unwrap();
+    assert_eq!(native["value"]["openCount"], 2);
+    assert_eq!(native["value"]["backend"], "native");
+}
+
 #[test]
 fn a_bound_adapter_that_cannot_start_is_unavailable_not_native() {
     // Catches: a broken adapter making TUIC show the project's native plans.
-    // The native plan is archived: an open one would refuse the binding itself.
+    // Even retained native records must not become an error fallback.
     let bound = bind("/nonexistent/story-adapter", &[]);
     let project = bound.project();
     let store = StoryStore::open().unwrap();
@@ -254,9 +295,11 @@ fn explicit_native_overrides_detection_and_invalid_override_never_falls_back() {
     );
 }
 
+/// Catches: an unfinished native plan vetoing an explicit external binding,
+/// or switching back to native losing the original records.
 #[test]
-fn external_selection_refuses_open_native_plan_without_changing_its_records() {
-    let bound = bind("unused", &[]);
+fn external_selection_preserves_open_native_records_for_explicit_native_access() {
+    let bound = bind_reference();
     let project = bound.project();
     let store = StoryStore::open().unwrap();
     let plan = store
@@ -266,30 +309,22 @@ fn external_selection_refuses_open_native_plan_without_changing_its_records() {
             source: "plans/open.md".into(),
         })
         .unwrap();
-    let status = act(&project, json!({"action":"backend_status"})).unwrap();
-    assert_eq!(status["value"]["availability"], "unavailable");
-    assert!(
-        status["value"]["error"]
-            .as_str()
-            .unwrap()
-            .contains("still open")
+    assert_eq!(
+        act(&project, json!({"action":"list_plans"})).unwrap()["value"][0]["id"],
+        "default"
     );
     assert_eq!(store.get_plan(&plan.id).unwrap(), plan);
-    let error = story_action(
-        project.to_str().unwrap(),
-        serde_json::from_value(
-            json!({"action":"approve_connector", "installation":"/repo-controlled", "expected_identity":"stale"}),
-        )
-        .unwrap(),
-        Some("managed-agent"),
-    )
-    .unwrap_err();
-    assert!(error.contains("authenticated human UI"));
+    act(&project, json!({"action":"set_backend","backend":"native"})).unwrap();
+    assert_eq!(
+        act(&project, json!({"action":"list_plans"})).unwrap()["value"][0]["id"],
+        plan.id
+    );
+    assert_eq!(store.get_plan(&plan.id).unwrap(), plan);
 }
 
-/// Catches: detecting Wiz before approval stranding native plans and archive actions.
+/// Catches: old native plans hiding detected Wiz or hiding connector failures.
 #[test]
-fn automatic_wiz_marker_retains_open_native_plan_and_native_actions() {
+fn automatic_wiz_marker_selects_connector_without_deleting_native_plans() {
     let bound = bind("unused", &[]);
     let project = bound.project();
     std::fs::remove_file(bound._config.path().join(SETTINGS_FILE)).unwrap();
@@ -303,35 +338,96 @@ fn automatic_wiz_marker_retains_open_native_plan_and_native_actions() {
         .unwrap();
     std::fs::create_dir(project.join(".wiz")).unwrap();
     let status = act(&project, json!({"action":"backend_status"})).unwrap();
-    assert_eq!(status["value"]["backend"], "native");
-    assert_eq!(status["value"]["availability"], "available");
-    assert!(
-        status["value"]["reason"]
-            .as_str()
-            .unwrap()
-            .contains("Native retained while")
-    );
-    assert_eq!(
-        act(&project, json!({"action":"list_plans"})).unwrap()["value"][0]["id"],
-        plan.id
-    );
+    assert_eq!(status["value"]["backend"], "external:wiz-stories");
+    // The isolated config has no approval. Native content must not mask this.
+    assert_ne!(status["value"]["availability"], "available");
+    assert!(act(&project, json!({"action":"list_plans"})).is_err());
+    assert_eq!(store.get_plan(&plan.id).unwrap(), plan);
+    let explicit = act(
+        &project,
+        json!({"action":"set_backend","backend":"wiz-stories"}),
+    )
+    .unwrap();
+    assert_eq!(explicit["value"]["backend"], "external:wiz-stories");
+    assert_eq!(explicit["value"]["provenance"], "explicit");
+    act(&project, json!({"action":"set_backend","backend":"native"})).unwrap();
     assert_eq!(
         act(&project, json!({"action":"get_plan","plan_id":plan.id})).unwrap()["value"]["title"],
         "Native continuity"
     );
-    // Explicit Wiz remains unsafe, but the shared human API can choose native.
+}
+
+/// Catches: approved automatic Wiz selection still reading retained native plans.
+/// Uses the actual installed connector and registry, but only a disposable project
+/// and disposable TUIC approval store; never writes the installed connector or live data.
+#[test]
+#[ignore = "requires explicit TUIC_TEST_WIZ_CONNECTOR matching the installed registry"]
+fn actual_approved_wiz_selection_reads_connector_with_open_native_plan() {
+    let entry = std::env::var("TUIC_TEST_WIZ_CONNECTOR").expect("explicit installed entry");
+    let installation =
+        std::fs::canonicalize(Path::new(&entry).parent().unwrap().parent().unwrap()).unwrap();
+    let bound = bind("unused", &[]);
+    let project = bound.project();
+    // A real repository boundary prevents the connector walking up to this checkout.
+    let git = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&project)
+        .output()
+        .unwrap();
     assert!(
-        act(
-            &project,
-            json!({"action":"set_backend","backend":"wiz-stories"})
-        )
-        .unwrap_err()
-        .contains("still open")
+        git.status.success(),
+        "{}",
+        String::from_utf8_lossy(&git.stderr)
     );
+    std::fs::remove_file(bound._config.path().join(SETTINGS_FILE)).unwrap();
+    std::fs::create_dir(project.join(".wiz")).unwrap();
+    std::fs::create_dir(project.join("stories")).unwrap();
+    std::fs::create_dir(project.join("plans")).unwrap();
+    let store = StoryStore::open().unwrap();
+    let native = store
+        .create_plan(crate::stories::NewPlan {
+            project: project.to_string_lossy().into_owned(),
+            title: "Retained native plan".into(),
+            source: "native.md".into(),
+        })
+        .unwrap();
+    let proposed = act(&project, json!({"action":"backend_status"})).unwrap();
     assert_eq!(
-        act(&project, json!({"action":"set_backend","backend":"native"})).unwrap()["value"]["provenance"],
-        "explicit"
+        proposed["value"]["availability"], "approval_required",
+        "{proposed}"
     );
+    assert_eq!(proposed["value"]["installation"], json!(installation));
+    act(
+        &project,
+        json!({"action":"approve_connector", "installation":installation,
+        "expected_identity":proposed["value"]["generation"]}),
+    )
+    .unwrap();
+    let status = act(&project, json!({"action":"backend_status"})).unwrap();
+    assert_eq!(status["value"]["backend"], "external:wiz-stories");
+    assert_eq!(status["value"]["availability"], "available", "{status}");
+    let plans = act(&project, json!({"action":"list_plans"})).unwrap();
+    assert!(
+        plans["value"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p["id"] != native.id)
+    );
+    assert_eq!(store.get_plan(&native.id).unwrap(), native);
+    act(&project, json!({"action":"set_backend","backend":"native"})).unwrap();
+    assert_eq!(
+        act(&project, json!({"action":"get_plan","plan_id":native.id})).unwrap()["value"]["title"],
+        "Retained native plan"
+    );
+    // Approval remains pinned when automatic selection is restored.
+    let restored = act(
+        &project,
+        json!({"action":"set_backend","backend":"automatic"}),
+    )
+    .unwrap();
+    assert_eq!(restored["value"]["backend"], "external:wiz-stories");
+    assert_eq!(restored["value"]["availability"], "available");
 }
 
 /// Catches: newly strict parsing disabling a legacy binding (even via unrelated extra metadata).

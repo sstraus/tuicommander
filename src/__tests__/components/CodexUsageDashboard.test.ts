@@ -6,12 +6,12 @@ import {
 	CodexUsageDashboard,
 	formatDuration,
 	formatPercent,
-	formatTokens,
 	labelWindows,
 } from "../../components/CodexUsageDashboard/CodexUsageDashboard";
 import type { CodexUsageApiResponse } from "../../features/codexUsage";
 import { appLogger } from "../../stores/appLogger";
 import { providerQuotaStore } from "../../stores/providerQuota";
+import { formatTokens } from "../../utils/sessionUsageFormatting";
 import { mockInvoke } from "../mocks/tauri";
 
 const win = (usedPercent: number, seconds: number | null) => ({

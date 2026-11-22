@@ -329,6 +329,8 @@ export interface TranscriptProps {
 	/** Constrain intrinsic content to the phone viewport. */
 	mobile?: boolean;
 	entries: () => AcpTranscriptEntry[];
+	/** ACP uses transient public thoughts; absent preserves the PTY history disclosure. */
+	reasoning?: () => string | null;
 	/** Shown while a turn is running and nothing has streamed back yet. */
 	busy: () => boolean;
 	/** Drives the working indicator when set; defaults to `busy`. */
@@ -431,6 +433,23 @@ const LinkedPlainText: Component<{ text: string; onOpenFile?: (href: string) => 
 				)
 			}
 		</For>
+	);
+};
+
+/** A long card (for example the compaction summary) shows its first line; the rest stays one click away. */
+const NoticeBody: Component<{ text: string }> = (props) => {
+	const split = createMemo(() => {
+		const text = props.text.trim();
+		const end = text.indexOf("\n");
+		return end < 0 ? { head: text, rest: "" } : { head: text.slice(0, end), rest: text.slice(end + 1).trim() };
+	});
+	return (
+		<Show when={split().rest} fallback={<div class={s.noticeBody}>{split().head}</div>}>
+			<details class={s.noticeDetails}>
+				<summary class={s.noticeBody}>{split().head}</summary>
+				<div class={s.noticeBody}>{split().rest}</div>
+			</details>
+		</Show>
 	);
 };
 
@@ -573,6 +592,7 @@ function stripAnswerMarker(head: HTMLElement): void {
 }
 
 export const Transcript: Component<TranscriptProps> = (props) => {
+	const reasoning = () => props.reasoning?.() ?? null;
 	const activity = createMemo(() => {
 		const activity = activityRows(props.entries(), !!props.onSuggestion);
 		if (props.terminalAgent) {
@@ -610,6 +630,7 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 	createEffect(() => {
 		props.busy();
 		props.retry?.();
+		reasoning();
 		const content = new Map(
 			props
 				.entries()
@@ -1146,7 +1167,7 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 												<div class={s.noticeTitle}>
 													{(notice().action && NOTICE_LABELS[notice().action!.kind].title) || "Notice"}
 												</div>
-												<div class={s.noticeBody}>{notice().text}</div>
+												<NoticeBody text={notice().text} />
 												<Show when={notice().action}>
 													{(action) => (
 														<Button type="button" class={s.noticeAction} onClick={() => runNoticeAction(action())}>
@@ -1157,7 +1178,7 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 											</div>
 										)}
 									</Match>
-									<Match when={entry.kind === "thought" && entry}>
+									<Match when={entry.kind === "thought" && !props.reasoning && entry}>
 										{(thought) => (
 											<details class={s.reasoningDisclosure}>
 												<summary class={s.reasoningSummary}>Thinking</summary>
@@ -1231,10 +1252,15 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 						)}
 					</For>
 				</Show>
+				<Show when={reasoning() !== null}>
+					<div class={s.transientReasoning} role="status" aria-label="Turn reasoning">
+						<em>{reasoning() || "Processing…"}</em>
+					</div>
+				</Show>
 				<Show
 					when={props.retry?.()}
 					fallback={
-						<Show when={(props.working ?? props.busy)()}>
+						<Show when={reasoning() === null && (props.working ?? props.busy)()}>
 							<WorkingIndicator label={props.busyLabel} />
 						</Show>
 					}

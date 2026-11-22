@@ -9,10 +9,16 @@ import { isMacOS } from "../platform";
 const mod = isMacOS() ? "Cmd" : "Ctrl";
 
 export const CONTEXTUAL_TIPS = {
+	chatReasoning: {
+		feature: "Live turn reasoning",
+		description:
+			"AI Chat shows public reasoning in italics while the accepted turn waits for its answer. The transient text clears when the answer starts; stored evidence stays in the session history.",
+		shortcut: null,
+	},
 	sidebarModes: {
 		feature: "Sidebar R, C, H modes",
 		description:
-			"Click the toolbar layout switch for Rich, Compact, or Harness-only. H keeps rich rows and shows only branches with a live harness session.",
+			"Click the toolbar layout switch for Rich, Compact, or Harness-only. In Rich rows, a vertical guide connects child sessions to their parent. H keeps rich rows and shows only branches with a live harness session.",
 		shortcut: null,
 	},
 	preventSleep: {
@@ -37,9 +43,33 @@ export const CONTEXTUAL_TIPS = {
 
 export const TIPS: Tip[] = [
 	{
+		feature: "Discussion side questions",
+		description:
+			"Ask the agent a question without interrupting it. The answer comes from a read-only fork of its session and lands in Progress.",
+		shortcut: `${mod}+Alt+Q`,
+	},
+	{
+		feature: "Agent background indicator",
+		description:
+			"A steady blue Background indicator means an agent can receive input but still has tracked work running.",
+		shortcut: null,
+	},
+	{
+		feature: "Reply to Progress",
+		description:
+			"Use Reply beside a Progress report to answer its author without switching repositories. Enter sends; Shift+Enter adds a line. Explicit binary questions offer Yes and No.",
+		shortcut: null,
+	},
+	{
+		feature: "Live workflow runs and approvals",
+		description:
+			"Open Preview & runs to select an active or recent workflow and follow its pinned graph. Approval requests open a real dialog; Later keeps their pending count until a client answers or the run ends.",
+		shortcut: null,
+	},
+	{
 		feature: "Catalog workflow authoring",
 		description:
-			"The Workflow Designer opens neutral drafts with schema forms and typed mappings. Preview is separate from publication and execution. This view requires a compatible neutral backend.",
+			"In Workflow Designer, select a node to configure it, choose a named route and click its destination. Fit graph shows the topology; Inputs & returns and Preview & runs have separate views. A compatible neutral backend remains required.",
 		shortcut: null,
 	},
 	{
@@ -616,6 +646,11 @@ export const TIPS: Tip[] = [
 		shortcut: `${mod}+Shift+W`,
 	},
 	{
+		feature: "Scratchpad",
+		description: "One Markdown notepad shared by every repo — click the notepad icon in the toolbar.",
+		shortcut: null,
+	},
+	{
 		feature: "Ideas Panel",
 		description: "A per-repo scratchpad for context, links, and commands — click the Ideas icon in the toolbar.",
 		shortcut: null,
@@ -989,7 +1024,7 @@ export const TIPS: Tip[] = [
 	{
 		feature: "Native Agent Hooks",
 		description:
-			"Let Claude or Gemini report status through their own hooks for precise busy/idle/waiting state — enable per agent in Settings → Agents. TUIC installs and removes the hooks cleanly and never touches your own.",
+			"Let Claude or Antigravity report status through their own hooks for precise busy/idle/waiting state — enable per agent in Settings → Agents. TUIC installs and removes the hooks cleanly and never touches your own.",
 		shortcut: null,
 	},
 	{

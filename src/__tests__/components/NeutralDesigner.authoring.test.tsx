@@ -90,7 +90,8 @@ it("edits recorded draft label metadata and saves at the original revision witho
 it("customizes the recorded pinned publication in a distinct draft without changing its retained identity", async () => {
 	await ready(false);
 	const pin = authoring.publication.value;
-	fireEvent.click(screen.getByRole("button", { name: `Inspect ${pin.id} · revision ${pin.revision}` }));
+	// The publication of a listed draft is named after that draft, not its id.
+	fireEvent.click(screen.getByRole("button", { name: `Inspect operation · revision ${pin.revision}` }));
 	await screen.findByRole("region", { name: "Pinned metanode graph" });
 	await waitFor(() => expect(screen.getByRole("button", { name: "Customize in a new draft" })).not.toBeDisabled());
 	fireEvent.click(screen.getByRole("button", { name: "Customize in a new draft" }));
@@ -126,12 +127,14 @@ it("shows the real invalid typed-link diagnostic before allowing publication", a
 
 it("renders the actual pure preparation and present sample input without save, publication or dispatch", async () => {
 	await ready();
+	fireEvent.click(screen.getByRole("tab", { name: "Preview & runs" }));
 	fireEvent.input(screen.getByLabelText("Sample inputs (JSON)"), { target: { value: '{"value":7}' } });
 	fireEvent.click(screen.getByRole("button", { name: "Preview sample IO and effect intents" }));
 	const preview = await screen.findByRole("region", { name: "Resolved preview" });
 	const blocks = within(preview).getAllByText((_, node) => node?.tagName === "PRE");
-	expect(JSON.parse(blocks[0].textContent ?? "null")).toEqual(authoring.preview.value.activities[0].inputs);
-	expect(JSON.parse(blocks[1].textContent ?? "null")).toEqual(authoring.preview.value.activities[0].effect_intent);
+	// The resolved sample input is shown as a readable row, not a JSON dump.
+	expect(within(preview).getByText("value", { selector: "dt" }).nextElementSibling?.textContent).toBe("7");
+	expect(JSON.parse(blocks[0].textContent ?? "null")).toEqual(authoring.preview.value.activities[0].effect_intent);
 	expect(requests.find((action) => action.action === "preview")).toEqual({
 		action: "preview",
 		definition: authoring.draft.value.definition,

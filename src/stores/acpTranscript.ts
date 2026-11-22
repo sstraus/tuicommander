@@ -1,6 +1,7 @@
 import { createStore, produce, unwrap } from "solid-js/store";
 import type { SendNowMode } from "../hooks/usePty";
 import type {
+	AcpConnectionId,
 	AcpPlanEntry,
 	AcpSessionId,
 	AcpSessionUpdate,
@@ -65,7 +66,17 @@ export interface AcpProviderRetry {
 	retryAt?: number;
 }
 
+/** Presentation only. A null text seals a turn against late thought chunks. */
+interface TransientReasoning {
+	connectionId: AcpConnectionId;
+	generation: number;
+	turnId: string;
+	sequence: number;
+	text: string | null;
+}
+
 interface TranscriptState {
+	reasoning: Record<AcpSessionId, TransientReasoning>;
 	sessions: Record<AcpSessionId, AcpTranscriptEntry[]>;
 	titles: Record<AcpSessionId, string>;
 	usage: Record<AcpSessionId, { used: number; size: number; cost?: { amount: number; currency: string } }>;
@@ -78,6 +89,7 @@ interface TranscriptState {
 }
 
 const [state, setState] = createStore<TranscriptState>({
+	reasoning: {},
 	sessions: {},
 	titles: {},
 	usage: {},
@@ -366,12 +378,62 @@ function reduceUpdate(
 	}
 }
 
+/** Use host-owned dispatch and turn identity, never optimistic sends or replayed history. */
+function reduceReasoning(draft: TranscriptState, frame: Extract<AcpStreamFrame, { kind: "event" }>): void {
+	const { sessionId, turnId, connectionId, generation, sequence, event } = frame;
+	if (!sessionId || !turnId) return;
+	const current = draft.reasoning[sessionId];
+	if (current?.connectionId === connectionId) {
+		if (generation < current.generation || (generation === current.generation && sequence <= current.sequence)) return;
+	}
+	if (event.kind === "promptSent") {
+		if (current?.connectionId === connectionId && current.generation === generation && current.turnId === turnId)
+			return;
+		draft.reasoning[sessionId] = { connectionId, generation, turnId, sequence, text: "" };
+		return;
+	}
+	if (
+		!current ||
+		current.connectionId !== connectionId ||
+		current.generation !== generation ||
+		current.turnId !== turnId ||
+		current.text === null
+	)
+		return;
+	current.sequence = sequence;
+	if (event.kind === "turnSettled" || event.kind === "turnFailed") {
+		current.text = null;
+		return;
+	}
+	if (event.kind !== "sessionUpdate") return;
+	const update = event.update as unknown as Record<string, unknown>;
+	const content = update.content as { type?: unknown; text?: unknown } | null;
+	if (
+		egoMeta(update)?.inherited === true ||
+		content?.type !== "text" ||
+		typeof content.text !== "string" ||
+		!content.text
+	)
+		return;
+	if (update.sessionUpdate === "agent_thought_chunk") current.text += content.text;
+	else if (update.sessionUpdate === "agent_message_chunk" && egoMeta(update)?.salience !== "card") current.text = null;
+}
+
 export const acpTranscript = {
 	state,
 
 	/** Forget everything. Tests only. */
 	reset(): void {
-		setState({ sessions: {}, titles: {}, usage: {}, turnHasReply: {}, pendingUserEcho: {}, retries: {}, nextId: 1 });
+		setState({
+			reasoning: {},
+			sessions: {},
+			titles: {},
+			usage: {},
+			turnHasReply: {},
+			pendingUserEcho: {},
+			retries: {},
+			nextId: 1,
+		});
 	},
 
 	/**
@@ -390,6 +452,7 @@ export const acpTranscript = {
 		const removed = [...(unwrap(state.sessions[sessionId]) ?? [])];
 		setState(
 			produce((s: TranscriptState) => {
+				delete s.reasoning[sessionId];
 				delete s.sessions[sessionId];
 				delete s.turnHasReply[sessionId];
 				delete s.pendingUserEcho[sessionId];
@@ -428,6 +491,7 @@ export const acpTranscript = {
 		const event = frame.event;
 		setState(
 			produce((s: TranscriptState) => {
+				reduceReasoning(s, frame);
 				const entries = (s.sessions[sessionId] ??= []);
 				if (event.kind === "turnStarted") {
 					s.turnHasReply[sessionId] = false;
@@ -532,6 +596,23 @@ export const acpTranscript = {
 				if (index >= 0) entries.splice(index, 1);
 			}),
 		);
+	},
+
+	/** Hide presentation on stream teardown while retaining every transcript entry. */
+	stopReasoning(connectionId: AcpConnectionId, sessionId?: AcpSessionId): void {
+		setState(
+			produce((s: TranscriptState) => {
+				for (const [session, current] of Object.entries(s.reasoning)) {
+					if (current.connectionId === connectionId && (!sessionId || session === sessionId)) current.text = null;
+				}
+			}),
+		);
+	},
+
+	/** Empty text means an accepted turn is waiting for its first public thought. */
+	reasoning(sessionId: AcpSessionId, connectionId: AcpConnectionId): string | null {
+		const current = state.reasoning[sessionId];
+		return current?.connectionId === connectionId ? current.text : null;
 	},
 
 	entries(sessionId: AcpSessionId): AcpTranscriptEntry[] {

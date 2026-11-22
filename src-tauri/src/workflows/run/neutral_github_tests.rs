@@ -164,7 +164,7 @@ async fn github_source_refuses_missing_installed_catalog_before_network() {
         .unwrap()
         .execute(
             "VACUUM INTO ?1",
-            [f._dir.path().join("workflows.sqlite3").to_str().unwrap()],
+            [f._dir.path().join(crate::db::TUIC_DB).to_str().unwrap()],
         )
         .unwrap();
     let _config = crate::config::set_config_dir_override(f._dir.path().to_path_buf());

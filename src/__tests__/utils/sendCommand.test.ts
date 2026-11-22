@@ -309,7 +309,7 @@ describe("sendCommand framing (critic 1163)", () => {
 	// shell, which would paste "ls" into a shell prompt as literal escape bytes.
 	it("frames long verified paste payloads, and keeps other agents plain", async () => {
 		const long = "x".repeat(1000);
-		for (const agent of ["gemini", "opencode", "grok", "pi", "future-agent", null]) {
+		for (const agent of ["agy", "opencode", "grok", "pi", "future-agent", null]) {
 			const { writeFn, calls } = makeRecorder();
 			await sendCommand(writeFn, long, agent, "posix");
 			expect(calls.at(-2)!, String(agent)).not.toContain("\x1b[200~");

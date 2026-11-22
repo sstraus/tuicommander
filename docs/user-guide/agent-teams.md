@@ -348,35 +348,26 @@ stage mutation action exists.
 
 ### Agent capabilities
 
-A spawn fixes what the new agent may do. `agent action=spawn` (and
-`spawn.capabilities` on `agent action=launch`) takes `capabilities`, a list of
-`land`, `push`, `tag`, `children`, `progress` and `operator`. The `operator` capability permits the automation cutover, rollback and reconciliation actions. Uncapped roots have it; automation and workflow agents do not. TUIC saves an agent’s fixed set before launch and restores it with the session identity after restart. A legacy session without a record must be relaunched to use `operator`; desktop actions are unchanged. The local user can edit these files, so they are not a security boundary. A child, that is a spawn with a
-parent, gets none of them unless the list names them. A spawn without a parent
-and without the list stays uncapped, so hand-opened tabs keep their rights.
+A spawned agent may do what the session that spawned it may do: spawn its own
+agents, commit, push and tag. It still reports to its parent by mail: TUIC
+refuses `progress` from a managed child. What a worker should or should not do
+belongs in its brief. The per-agent `land`, `push`, `tag`, `children` and
+`progress` capabilities, their git shim and `TUIC_CAPABILITIES` were removed on
+2026-11-20; a brief that still names them spawns normally and they grant nothing.
 
-- `children` covers `agent action=spawn`, `agent action=launch` and
-  `workflow action=launch`. Plain terminal sessions are not children.
-- `progress` covers the `progress` tool.
-- `land`, `push` and `tag` have no MCP call. TUIC exports the set as
-  `TUIC_CAPABILITIES` (comma-separated, empty for none) and the repository
-  `pre-push` hook refuses a branch push without `push` and a tag push without
-  `tag`. For a capped agent TUIC also sets `core.hooksPath` (through
-  `GIT_CONFIG_COUNT`/`KEY`/`VALUE`) to a TUIC hooks directory, so a push is
-  refused in a repository that has no such hook, also from a login shell such
-  as the Claude Code Bash tool. Each hook there runs the repository's own hook
-  of the same name. A `git` shim first on `PATH` adds the `--no-verify` case,
-  but a login shell can move it behind `/usr/bin`. Enforcement is advisory and
-  holds only where TUIC starts the agent on macOS or Linux: `git push
-  --no-verify` in a login shell, an absolute path to git, `git -c
-  core.hooksPath=...`, `env -u GIT_CONFIG_COUNT`, a resumed tab (story 2757)
-  and Windows (repository hook only) are not covered.
+One capability remains, `operator`. It permits the automation cutover, rollback
+and reconciliation actions and answers to native workflow approval questions.
+Uncapped roots (hand-opened tabs) have it; a spawned child, an automation agent
+and a workflow agent do not, unless the spawn names it in `capabilities`
+(`spawn.capabilities` on `agent action=launch`). A capped agent can grant a
+child only what it holds; TUIC refuses a wider grant with
+`code: "capability_denied"`, `effect: "not_started"` and mails the parent once.
+TUIC saves the set before launch and restores it with the session identity after
+restart. Mail, prompts and the caller's `env` cannot widen it. The local user
+can edit these files, so this is not a security boundary.
 
-TUIC refuses a call outside the set with `code: "capability_denied"`, the
-`capability` it needs and `effect: "not_started"`. The parent gets one
-`capability_denied` mail per refused capability, however often the child
-retries. A capped agent can grant a child only capabilities it holds. The set is
-written only by the spawn and removed with the PTY: mail, prompts and the
-caller's `env` (which cannot set `TUIC_CAPABILITIES`) cannot widen it.
+Native workflow publication (push, pull requests, issue effects) needs no
+capability: each such effect waits for its approval question to be answered yes.
 
 ### Silent managed workers
 

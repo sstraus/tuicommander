@@ -1,3 +1,7 @@
+## Local HTTP defaults (2026-11-18) — Rust restart required
+
+- [ ] After an owner-approved backend rebuild/restart, verify that anonymous `POST /stories/action?path=<project>` with `{"action":"summary"}` succeeds on `127.0.0.1` and `::1` with `services.auth.require_local_auth` absent or false. Set the flag to true and confirm the same anonymous request requires authentication, while a valid session still works. Verify a non-loopback client still requires credentials. Restore the owner-selected flag after checking. Targeted router tests cover these admission cases; the running daily instance has not been restarted.
+
 ## Tailscale CLI mode (2860-81f8) — Rust restart required
 
 - [ ] When ready to lose the current sessions, manually restart `make dev` or install a `make build` release. On the affected Mac, launch TUIC from Finder without a global `TAILSCALE_BE_CLI` workaround, select Remote Access → Recheck, and confirm Tailscale is running and the phone can reach the host. Also check a PATH alias to the app executable. The targeted command-environment test covers the explicit child override; Roberto's exact executable and phone connection still need live confirmation. No daily instance was restarted.
@@ -28,3 +32,5 @@
 ## Remote worktree refresh (#150, PR #152) — Rust restart required
 
 - [ ] Remote worktrees (#150): register a repository on an SSH or Direct connection, create and remove a worktree on that host (using Git and MCP), and check that the desktop sidebar updates without switching repositories. Restart the daemon, repeat, and confirm updates resume. Keep a local repository open during the check and verify its workspace rows and terminals are unaffected.
+
+- [ ] remote-bin rotation (2026-11-21): after `make dev` restart, deploy or update a remote host; `~/Library/Application Support/com.tuic.commander/remote-bin/` keeps only the running version plus the newest other one (`remote_deploy/assets.rs` `prune_other_versions`).

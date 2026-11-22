@@ -149,24 +149,16 @@ pub(crate) fn bind_pty_identity(
     let identity = tuic_session.unwrap_or(session_id);
     cmd.env("TUIC_SESSION", identity);
     // A resumed suspended tab keeps its fixed capability set under the same
-    // identity (see `cleanup_session_state`); the pre-push hook reads it here.
+    // identity (see `cleanup_session_state`).
     if tuic_session.is_some()
         && !state.agent_capabilities.contains_key(identity)
         && let Some(set) = crate::agent_capabilities::load(&state.data_dir, identity)
     {
         state.agent_capabilities.insert(identity.to_owned(), set);
     }
-    if let Some(set) = state.agent_capabilities.get(identity) {
-        cmd.env(crate::agent_capabilities::ENV_VAR, set.env_value());
-    } else {
-        cmd.env_remove(crate::agent_capabilities::ENV_VAR);
-    }
     match crate::attachments::prepare_session_directory(&state.data_dir, "pty", session_id) {
         Ok(directory) => {
             cmd.env("TUIC_ATTACHMENTS_DIR", &directory);
-            if let Err(error) = crate::attachments::configure_gemini_trust(cmd, &directory) {
-                tracing::warn!(session_id, %error, "Could not provision Gemini attachment trust");
-            }
             state
                 .session_maps
                 .attachment_launch_dirs
@@ -377,10 +369,11 @@ where
 /// Build a CommandBuilder for the given shell with platform-appropriate flags.
 ///
 /// The `shell` string may contain arguments (e.g. `wsl.exe -d Ubuntu`).
-/// The first whitespace-delimited token is the executable; the rest are args.
+/// The executable is the first token, a quoted path, or an unquoted path ending
+/// in `.exe`/`.cmd`/`.bat` (so `C:\Program Files\...` survives); the rest are args.
 pub(crate) fn build_shell_command(shell: &str) -> CommandBuilder {
-    let mut parts = shell.split_whitespace();
-    let exe = parts.next().unwrap_or(shell);
+    let mut parts = crate::windows_launch::split_shell_command(shell).into_iter();
+    let exe = parts.next().unwrap_or_else(|| shell.to_string());
     #[allow(unused_mut)]
     let mut cmd = CommandBuilder::new(exe);
     sanitize_pty_parent_env(&mut cmd);
@@ -1343,6 +1336,10 @@ pub(crate) struct SilenceState {
     /// changes shell state by itself; it only strengthens a matching interrupted
     /// screen emitted by the agent.
     pub(super) interrupt_requested_at: Option<std::time::Instant>,
+    /// A native dialog answer (key, Enter or Escape) was just written. Rejecting
+    /// or cancelling a permission dialog ends the turn with no Stop hook, so the
+    /// agent's own interrupted banner may close it, like a requested interrupt.
+    pub(super) dialog_answered_at: Option<std::time::Instant>,
     /// Debounce clock for `note_ready_screen`: first observation of a stable
     /// agent ready prompt. Not part of `TurnEvidence` — it is a pending
     /// observation, not yet evidence; only committed via `force_idle` once
@@ -1443,6 +1440,7 @@ impl SilenceState {
             last_working_screen_offset: 0,
             last_hook_busy_offset: None,
             interrupt_requested_at: None,
+            dialog_answered_at: None,
             screen_ready_pending_since: None,
             active_injection_claim: None,
             next_injection_claim: 0,
@@ -1811,8 +1809,21 @@ impl SilenceState {
             .is_some_and(|at| at.elapsed() < INTERRUPT_PENDING_TTL)
     }
 
+    /// A dialog answer was written and the turn may now end without a Stop hook.
+    pub(crate) fn note_dialog_answered(&mut self) {
+        self.dialog_answered_at = Some(std::time::Instant::now());
+    }
+
+    pub(crate) fn dialog_answer_pending(&self) -> bool {
+        self.dialog_answered_at
+            .is_some_and(|at| at.elapsed() < INTERRUPT_PENDING_TTL)
+    }
+
     pub(super) fn note_interrupted_screen(&mut self) -> bool {
-        if self.interrupt_pending() {
+        // The claims stay until a new submission or their TTL: the foreground
+        // probe may still be pending on this tick, and the next tick needs the
+        // claim again to release native busy.
+        if self.interrupt_pending() || self.dialog_answer_pending() {
             if self.native_state == NativeActivity::Busy {
                 self.native_state = NativeActivity::Idle;
             }
@@ -1820,7 +1831,6 @@ impl SilenceState {
                 .force_idle(EvidenceRank::Screen, "interrupted-screen");
             self.last_status_line_at = None;
             self.screen_ready_pending_since = None;
-            self.interrupt_requested_at = None;
             self.evidence.activity_seen = false;
             return true;
         }
@@ -1848,6 +1858,7 @@ impl SilenceState {
         // write still marks itself uncertain afterward.
         self.invalidate_injection_claim();
         self.interrupt_requested_at = None;
+        self.dialog_answered_at = None;
         self.completion_declared = false;
         self.note_busy_evidence();
         if protocol_instrumented {
@@ -2160,10 +2171,13 @@ impl SilenceState {
     }
 
     /// Called by the timer thread. Returns the error text if the silence
-    /// threshold has been reached and we haven't emitted yet. Semantics mirror
-    /// `check_silence` but use the shorter tool-error threshold.
-    pub(crate) fn check_tool_error(&mut self) -> Option<String> {
-        if self.is_spinner_active() {
+    /// threshold has been reached, the turn has ended (`turn_ended`: the shell
+    /// is idle) and we haven't emitted yet. Silence alone is not a turn end:
+    /// an agent often thinks for longer than the threshold after a failed tool
+    /// call and then continues by itself, which must not ask for the user.
+    /// The candidate stays parked while the agent works; real output clears it.
+    pub(crate) fn check_tool_error(&mut self, turn_ended: bool) -> Option<String> {
+        if !turn_ended || self.is_spinner_active() {
             return None;
         }
         let should_fire = self.pending_tool_error.is_some()
@@ -3696,6 +3710,23 @@ pub(crate) fn mark_session_exited(session_id: &str, state: &Arc<AppState>) {
 }
 
 fn publish_session_exit(session_id: &str, state: &Arc<AppState>) {
+    // A dead process answers no dialog. Neither a screen repaint nor a hook can
+    // retract the badge now, so the exit itself is the clear (#3100-cafa).
+    if state
+        .session_maps
+        .session_states
+        .get(session_id)
+        .is_some_and(|session| session.awaiting_input)
+    {
+        state.emit_pty_event(crate::state::AppEvent::PtyParsed {
+            session_id: session_id.to_string(),
+            parsed: serde_json::json!({
+                "type": "protocol-question-cleared",
+                "source": "process-exit",
+            })
+            .into(),
+        });
+    }
     // Notify orchestrator (if any) that this agent has exited.
     let exit_code = state
         .session_maps

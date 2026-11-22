@@ -32,7 +32,7 @@ interface SessionsScreenProps {
 const PULL_THRESHOLD = 60;
 
 // The Working counter already includes delegated work; filtering must use that same group.
-const counterStatus = (status: SessionStatus) => (status === "sub-tasks" ? "busy" : status);
+const counterStatus = (status: SessionStatus) => (status === "sub-tasks" || status === "background" ? "busy" : status);
 
 export function SessionsScreen(props: SessionsScreenProps) {
 	// Key by session id: polling replaces session objects, but must not reset the busy hold.

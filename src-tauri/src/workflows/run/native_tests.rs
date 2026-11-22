@@ -57,15 +57,26 @@ async fn native_pins_and_named_verification_use_current_git_artifact() {
 #[test]
 fn native_context_rechecks_revocation_and_does_not_amplify_inherited_rights() {
     let f = Fixture::new();
-    f.context.current(Some(Capability::Push)).unwrap();
-    let child = f.context.for_subflow(&Default::default()).unwrap();
+    let operator = || CapabilitySet::from_spawn_arg(&json!(["operator"])).unwrap();
+    f.state
+        .agent_capabilities
+        .insert("trusted".into(), operator());
+    let context = super::NativeContext::capture(
+        &f.state,
+        super::NativeCaller::Agent("trusted".into()),
+        f.context.workspace_path(),
+        vec![],
+    )
+    .unwrap();
+    context.current(Some(Capability::Operator)).unwrap();
+    let child = context.for_subflow(&Default::default()).unwrap();
     let child = (child.as_ref() as &dyn std::any::Any)
         .downcast_ref::<super::NativeContext>()
         .unwrap();
     f.state
         .agent_capabilities
         .insert("trusted".into(), CapabilitySet::default());
-    assert!(child.current(Some(Capability::Push)).is_err());
+    assert!(child.current(Some(Capability::Operator)).is_err());
     let narrowed = super::NativeContext::capture(
         &f.state,
         super::NativeCaller::Agent("trusted".into()),
@@ -73,11 +84,10 @@ fn native_context_rechecks_revocation_and_does_not_amplify_inherited_rights() {
         vec![],
     )
     .unwrap();
-    f.state.agent_capabilities.insert(
-        "trusted".into(),
-        CapabilitySet::from_spawn_arg(&json!(["push"])).unwrap(),
-    );
-    assert!(narrowed.current(Some(Capability::Push)).is_err());
+    f.state
+        .agent_capabilities
+        .insert("trusted".into(), operator());
+    assert!(narrowed.current(Some(Capability::Operator)).is_err());
     f.state.agent_capabilities.remove("trusted");
     assert!(f.context.pin_artifact(&[]).is_err());
 }
@@ -161,7 +171,7 @@ async fn native_unbound_run_and_missing_pinned_handler_refuse_without_success() 
     );
     let forged = f.start(
         "artifact.pin",
-        json!({"paths":[],"caller":"trusted","capabilities":["push"]}),
+        json!({"paths":[],"caller":"trusted","capabilities":["operator"]}),
     );
     let refused = f.dispatch(&forged).await;
     assert!(matches!(refused.status, NeutralStatus::Failed { .. }));
@@ -181,7 +191,7 @@ async fn native_typed_owner_and_host_checks_use_the_installed_provider() {
         vec!["exact-tree".into()],
     )
     .unwrap();
-    owner.current(Some(Capability::Push)).unwrap();
+    owner.current(Some(Capability::Operator)).unwrap();
     assert!(
         NativeContext::capture(
             &f.state,

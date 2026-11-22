@@ -187,17 +187,20 @@ fn config_dir() -> std::path::PathBuf {
     )
 }
 
+/// The socket the selected instance published, else its derived endpoint.
+#[cfg(unix)]
+fn primary_socket_path() -> std::path::PathBuf {
+    tuic_ipc::client_socket_path(
+        tuic_ipc::app_instance::current_app_instance(),
+        &config_dir(),
+        &std::env::temp_dir(),
+    )
+}
+
 #[cfg(unix)]
 fn ipc_endpoint() -> String {
-    std::env::var("TUIC_SOCKET").unwrap_or_else(|_| {
-        tuic_ipc::socket_path(
-            tuic_ipc::app_instance::current_app_instance(),
-            &config_dir(),
-            &std::env::temp_dir(),
-        )
-        .to_string_lossy()
-        .into_owned()
-    })
+    std::env::var("TUIC_SOCKET")
+        .unwrap_or_else(|_| primary_socket_path().to_string_lossy().into_owned())
 }
 
 #[cfg(windows)]
@@ -292,11 +295,7 @@ async fn connect_ipc() -> Result<IpcStream, String> {
         }
 
         let dir = config_dir();
-        let primary = tuic_ipc::socket_path(
-            tuic_ipc::app_instance::current_app_instance(),
-            &dir,
-            &std::env::temp_dir(),
-        );
+        let primary = primary_socket_path();
 
         // Try primary socket first (with timeout to avoid hanging on stale sockets)
         if let Ok(Ok(stream)) = tokio::time::timeout(

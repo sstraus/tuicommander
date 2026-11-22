@@ -21,6 +21,8 @@ const updates = () =>
 		.mocked(invoke)
 		.mock.calls.filter(([, args]) => (args as { action?: { action: string } })?.action?.action === "update_plan");
 beforeEach(() => {
+	// This subject exercises an explicitly selected plan, not the project-wide landing view.
+	storiesUi.reveal({ project: "/plan-edit", planId: "plan", storyId: null });
 	plan = { id: "plan", project: "/plan-edit", title: "Original plan", source: "original.md", revision: 7 };
 	failure = "";
 	storiesUi.setVisibility("all");

@@ -3,12 +3,14 @@ import { rateLimitStore } from "../stores/ratelimit";
 import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
 import { displayTask } from "./displayTask";
+import { showsBackgroundWork } from "./terminalVisualState";
 
 export type EffectiveActivityState =
 	| "rate_limited"
 	| "error"
 	| "awaiting_input"
 	| "working"
+	| "background"
 	| "completed"
 	| "idle"
 	| "unknown";
@@ -29,11 +31,7 @@ export function effectiveActivityState(
 	if (isRateLimited) return "rate_limited";
 	if (awaitingInput === "error") return "error";
 	if (awaitingInput || agentState === "awaiting_input") return "awaiting_input";
-	// A ready composer is available work from the dashboard's point of view.
-	// Codex may intentionally leave a long-lived background terminal (for
-	// example a dev server) running after the turn has completed; that process
-	// remains tracked by the backend but must not keep this row latched Working.
-	if (shellState === "idle" && backgroundWork) return "idle";
+	if (showsBackgroundWork(shellState, backgroundWork)) return "background";
 	if (agentState === "starting" || agentState === "working" || backgroundWork) return "working";
 	if (agentState === "completed") return "completed";
 	if (shellState === "busy") return "working";
@@ -44,7 +42,7 @@ export function effectiveActivityState(
 
 /** True only for states that should receive working row styling and ordering. */
 export function isActivityWorking(state: EffectiveActivityState): boolean {
-	return state === "rate_limited" || state === "awaiting_input" || state === "working";
+	return state === "rate_limited" || state === "awaiting_input" || state === "working" || state === "background";
 }
 
 /** Extract project name (last path segment) from cwd */
@@ -71,7 +69,14 @@ export function terminalStatusLabel(
 	shellState: string | null,
 	awaitingInput: string | null,
 	isRateLimited: boolean,
-	classNames: { rateLimited: string; error: string; waiting: string; working: string; idle: string },
+	classNames: {
+		rateLimited: string;
+		error: string;
+		waiting: string;
+		working: string;
+		background: string;
+		idle: string;
+	},
 	agentState: string | null = null,
 	backgroundWork = false,
 ): { label: string; className: string } {
@@ -79,6 +84,7 @@ export function terminalStatusLabel(
 	if (state === "rate_limited") return { label: "Rate limited", className: classNames.rateLimited };
 	if (state === "error") return { label: "Error", className: classNames.error };
 	if (state === "awaiting_input") return { label: "Waiting for input", className: classNames.waiting };
+	if (state === "background") return { label: "Background", className: classNames.background };
 	if (state === "working") return { label: "Working", className: classNames.working };
 	if (state === "completed") return { label: "Completed", className: classNames.idle };
 	if (state === "idle") return { label: "Idle", className: classNames.idle };

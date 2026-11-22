@@ -175,8 +175,8 @@ pub(crate) fn session_identity(
     (agent_type, name)
 }
 
-/// Shared reporting core for MCP, HTTP and Tauri IPC. `into_entry` is what
-/// refuses `intent` here: an agent may not claim one.
+/// Test shorthand for the reporting core without an author.
+#[cfg(test)]
 pub fn submit_progress_report(
     state: &crate::state::AppState,
     project_hint: Option<&str>,
@@ -185,13 +185,40 @@ pub fn submit_progress_report(
     agent_type: Option<&str>,
     pty_id: Option<&str>,
 ) -> Result<ProgressEntry, String> {
-    append(
+    submit_progress_report_with_origin(
         state,
         project_hint,
-        input.into_entry(agent_name)?,
+        input,
+        agent_name,
         agent_type,
         pty_id,
         None,
+    )
+}
+
+/// Shared reporting core for MCP, HTTP and Tauri IPC. `into_entry` is what
+/// refuses `intent` here: an agent may not claim one.
+pub(crate) fn submit_progress_report_with_origin(
+    state: &crate::state::AppState,
+    project_hint: Option<&str>,
+    input: ProgressReportInput,
+    agent_name: Option<String>,
+    agent_type: Option<&str>,
+    pty_id: Option<&str>,
+    author: Option<&str>,
+) -> Result<ProgressEntry, String> {
+    if !progress_tracking_enabled(state, agent_type) {
+        return Err(TRACKING_DISABLED.to_string());
+    }
+    let question = input.question;
+    let entry = input.into_entry(agent_name)?;
+    let project = resolve_owning_project(project_hint)?;
+    ProgressStore::open()?.record_report(
+        &project.to_string_lossy(),
+        &entry,
+        pty_id,
+        author,
+        question,
     )
 }
 
@@ -243,6 +270,11 @@ pub fn progress_list(project: &str, input: ProgressListInput) -> Result<Progress
     ProgressStore::open()?.list(&project_of(project)?, &input)
 }
 
+/// The newest default-kind entries of every project (the cross-project view).
+pub fn progress_recent(input: ProgressRecentInput) -> Result<Vec<ProgressRecentEntry>, String> {
+    ProgressStore::open()?.recent(&input)
+}
+
 pub fn progress_projects() -> Result<Vec<String>, String> {
     ProgressStore::open()?.recent_projects()
 }
@@ -259,6 +291,22 @@ pub fn progress_mark_viewed(
     pty_id: Option<&str>,
 ) -> Result<ProgressViewedReceipt, String> {
     ProgressStore::open()?.mark_viewed_for_pty(&project_of(project)?, pty_id)
+}
+
+/// Human replies use the existing normal mail lane, not the PTY composer.
+pub async fn progress_reply(
+    state: std::sync::Arc<crate::state::AppState>,
+    project: String,
+    input: ProgressReplyInput,
+) -> Result<ProgressReplyReceipt, String> {
+    tokio::task::spawn_blocking(move || {
+        let project = project_of(&project)?;
+        ProgressStore::open()?.reply(&project, &input, |author, pty, message, id| {
+            crate::mcp_http::progress_reply_mail(&state, author, pty, message, id)
+        })
+    })
+    .await
+    .map_err(|e| format!("progress reply task failed: {e}"))?
 }
 
 #[cfg(test)]
@@ -373,6 +421,7 @@ mod tests {
                 &state,
                 Some(&hint),
                 ProgressReportInput {
+                    question: None,
                     kind,
                     text: format!("Handled {secret}"),
                     step: Some(format!("step {secret}")),
@@ -530,6 +579,7 @@ mod tests {
                 &state,
                 Some(&hint),
                 ProgressReportInput {
+                    question: None,
                     kind: ProgressKind::Done,
                     text: "Should not land either".to_string(),
                     step: None,

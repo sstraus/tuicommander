@@ -42,6 +42,8 @@ const story: EditableStory & {
 	abandoned: false,
 };
 beforeEach(() => {
+	// This subject exercises an explicitly selected plan, not the project-wide landing view.
+	storiesUi.reveal({ project: "/repo", planId: "p1", storyId: null });
 	storiesUi.setVisibility("all");
 	vi.mocked(invoke).mockReset();
 	vi.mocked(invoke).mockImplementation(async (command, args) => {

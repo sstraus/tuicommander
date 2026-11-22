@@ -18,12 +18,7 @@ stub="$scratch/stub-bin"
 mkdir -p "$stub"
 printf '#!/bin/sh\nexit 0\n' > "$stub/mbx"
 chmod +x "$stub/mbx"
-without_mbx=""
-IFS=: read -r -a dirs <<<"$PATH"
-for dir in "${dirs[@]}"; do
-  [[ -x "$dir/mbx" ]] && continue
-  without_mbx="${without_mbx:+$without_mbx:}$dir"
-done
+without_mbx="$(. "$root/scripts/test-tmp-lib.sh" && tuic_path_without_mbx "$PATH")"
 
 run_wrapper() { # <path> <host tmpdir> -- prints TMPDIR; stderr to $scratch/stderr
   env -u TUIC_TEST_TMP_ROOT -u TUIC_TEST_TMP_BASE PATH="$1" TUIC_TEST_HOST_TMPDIR="$2" \

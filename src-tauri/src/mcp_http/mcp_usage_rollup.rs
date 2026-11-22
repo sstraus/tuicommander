@@ -22,11 +22,8 @@ use serde_json::{Value, json};
 
 use crate::AppState;
 
-const STORE_FILE: &str = "mcp_usage.sqlite3";
-const RETENTION_DAYS: i64 = 90;
 const READ_DAYS: i64 = 7;
 const FLUSH_INTERVAL: Duration = Duration::from_secs(30);
-const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// Bucket `i` holds sizes in `[2^(i-1), 2^i)` bytes; bucket 0 holds zero. The last
 /// bucket is open-ended (>= 8 MiB), which no MCP reply approaches.
 const BUCKETS: usize = 24;
@@ -39,9 +36,15 @@ static STORE: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 
 const CLIENTS: [&str; 4] = ["claude", "codex", "ego", "grok"];
 
+/// The `tuic` command line names itself `tuic-cli`: scripted calls, not model choices.
+const CLI_CLIENT: &str = "tuic-cli";
+
 /// Client kind from the MCP client name or the user agent. Whole alphanumeric
 /// tokens only, so a name such as "category-tool" never reads as `ego`.
 pub(super) fn client_kind(name: Option<&str>, user_agent: Option<&str>) -> &'static str {
+    if name.is_some_and(|name| name.eq_ignore_ascii_case(CLI_CLIENT)) {
+        return "cli";
+    }
     for text in [name, user_agent].into_iter().flatten() {
         let lower = text.to_ascii_lowercase();
         for token in lower.split(|c: char| !c.is_ascii_alphanumeric()) {
@@ -163,7 +166,7 @@ fn today_ms() -> u64 {
 }
 
 /// UTC civil day (`YYYY-MM-DD`) of a unix millisecond timestamp.
-fn day_of(ms: u64) -> String {
+pub(crate) fn day_of(ms: u64) -> String {
     // Howard Hinnant's civil-from-days, on whole days since 1970-01-01.
     let days = (ms / MS_PER_DAY) as i64 + 719_468;
     let era = days.div_euclid(146_097);
@@ -178,38 +181,29 @@ fn day_of(ms: u64) -> String {
 }
 
 fn db_path() -> PathBuf {
-    crate::config::config_dir().join(STORE_FILE)
+    crate::db::path(crate::db::TUIC_DB)
 }
 
 fn connect() -> Result<Connection, String> {
-    let path = db_path();
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("mcp usage store: create dir: {e}"))?;
-    }
-    let conn = Connection::open(&path).map_err(|e| format!("mcp usage store: open: {e}"))?;
-    conn.busy_timeout(BUSY_TIMEOUT)
-        .map_err(|e| format!("mcp usage store: busy timeout: {e}"))?;
-    conn.pragma_update(None, "journal_mode", "WAL")
-        .map_err(|e| format!("mcp usage store: WAL: {e}"))?;
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS mcp_usage_daily (
-           day               TEXT NOT NULL,
-           client            TEXT NOT NULL,
-           role              TEXT NOT NULL,
-           tool              TEXT NOT NULL,
-           action            TEXT NOT NULL,
-           calls             INTEGER NOT NULL,
-           app_errors        INTEGER NOT NULL,
-           invalid_arguments INTEGER NOT NULL,
-           bytes_hist        TEXT NOT NULL,
-           bytes_max         INTEGER NOT NULL,
-           catalogue_bytes   INTEGER NOT NULL,
-           PRIMARY KEY (day, client, role, tool, action)
-         ) WITHOUT ROWID;",
-    )
-    .map_err(|e| format!("mcp usage store: schema: {e}"))?;
-    Ok(conn)
+    crate::db::open_with(&db_path(), &crate::db::TUIC_SCHEMA)
+        .map_err(|e| format!("mcp usage store: {e}"))
 }
+
+/// Daily MCP usage rollup in `tuic.sqlite3`.
+pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS mcp_usage_daily (
+   day               TEXT NOT NULL,
+   client            TEXT NOT NULL,
+   role              TEXT NOT NULL,
+   tool              TEXT NOT NULL,
+   action            TEXT NOT NULL,
+   calls             INTEGER NOT NULL,
+   app_errors        INTEGER NOT NULL,
+   invalid_arguments INTEGER NOT NULL,
+   bytes_hist        TEXT NOT NULL,
+   bytes_max         INTEGER NOT NULL,
+   catalogue_bytes   INTEGER NOT NULL,
+   PRIMARY KEY (day, client, role, tool, action)
+ ) WITHOUT ROWID;";
 
 fn encode_hist(hist: &[u64; BUCKETS]) -> String {
     hist.iter()
@@ -328,13 +322,6 @@ impl Rollup {
             )
             .map_err(|e| format!("mcp usage store: upsert: {e}"))?;
         }
-        tx.execute(
-            "DELETE FROM mcp_usage_daily WHERE day < ?1",
-            params![day_of(
-                today_ms().saturating_sub(RETENTION_DAYS as u64 * MS_PER_DAY)
-            )],
-        )
-        .map_err(|e| format!("mcp usage store: prune: {e}"))?;
         tx.commit()
             .map_err(|e| format!("mcp usage store: commit: {e}"))
     }
@@ -499,10 +486,9 @@ mod tests {
         }
     }
 
-    // Catches: a second flush replaces the stored day instead of adding to it, and
-    // rows older than the retention window survive a write.
+    // Catches: a second flush replaces the stored day instead of adding to it.
     #[test]
-    fn flushes_add_to_the_stored_day_and_prune_past_retention() {
+    fn flushes_add_to_the_stored_day() {
         let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
         let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
         let rollup = Rollup::default();
@@ -510,24 +496,10 @@ mod tests {
         rollup.flush().unwrap();
         rollup.record_call(&obs("agent.send", 5000));
         rollup.record_call(&obs("agent.send", 100));
-        {
-            let conn = connect().unwrap();
-            let old = day_of(today_ms() - (RETENTION_DAYS as u64 + 1) * MS_PER_DAY);
-            conn.execute(
-                "INSERT INTO mcp_usage_daily VALUES (?1,'claude','managed_child','agent','old',9,0,0,?2,1,0)",
-                params![old, encode_hist(&[0; BUCKETS])],
-            )
-            .unwrap();
-        }
         let report = rollup.report().unwrap();
         let action = &report["roles"][0]["actions"][0];
         assert_eq!(action["calls"], 3, "{report}");
         assert_eq!(action["response_bytes_max"], 5000, "{report}");
         assert_eq!(report["roles"][0]["actions"].as_array().unwrap().len(), 1);
-        let rows: i64 = connect()
-            .unwrap()
-            .query_row("SELECT count(*) FROM mcp_usage_daily", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(rows, 1, "the 91-day-old row was not pruned");
     }
 }

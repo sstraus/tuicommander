@@ -26,7 +26,7 @@ def publish(args):
         result = git('ls-remote', 'origin', ref).split()
         return result[0] if result else ''
 
-    # Refresh only public refs; never merge them into private development main.
+    # Refresh only public refs; never merge them into private development master.
     git('fetch', '--no-tags', 'origin',
         '+refs/heads/main:refs/remotes/origin/main')
     if remote_ref('refs/heads/nightly'):
@@ -49,7 +49,7 @@ def publish(args):
     else:
         if git('status', '--porcelain'):
             raise ValueError('working tree is dirty; commit the reviewed source first')
-        source = git('rev-parse', 'refs/heads/main' if args.action == 'nightly' else 'HEAD')
+        source = git('rev-parse', 'refs/heads/master' if args.action == 'nightly' else 'HEAD')
         if args.action == 'nightly':
             options = ['--date', args.date] if args.date else []
             snapshot = json.loads(tool('nightly', '--source', source, *options))

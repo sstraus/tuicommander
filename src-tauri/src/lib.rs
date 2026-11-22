@@ -36,6 +36,7 @@ pub(crate) mod background_mode;
 #[cfg(test)]
 mod background_mode_tests;
 mod boss_attention;
+pub(crate) mod db;
 #[cfg(all(debug_assertions, feature = "desktop"))]
 pub mod dev_backend;
 mod fabbrica_attention;
@@ -48,6 +49,7 @@ pub(crate) mod session_resume;
 pub(crate) mod session_wake;
 pub(crate) mod sqlite_once;
 pub(crate) mod suspended_sessions;
+pub(crate) mod windows_launch;
 pub mod work_items;
 pub use tuic_core::app_instance;
 mod agent_test;
@@ -192,6 +194,7 @@ pub(crate) use tuic_core::redaction;
 mod agent_question;
 pub(crate) mod chat_view;
 mod codex_binding;
+pub(crate) mod discussion;
 mod monitoring_status;
 pub(crate) mod registry;
 pub(crate) mod relay_client;
@@ -532,11 +535,27 @@ fn report_progress_event(
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
+async fn progress_reply(
+    state: State<'_, Arc<AppState>>,
+    project: String,
+    input: progress::ProgressReplyInput,
+) -> Result<progress::ProgressReplyReceipt, String> {
+    progress::progress_reply(state.inner().clone(), project, input).await
+}
+#[cfg(feature = "desktop")]
+#[tauri::command]
 fn progress_list(
     project: String,
     input: progress::ProgressListInput,
 ) -> Result<progress::ProgressList, String> {
     progress::progress_list(&project, input)
+}
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn progress_recent(
+    input: progress::ProgressRecentInput,
+) -> Result<Vec<progress::ProgressRecentEntry>, String> {
+    progress::progress_recent(input)
 }
 #[cfg(feature = "desktop")]
 #[tauri::command]
@@ -559,6 +578,34 @@ async fn progress_flow(
     input: progress::ProgressFlowInput,
 ) -> Result<progress::ProgressFlow, String> {
     progress::progress_flow_blocking(state.inner().clone(), project, input).await
+}
+#[cfg(feature = "desktop")]
+#[tauri::command]
+async fn discussion_ask(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    question: String,
+) -> Result<progress::ProgressEntry, String> {
+    discussion::service::ask(state.inner().clone(), session_id, question).await
+}
+#[cfg(feature = "desktop")]
+#[tauri::command]
+async fn discussion_follow_up(
+    state: State<'_, Arc<AppState>>,
+    entry_id: i64,
+    question: String,
+) -> Result<progress::ProgressEntry, String> {
+    discussion::service::follow_up(state.inner().clone(), entry_id, question).await
+}
+#[cfg(feature = "desktop")]
+#[tauri::command]
+async fn discussion_get(entry_id: i64) -> Result<discussion::store::ThreadDetail, String> {
+    discussion::service::get(entry_id).await
+}
+#[cfg(feature = "desktop")]
+#[tauri::command]
+async fn discussion_cancel(entry_id: i64) -> Result<(), String> {
+    discussion::service::cancel(entry_id).await
 }
 #[cfg(feature = "desktop")]
 #[tauri::command]
@@ -1833,6 +1880,8 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
     *app_state.github.token_source.get_mut() = github_token_source;
 
     let state = Arc::new(app_state);
+    crate::discussion::service::startup();
+    crate::db::retention::start(&state);
     state.wire_event_bus();
 
     // The relay supervisor runs whether or not the relay is enabled at boot:
@@ -2535,12 +2584,18 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             clear_repo_caches,
             report_progress_event,
             progress_list,
+            progress_reply,
             progress_projects,
+            progress_recent,
             progress_delete,
             progress_mark_viewed,
             progress_flow,
             progress_flow_detail,
             chat_view_snapshot,
+            discussion_ask,
+            discussion_follow_up,
+            discussion_get,
+            discussion_cancel,
             chat_view_full_text,
             boss_attention,
             answer_outside_request,
@@ -2666,6 +2721,7 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             config::delete_note_assets,
             config::delete_note_assets_batch,
             config::get_note_images_dir,
+            config::get_scratchpad_path,
             boot_commands::load_activity_async,
             config::save_activity,
             boot_commands::load_keybindings_async,
@@ -2982,6 +3038,7 @@ fn spawn_background_tasks(state: &Arc<AppState>) {
     provider_quota::spawn_scheduler(state.clone());
     pty::spawn_tombstone_sweeper(state.clone());
     content_index::spawn_content_index_updater(state.clone());
+    discussion::capture::start(state.clone());
     cpu_watchdog::spawn(state.clone());
     // Its own thread on purpose: probing the webview URL blocks on the event
     // loop, and the CPU watchdog must not be able to hang behind it.
@@ -3058,6 +3115,7 @@ fn spawn_daemon_background_tasks(state: &Arc<AppState>) {
     #[cfg(unix)]
     pty::spawn_standby_checker(state.clone());
     content_index::spawn_content_index_updater(state.clone());
+    discussion::capture::start(state.clone());
     mcp_http::mcp_transport::spawn_tool_search_index_updater(state.clone());
     mcp_http::tool_usage::spawn_updater(state.clone());
     provider_quota_transport::spawn(state.clone());
@@ -3289,6 +3347,8 @@ pub async fn run_remote(mut options: RemoteOptions) -> anyhow::Result<()> {
     *app_state.github.token_source.get_mut() = github_token_source;
 
     let state = Arc::new(app_state);
+    crate::discussion::service::startup();
+    crate::db::retention::start(&state);
     // The Host guard trusts the Tailscale FQDN only while the state is Running, so
     // the daemon must detect it like the desktop boot does (#1535).
     let detected = detect_tailscale_bounded(async {

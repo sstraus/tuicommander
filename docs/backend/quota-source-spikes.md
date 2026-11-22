@@ -221,3 +221,10 @@ list. Without a pi Copilot login no candidate endpoint could be recorded. The
 `pi` owner reports Copilot keys as unavailable.
 
 <!-- DEFERRED (2026-11-14) — Copilot quota needs a recorded non-generating response from a pi Copilot login; Anthropic header names need a successful pi or ego response. -->
+
+## S3: Antigravity CLI 1.5.10 (2026-11-21, story 3103-eb8e)
+
+Gemini CLI is replaced by `agy`. The installed binary was not signed in, so no
+quota source was probed; `agy models` and a headless turn both stop at "sign in".
+Quota stays terminal-detection only. Re-run S2's questions against a signed-in
+`agy` before adding a reader.

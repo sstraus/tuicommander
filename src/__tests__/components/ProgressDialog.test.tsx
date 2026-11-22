@@ -3,43 +3,59 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProgressDialog } from "../../components/ProgressDialog";
 import { progressStore } from "../../stores/progress";
 
-const { close, deleteEntries, open, selectPty, setBlockedOnly, setView, viewState, flowState, projectState, defaults } =
-	vi.hoisted(() => {
-		const entry = (id: number, type: string, text: string, createdAtMs: number) => ({
-			id,
-			project: "/repo",
-			createdAtMs,
-			type,
-			text,
-			agentName: "Worker",
-		});
-		const defaults = () => ({
-			entries: [
-				entry(3, "blocked", "Cannot reach the registry.", 300),
-				entry(2, "intent", "Rewriting the dialog.", 200),
-				entry(1, "done", "Shipped the store.", 100),
-			],
-			ptyIds: ["pty-a", "pty-b"],
-			// Everything at or below this timestamp was on screen last visit.
-			dividerMs: 200,
-			loading: false,
-			error: "one line for the whole failure",
-		});
-		return {
-			close: vi.fn(),
-			deleteEntries: vi.fn(),
-			open: vi.fn(),
-			selectPty: vi.fn(),
-			setBlockedOnly: vi.fn(),
-			setView: vi.fn(),
-			viewState: { current: "list" as "list" | "flow" },
-			flowState: {} as Record<string, unknown>,
-			projectState: defaults() as ReturnType<typeof defaults>,
-			defaults,
-		};
+const {
+	close,
+	deleteEntries,
+	open,
+	selectPty,
+	setBlockedOnly,
+	setShowActivity,
+	setView,
+	viewState,
+	flowState,
+	projectState,
+	defaults,
+} = vi.hoisted(() => {
+	const entry = (id: number, type: string, text: string, createdAtMs: number) => ({
+		id,
+		project: "/repo",
+		createdAtMs,
+		type,
+		text,
+		agentName: "Worker",
 	});
+	const defaults = () => ({
+		entries: [
+			entry(3, "blocked", "Cannot reach the registry.", 300),
+			entry(2, "intent", "Rewriting the dialog.", 200),
+			entry(1, "done", "Shipped the store.", 100),
+		],
+		ptyIds: ["pty-a", "pty-b"],
+		// Everything at or below this timestamp was on screen last visit.
+		dividerMs: 200,
+		loading: false,
+		error: "one line for the whole failure",
+	});
+	return {
+		close: vi.fn(),
+		deleteEntries: vi.fn(),
+		open: vi.fn(),
+		selectPty: vi.fn(),
+		setBlockedOnly: vi.fn(),
+		setShowActivity: vi.fn(),
+		setView: vi.fn(),
+		viewState: { current: "list" as "list" | "flow" },
+		flowState: {} as Record<string, unknown>,
+		projectState: defaults() as ReturnType<typeof defaults>,
+		defaults,
+	};
+});
 
 vi.mock("../../stores/modalStack", () => ({ registerModal: vi.fn() }));
+// The thread reads its own store; here it only has to stand where it renders.
+vi.mock("../../components/ProgressDialog/DiscussionThread", () => ({
+	DiscussionThread: (props: { entryId: number }) => <div data-testid={`thread-${props.entryId}`} />,
+}));
 
 vi.mock("../../stores/repositories", () => ({
 	repositoriesStore: { get: () => ({ displayName: "Example" }) },
@@ -62,8 +78,8 @@ vi.mock("../../stores/progress", () => ({
 		requestedProject: () => "/repo",
 		selectedPtyId: () => "pty-a",
 		selectPty,
-		progressOnly: () => false,
-		setProgressOnly: vi.fn(),
+		showActivity: () => false,
+		setShowActivity,
 		blockedOnly: () => false,
 		setBlockedOnly,
 		open,
@@ -147,6 +163,21 @@ describe("ProgressDialog", () => {
 		expect(screen.getAllByText("Shipped the store.")).toHaveLength(1);
 	});
 
+	// Catches: an open thread under a row that still prints the same question or
+	// answer above it, so the reader sees the text twice.
+	it("shows an open thread instead of the row text it would repeat", () => {
+		projectState.entries = [
+			{ id: 9, project: "/repo", createdAtMs: 300, type: "answer", text: "No technical limit.", agentName: "Worker" },
+			{ id: 8, project: "/repo", createdAtMs: 200, type: "question", text: "Only with Claude?", agentName: "Worker" },
+		];
+		render(() => <ProgressDialog />);
+
+		fireEvent.click(screen.getAllByRole("button", { name: "Thread" })[0]);
+		expect(screen.getByTestId("thread-9")).toBeTruthy();
+		expect(screen.queryByText("No technical limit.")).toBeNull();
+		expect(screen.getByText("Only with Claude?")).toBeTruthy();
+	});
+
 	it("deletes the entry the button belongs to", () => {
 		render(() => <ProgressDialog />);
 
@@ -172,13 +203,16 @@ describe("ProgressDialog", () => {
 		expect(close).not.toHaveBeenCalled();
 	});
 
-	it("offers exactly one blocked-only toggle", () => {
+	// Catches: the trace toggle wired to the blocked filter, or a duplicate toggle.
+	it("offers one blocked-only toggle and one activity toggle", () => {
 		render(() => <ProgressDialog />);
 
 		const toggles = document.querySelectorAll("input[type='checkbox']");
-		expect(toggles).toHaveLength(1);
-		fireEvent.click(toggles[0]);
+		expect(toggles).toHaveLength(2);
+		fireEvent.click(screen.getByLabelText("Blocked only"));
 		expect(setBlockedOnly).toHaveBeenCalledWith(true);
+		fireEvent.click(screen.getByLabelText("Activity"));
+		expect(setShowActivity).toHaveBeenCalledWith(true);
 	});
 });
 

@@ -84,7 +84,7 @@ fn resume_preserves_agent_selectors_and_custom_binaries() {
     let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
     let _config = crate::config::set_config_dir_override(root.path().into());
     for (agent, expected) in [
-        ("gemini", "--resume"),
+        ("agy", "--continue"),
         ("codex", "resume --last"),
         ("ego", "resume"),
         ("cursor", "resume"),
@@ -105,7 +105,7 @@ fn resume_preserves_agent_selectors_and_custom_binaries() {
     let quoted_id = crate::prompt::shell_quote("recorded-id");
     for (agent, selector) in [
         ("claude", "--resume"),
-        ("gemini", "--resume"),
+        ("agy", "--conversation"),
         ("codex", "resume"),
         ("ego", "resume"),
     ] {

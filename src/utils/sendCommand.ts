@@ -38,7 +38,7 @@ export const CODEX_PASTE_FRAME_MIN_CHARS = 500;
 const SHORT_ENTER_GAP_AGENTS = new Set([
 	"claude",
 	"codex",
-	"gemini",
+	"agy",
 	"opencode",
 	"amp",
 	"cursor",

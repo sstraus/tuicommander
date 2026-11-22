@@ -1255,6 +1255,7 @@ async fn progress_persists_before_emitting_and_each_report_is_its_own_entry() {
     let state = test_state();
     let mut events = state.event_bus.subscribe();
     let input = crate::progress::ProgressReportInput {
+        question: None,
         kind: crate::progress::ProgressKind::Done,
         text: "Transport parity is verified.".to_string(),
         step: Some("Progress".to_string()),
@@ -1332,6 +1333,7 @@ async fn blocked_progress_emits_the_question_for_its_managed_session() {
         &state,
         Some(&project.path().to_string_lossy()),
         crate::progress::ProgressReportInput {
+            question: None,
             kind: crate::progress::ProgressKind::Blocked,
             text: "Should I deploy now?".to_string(),
             step: None,
@@ -1370,6 +1372,7 @@ fn report_for_pty(
         state,
         Some(project),
         crate::progress::ProgressReportInput {
+            question: None,
             kind,
             text: text.to_string(),
             step: None,
@@ -1403,6 +1406,9 @@ async fn blocked_progress_badge_clears_when_the_same_pty_delegates() {
     emit_progress_entry(
         &state,
         crate::progress::ProgressEntry {
+            question: None,
+            reply_target_available: Some(true),
+            answered: None,
             id: 99,
             project: project.clone(),
             pty_id: Some("codex-pty".to_string()),
@@ -1435,6 +1441,7 @@ async fn empty_blocked_progress_is_rejected_without_a_question_event() {
         &state,
         Some(&project.path().to_string_lossy()),
         crate::progress::ProgressReportInput {
+            question: None,
             kind: crate::progress::ProgressKind::Blocked,
             text: "   ".to_string(),
             step: None,
@@ -1461,6 +1468,7 @@ async fn blocked_acp_progress_reaches_the_conversation_without_a_pty_event() {
         &state,
         Some(&project.path().to_string_lossy()),
         crate::progress::ProgressReportInput {
+            question: None,
             kind: crate::progress::ProgressKind::Blocked,
             text: "Need approval for the next step".to_string(),
             step: None,
@@ -1833,6 +1841,7 @@ fn ui_tab_falls_back_to_mcp_session_repo_path() {
             last_activity: std::time::Instant::now(),
             is_claude_code: true,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: false,
             sse_generation: 0,
             repo_path: Some("/Gits/personal/gamma".to_string()),
@@ -2773,4 +2782,175 @@ async fn managed_child_progress_refuses_done_and_blocked_without_user_events() {
         events.try_recv().unwrap(),
         crate::state::AppEvent::ProgressRecorded { .. }
     ));
+}
+
+// Catches dropping the exact ACP peer identity while preserving only its display name.
+#[tokio::test]
+async fn contextual_progress_reply_from_mcp_preserves_exact_acp_author() {
+    let config = tempfile::tempdir().unwrap();
+    let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+    let project = tempfile::tempdir().unwrap();
+    let state = test_state();
+    register_peer(&state, TEST_UUID_A, "same-name", "origin-mcp");
+    register_peer(&state, TEST_UUID_B, "same-name", "other-mcp");
+    state.peer_agents.get_mut(TEST_UUID_A).unwrap().project =
+        Some(project.path().to_string_lossy().into());
+    let reported = handle_progress(
+        &state,
+        &serde_json::json!({
+            "type":"blocked", "text":"Publish the prepared update?", "question":{"kind":"yes_no"}
+        }),
+        Some("origin-mcp"),
+    )
+    .await;
+    assert!(reported.get("error").is_none(), "{reported}");
+    let owner = project
+        .path()
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let list = crate::progress::progress_list(&owner, Default::default()).unwrap();
+    let id = list.entries[0].id;
+    assert_eq!(
+        list.entries[0].question,
+        Some(crate::progress::ProgressQuestion::YesNo)
+    );
+    let reply = crate::progress::progress_reply(
+        state.clone(),
+        owner,
+        crate::progress::ProgressReplyInput {
+            entry_id: id,
+            request_id: "acp-context".into(),
+            text: None,
+            answer: Some(false),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        reply.delivery,
+        crate::progress::ProgressReplyDelivery::Queued
+    );
+    let inbox = state.agent_inbox.get(TEST_UUID_A).unwrap();
+    assert_eq!(inbox.len(), 1);
+    assert_eq!(inbox[0].from_name, "user");
+    assert!(inbox[0].content.contains("Publish the prepared update?"));
+    assert!(inbox[0].content.contains("Answer: No"));
+    assert!(
+        state
+            .agent_inbox
+            .get(TEST_UUID_B)
+            .is_none_or(|inbox| inbox.is_empty())
+    );
+}
+
+// Catches treating prose as binary metadata and accepting malformed question objects.
+#[tokio::test]
+async fn contextual_progress_question_is_explicit_and_validated() {
+    let config = tempfile::tempdir().unwrap();
+    let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+    let project = tempfile::tempdir().unwrap();
+    let state = test_state();
+    register_peer(&state, TEST_UUID_A, "question-author", "question-mcp");
+    state.peer_agents.get_mut(TEST_UUID_A).unwrap().project =
+        Some(project.path().to_string_lossy().into());
+    let prose = handle_progress(
+        &state,
+        &serde_json::json!({"type":"blocked", "text":"Yes or no?"}),
+        Some("question-mcp"),
+    )
+    .await;
+    assert!(prose.get("error").is_none(), "{prose}");
+    let owner = project
+        .path()
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let list = crate::progress::progress_list(&owner, Default::default()).unwrap();
+    assert_eq!(list.entries[0].question, None);
+    let malformed = handle_progress(
+        &state,
+        &serde_json::json!({"type":"blocked", "text":"?", "question":{"kind":"choice"}}),
+        Some("question-mcp"),
+    )
+    .await;
+    assert!(
+        malformed["error"]
+            .as_str()
+            .unwrap()
+            .contains("invalid question")
+    );
+    let malformed = malformed["error"].as_str().unwrap();
+    assert!(
+        malformed.contains(r#"{"kind":"yes_no"}"#) && malformed.contains("omit question"),
+        "malformed question must say how to correct it: {malformed}"
+    );
+    let mut events = state.event_bus.subscribe();
+    let done = handle_progress(
+        &state,
+        &serde_json::json!({"type":"done", "text":"?", "question":{"kind":"yes_no"}}),
+        Some("question-mcp"),
+    )
+    .await;
+    let message = done["error"].as_str().expect("done+question is refused");
+    for needle in [
+        "progress.question",
+        "type=done",
+        "unchanged retry",
+        "omit question",
+        "type=blocked",
+        "free-text",
+    ] {
+        assert!(message.contains(needle), "missing {needle:?}: {message}");
+    }
+    assert!(events.try_recv().is_err(), "refused call emitted an event");
+    let after = crate::progress::progress_list(&owner, Default::default()).unwrap();
+    assert_eq!(after.entries.len(), 1, "refused call created an entry");
+    let fixed = handle_progress(
+        &state,
+        &serde_json::json!({"type":"done", "text":"Finished"}),
+        Some("question-mcp"),
+    )
+    .await;
+    assert!(fixed.get("error").is_none(), "{fixed}");
+    let asked = handle_progress(
+        &state,
+        &serde_json::json!({"type":"blocked", "text":"Ship?", "question":{"kind":"yes_no"}}),
+        Some("question-mcp"),
+    )
+    .await;
+    assert!(asked.get("error").is_none(), "{asked}");
+}
+
+// Catches: workspace resolution masking a contradictory report the caller can fix locally.
+#[tokio::test]
+async fn progress_question_conflict_is_reported_before_missing_project() {
+    let state = test_state();
+    let reply = handle_progress(
+        &state,
+        &serde_json::json!({"type":"done", "text":"Ship?", "question":{"kind":"yes_no"}}),
+        None,
+    )
+    .await;
+    let error = reply["error"].as_str().expect("report must be rejected");
+    assert!(
+        error.contains("type=done") && error.contains("omit question"),
+        "{reply}"
+    );
+}
+
+// Catches: a caller with a wrong or missing type learns the rule but not the allowed values.
+#[tokio::test]
+async fn progress_type_errors_name_the_allowed_values() {
+    let state = test_state();
+    for args in [
+        serde_json::json!({"text":"x"}),
+        serde_json::json!({"type":"finished", "text":"x"}),
+    ] {
+        let reply = handle_progress(&state, &args, None).await;
+        let message = reply["error"].as_str().expect("refused");
+        assert!(message.contains("'done' or 'blocked'"), "{args}: {message}");
+    }
 }

@@ -111,16 +111,8 @@ impl HostAdmission for NativeHost {
             );
         }
         context.git_workspace()?;
-        context.current(
-            matches!(
-                descriptor.handler.name.as_str(),
-                "native.publication.push"
-                    | "native.publication.github"
-                    | "native.issue.effect"
-                    | super::super::native_issue_publication::HANDLER
-            )
-            .then_some(crate::agent_capabilities::Capability::Push),
-        )?;
+        // Publication effects are gated by their approval question, not a capability.
+        context.current(None)?;
         let workspace = subject
             .and_then(|s| s.get("workspace"))
             .ok_or("native workspace subject absent")?;

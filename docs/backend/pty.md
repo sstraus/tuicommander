@@ -496,6 +496,12 @@ Platform defaults:
 - Linux: `$SHELL` environment variable, fallback `/bin/bash`
 - Windows: `powershell.exe`
 
+The shell string may carry arguments. `windows_launch::split_shell_command` takes the executable as a quoted path, or as the text up to the first `.exe`/`.cmd`/`.bat`/`.com` followed by whitespace, so `C:\Program Files\Git\bin\bash.exe -l` is one program plus one argument. Without such an extension the first whitespace token is the program.
+
+### Agent launch through an npm `.cmd` shim (Windows)
+
+`CreateProcessW` runs a `.cmd` through `cmd.exe /c`, and `cmd` ends the command line at the first newline, so a multi-line prompt would drop every later argument (`--settings`, hooks). Every agent launch site passes the program through `windows_launch::resolve_launch_program`, which reads the npm shim and launches the `.exe` it forwards to. A shim that forwards to a node script, or whose target is missing, is launched unchanged.
+
 ## Buffer Types
 
 ### Utf8ReadBuffer
@@ -644,20 +650,14 @@ equivalent of macOS QoS-background, which would make builds crawl.
 
 On macOS, the PTY **reader thread**, the **frame ticker**, and the **keystroke-write thread** are all raised to `QOS_CLASS_USER_INTERACTIVE` via `pthread_set_qos_class_self_np` (`raise_thread_for_interactive_io()` in `src-tauri/src/pty.rs`, `thread_qos` module). This is complementary to the child-process renice: on Apple Silicon the scheduler is QoS-band driven — `nice` only reorders threads within a band. Without this elevation, TUIC's interactive-path threads ran in the default QoS band alongside compiler worker threads, causing input latency under heavy builds. Raising to `USER_INTERACTIVE` puts the interactive path in a higher scheduler band. macOS-only; a no-op on Linux/Windows.
 
-## Session Conflict Flag File
+## Session Conflict Messages
 
-When an agent reports a session conflict (session already in use or not found), TUICommander handles it via a flag-file mechanism instead of writing directly to the PTY.
-
-**Flow:**
-
-1. The output parser detects a session conflict message (`ParsedEvent::AgentSessionConflict`)
-2. `ChunkProcessor` calls `mark_session_conflict()`, which creates a flag file named `no-session-inject.<TUIC_SESSION>` in the app config directory
-3. Shell wrapper functions (zsh, bash, fish) check for this flag file before injecting `--session-id $TUIC_SESSION`
-4. If the flag file exists, the wrapper skips session-id injection, allowing the agent to start a fresh session
-
-This replaced the previous `maybe_reset_tuic_session` approach, which wrote `export TUIC_SESSION=...` directly to the PTY. Direct PTY writes could corrupt TUI output (e.g., Ink-based agents in raw mode). The flag-file approach is safe because it uses the filesystem as a side-channel — no bytes are injected into the terminal stream.
-
-A debounce (`last_session_conflict_mark`) prevents creating multiple flag files within a short window for the same session.
+When an agent reports a session conflict (session already in use or not found)
+while the terminal is in shell mode, the output parser emits
+`ParsedEvent::AgentSessionConflict` and `ChunkProcessor` drops it: it is the
+agent's own exit message, not output to forward. TUICommander writes nothing to
+the PTY or to disk in response. (The former `no-session-inject.<TUIC_SESSION>`
+flag files were removed on 2026-11-21: no shell wrapper read them any more.)
 
 ## Ctrl-U Prefix Handling
 
@@ -744,7 +744,7 @@ Goose appends its reply below the submitted `> prompt`, so the reader does not a
 
 **Movement is the default busy signal (#446-596f):** "if the text above the input area moves, the agent is active." Post-cutoff `changed_rows` are text-equality diffed (`TerminalGrid::process`), so a byte-identical repaint produces no ChangedRow. Static completed summaries, hints, HUD bars, and banner art are inert. Spinner rows among the changed rows additionally refresh `last_output_ms` while they animate. Claude and Codex have narrowly scoped semantic presence exceptions described below because current versions can freeze a valid active status while a child or blocking hook runs.
 
-**Agent screen adapters:** Gemini remains prompt-based (`Ready` or `Unknown`). Gemini and Codex accept composers only in the current bottom chrome zone (or the final three rows when no input box can be identified), so a historical submitted prompt or markdown quote cannot report `Ready`. Codex detects `Working`/`Ready`/`Interrupted` from its semantic status near that current composer; both `›` and the newer `»` composer glyph are accepted. Claude treats only a spinner-prefixed phase containing an ellipsis and parenthesized progress as `Working`; this outranks the empty `❯` composer that current Claude versions leave visible during long tools. Completed summaries such as `✻ Sautéed for 1m 25s` remain `Ready`. If Claude emits a premature Stop/suggest before a blocking Stop hook, a live phase marker reopens that turn and clears the stale completion suggestions. Grok similarly keeps its `❯` composer visible during a turn: a leading Braille spinner in its bottom status row is `Working`, and the stable composer becomes `Ready` only after that row disappears. These adapters repair the shell's long-lived OSC 133 busy marker even when native hooks are unavailable or disabled.
+**Agent screen adapters:** agy remains prompt-based (`Ready` or `Unknown`; UNVERIFIED until captures exist). agy and Codex accept composers only in the current bottom chrome zone (or the final three rows when no input box can be identified), so a historical submitted prompt or markdown quote cannot report `Ready`. Codex detects `Working`/`Ready`/`Interrupted` from its semantic status near that current composer; both `›` and the newer `»` composer glyph are accepted. Claude treats only a spinner-prefixed phase containing an ellipsis and parenthesized progress as `Working`; this outranks the empty `❯` composer that current Claude versions leave visible during long tools. Completed summaries such as `✻ Sautéed for 1m 25s` remain `Ready`. If Claude emits a premature Stop/suggest before a blocking Stop hook, a live phase marker reopens that turn and clears the stale completion suggestions. Grok similarly keeps its `❯` composer visible during a turn: a leading Braille spinner in its bottom status row is `Working`, and the stable composer becomes `Ready` only after that row disappears. These adapters repair the shell's long-lived OSC 133 busy marker even when native hooks are unavailable or disabled.
 
 **Signal precedence and confirmation:** Explicit hook busy > current Claude/Codex/Grok semantic Working marker > movement (real output / animated spinner) > silence. A ready prompt visible from the previous turn cannot cancel a newly submitted prompt until real activity has been observed; after activity, a stable ready composer can repair a missed hook idle. A current-turn completion marker prevents a stale static Codex Working row from relatching BUSY; movement of that exact semantic row can reopen a Codex internal continuation that starts without PTY input. Claude's current live phase marker can supersede a premature completion from a blocking Stop hook. That reopen is provisional when TUIC's own Stop hook was the last protocol fact (#2837-df6a): Claude keeps its spinner row (`running Stop hooks… n/7`) on screen until its last Stop hook returns, so every Claude turn end reopens. For Claude only, once the timer sees no Working row and no newer hook, submitted line or busy evidence, it restores the Protocol `hook-idle`. Codex internal continuations do not use this recovery: their semantic Working movement can reopen a completed turn, but an Unknown screen must not restore its previous completion. Confirmation then does not depend on a composer the Ready adapter can read, and status-line repaints cannot demote it to Silence rank. A tool-using continuation still reports `state=busy` from PreToolUse; a text-only one ends with another Stop hook. A pending process probe or confirmed meaningful descendant still owns the task lifecycle. Hook-based question suppression activates only after an OSC 7770 state marker is actually received.
 
@@ -1381,7 +1381,7 @@ accumulation and ego PTY/ACP request ownership are unchanged.
 
 ### Native Windows hook availability
 
-Native Windows does not install or inject TUIC's external POSIX status hooks. Hook state returns `unsupported`, and hook/status setters reject changes before writing preferences or user hook files. Saved preferences and existing hooks remain intact. Settings hides these controls based on the owning backend response, including remote machines. External agents retain heuristic detection; ego keeps native PTY OSC signals and its separate ACP path.
+Native Windows does not install or inject POSIX status hooks. When the owning backend has a usable bundled `tuic.exe`, generated Windows hooks call `tuic.exe agent-state`, which uses the named pipe with a `CONOUT$` fallback. Without that CLI, hook state returns `unsupported` and hook/status setters reject changes without writing preferences or user hook files. Settings follows the owning backend response, including for remote machines. External agents retain heuristic detection. ego keeps its native PTY OSC signals and its separate ACP path.
 
 ### Claude permission hook ownership
 

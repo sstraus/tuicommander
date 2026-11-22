@@ -352,8 +352,8 @@ ext=md
 suffix=
 [ "$TUIC_SPAWNED_CHILD" = 1 ] && suffix=-child
 file=${TUIC_AGENT_INSTRUCTIONS_DIR:+$TUIC_AGENT_INSTRUCTIONS_DIR/instructions-$name$suffix.$ext}
-if [ "$name" = gemini ]; then
-  [ -z "$TUIC_ATTACHMENTS_DIR" ] || set -- "--include-directories=$TUIC_ATTACHMENTS_DIR" "$@"
+if [ "$name" = agy ]; then
+  [ -z "$TUIC_ATTACHMENTS_DIR" ] || set -- "--add-dir=$TUIC_ATTACHMENTS_DIR" "$@"
   exec "$real" "$@"
 fi
 if [ "$name" = ego ] && [ -n "$TUIC_ATTACHMENTS_DIR" ]; then
@@ -431,7 +431,7 @@ exec "$real" "$@"
 /// its instructions use the native `OPENCODE_CONFIG_CONTENT` environment value.
 #[cfg(unix)]
 const SHIM_AGENTS: [&str; 8] = [
-    "claude", "codex", "grok", "goose", "pi", "ego", "gemini", "opencode",
+    "claude", "codex", "grok", "goose", "pi", "ego", "agy", "opencode",
 ];
 
 /// The marker file the shim looks for to skip a TUIC shim dir on `PATH`.
@@ -617,7 +617,7 @@ fn render_shim() -> String {
             "__TUIC_SCREEN_POLICIES__",
             &crate::agent_hook_launch::SCREEN_POLICIES
                 .iter()
-                .map(|(agent, flag, _)| format!("  {agent}) screen_flag={flag};;"))
+                .map(|(agent, flag, _)| format!("  {agent}) screen_flag='{flag}';;"))
                 .collect::<Vec<_>>()
                 .join("\n"),
         )
@@ -1270,9 +1270,9 @@ mod tests {
             let real = agent_bin_dir();
             let path = std::env::join_paths([&shim, &real]).unwrap();
             for agent in super::super::SHIM_AGENTS {
-                // The launch harness normally needs only these agents. Gemini
+                // The launch harness normally needs only these agents. agy
                 // also needs a downstream executable for this installer contract.
-                if agent == "gemini" {
+                if agent == "agy" {
                     let staging = staging_path(&real, agent);
                     std::os::unix::fs::symlink(REAL_ECHO, &staging).unwrap();
                     std::fs::rename(staging, real.join(agent)).unwrap();
@@ -1468,7 +1468,6 @@ mod tests {
                 .env_remove("TUIC_OPENCODE_SCREEN_FLAG")
                 .env_remove("TUIC_AGENT_INSTRUCTIONS_DIR")
                 .env_remove("TUIC_ATTACHMENTS_DIR")
-                .env_remove("GEMINI_CLI_TRUSTED_FOLDERS_PATH")
                 .env_remove("TUIC_AGENT_SHIM_DIR")
                 // A test run from a TUIC managed child inherits =1, which makes
                 // the shim read the -child instructions (#2827-6819).

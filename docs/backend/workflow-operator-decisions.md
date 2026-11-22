@@ -52,3 +52,10 @@ The installed catalog and shared neutral action schema expose the same contract
 to Designer, IPC, HTTP and MCP. No route-specific decision implementation exists.
 These Rust changes require an authorized manual restart/rebuild to load; no live
 application restart or publication is part of implementation verification.
+
+The shared approval host presents retained operator questions as Markdown dialogs
+on desktop, browser/PWA and mobile. It echoes the complete pinned typed request
+to `operator_answer`, including the current sequence and question revision.
+Ordinary `inbox.approval` questions instead use the existing boolean `answer`.
+Attention cards and pending inbox entries open the same dialog; they never record
+an answer themselves. Run events and reconnect restore/retract the presentation.

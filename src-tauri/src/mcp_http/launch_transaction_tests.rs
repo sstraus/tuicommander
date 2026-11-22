@@ -257,7 +257,7 @@ async fn launch_transaction_interrupted_side_effect_blocks_without_retry() {
             reason: None,
             revision: 0,
         };
-        let journal = Journal(state.data_dir.join("managed-launches.sqlite"));
+        let journal = Journal(state.data_dir.join(crate::db::TUIC_DB));
         journal.reserve(&key, record.clone()).unwrap();
         drop(journal);
         let result = execute(&state, addr().into(), &request).await;
@@ -464,7 +464,14 @@ async fn launch_transaction_remote_refusal_has_no_side_effects() {
     )
     .await;
     assert!(result["error"].as_str().unwrap().contains("localhost"));
-    assert!(!state.data_dir.join("managed-launches.sqlite").exists());
+    assert_eq!(
+        crate::db::open(&state.data_dir.join(crate::db::TUIC_DB))
+            .unwrap()
+            .query_row("SELECT count(*) FROM launches", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
     assert!(state.session_maps.sessions.is_empty());
 }
 
@@ -476,7 +483,7 @@ async fn automation_and_mcp_launch_share_name_hold_and_retry_policy() {
     let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
     let _config = crate::config::set_config_dir_override(root.path().join("config"));
     let repo = repo(root.path()).canonicalize().unwrap();
-    let config = serde_json::from_value(json!({"launch_instructions":"", "agents":{"gemini":{
+    let config = serde_json::from_value(json!({"launch_instructions":"", "agents":{"agy":{
         "run_configs":[{"name":"fixture-profile", "command":"/bin/sh", "args":["-c", "exec cat", "{prompt}"]}]
     }}})).unwrap();
     crate::config::save_agents_config(crate::config::AgentsConfig::default(), config).unwrap();

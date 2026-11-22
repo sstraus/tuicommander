@@ -31,14 +31,14 @@ Native plans have a stored `revision`. `update_plan` takes `plan_id`, `expected_
 
 Every TCP request validates its Host and Origin before reaching a handler, including login, health and preflight requests. Unknown/missing/duplicate Host or foreign/opaque Origin returns 403. Allowed hosts are localhost, loopback/private IP literals, local interface IPs and the detected Tailscale FQDN. Allowed origins are the exact bundled WebView origins, Vite `http://127.0.0.1:1421`/`http://localhost:1421`, and the HTTP/HTTPS origin of the validated Host. Cross-site requests are rejected except for the explicit WebView/development origins.
 
-Protected routes require the existing `?token=...`, `tui-session` cookie or Basic Auth even from loopback/LAN. Native HTTP clients may omit Origin, but must send Host and credentials. Login assets and valid preflight remain public; the headless `/health` probe remains public. Local Unix socket and Windows named-pipe clients keep their existing IPC access.
+Loopback HTTP connections (`127.0.0.1` and `::1`) need no credentials by default. Set `services.auth.require_local_auth` to `true` to require the existing `?token=...`, `tui-session` cookie or Basic Auth on local protected routes. The flag defaults to `false` when omitted and is read on each request. Non-loopback clients still require credentials. Native HTTP clients may omit Origin, but must send Host. Explicit credentials retain verified caller provenance; anonymous loopback admission does not mark a caller as credential-verified. Host/Origin and endpoint-specific access checks are unchanged. Login assets and valid preflight remain public; the headless `/health` probe remains public. Local Unix socket and Windows named-pipe clients keep their existing IPC access.
 
 HTML GET navigation to `/` and `/mobile` uses `/mobile/login` when credentials are missing and a password is configured. After login, `next` may return to `/` (including its query) or a mobile path. API calls and non-HTML requests keep the existing 401 Basic challenge.
 
 ## Native stories
 
 `POST /stories/action?path=<project>` also accepts `{action:{action:"backend_status"}}`. It returns `{type:"backend_status",value:{backend,label,provenance,reason,availability,installation,version,error,generation}}`, including unavailable configuration. `{action:{action:"approve_connector",installation:"/resolved/install",expected_identity:"displayed-version:entry-sha256"}}` saves global installed-Wiz approval only for an authenticated human caller, not a managed session. It uses the same action service as IPC. See the story backend protocol for approval drift and detection rules.
-`set_backend {backend:"native"|"automatic"|"wiz-stories"}` is also an authenticated-human-only shared action. Native continuity precedes discovery; active run snapshot provenance prevents backend changes after restart. Approval compares the displayed `generation` (entry/version), not a full installation-tree digest.
+`set_backend {backend:"native"|"automatic"|"wiz-stories"}` is also an authenticated-human-only shared action. Project markers select the connector even when unfinished native plans remain; explicit native selection exposes the retained records. Do not change backends during a workflow run: the neutral engine does not pin story backend identity. Approval compares the displayed `generation` (entry/version), not a full installation-tree digest.
 
 Native stories expose `qa` for work that waits on manual checks. A criterion starts with `[MANUAL]`, or is marked through `set_criterion_manual {index,manual}`. Active work automatically enters QA when all unchecked criteria are manual; `submit_qa` explicitly requests that state. `reject_qa` returns QA to In progress; `approve` requires every criterion checked. QA keeps plans Active and dependencies blocked. All transitions retain expected-revision checks. See the [native stories guide](../user-guide/native-stories.md#manual-qa).
 
@@ -93,12 +93,23 @@ require an explicit `path` query naming a registered project.
 | Route | Body | Response |
 |---|---|---|
 | `/progress/report` | `{ type, text, step? }`, `type` is `done` or `blocked` | `{ id }` |
+| `/progress/reply` | `{ entryId, requestId, text? or answer? }` | `{ entryId, requestId, delivery: "queued" or "delivered" }` |
 | `/progress/list` | `{ progressOnly?, blockedOnly?, ptyId?, limit?, cursor? }` | `{ project, entries, total, nextCursor, ptyIds, lastViewedMs? }` |
 | `GET /progress/projects` | none | Array of project paths with journal entries, newest first |
 | `/progress/delete` | `{ ids }` | `{ deleted }` |
 | `/progress/viewed?ptyId=<id>` | none | `{ lastViewedMs }` |
 | `/progress/flow` | `{ ptyId? }` | `ProgressFlow` |
 | `/progress/flow/detail` | `{ ptyId, agentId, part }`, `part` is `prompt` or `report` | `{ text }` |
+
+`POST /progress/reply?path=<project>` matches IPC `progress_reply(project,input)`.
+Exactly one nonempty text or boolean answer is required. Boolean answers require
+stored `question: {kind:"yes_no"}` metadata. The backend uses the report's stored
+author and normal peer-mail delivery, never the focused terminal. Reuse
+`requestId` for an identical retry; use a new ID for a new text comment. A binary
+question accepts one answer. Unknown or closed authors return an error instead
+of selecting another recipient. `queued` means inbox acceptance; `delivered`
+means the existing wake/delivery path accepted it, not that the agent read it.
+List entries can include `question`, `replyTargetAvailable` and `answered`.
 
 Unknown fields are rejected. `text` is capped at 500 characters and `step` at 80.
 All Progress entry kinds redact secret-shaped text and step fields before
@@ -140,7 +151,7 @@ joining and redaction happen in Rust:
 ProgressFlow = {
   project, truncated,                    // truncated: journal > 500 entries
   participants: [{ id, kind: "terminal"|"subagent", title, agentType?,
-                   state: "busy"|"idle"|"awaiting"|"closed"|"running"|"done",
+                   state: "busy"|"idle"|"awaiting"|"closed"|"running"|"done"|"interrupted",
                    parent?, intent?, toolCalls, ptyId, agentId? }],
   events: [{ id, kind: "intent"|"done"|"blocked"|"delegated"|"message"
                   |"subagent_spawn"|"subagent_return",
@@ -621,6 +632,12 @@ GET  /sessions/:id/leaf-pid                            -> { "pid": number|null }
 GET  /sessions/:id/chat-view?from_seq=N&epoch=E        -> { epoch, nextSeq, reset, updates[], unknownRows, malformedRows, pendingTexts: [] }
 POST /sessions/:id/chat-view { epoch?, fromSeq?, pendingTexts?: string[] } -> same snapshot with cleaned pendingTexts[]
 GET  /sessions/:id/chat-view/messages/:message_id/full-text -> { text }   (the whole message the stream capped; Claude only)
+POST /sessions/:id/discussion { question }   -> ProgressEntry (question)  (side question in a read-only fork; 422 when refused)
+GET  /discussion/:entry_id                   -> ThreadDetail { threadId, project, ptyId, source, forkSessionId, running, turns[] }
+POST /discussion/:entry_id/follow-up { question } -> ProgressEntry (question)
+POST /discussion/:entry_id/cancel            -> null
+POST /progress/recent { kind?, unreadOnly?, limit? } -> [ProgressEntry & { unread }]   (every project)
+(The answers arrive as `progress-recorded` events; list, read marks and delete use the Progress routes. All of these require loopback or an authenticated caller.)
 GET  /sessions/:id/has-foreground                      -> { "process": string|null }
 POST /sessions/:id/visible              { "visible": bool }   -> { "ok": true }
 GET  /sessions/:id/terminal/selection-text?startRow=&startCol=&endRow=&endCol=&historyBase=  -> { "text": string }
@@ -1704,6 +1721,14 @@ PUT /config/notes
 
 Load/save notes (opaque JSON, shape defined by frontend).
 
+### Scratchpad
+
+```
+GET /config/scratchpad-path
+```
+
+Return the absolute path of the global scratchpad (`config_dir()/scratchpad.md`) as a JSON string. Creates the file empty when missing and never truncates it. The client reads and writes it through `/fs/read-editor-external` and `/fs/write-external`.
+
 ### Remote Connections
 
 ```
@@ -2069,9 +2094,9 @@ surface does not expose remain `null` rather than being inferred.
 subscription tier, on-demand amounts, and prepaid balance. This process is
 telemetry-only and does not change the PTY routing of interactive Grok tabs.
 
-Gemini has no corresponding endpoint: its `/stats` and `/usage` commands are
+Antigravity CLI has no corresponding endpoint: its `/stats` and `/usage` commands are
 session-local UI data, not a stable account quota contract. TUIC therefore does
-not expose a Gemini account-usage route.
+not expose an Antigravity account-usage route.
 
 `/fs/read-external` and `/fs/read-editor-external` read any absolute local text file the owner can read, for every authenticated caller (loopback and network), matching the desktop IPC reads. HTTP authentication and the Host/Origin boundary still apply. A traversal (`..`), NUL or relative path gets a 400 before any read. Markdown link clicks use `/fs/resolve-markdown-link` to decode `tuic://open/` before the normal local filesystem checks. Image previews use the existing authenticated, directory-scoped `/fs/markdown-image` route.
 
@@ -3770,7 +3795,7 @@ The receipt includes `launch_id`, reserved `session_id`, `stage`, `status`, `liv
 
 `status` is `created`, `prompt_delivered`, `ready` or `blocked`. `prompt_delivery=delivered` proves argv handoff or successful queued PTY submission, not model acceptance. `ready` additionally requires the native Ready-screen adapter and the shared idle/completed session projection. Terminal movement or silence alone is insufficient. Deferred prompt timeouts (including parentless automation/workflow children after the 30-second budget), questions and a refused turn (`agent_state=error`, with its message in `last_error` and `reason`) report blocked; the initial prompt stays queued and a retry never re-enqueues it. Warm-artifact readiness is a separate observation, not a promise that copying or setup has finished before the child starts.
 
-The journal in the app data directory, `managed-launches.sqlite`, persists request digests and resource identities, not prompt/environment bodies. Its checkpoints precede workspace and PTY creation. A crash in an uncertain creation window returns blocked rather than attempting that side effect again. A retained live child is recovered by its reserved identity; missing delivery metadata stays unknown. An exited child or server restart never causes the same key to create a replacement. Journal records are not expired: they are retry tombstones, unlike the process-lifetime `task_id` in a child response. On uncertain workspace creation inspect the requested repository/branch before a separate, explicitly chosen launch.
+The journal in the app data directory (`launches` in `tuic.sqlite3`) persists request digests and resource identities, not prompt/environment bodies. Its checkpoints precede workspace and PTY creation. A crash in an uncertain creation window returns blocked rather than attempting that side effect again. A retained live child is recovered by its reserved identity; missing delivery metadata stays unknown. An exited child or server restart never causes the same key to create a replacement. Journal records are retry tombstones, deleted `retention.launch_days` after they reach `created` or `blocked`, unlike the process-lifetime `task_id` in a child response. On uncertain workspace creation inspect the requested repository/branch before a separate, explicitly chosen launch.
 
 Native automation and workflow run bindings also use this transaction through `managed_launch`: automation run IDs and workflow attempt IDs provide stable keys, with an in-process run-owner scope when no peer parent exists. No synthetic peer is registered. Run-owned children use the same pinned-name and explicit keep-open path as MCP children; the existing run controller still owns cancellation and completion. The unkeyed public `spawn` compatibility action continues to use the same low-level PTY spawn implementation.
 
@@ -4112,6 +4137,36 @@ constant verification requests select installed check names; start JSON does not
 
 `POST /workflows/neutral/action?path=<project>` accepts the same `NeutralAction` as desktop IPC; the JSON body is the action itself. Local/authenticated guard, closed request fields, snake_case `{type,value}` replies, cursor-based inspection and lifecycle SSE are shared. See [neutral transport](../backend/workflows.md#neutral-workflow-transport-015).
 
+Status codes of `POST /workflows/neutral/action`. The error body is always `{"error": "<text>"}`, and MCP returns the same text:
+
+| Code | Meaning | Examples |
+|------|---------|----------|
+| 400 | The request is malformed | relative project path, invalid event cursor or limit, empty draft name, oversized draft, invalid story id or delivery key |
+| 403 | The caller may not act on the object | run or publication of another project, approval without owner or bound Operator authority, trigger replay without owner authority |
+| 404 | The named object does not exist | unknown publication, draft, preset or run id; unavailable native caller/run binding |
+| 409 | The current state refuses the request | approval that is expired, stale or already answered, operator answer that differs from the exact current wait/sequence/reason, stale draft revision or operation version, changed run sequence, reused command or request identity, run already ended |
+| 500 | A fault or an unclassified legacy refusal | store, decode or host failure; see the limitations below |
+
+An `answer` or `operator_answer` for an unknown run returns 404 even when
+native caller binding rejects it before a run lookup. A stale `operator_answer`
+returns 409, including a moved sequence or a wait that is no longer current.
+An answer with an unknown effect key still returns 500 because its error text
+also describes an internal callback identity fault. Status mapping does not
+change the error text returned by HTTP, IPC or MCP.
+
+The neutral `resolve_mutation` action reconciles a stopped uncertain mutation in an
+ended run. Supply `run_id`, `command_id`, `expected_sequence`, exact effect `key`
+and bounded reconciliation `evidence`. It uses the existing effect
+answer authority, preserves the original uncertainty and procedure, records the
+operator disposition, releases that effect's resources and wakes waiting runs.
+Inspect conflicts through the retained `resource_wait` event and snapshot field
+(`resource`, `owner_run`, `owner_effect`). See [the effect ledger](../backend/workflows.md#neutral-asynchronous-effects-and-approvals-005).
+
+For `resolve_mutation`, an active run, absent backend stop proof or an immutable
+prior disposition returns 409; invalid evidence returns
+400. A stopped observation or the installed script host's original-process proof
+is required. `mutation_resolution` retains both `evidence` and `stop_proof`.
+
 ### Scheduled neutral bindings
 
 The existing neutral action accepts trigger source `scheduled` with `kind: "schedule"`,
@@ -4126,8 +4181,22 @@ See [trigger admission](../backend/workflow-trigger-admission.md#scheduled-neutr
 
 - `GET /provider-quotas` returns the current registry views without a network read.
 - `GET /sessions/{session_id}/quota-binding` returns the subscription key for the session, or `null`.
-- `POST /provider-quotas/refresh` accepts `{ "key": { "owner": "…", "provider": "…", "credential": "…" } }` and returns the updated view. The registry limits forced refresh to once per minute per key; an early request returns an error with the retry time.
+- `POST /provider-quotas/refresh` accepts `{ "key": { "owner": "…", "provider": "…", "credential": "…" } }` and returns the updated view. An ego named-account key also includes `"connection": "<stable account ID>"`; `provider` stays the vendor. Missing/null connection identifies a legacy credential. Preserve this field in refresh requests and cache keys, as in binding and quota events. The registry limits forced refresh to once per minute per key; an early request returns an error with the retry time.
 - Each quota view includes `session_ids`, the initial client binding inventory for its key.
+- Quota views include `retry_warning` (boolean), a display-only signal set from the third consecutive transient quota-read failure, even if a retained snapshot is still fresh. Skipped reads and client events do not count. Success or a newer passive quota resets it. Authentication and contract errors remain immediate; cooldowns are unchanged.
 - `/events` publishes `provider-quota-changed` with the changed view as its payload. Desktop clients receive the same payload through the Tauri event.
 - `/events` also publishes `provider-quota-binding-changed` with `{session_id, key}` when a binding changes. A null key retracts the binding. Desktop clients receive the same event. Clients subscribe before reading initial session bindings so a late read cannot overwrite a newer event.
 - A subscription key can include an optional `profile`. A named profile remains separate from the credential path. Owners that do not support it return `unavailable` with reason `profile not supported`; they do not use the default profile.
+
+`open_story_count` uses the existing story action envelope and returns
+`{type:"open_story_count",value:{project,backend,generation,openCount}}`. It counts
+open, non-archived stories across all non-archived plans through the selected
+backend project projection. It returns no story content; unavailable or changed
+backends fail without native or filesystem fallback.
+
+Neutral workflow run discovery uses the existing `POST /workflows/neutral/action?path=<project>`
+with `{"action":"list_runs"}`. The `runs` reply contains newest-first project run
+summaries (`id`, `publication`, `name`, `status`, `current_node`,
+`waiting_on_approval`, `started_ms`, `updated_ms`). `inspect` includes a `progress`
+object with retained publication, complete-replay node states, current approvals
+and timestamps. Desktop IPC uses identical snake_case fields and action bodies.

@@ -24,6 +24,10 @@ pub mod evidence;
 pub(crate) mod neutral;
 pub(crate) mod neutral_api;
 mod neutral_native;
+mod neutral_summaries;
+mod neutral_views;
+#[cfg(test)]
+mod neutral_views_tests;
 pub(crate) use neutral_effects::EffectKey as NeutralEffectKey;
 pub(crate) use neutral_runtime::NeutralHost;
 mod native_agent;
@@ -197,7 +201,15 @@ mod neutral_trigger_coalescing_tests;
 #[cfg(test)]
 mod neutral_trigger_fixture;
 #[cfg(test)]
+mod trigger_recovery_tests;
+#[cfg(test)]
 pub(crate) use neutral_trigger_fixture::install_github_issue_binding;
+#[cfg(test)]
+mod live_connector_tests;
+#[cfg(test)]
+mod live_delivery_tests;
+#[cfg(test)]
+mod live_support;
 mod neutral_trigger_start;
 mod neutral_trigger_store;
 #[cfg(test)]

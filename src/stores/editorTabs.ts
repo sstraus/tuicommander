@@ -12,6 +12,8 @@ export interface EditorTabData extends BaseTab {
 	filePath: string;
 	fileName: string; // Display name (basename of filePath)
 	isDirty: boolean;
+	/** Unsaved text recovered within this window; never written to the source file. */
+	reloadDraft?: { text: string; savedContent: string };
 	initialLine?: number; // 1-based line to select on first mount
 	initialCol?: number; // 1-based column to select on first mount
 	externalEditable?: boolean; // Allow editing external (absolute-path) files
@@ -135,6 +137,7 @@ function createEditorTabsStore() {
 		): string {
 			const existing = Object.values(base.state.tabs).find((tab) => tab.mcpUiId === mcpUiId);
 			const id = existing?.id ?? base._nextId("edit");
+			const sameFile = existing?.repoPath === repoPath && existing.filePath === filePath;
 			const tab: EditorTabData = {
 				id,
 				mcpUiId,
@@ -142,7 +145,8 @@ function createEditorTabsStore() {
 				fsRoot: repoPath,
 				filePath,
 				fileName: pathBasename(filePath) || filePath,
-				isDirty: false,
+				isDirty: sameFile ? existing.isDirty : false,
+				reloadDraft: sameFile ? existing.reloadDraft : undefined,
 				branchKey: branchKeyFor(repoPath),
 				initialLine,
 				initialCol: opts.initialCol,
@@ -163,10 +167,16 @@ function createEditorTabsStore() {
 			if (existing) base.remove(existing.id);
 		},
 
-		/** Mark a tab as dirty or clean */
+		/** Keep each editor change in the reload snapshot, not just the first dirty transition. */
+		setReloadDraft(id: string, draft: EditorTabData["reloadDraft"]): void {
+			if (base.state.tabs[id]) base._setState("tabs", id, "reloadDraft", draft);
+		},
+
+		/** Mark a tab as dirty or clean. Saving also drops its recovered draft. */
 		setDirty(id: string, isDirty: boolean): void {
 			if (base.state.tabs[id]) {
 				base._setState("tabs", id, "isDirty", isDirty);
+				if (!isDirty) base._setState("tabs", id, "reloadDraft", undefined);
 			}
 		},
 

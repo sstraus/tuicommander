@@ -173,10 +173,11 @@ export function owningConnectionFor(command: string, args: Record<string, unknow
 export function rpc<T>(
 	command: string,
 	args: Record<string, unknown> = {},
-	explicitConnectionId?: string,
+	explicitConnectionId?: string | null,
 	signal?: AbortSignal,
 ): Promise<T> {
-	const connectionId = explicitConnectionId ?? owningConnectionFor(command, args);
+	const connectionId =
+		explicitConnectionId === null ? undefined : (explicitConnectionId ?? owningConnectionFor(command, args));
 	// Serialize write_pty per session in browser mode to prevent letter reordering
 	if (command === "write_pty" && (!isTauri() || connectionId)) {
 		const sessionId = (args.sessionId ?? args.id) as string;

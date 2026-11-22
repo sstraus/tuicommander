@@ -85,7 +85,7 @@ fn session_directory(state: &AppState, query: &UploadQuery) -> Result<PathBuf, U
         .session_states
         .get(&query.id)
         .and_then(|row| row.agent_type.clone())
-        .is_some_and(|agent| ["claude", "gemini"].contains(&agent.as_str()));
+        .is_some_and(|agent| ["claude", "agy"].contains(&agent.as_str()));
     if needs_grant
         && !state
             .session_maps
@@ -101,55 +101,6 @@ fn session_directory(state: &AppState, query: &UploadQuery) -> Result<PathBuf, U
         .map_err(|message| error(StatusCode::BAD_REQUEST, &message));
     drop(session);
     directory
-}
-
-/// Gemini 0.63 reads this override instead of its global trustedFolders.json.
-/// Keep existing decisions; add only the TUIC-owned session directory.
-pub(crate) fn configure_gemini_trust(
-    cmd: &mut portable_pty::CommandBuilder,
-    directory: &std::path::Path,
-) -> Result<(), String> {
-    let source = cmd
-        .get_env("GEMINI_CLI_TRUSTED_FOLDERS_PATH")
-        .map(PathBuf::from)
-        .or_else(|| {
-            cmd.get_env("GEMINI_CLI_HOME")
-                .map(PathBuf::from)
-                .or_else(|| cmd.get_env("HOME").map(PathBuf::from))
-                .or_else(dirs::home_dir)
-                .map(|home| {
-                    if cmd
-                        .get_env("SANDBOX")
-                        .is_some_and(|value| value == "sandbox-exec")
-                    {
-                        home.join(".cache/.gemini/trustedFolders.json")
-                    } else {
-                        home.join(".gemini/trustedFolders.json")
-                    }
-                })
-        });
-    let mut rules = match source.map(std::fs::read_to_string) {
-        Some(Ok(text)) => crate::jsonc_edit::parse(&text)?,
-        Some(Err(error)) if error.kind() != std::io::ErrorKind::NotFound => {
-            return Err(error.to_string());
-        }
-        _ => serde_json::json!({}),
-    };
-    let entries = rules
-        .as_object_mut()
-        .ok_or("Gemini trusted folders must be an object")?;
-    entries.insert(
-        directory.to_string_lossy().into_owned(),
-        serde_json::json!("TRUST_FOLDER"),
-    );
-    let path = directory.join(".gemini-trusted-folders.json");
-    std::fs::write(
-        &path,
-        serde_json::to_vec(&rules).map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| error.to_string())?;
-    cmd.env("GEMINI_CLI_TRUSTED_FOLDERS_PATH", path);
-    Ok(())
 }
 
 fn safe_name(name: &str) -> Result<String, UploadError> {

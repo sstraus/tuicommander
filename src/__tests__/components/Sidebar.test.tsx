@@ -105,6 +105,7 @@ vi.mock("../../stores/repoSettings", () => ({
 
 vi.mock("../../stores/terminals", () => ({
 	terminalsStore: {
+		getIds: vi.fn(() => []),
 		get: mockTerminalsGet,
 		getSubAgentTag: mockGetSubAgentTag,
 		isBusy: vi.fn(() => false),
@@ -160,6 +161,7 @@ import { settingsStore } from "../../stores/settings";
 import { terminalsStore } from "../../stores/terminals";
 import { uiStore } from "../../stores/ui";
 import { workItemLinksStore } from "../../stores/workItemLinks";
+import { revealRepoInSidebar } from "../../utils/revealRepoInSidebar";
 
 /** Helper to create default no-op props for Sidebar */
 function defaultProps(overrides: Partial<Parameters<typeof Sidebar>[0]> = {}) {
@@ -1160,7 +1162,9 @@ describe("Sidebar", () => {
 					const link = () => container.querySelector<HTMLButtonElement>("[data-testid='cross-repo-child-link']");
 					const childRow = () => container.querySelector("[data-sidebar-repo='/child'] .branchTabItem.active");
 					expect(link()?.textContent).toContain("2 agents in Child repo");
-					expect(container.querySelector("[data-sidebar-repo='/repo1'] .branchTabNested")).toBeNull();
+					expect(
+						container.querySelector("[data-sidebar-repo='/repo1'] .branchTabChildren > .branchTabNode"),
+					).toBeNull();
 					expect(childRow()).toBeNull();
 					const childLink = link();
 					if (!childLink) throw new Error("Missing child navigation link");
@@ -1269,6 +1273,19 @@ describe("Sidebar", () => {
 				expect(container.querySelectorAll(".subagentRow")[1].textContent).toContain("Returned");
 			});
 
+			it("shows interrupted subagents without labeling or counting them as returned", () => {
+				const interrupted = [2, 3, 4].map((n) => sub(n, "interrupted"));
+				const { container } = setup({ t1: term("t1") }, [sub(1), ...interrupted, sub(5, "done")]);
+				const rows = [...container.querySelectorAll(".subagentRow")].map((row) => row.textContent);
+				expect(rows).toHaveLength(4);
+				expect(rows[0]).toContain("Running");
+				interrupted.forEach((row, i) => {
+					expect(rows[i + 1]).toContain("Interrupted");
+					expect(rows[i + 1]).toContain(row.title);
+				});
+				expect(container.querySelector("[data-testid='returned-subagent-fold']")?.textContent).toBe("1 returned");
+			});
+
 			// Catches: a long subagent list pushing every other row off screen.
 			it("folds more than three subagents into a count and expands on click", () => {
 				const { container } = setup({ t1: term("t1") }, [sub(1), sub(2), sub(3), sub(4)]);
@@ -1296,15 +1313,16 @@ describe("Sidebar", () => {
 				const { container } = setup({ t1: term("t1"), t2: term("t2", { parentSession: "tuic-t1" }) }, []);
 				const items = [...container.querySelectorAll(".branchTabItem")];
 				expect(items).toHaveLength(2);
-				expect(items[0].classList.contains("branchTabNested")).toBe(false);
-				expect(items[1].classList.contains("branchTabNested")).toBe(true);
+				expect(items[0].closest(".branchTabChildren")).toBeNull();
+				const parent = items[0].closest(".branchTabNode");
+				expect(parent?.querySelector(":scope > .branchTabChildren > .branchTabNode .branchTabItem")).toBe(items[1]);
 			});
 
 			// Catches: a child whose parent is on another branch vanishing from the list.
 			it("keeps a child top level when its parent is not on the branch", () => {
 				const { container } = setup({ t2: term("t2", { parentSession: "tuic-gone" }) }, []);
 				const item = container.querySelector(".branchTabItem") as HTMLElement;
-				expect(item.classList.contains("branchTabNested")).toBe(false);
+				expect(item.closest(".branchTabChildren")).toBeNull();
 			});
 
 			// Catches: the polling effect tracking only the first agent terminal, so a later agent
@@ -1325,7 +1343,7 @@ describe("Sidebar", () => {
 				try {
 					const { container } = setup({ t1: term("t1"), t2: term("t2", { parentSession: "tuic-t1" }) }, [sub(1)]);
 					expect(container.querySelectorAll(".subagentRow")).toHaveLength(0);
-					expect(container.querySelectorAll(".branchTabNested")).toHaveLength(0);
+					expect(container.querySelectorAll(".branchTabChildren > .branchTabNode")).toHaveLength(0);
 				} finally {
 					uiStore.cycleSidebarDensityMode();
 					uiStore.cycleSidebarDensityMode();
@@ -3060,7 +3078,7 @@ describe("Sidebar", () => {
 					},
 					t3: {
 						name: "Gemini handoff",
-						agentType: "gemini",
+						agentType: "agy",
 						agentIntent: null,
 						currentTask: null,
 						lastPrompt: "preparing the checkout handoff",
@@ -4575,6 +4593,33 @@ describe("Sidebar", () => {
 			expect(text(container)).not.toContain("ShellRepo");
 			expect(text(container)).not.toContain("GroupedShell");
 			expect(text(container)).not.toContain("EmptyGroup");
+		});
+
+		it("reveals a filtered-out repository without clearing filters for an already visible one", () => {
+			setTerms({ ag: { agentType: "claude" }, sh: {} });
+			const live = makeRepo({ path: "/live", workspaces: { agent: ws("agent", ["ag"]) } });
+			const shell = makeRepo({ path: "/shell", workspaces: { shell: ws("shell", ["sh"]) } });
+			const idle = makeRepo({ path: "/idle" });
+			setRepos({ "/live": live, "/shell": shell, "/idle": idle });
+			vi.mocked(repositoriesStore.get).mockImplementation((path) => repositoriesStore.state.repositories[path]);
+			uiStore.setRepoFilterActiveOnly(true);
+			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			const row = (path: string) => container.querySelector(`[data-sidebar-repo="${path}"]`);
+
+			expect(row("/live")).toBeVisible();
+			expect(row("/shell")).toBeNull();
+			expect(row("/idle")).toBeNull();
+			try {
+				// The palette calls this same reveal path for both Switch and Unpark.
+				revealRepoInSidebar("/live");
+				expect(row("/shell")).toBeNull();
+
+				revealRepoInSidebar("/shell");
+				expect(row("/shell")).toBeVisible();
+				expect(row("/idle")).toBeVisible();
+			} finally {
+				vi.mocked(repositoriesStore.get).mockReturnValue(undefined);
+			}
 		});
 
 		// Catches: no empty state / no way back when nothing qualifies.

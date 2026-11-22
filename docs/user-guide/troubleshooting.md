@@ -4,7 +4,7 @@ This page collects the most common problems when using TUICommander. Start with 
 
 ## Quick checks
 
-1. Confirm that the agent binary works outside TUICommander (`claude`, `codex`, `gemini`, etc.).
+1. Confirm that the agent binary works outside TUICommander (`claude`, `codex`, `agy`, etc.).
 2. Confirm the repository is a valid Git checkout and that the selected directory is writable.
 3. Check that the terminal is using the expected shell and PATH.
 4. Restart the affected terminal tab before restarting the whole app; the PTY and other tabs can remain alive.

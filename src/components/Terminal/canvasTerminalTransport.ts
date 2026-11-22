@@ -19,6 +19,13 @@ export interface TerminalTransport {
 	 */
 	ackFrame(received: number): void;
 	setVisible?(visible: boolean): void;
+	/**
+	 * True when this transport completed a grid subscription and a later one for
+	 * the same session has since replaced it. The desktop backend keeps ONE grid
+	 * channel per session, so the replaced instance receives no more frames until
+	 * it resubscribes. Absent on transports with one stream per instance.
+	 */
+	lostGrid?(): boolean;
 	onEvent(type: string, handler: (payload: unknown) => void): Promise<void>;
 	/** WS lifecycle errors are local notifications, not backend PTY events. */
 	onStreamError?(handler: (error: unknown) => void): void;
@@ -59,6 +66,9 @@ export function createTransport(sessionId: string, connectionId?: string): Termi
 	if (connectionId) return new WsTransport(sessionId, connectionId);
 	return isTauri() ? new TauriTransport(sessionId) : new WsTransport(sessionId);
 }
+
+/** The transport holding each session's single desktop grid channel. */
+const gridOwners = new Map<string, TauriTransport>();
 
 export class TauriTransport implements TerminalTransport {
 	private sessionId: string;
@@ -123,6 +133,7 @@ export class TauriTransport implements TerminalTransport {
 			channel,
 			visible: this.visible,
 		})) as number;
+		gridOwners.set(this.sessionId, this);
 		this.setVisible(this.visible);
 		await this.visibilityPublication;
 	}
@@ -132,6 +143,7 @@ export class TauriTransport implements TerminalTransport {
 			this.invokeRef?.("unsubscribe_terminal_grid", { sessionId: this.sessionId, epoch: this.epoch }).catch(() => {});
 			this.epoch = null;
 		}
+		if (gridOwners.get(this.sessionId) === this) gridOwners.delete(this.sessionId);
 		for (const unlisten of this.unlisteners) {
 			// Tauri's unlisten is async under the hood and REJECTS if its internal
 			// registry entry is already gone (webview/session teardown race — common
@@ -140,6 +152,10 @@ export class TauriTransport implements TerminalTransport {
 			Promise.resolve(unlisten() as unknown).catch(() => {});
 		}
 		this.unlisteners = [];
+	}
+
+	lostGrid(): boolean {
+		return this.epoch !== null && gridOwners.get(this.sessionId) !== this;
 	}
 
 	async invoke(cmd: string, args: Record<string, unknown>): Promise<unknown> {

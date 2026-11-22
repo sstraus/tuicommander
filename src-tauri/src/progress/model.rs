@@ -40,16 +40,27 @@ pub enum ProgressKind {
     Delegated,
     /// One terminal sent another a message with `agent action=send`.
     Message,
+    /// The user asked an agent: a side question answered in a fork, or a
+    /// direct question captured from the transcript. Written by TUIC.
+    Question,
+    /// The answer to a `question`. Written by TUIC.
+    Answer,
 }
 
 impl ProgressKind {
-    pub(crate) const ALL: [Self; 5] = [
+    pub(crate) const ALL: [Self; 7] = [
         Self::Done,
         Self::Blocked,
         Self::Intent,
         Self::Delegated,
         Self::Message,
+        Self::Question,
+        Self::Answer,
     ];
+
+    /// The host trace: stored for Flow and as the reporting floor, but not
+    /// part of the default list.
+    pub(crate) const ACTIVITY: [Self; 3] = [Self::Intent, Self::Delegated, Self::Message];
 
     pub(crate) fn as_str(self) -> &'static str {
         match self {
@@ -58,6 +69,8 @@ impl ProgressKind {
             Self::Intent => "intent",
             Self::Delegated => "delegated",
             Self::Message => "message",
+            Self::Question => "question",
+            Self::Answer => "answer",
         }
     }
 
@@ -70,11 +83,16 @@ impl ProgressKind {
             .ok_or_else(|| format!("unknown progress type '{value}'"))
     }
 
+    /// Valid values an agent may send, appended to every type error.
+    pub(crate) const REPORTABLE_TYPES: &'static str = "type must be 'done' or 'blocked'";
+
     /// Parse a kind an agent may report. A host-written kind is refused here
     /// rather than in the store, so the agent reads why instead of seeing its
     /// entry silently filed under a kind it did not ask for.
     pub(crate) fn parse_reportable(value: &str) -> Result<Self, String> {
-        Self::parse(value)?.reportable()
+        Self::parse(value)
+            .map_err(|error| format!("{error}; {}", Self::REPORTABLE_TYPES))?
+            .reportable()
     }
 
     /// The one rule both input paths apply: only `done` and `blocked` come
@@ -83,6 +101,7 @@ impl ProgressKind {
         match self {
             Self::Intent => Err(INTENT_IS_NOT_REPORTABLE.to_string()),
             Self::Delegated | Self::Message => Err(HAND_OFF_IS_NOT_REPORTABLE.to_string()),
+            Self::Question | Self::Answer => Err(EXCHANGE_IS_NOT_REPORTABLE.to_string()),
             reportable => Ok(reportable),
         }
     }
@@ -90,6 +109,30 @@ impl ProgressKind {
 
 pub(crate) const INTENT_IS_NOT_REPORTABLE: &str =
     "type must be 'done' or 'blocked' — 'intent' is recorded by TUIC from the intent: marker";
+
+/// Repair guidance for `question` on a non-blocked report. Callers repeated the
+/// bare rule verbatim (3097-0e55), so the message names the conflict, says the
+/// same call cannot succeed and gives both corrections.
+pub(crate) fn question_requires_blocked(kind: ProgressKind) -> String {
+    format!(
+        "progress.question is only valid with type=blocked, but this call has type={}; an unchanged retry will fail again. \
+To finish, resend with type={} and omit question. \
+Use type=blocked with question={{\"kind\":\"yes_no\"}} only when you stop to wait for a yes/no answer; \
+type=blocked without question accepts a free-text reply.",
+        kind.as_str(),
+        kind.as_str()
+    )
+}
+
+/// Repair guidance for a malformed `question` object.
+pub(crate) fn invalid_question(detail: &str) -> String {
+    format!(
+        "invalid question: {detail}. The only accepted form is question={{\"kind\":\"yes_no\"}} with type=blocked; \
+omit question for a done report or a free-text blocked report."
+    )
+}
+
+pub(crate) const EXCHANGE_IS_NOT_REPORTABLE: &str = "type must be 'done' or 'blocked' — 'question' and 'answer' are recorded by TUIC from the user's questions and their answers";
 
 pub(crate) const HAND_OFF_IS_NOT_REPORTABLE: &str = "type must be 'done' or 'blocked' — 'delegated' and 'message' are recorded by TUIC from agent action=spawn and action=send";
 
@@ -149,6 +192,12 @@ pub(crate) fn validate_text(field: &str, value: &str, max: usize) -> Result<(), 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProgressEntry {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub question: Option<ProgressQuestion>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_target_available: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub answered: Option<bool>,
     pub id: i64,
     pub project: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -192,6 +241,10 @@ pub struct ProgressListInput {
     /// Only human progress (intent, done, blocked), before paging.
     #[serde(default)]
     pub progress_only: Option<bool>,
+    /// `false`: leave out the host trace (`intent`, `delegated`, `message`).
+    /// Absent keeps every kind, for callers older than the default list.
+    #[serde(default)]
+    pub include_activity: Option<bool>,
     /// Restrict the selected kinds to blocked entries.
     #[serde(default)]
     pub blocked_only: Option<bool>,
@@ -204,6 +257,30 @@ pub struct ProgressListInput {
     /// Return entries older than this id.
     #[serde(default)]
     pub cursor: Option<i64>,
+}
+
+/// The cross-project list: what is for the user, from every project.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProgressRecentInput {
+    /// Only this kind; absent shows the default kinds (no host trace).
+    #[serde(default)]
+    pub kind: Option<ProgressKind>,
+    /// Only entries newer than their project's last view.
+    #[serde(default)]
+    pub unread_only: Option<bool>,
+    /// Clamped to 1..=MAX_PAGE_LIMIT.
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// One cross-project row: the entry, and whether its project saw it.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProgressRecentEntry {
+    #[serde(flatten)]
+    pub entry: ProgressEntry,
+    pub unread: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -229,6 +306,8 @@ pub struct ProgressViewedReceipt {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProgressReportInput {
+    #[serde(default)]
+    pub question: Option<ProgressQuestion>,
     #[serde(rename = "type")]
     pub kind: ProgressKind,
     pub text: String,
@@ -243,6 +322,9 @@ impl ProgressReportInput {
     /// the same sentence.
     pub fn into_entry(self, agent_name: Option<String>) -> Result<NewProgressEntry, String> {
         self.kind.reportable()?;
+        if self.question.is_some() && self.kind != ProgressKind::Blocked {
+            return Err(question_requires_blocked(self.kind));
+        }
         Ok(NewProgressEntry {
             kind: self.kind,
             text: self.text,
@@ -313,6 +395,7 @@ mod tests {
             INTENT_IS_NOT_REPORTABLE
         );
         let typed = ProgressReportInput {
+            question: None,
             kind: ProgressKind::Intent,
             text: "wiring auth middleware".to_string(),
             step: None,
@@ -345,7 +428,18 @@ mod tests {
     #[test]
     fn every_stored_kind_is_in_the_list_used_by_progress_queries() {
         let names = ProgressKind::ALL.map(ProgressKind::as_str);
-        assert_eq!(names, ["done", "blocked", "intent", "delegated", "message"]);
+        assert_eq!(
+            names,
+            [
+                "done",
+                "blocked",
+                "intent",
+                "delegated",
+                "message",
+                "question",
+                "answer"
+            ]
+        );
         for kind in ProgressKind::ALL {
             assert_eq!(ProgressKind::parse(kind.as_str()), Ok(kind));
         }
@@ -389,4 +483,35 @@ mod tests {
         assert_eq!(entry.trimmed_step(), None);
         assert_eq!(entry.trimmed_agent_name(), None);
     }
+}
+
+/// Explicit structured question, never inferred from prose.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ProgressQuestion {
+    YesNo,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProgressReplyInput {
+    pub entry_id: i64,
+    pub request_id: String,
+    pub text: Option<String>,
+    pub answer: Option<bool>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProgressReplyDelivery {
+    Delivered,
+    Queued,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProgressReplyReceipt {
+    pub entry_id: i64,
+    pub request_id: String,
+    pub delivery: ProgressReplyDelivery,
 }

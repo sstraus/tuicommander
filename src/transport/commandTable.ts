@@ -701,6 +701,26 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 			body: { epoch: args.epoch ?? null, fromSeq: args.fromSeq ?? 0, pendingTexts: args.pendingTexts ?? [] },
 		}),
 	},
+	discussion_ask: {
+		map: (args, p) => ({
+			method: "POST",
+			path: `/sessions/${p("sessionId")}/discussion`,
+			body: { question: args.question },
+		}),
+	},
+	discussion_get: {
+		map: (_args, p) => ({ method: "GET", path: `/discussion/${p("entryId")}` }),
+	},
+	discussion_follow_up: {
+		map: (args, p) => ({
+			method: "POST",
+			path: `/discussion/${p("entryId")}/follow-up`,
+			body: { question: args.question },
+		}),
+	},
+	discussion_cancel: {
+		map: (_args, p) => ({ method: "POST", path: `/discussion/${p("entryId")}/cancel` }),
+	},
 	chat_view_full_text: {
 		map: (args) => ({
 			method: "GET",
@@ -888,10 +908,14 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 			body: args.report,
 		}),
 	},
+	progress_reply: {
+		map: (args, p) => ({ method: "POST", path: `/progress/reply?path=${p("project")}`, body: args.input }),
+	},
 	progress_list: {
 		map: (args, p) => ({ method: "POST", path: `/progress/list?path=${p("project")}`, body: args.input }),
 	},
 	progress_projects: { map: () => ({ method: "GET", path: "/progress/projects" }) },
+	progress_recent: { map: (args) => ({ method: "POST", path: "/progress/recent", body: args.input }) },
 	automation_action: {
 		map: (args) => ({ method: "POST", path: "/automations/action", body: { input: args.input } }),
 	},
@@ -2206,6 +2230,7 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 
 	// --- Notes ---
 	load_notes: { map: () => ({ method: "GET", path: "/config/notes" }) },
+	get_scratchpad_path: { map: () => ({ method: "GET", path: "/config/scratchpad-path" }) },
 	save_notes: {
 		map: (args) => ({ method: "PUT", path: "/config/notes", body: { base: args.base, config: args.config } }),
 	},

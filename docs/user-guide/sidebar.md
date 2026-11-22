@@ -142,12 +142,14 @@ The **layout button** in the toolbar (left of the filter icon) cycles the sideba
 **Compact** is the one-line rows. **Rich** keeps the same navigation density and adds facts:
 
 - **Branch:** the PR state word and title; last-commit age; ahead/behind of the upstream (`↑2 ↓1`); diff stats; `N dirty` (click opens Changes); `Merged`, `Stale` (no commit for 30 days, not merged), `Unknown` (removal blocked, status could not be read) and `unmerged`. Each chip explains itself in a tooltip, with the same removal-safety text compact shows. A main checkout never shows stale, merged, dirty or unknown.
-- **Agent:** its state (Working, Idle, Needs input, Error) and what it is doing; its in-session subagents, one line each with state, title, tool calls and age (more than three fold into "N subagents", click to expand); TUIC child sessions nest under their parent agent.
+- **Agent:** its state (Working, Idle, Needs input, Error) and what it is doing; its in-session subagents, one line each with state, title, tool calls and age (more than three fold into "N subagents", click to expand); a vertical guide connects nested TUIC child sessions to their parent agent on the same branch.
 - **Repository:** current branch, positive open-PR and worktree counts, and the age of the last remote poll.
 
 Compact carries the same facts in tooltips: the branch name's tooltip has the commit age, ahead/behind and the stale rule; an agent row's tooltip has its state and line. Subagents and nesting exist only in rich.
 
 **H** shows only branches with a live harness session, together with their repositories and groups. R and C clear this harness filter. The separate active-only filter stays available in every mode. Older Auto preferences open in rich mode.
+
+If you choose a repository in the Command Palette (`Cmd+P`) and a sidebar filter hides it, the sidebar switches to the unfiltered view and shows the repository. If you choose a repository that is already visible, the sidebar keeps its filters.
 
 Subagent lines come from the existing `progress_flow` command, read at most every 5 seconds per repository, only in rich.
 
@@ -193,7 +195,7 @@ In rich mode, sessions idle for more than two hours fold into an expandable coun
 
 Rich working agent rows reserve two clamped intent lines. Idle, awaiting-input and error rows stay on one line with status dots; their full intent, task or prompt remains in the tooltip. Compact rows keep their one-line layout.
 
-Rich navigation keeps compact typography and padding. Branch identity and facts share one line, with names truncated and full PR/lifecycle facts in tooltips. Repository metadata disappears when PR and worktree counts are both zero. Header controls use compact sizing to protect repo names. Returned subagents fold into an expandable count independently of running work.
+Rich navigation keeps compact typography and padding. Branch identity and facts share one line, with names truncated and full PR/lifecycle facts in tooltips. Repository metadata disappears when PR and worktree counts are both zero. Header controls use compact sizing to protect repo names. Returned subagents fold into an expandable count. Interrupted subagents are labeled **Interrupted** and do not count as returned.
 
 In rich mode, ungrouped repositories with open terminals appear first, followed by an Idle section. Manual order is preserved inside each section. Idle headers start on one line; disclosure reveals their branches without changing activity or saved order. Headers count agents in the backend working state, independently of open-terminal membership.
 

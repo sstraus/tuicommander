@@ -12,7 +12,7 @@ function argvAfter(command: string, head: string): string {
 // Each agent below was checked against its own `--help` (a trailing [PROMPT]/query starts the interactive session
 // with that message) and run as `<cli> -- --version`, which must not print a version. pi lists [messages] but its
 // parser has no `--` handling (`--` is an unknown flag that takes the next word as its value), so it is typed.
-const WITH_ARGV = ["claude", "codex", "gemini", "grok"] as const;
+const WITH_ARGV = ["claude", "codex", "agy", "grok"] as const;
 
 describe("launchCommandWithPrompt", () => {
 	// Catches: an agent that takes no positional prompt being given one (opencode treats it as a project path).

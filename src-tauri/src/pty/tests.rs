@@ -34,6 +34,7 @@ include!("codex_tool_capture_tests.rs");
 
 include!("claude_hook_test_support.rs");
 include!("claude_hook_tests.rs");
+include!("claude_interrupt_tests.rs");
 include!("tool_readout_tests.rs");
 
 include!("ego_events_tests.rs");

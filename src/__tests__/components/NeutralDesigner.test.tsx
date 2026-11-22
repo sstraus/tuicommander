@@ -31,6 +31,22 @@ beforeEach(() => {
 		const action = args?.action as Record<string, unknown>;
 		calls.push(action);
 		switch (action.action) {
+			case "list_runs":
+				return {
+					type: "runs",
+					value: [
+						{
+							id: "retained-run",
+							name: "Retained workflow",
+							publication: { project: "/repo", id: "flow", revision: 1 },
+							status: { type: "running" },
+							current_node: "start",
+							waiting_on_approval: false,
+							started_ms: 1,
+							updated_ms: 2,
+						},
+					],
+				};
 			case "catalog":
 				return { type: "catalog", value: { activities, metanodes: [] } };
 			case "list_drafts":
@@ -128,6 +144,7 @@ it("previews unsaved control edits without starting, publishing or executing an 
 	render(() => <NeutralDesigner project="/repo" />);
 	await ready();
 	fireEvent.click(screen.getByRole("button", { name: "Add wait" }));
+	fireEvent.click(screen.getByRole("tab", { name: "Preview & runs" }));
 	fireEvent.click(screen.getByRole("button", { name: "Preview sample IO and effect intents" }));
 	await screen.findByText(/producer output remains unknown/);
 	const preview = calls.find((action) => action.action === "preview");
@@ -190,8 +207,8 @@ it("renders a registered custom script from its schema and saves config without 
 it("rereads retained run state on lifecycle invalidation and reconnect without executing the run", async () => {
 	render(() => <NeutralDesigner project="/repo" />);
 	await ready();
-	fireEvent.input(screen.getByRole("textbox", { name: "Run ID" }), { target: { value: "retained-run" } });
-	fireEvent.click(screen.getByRole("button", { name: "Inspect retained run" }));
+	fireEvent.click(screen.getByRole("tab", { name: "Preview & runs" }));
+	fireEvent.click(await screen.findByRole("button", { name: /Retained workflow · revision 1/ }));
 	await screen.findByRole("region", { name: "Retained run" });
 	expect(screen.getByText(/"state": "uncertain"/)).toBeInTheDocument();
 	const subscription = vi.mocked(subscribeEvents).mock.calls.at(-1);

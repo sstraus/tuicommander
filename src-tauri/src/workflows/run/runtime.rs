@@ -106,10 +106,10 @@ impl WorkflowRuntime {
         {
             tracing::warn!(source = "workflows", %error, "Native operation catalog unavailable");
         }
-        crate::story_adapter::binding::spawn_poller(state.event_bus.clone());
+        crate::story_adapter::binding::spawn_poller(state);
         let weak = Arc::downgrade(state);
         *state.workflow_runtime.state.lock() = weak.clone();
-        let path = crate::config::config_dir().join("workflow_runs.sqlite3");
+        let path = crate::db::path(crate::db::WORKFLOW_RUNS_DB);
         tokio::spawn(async move {
             // A restarted daemon can start while the previous process still
             // releases the owner lock, and a second daemon may own it for as
@@ -264,7 +264,7 @@ mod native_public_checks_tests;
 mod native_public_http_tests;
 #[cfg(test)]
 #[path = "native_public_support.rs"]
-mod native_public_support;
+pub(super) mod native_public_support;
 
 #[cfg(test)]
 #[path = "native_agent_tests.rs"]
@@ -301,3 +301,10 @@ mod parity_schedule_tests;
 #[cfg(test)]
 #[path = "parity_github_live.rs"]
 mod parity_github_live;
+
+#[cfg(test)]
+#[path = "live_schedule_tests.rs"]
+mod live_schedule_tests;
+#[cfg(test)]
+#[path = "scenario/mod.rs"]
+mod scenario;

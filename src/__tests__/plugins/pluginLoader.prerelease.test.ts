@@ -8,7 +8,10 @@ async function load(appVersion: string) {
 const manifest = (minAppVersion: string) =>
 	({ id: "p", name: "p", version: "1.0.0", minAppVersion, main: "main.js" }) as never;
 
-describe("validateManifest with prerelease app versions", () => {
+// Each case re-imports pluginLoader after resetModules; the first cold import of its
+// graph took 6.6 s alone and more under a full parallel run, so the 5 s default is not
+// a bound this test means to assert.
+describe("validateManifest with prerelease app versions", { timeout: 30_000 }, () => {
 	afterEach(() => vi.unstubAllGlobals());
 
 	it("Catches: plugin requiring the base version refused on that version's own nightly build", async () => {

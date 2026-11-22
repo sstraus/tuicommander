@@ -11,6 +11,7 @@ import { errorLogStore } from "../stores/errorLog";
 import { globalWorkspaceStore } from "../stores/globalWorkspace";
 import { mcpPopupStore } from "../stores/mcpPopup";
 import { mdTabsStore } from "../stores/mdTabs";
+import { waitingEntries } from "../stores/needsYou";
 import { promptLibraryStore, type SavedPrompt } from "../stores/promptLibrary";
 import { repositoriesStore } from "../stores/repositories";
 import { paneLayoutKey } from "../stores/savedPaneLayouts";
@@ -102,9 +103,8 @@ export function useAppShortcutHandlers(options: AppShortcutHandlerOptions): Shor
 			if (id) navigateToTerminal(id);
 		},
 		jumpWaitingTerminal: () => {
-			const waiting = terminalsStore
-				.getIds()
-				.filter((id) => terminalsStore.get(id)?.awaitingInput != null && !terminalsStore.isDetached(id));
+			// Same oldest-first order as the toolbar "Needs you" list.
+			const waiting = waitingEntries().map((entry) => entry.id);
 			const next = nextWaitingTerminal(waiting, terminalsStore.state.activeId);
 			if (next) navigateToTerminal(next);
 		},
@@ -145,6 +145,8 @@ export function useAppShortcutHandlers(options: AppShortcutHandlerOptions): Shor
 		toggleFileBrowserPanel: uiStore.toggleFileBrowserPanel,
 		requestFileBrowserContentSearch: uiStore.requestFileBrowserContentSearch,
 		toggleOutlinePanel: uiStore.toggleOutlinePanel,
+		// Lazy: the Discussion store pulls in the Progress journal.
+		askSideQuestion: () => void import("../stores/discussion").then((m) => m.discussionStore.requestAsk()),
 		findInTerminal: () => {
 			const diffId = diffTabsStore.state.activeId;
 			if (diffId) {

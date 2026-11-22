@@ -20,6 +20,7 @@ import {
 	maskTweakCommentSyntax,
 	parseInlineTweakComments,
 	parseTweakComments,
+	TASK_ITEM_PATTERN,
 } from "../../utils/tweakComments";
 import { applyTweakDomHighlights } from "../../utils/tweakDomHighlight";
 import { filePathRegex, isWholeFilePath } from "../Terminal/linkProvider";
@@ -226,7 +227,7 @@ function buildCheckboxLineMap(source: string): CheckboxSite[] {
 			continue;
 		}
 		if (inFence) continue;
-		const m = /^(\s*[-*+]\s+)\[([ xX~])\]/.exec(lines[i]);
+		const m = TASK_ITEM_PATTERN.exec(lines[i]);
 		if (m) map.push({ line: i, col: m[1].length, mark: normalizeMark(m[2]) });
 	}
 	return map;

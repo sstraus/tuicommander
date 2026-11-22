@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeSet;
 
-pub(super) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS activity_presets (
+pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS activity_presets (
     project TEXT NOT NULL,
     id TEXT NOT NULL,
     revision INTEGER NOT NULL CHECK(revision > 0),
@@ -108,7 +108,8 @@ impl WorkflowStore {
         handlers: &BTreeSet<HandlerRef>,
     ) -> Result<ActivityPreset, String> {
         let row: Option<(String, String)> = self.connect()?.query_row("SELECT document,sha256 FROM activity_presets WHERE project=?1 AND id=?2 AND revision=?3", params![project, id, revision], |row| Ok((row.get(0)?, row.get(1)?))).optional().map_err(|e| format!("read activity preset: {e}"))?;
-        let (document, digest) = row.ok_or("activity preset not found")?;
+        let (document, digest) =
+            row.ok_or(crate::workflows::neutral_api::refusal::PRESET_NOT_FOUND)?;
         let value: Value =
             serde_json::from_str(&document).map_err(|e| format!("decode activity preset: {e}"))?;
         if value.get("format_version").and_then(Value::as_u64) != Some(u64::from(FORMAT_VERSION)) {

@@ -331,6 +331,7 @@ Hold `Cmd` alone (`Ctrl` on Windows/Linux) for 450 ms to show shortcut badges on
 | `command-overview` | — | Command overview |
 | `open-tasks` | — | Open Tasks (listed only while a work-item provider plugin is loaded) |
 | `toggle-outline` | `Cmd+Alt+L` | Toggle outline panel |
+| `ask-side-question` | `Cmd+Alt+Q` | Open Progress on the active terminal with the side-question box focused |
 | `toggle-compose-panel` | `Cmd+I` | Toggle compose panel |
 | `detach-activity-dashboard` | — | Open Activity Dashboard in separate window |
 | `toggle-tunnels` | — | SSH Tunnels panel |

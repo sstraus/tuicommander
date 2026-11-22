@@ -455,7 +455,7 @@ fn test_ego_is_always_hook_instrumented() {
 fn windows_saved_hooks_keep_heuristic_detection_and_native_ego() {
     let mut agents = crate::config::AgentsConfig::default();
     for preference in [None, Some(true), Some(false)] {
-        for agent in ["claude", "codex", "gemini", "grok", "opencode", "pi"] {
+        for agent in ["claude", "codex", "agy", "grok", "opencode", "pi"] {
             agents.agents.insert(
                 agent.into(),
                 crate::config::AgentSettings {
@@ -559,7 +559,7 @@ fn test_silence_state_no_pending_returns_none() {
 #[test]
 fn test_tool_error_no_candidate_returns_none() {
     let mut s = SilenceState::new();
-    assert!(s.check_tool_error().is_none());
+    assert!(s.check_tool_error(true).is_none());
 }
 
 #[test]
@@ -571,11 +571,32 @@ fn test_tool_error_fires_after_silence_threshold() {
         - SILENCE_TOOL_ERROR_THRESHOLD
         - std::time::Duration::from_millis(100);
     assert_eq!(
-        s.check_tool_error(),
+        s.check_tool_error(true),
         Some("Error: Exit code 128".to_string())
     );
     // Dedup: second call returns None (already emitted).
-    assert!(s.check_tool_error().is_none());
+    assert!(s.check_tool_error(true).is_none());
+}
+
+#[test]
+fn test_tool_error_waits_for_turn_end_while_agent_keeps_working() {
+    // A failed tool call followed by model thinking is silent for longer than
+    // the threshold, yet the agent continues on its own. Only a turn that
+    // actually ended on the error may ask for the user.
+    let mut s = SilenceState::new();
+    s.mark_tool_error_candidate("Error: Exit code 1".to_string());
+    s.last_output_at = std::time::Instant::now()
+        - SILENCE_TOOL_ERROR_THRESHOLD
+        - std::time::Duration::from_millis(100);
+    assert!(
+        s.check_tool_error(false).is_none(),
+        "a busy agent must not raise a tool error"
+    );
+    assert_eq!(
+        s.check_tool_error(true),
+        Some("Error: Exit code 1".to_string()),
+        "the candidate survives until the turn ends on it"
+    );
 }
 
 #[test]
@@ -587,7 +608,7 @@ fn test_tool_error_recovery_clears_candidate() {
         - SILENCE_TOOL_ERROR_THRESHOLD
         - std::time::Duration::from_millis(100);
     assert!(
-        s.check_tool_error().is_none(),
+        s.check_tool_error(true).is_none(),
         "recovery must clear pending tool error"
     );
 }
@@ -604,7 +625,7 @@ fn test_tool_error_does_not_refire_same_line_after_recovery() {
         - SILENCE_TOOL_ERROR_THRESHOLD
         - std::time::Duration::from_millis(100);
     assert_eq!(
-        s.check_tool_error(),
+        s.check_tool_error(true),
         Some("Error: Exit code 1".to_string()),
         "first occurrence must fire"
     );
@@ -618,7 +639,7 @@ fn test_tool_error_does_not_refire_same_line_after_recovery() {
         - SILENCE_TOOL_ERROR_THRESHOLD
         - std::time::Duration::from_millis(100);
     assert!(
-        s.check_tool_error().is_none(),
+        s.check_tool_error(true).is_none(),
         "same error line must not refire after recovery (scroll-induced)"
     );
 }
@@ -632,7 +653,7 @@ fn test_tool_error_refires_after_memory_reset() {
     s.last_output_at = std::time::Instant::now()
         - SILENCE_TOOL_ERROR_THRESHOLD
         - std::time::Duration::from_millis(100);
-    assert!(s.check_tool_error().is_some());
+    assert!(s.check_tool_error(true).is_some());
 
     s.reset_tool_error_memory();
 
@@ -641,7 +662,7 @@ fn test_tool_error_refires_after_memory_reset() {
         - SILENCE_TOOL_ERROR_THRESHOLD
         - std::time::Duration::from_millis(100);
     assert_eq!(
-        s.check_tool_error(),
+        s.check_tool_error(true),
         Some("Error: Exit code 1".to_string()),
         "after user input, same error text must be allowed to notify again"
     );
@@ -1368,7 +1389,7 @@ fn gemini_markdown_quote_in_history_is_not_a_ready_prompt() {
     screen.extend((0..8).map(|n| format!("current output row {n}")));
 
     assert_eq!(
-        detect_gemini_screen_activity(&screen),
+        detect_agy_screen_activity(&screen),
         AgentScreenActivity::Unknown
     );
 }
@@ -1384,7 +1405,7 @@ fn gemini_prompt_above_tall_hud_is_current_chrome() {
     screen.extend((0..30).map(|n| format!("custom HUD row {n}")));
 
     assert_eq!(
-        detect_gemini_screen_activity(&screen),
+        detect_agy_screen_activity(&screen),
         AgentScreenActivity::Ready
     );
 }
@@ -1565,6 +1586,33 @@ fn claude_idle_with_banner_and_hud() -> Vec<String> {
         "  5h: 52% (52m) | 7d: 18% (22h) | $0 | 📅 $124.01 | 13m".into(),
         "  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents".into(),
     ]
+}
+
+// Catches: the interrupt banner of an EARLIER turn, still within the scan
+// rows above the composer, keeps a later finished turn reading Interrupted.
+// Every Ready-only gate (local-command `native_idle_claim`, `protocol-stale`,
+// suggest, launch-ready) then never sees Ready and the tab stays working.
+#[test]
+fn claude_interrupt_banner_of_an_earlier_turn_does_not_outlive_the_next_turn() {
+    let screen: Vec<String> = vec![
+        "> run the migration".into(),
+        "\u{23FA} Bash(./migrate.sh)".into(),
+        "  \u{23BF}  Interrupted \u{b7} What should Claude do instead?".into(),
+        String::new(),
+        "> /cost".into(),
+        "  \u{23BF}  Total cost:            $0.0123".into(),
+        "     Total duration (API):  4s".into(),
+        String::new(),
+        "\u{2500}".repeat(60),
+        "\u{276F} ".into(),
+        "\u{2500}".repeat(60),
+        "  \u{23F5}\u{23F5} bypass permissions on (shift+tab to cycle)".into(),
+    ];
+    assert_eq!(
+        detect_claude_screen_activity(&screen),
+        AgentScreenActivity::Ready,
+        "output after the banner shows a later turn ended; the old banner is history"
+    );
 }
 
 /// #446-596f regression: block-glyph art (the welcome banner) and a status-
@@ -6070,7 +6118,7 @@ fn enqueue_refuses_shells_and_dead_sessions() {
 #[test]
 fn queued_wake_without_agent_response_reports_uncertain_delivery() {
     for agent_type in [
-        "codex", "claude", "gemini", "opencode", "goose", "grok", "pi", "unknown",
+        "codex", "claude", "agy", "opencode", "goose", "grok", "pi", "unknown",
     ] {
         let state = crate::state::tests_support::make_test_app_state();
         let sid = format!("silent-{agent_type}");
@@ -9269,6 +9317,97 @@ async fn codex_canceled_approval_capture_clears_the_waiting_badge() {
     );
 }
 
+// Catches: a cancelled Codex approval leaves the tab working, because Codex sends no Stop hook for it.
+#[tokio::test(flavor = "current_thread")]
+async fn codex_canceled_approval_capture_returns_to_idle_without_stop() {
+    let capture = crate::pty_capture::decode_capture(&agent_prompt_fixture(
+        "codex-0.157.1-approval-cancel.tcap",
+    ))
+    .expect("valid live capture");
+    let (rows, cols) = capture.geometry.expect("recorded geometry");
+    let sid = "codex-canceled-approval-idle";
+    let (state, silence) = chunk_trace_state(sid);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("codex".into());
+    state
+        .grid
+        .vt_log_buffers
+        .insert(sid.into(), Mutex::new(VtLogBuffer::new(rows, cols, 2000)));
+    crate::state::AppState::spawn_session_state_accumulator(state.clone());
+    transition_explicit_shell_state(&state, sid, SHELL_BUSY, "busy", true);
+    let mut processor = ChunkProcessor::new(None, None);
+    let mut utf8 = Utf8ReadBuffer::new();
+    let mut escape = EscapeAwareBuffer::new();
+    for record in capture.records {
+        if record.direction == crate::pty_capture::CaptureDirection::Input {
+            crate::mcp_http::session::apply_input_bookkeeping(
+                &state,
+                sid,
+                std::str::from_utf8(&record.data).unwrap(),
+            );
+            continue;
+        }
+        let data = escape.push(&utf8.push(&record.data));
+        let (clean, _) = crate::state::strip_kitty_sequences(&data);
+        processor.process_chunk(&clean, &silence, sid, &state);
+        tokio::task::yield_now().await;
+    }
+    let shell = || {
+        state
+            .session_maps
+            .shell_states
+            .get(sid)
+            .unwrap()
+            .load(Ordering::Acquire)
+    };
+    assert_eq!(shell(), SHELL_BUSY, "the busy hook holds the turn");
+    let activity = silence.lock().cached_screen_activity;
+    // Esc cancels the approval; the first tick only arms the foreground probe.
+    silence.lock().note_interrupt_requested();
+    try_timer_idle_transition(&state, &silence, sid, activity, Some("codex"), None);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .background_probe_satisfied_turn_epoch = Some(0);
+    try_timer_idle_transition(&state, &silence, sid, activity, Some("codex"), None);
+    assert_eq!(
+        shell(),
+        SHELL_IDLE,
+        "{activity:?}: cancelled approval must end the turn"
+    );
+}
+
+// Catches: a killed agent keeps "Needs you" on an exited session, because no screen or hook can clear it.
+#[tokio::test(flavor = "current_thread")]
+async fn process_exit_clears_a_confident_awaiting_badge() {
+    let sid = "exit-with-open-dialog";
+    let state = accumulating_state(sid);
+    state.emit_pty_event(crate::state::AppEvent::PtyParsed {
+        session_id: sid.to_string(),
+        parsed: serde_json::json!({
+            "type": "question",
+            "prompt_text": "Do you want to proceed?",
+            "confident": true,
+        })
+        .into(),
+    });
+    assert!(await_session(&state, sid, |s| s.awaiting_input && s.question_confident).await);
+    mark_session_exited(sid, &state);
+    assert!(
+        await_session(&state, sid, |s| !s.awaiting_input
+            && !s.question_confident
+            && s.question_text.is_none())
+        .await,
+        "process exit must retract the waiting badge"
+    );
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn canceled_approval_does_not_clear_a_different_confident_question() {
     let sid = "approval-followed-by-another-question";
@@ -11519,10 +11658,7 @@ fn question_suppress_resolves_from_agent_config() {
         !hook_instrumented_for(&agents, Some("codex")),
         "explicit false"
     );
-    assert!(
-        !hook_instrumented_for(&agents, Some("gemini")),
-        "no override"
-    );
+    assert!(!hook_instrumented_for(&agents, Some("agy")), "no override");
     assert!(!hook_instrumented_for(&agents, None), "no agent type");
 }
 
@@ -14115,7 +14251,7 @@ fn gemini_quote_four_rows_above_the_bottom_is_not_a_ready_prompt() {
         .collect();
 
     assert_eq!(
-        detect_gemini_screen_activity(&screen),
+        detect_agy_screen_activity(&screen),
         AgentScreenActivity::Unknown
     );
 }
@@ -15009,8 +15145,8 @@ fn replay_oracle_all_committed_tcap_preserves_chunk_decisions() {
     let mut manifest = Vec::new();
     for fixture in fixtures {
         let agent = [
-            "claude", "codex", "grok", "goose", "opencode", "gemini", "pi", "amp", "cursor",
-            "droid", "ego",
+            "claude", "codex", "grok", "goose", "opencode", "agy", "pi", "amp", "cursor", "droid",
+            "ego",
         ]
         .into_iter()
         .find(|agent| {

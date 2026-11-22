@@ -2,7 +2,7 @@ import { type Component, createEffect, createMemo, createSignal, For, onCleanup,
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { providerQuotaStore } from "../../stores/providerQuota";
-import { formatQuotaWindow } from "../../utils/sessionUsageFormatting";
+import { formatQuotaWindow, formatTokens } from "../../utils/sessionUsageFormatting";
 import { Button } from "../ui/Button";
 import { Select } from "../ui/Select";
 import s from "./ClaudeUsageDashboard.module.css";
@@ -103,13 +103,6 @@ interface TimelinePoint {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Format a number with K/M suffixes for readability */
-function formatTokens(n: number): string {
-	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-	return n.toString();
-}
 
 /** Format a "resets_at" ISO string as a human-readable relative time */
 function formatResetTime(isoStr: string): string {

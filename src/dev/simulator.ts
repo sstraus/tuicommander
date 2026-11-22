@@ -434,7 +434,7 @@ const simulator = {
 
 ── Rate Limits ────────────────────────────────────────────────
   __tuic.rateLimit({ agent: 'claude', minutes: 15 })
-  __tuic.rateLimit({ agent: 'gemini', minutes: 10 })
+  __tuic.rateLimit({ agent: 'agy', minutes: 10 })
 
 ── Question / Awaiting Input ──────────────────────────────────
   __tuic.question()                              Show ? icon (question type)
@@ -464,7 +464,7 @@ const simulator = {
   __tuic.scenario('pr-draft')      Draft PR, CI failing, review required
   __tuic.scenario('pr-behind')     Behind base branch
   __tuic.scenario('ci-pending')    Checks still running
-  __tuic.scenario('rate-limited')  Claude rate limited, Gemini fallback
+  __tuic.scenario('rate-limited')  Claude rate limited, Antigravity fallback
   __tuic.scenario('all-down')      All agents rate limited
   __tuic.presets()                 List all presets
 

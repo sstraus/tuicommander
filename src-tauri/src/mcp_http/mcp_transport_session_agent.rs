@@ -400,6 +400,104 @@ pub(super) async fn handle_session_wait(
     session_wait_response(state, &session_id, until, met)
 }
 
+/// Upper bound of `input` with `wait_ms`.
+const INPUT_READ_MAX_MS: u64 = 30_000;
+/// Output silence that counts as "the command finished printing".
+const INPUT_READ_QUIET_MS: u64 = 400;
+const INPUT_READ_CHECK_MS: u64 = 50;
+/// Bytes of new output `input` with `wait_ms` returns at most.
+const INPUT_READ_MAX_BYTES: u64 = 64 * 1024;
+const INPUT_READ_ROWS: u16 = 50;
+const INPUT_READ_COLS: u16 = 200;
+
+/// `input` with `wait_ms`: type into a shell, wait until it stops printing, and
+/// return what it printed. Fuses the observed `input` → `wait` → `output` loop.
+/// Quiet output, not shell state, decides: right after the write the shell still
+/// reads idle, and a shell without integration never reports busy at all.
+pub(super) async fn handle_session_input_and_read(
+    state: &Arc<AppState>,
+    args: &serde_json::Value,
+    mcp_session_id: Option<&str>,
+) -> serde_json::Value {
+    let session_id = match require_session_id(state, args, "input") {
+        Ok(id) => id,
+        Err(e) => return e,
+    };
+    let is_agent = state
+        .session_maps
+        .session_states
+        .get(&session_id)
+        .is_some_and(|session| session.agent_type.is_some());
+    if is_agent {
+        return serde_json::json!({
+            "error": "wait_ms reads a shell's output; an agent composer takes action=submit",
+            "code": "invalid_arguments", "effect": "not_started", "retryable": false
+        });
+    }
+    let wait_ms = args["wait_ms"]
+        .as_u64()
+        .unwrap_or(INPUT_READ_MAX_MS)
+        .clamp(1, INPUT_READ_MAX_MS);
+    // Everything the terminal prints after this offset answers the command.
+    let start = submission_output_offset(state, &session_id).unwrap_or(0);
+    let mut write = args.clone();
+    if let Some(object) = write.as_object_mut() {
+        object.remove("wait_ms");
+    }
+    let written = {
+        let state = state.clone();
+        let sid = mcp_session_id.map(str::to_owned);
+        crate::pty::run_bounded_pty_input(move || {
+            Ok(handle_session(&state, &write, sid.as_deref()))
+        })
+        .await
+        .unwrap_or_else(|error| serde_json::json!({"error": error}))
+    };
+    if written.get("error").is_some() {
+        return written;
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(wait_ms);
+    let quiet = std::time::Duration::from_millis(INPUT_READ_QUIET_MS);
+    let mut last = submission_output_offset(state, &session_id);
+    let mut last_change = std::time::Instant::now();
+    let mut settled = false;
+    while std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(INPUT_READ_CHECK_MS)).await;
+        let now = submission_output_offset(state, &session_id);
+        if now != last {
+            last = now;
+            last_change = std::time::Instant::now();
+        } else if last_change.elapsed() >= quiet {
+            settled = true;
+            break;
+        }
+    }
+    // A short command's output stays on screen and never reaches the scrollback a
+    // cursor delta reads, so render the new bytes (secret masking included) in a
+    // scratch terminal and return its text.
+    let raw = session_output(
+        state,
+        &serde_json::json!({"action": "output", "session_id": session_id, "format": "raw",
+            "from_byte": start, "limit": INPUT_READ_MAX_BYTES}),
+    );
+    let mut scratch = crate::state::VtLogBuffer::new(INPUT_READ_ROWS, INPUT_READ_COLS, 10_000);
+    scratch.process(raw["data"].as_str().unwrap_or_default().as_bytes());
+    let mut lines: Vec<String> = scratch.lines().iter().map(|line| line.text()).collect();
+    lines.extend(scratch.screen_rows());
+    while lines.last().is_some_and(|line| line.trim().is_empty()) {
+        lines.pop();
+    }
+    let output = lines
+        .iter()
+        .map(|line| line.trim_end())
+        .collect::<Vec<_>>()
+        .join("\n");
+    serde_json::json!({
+        "ok": true, "settled": settled, "output": output,
+        "truncated": raw["has_more"].as_bool().unwrap_or(false),
+    })
+}
+
 const SUBMIT_ACK_DEFAULT_MS: u64 = 3_000;
 pub(super) const SUBMIT_ACK_MIN_MS: u64 = 250;
 const SUBMIT_ACK_MAX_MS: u64 = 10_000;
@@ -2280,7 +2378,8 @@ pub(super) fn spawn_with_identity(
                 Err(error) => return serde_json::json!({"error": error}),
             };
 
-            let mut cmd = CommandBuilder::new(&binary_path);
+            let mut cmd =
+                CommandBuilder::new(crate::windows_launch::resolve_launch_program(&binary_path));
             crate::pty::sanitize_pty_parent_env(&mut cmd);
 
             let mut screen_env = resolved
@@ -2294,10 +2393,7 @@ pub(super) fn spawn_with_identity(
                 }
             }
             for (k, v) in &caller_env {
-                if k == "TUIC_SESSION"
-                    || k == "TUIC_PARENT"
-                    || k == crate::agent_capabilities::ENV_VAR
-                {
+                if k == "TUIC_SESSION" || k == "TUIC_PARENT" {
                     continue;
                 }
                 cmd.env(k, v);
@@ -2321,21 +2417,6 @@ pub(super) fn spawn_with_identity(
                 cmd.env_remove("TUIC_PARENT");
             }
             crate::pty::bind_pty_identity(state, &mut cmd, &session_id, None);
-            // The pre-push hook reads the fixed set here; land/push/tag have no
-            // MCP surface for TUIC to refuse.
-            match &capabilities {
-                Some(set) => {
-                    cmd.env(crate::agent_capabilities::ENV_VAR, set.env_value());
-                    // A repository without the hook is covered by the git shim;
-                    // a spawn that cannot install it must not run uncovered.
-                    if let Err(error) =
-                        crate::agent_capabilities::apply_git_shim(&mut cmd, &state.data_dir)
-                    {
-                        return serde_json::json!({"error": format!("Cannot enforce push capabilities: {error}")});
-                    }
-                }
-                None => cmd.env_remove(crate::agent_capabilities::ENV_VAR),
-            }
             crate::pty::apply_agent_screen_env(&mut cmd, &screen_env);
 
             // Initial prompt withheld from argv for prefill-only TUIs (codex):
@@ -3155,7 +3236,7 @@ pub(super) fn finalize_spawn_args(
 /// Returns Ok(merged args) or Err(conflict description).
 ///
 /// `agent_type` gates the Claude-only flags: `--print` and `--output-format` are
-/// understood only by the `claude` CLI. For any other agent (codex, gemini,
+/// understood only by the `claude` CLI. For any other agent (codex, agy,
 /// goose, …) they are DROPPED with a `warn` — injecting them makes the child
 /// clap-exit 2 and the spawn silently fails. `--model` is generic
 /// and passed through for every agent.

@@ -5,7 +5,6 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
 mod admission;
 mod history;
@@ -13,9 +12,24 @@ mod mutations;
 #[cfg(test)]
 mod tests;
 
-/// Ledger layout; unknown versions must never be overwritten. Version 2 holds
-/// only prompt schedule runs: the legacy review, triage and issue runs are gone.
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA: crate::db::Schema = crate::db::Schema {
+    name: "automation runs",
+    migrations: &[&["CREATE TABLE automation_runs (
+        id TEXT PRIMARY KEY, automation_id TEXT NOT NULL, occurrence_ms INTEGER,
+        status TEXT NOT NULL, created_ms INTEGER NOT NULL, finished_ms INTEGER,
+        snapshot_json TEXT NOT NULL);
+        CREATE UNIQUE INDEX automation_occurrence ON automation_runs(automation_id,occurrence_ms) WHERE occurrence_ms IS NOT NULL;
+        CREATE INDEX automation_history ON automation_runs(created_ms DESC,id DESC);
+        CREATE INDEX automation_history_by_id ON automation_runs(automation_id,created_ms DESC,id DESC);
+        CREATE INDEX automation_status ON automation_runs(status);
+        CREATE INDEX automation_retention ON automation_runs(finished_ms);
+        CREATE TABLE automation_cursors (
+            automation_id TEXT PRIMARY KEY, occurrence_ms INTEGER NOT NULL);
+        CREATE TABLE automation_deliveries (
+            run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE CASCADE,
+            transition TEXT NOT NULL, channel TEXT NOT NULL, document_json TEXT NOT NULL,
+            PRIMARY KEY(run_id,transition,channel));"]],
+};
 const OPEN: &str = "('reserved','prechecking','running','needs_you')";
 
 #[derive(Clone, Debug)]
@@ -32,10 +46,7 @@ pub struct RunOwner {
 impl RunOwner {
     /// Acquire exclusive runtime ownership before schema setup or restart recovery.
     pub fn acquire(now_ms: i64) -> Result<Self, String> {
-        Self::acquire_at(
-            &crate::config::config_dir().join("automation_runs.sqlite3"),
-            now_ms,
-        )
+        Self::acquire_at(&crate::db::path(crate::db::AUTOMATION_RUNS_DB), now_ms)
     }
 
     pub fn acquire_at(path: &Path, now_ms: i64) -> Result<Self, String> {
@@ -65,9 +76,10 @@ impl RunOwner {
 }
 
 impl RunStore {
-    /// Open for inspection only. Readers cannot reserve, mutate, prune or recover runs.
+    /// Open for inspection only. Readers cannot reserve, mutate or recover runs; the
+    /// database cleanup prunes finished runs through one.
     pub fn open() -> Result<Self, String> {
-        Self::open_at(&crate::config::config_dir().join("automation_runs.sqlite3"))
+        Self::open_at(&crate::db::path(crate::db::AUTOMATION_RUNS_DB))
     }
 
     pub fn open_at(path: &Path) -> Result<Self, String> {
@@ -88,58 +100,7 @@ impl RunStore {
     }
 
     fn connect(&self) -> Result<Connection, String> {
-        let mut conn = Connection::open(&self.path).map_err(error)?;
-        conn.busy_timeout(Duration::from_secs(5)).map_err(error)?;
-        let version: i64 = conn
-            .pragma_query_value(None, "user_version", |r| r.get(0))
-            .map_err(error)?;
-        if version == 1 {
-            drop_legacy_runs(&mut conn, &self.path)?;
-        } else if version != 0 && version != SCHEMA_VERSION {
-            return Err(format!(
-                "unsupported automation run schema version {version}"
-            ));
-        }
-        // Refuse unversioned populated files, rather than guessing their contract.
-        if version == 0 {
-            let count: i64 = conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'", [], |r| r.get(0)).map_err(error)?;
-            if count != 0 {
-                return Err("unsupported unversioned automation run schema".into());
-            }
-        }
-        if version == SCHEMA_VERSION && crate::sqlite_once::is_prepared(&self.path) {
-            conn.pragma_update(None, "foreign_keys", "ON")
-                .map_err(error)?;
-            return Ok(conn);
-        }
-        conn.pragma_update(None, "journal_mode", "WAL")
-            .map_err(error)?;
-        crate::sqlite_once::hold_open(&self.path);
-        let tx = conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(error)?;
-        tx.execute_batch("CREATE TABLE IF NOT EXISTS automation_runs (
-            id TEXT PRIMARY KEY, automation_id TEXT NOT NULL, occurrence_ms INTEGER,
-            status TEXT NOT NULL, created_ms INTEGER NOT NULL, finished_ms INTEGER,
-            snapshot_json TEXT NOT NULL);
-            CREATE UNIQUE INDEX IF NOT EXISTS automation_occurrence ON automation_runs(automation_id,occurrence_ms) WHERE occurrence_ms IS NOT NULL;
-            CREATE INDEX IF NOT EXISTS automation_history ON automation_runs(created_ms DESC,id DESC);
-            CREATE INDEX IF NOT EXISTS automation_history_by_id ON automation_runs(automation_id,created_ms DESC,id DESC);
-            CREATE INDEX IF NOT EXISTS automation_status ON automation_runs(status);
-            CREATE INDEX IF NOT EXISTS automation_retention ON automation_runs(finished_ms);
-            CREATE TABLE IF NOT EXISTS automation_cursors (
-                automation_id TEXT PRIMARY KEY, occurrence_ms INTEGER NOT NULL);
-            CREATE TABLE IF NOT EXISTS automation_deliveries (
-                run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE CASCADE,
-                transition TEXT NOT NULL, channel TEXT NOT NULL, document_json TEXT NOT NULL,
-                PRIMARY KEY(run_id,transition,channel));").map_err(error)?;
-        tx.pragma_update(None, "user_version", SCHEMA_VERSION)
-            .map_err(error)?;
-        tx.commit().map_err(error)?;
-        conn.pragma_update(None, "foreign_keys", "ON")
-            .map_err(error)?;
-        crate::sqlite_once::mark_prepared(&self.path);
-        Ok(conn)
+        crate::db::open_with(&self.path, &SCHEMA).map_err(error)
     }
 
     /// Commit a run before the caller performs any external effect. Duplicate occurrences return None.
@@ -163,33 +124,6 @@ impl RunStore {
     pub fn get(&self, id: &str) -> Result<AutomationRun, String> {
         read(&self.connect()?, id)
     }
-}
-
-/// One-time removal of the legacy PR-review, triage and issue-intake runs and
-/// their receipt tables, after a backup next to the store.
-fn drop_legacy_runs(conn: &mut Connection, path: &Path) -> Result<(), String> {
-    crate::sqlite_once::backup_before_legacy_removal(conn, path)?;
-    let tx = conn
-        .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(error)?;
-    let version: i64 = tx
-        .pragma_query_value(None, "user_version", |r| r.get(0))
-        .map_err(error)?;
-    if version == 1 {
-        tx.execute_batch(
-            "DELETE FROM automation_deliveries WHERE run_id IN (SELECT id FROM automation_runs
-                WHERE json_extract(snapshot_json,'$.trigger.kind') NOT IN ('scheduled','manual'));
-            DELETE FROM automation_runs
-                WHERE json_extract(snapshot_json,'$.trigger.kind') NOT IN ('scheduled','manual');
-            DROP TABLE IF EXISTS automation_review_heads;
-            DROP TABLE IF EXISTS automation_event_keys;
-            DROP TABLE IF EXISTS automation_event_decisions;",
-        )
-        .map_err(error)?;
-        tx.pragma_update(None, "user_version", SCHEMA_VERSION)
-            .map_err(error)?;
-    }
-    tx.commit().map_err(error)
 }
 
 fn create_parent(path: &Path) -> Result<(), String> {

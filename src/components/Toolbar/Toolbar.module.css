@@ -608,3 +608,58 @@ button.filterToggle.filterToggleActive:hover {
     height: 44px;
   }
 }
+
+/* "Needs you" pill: colour only, geometry comes from the Button primitive. */
+.needsYou {
+  color: var(--attention);
+  font-weight: 600;
+  gap: 6px;
+  box-shadow: inset 0 0 0 1px var(--attention);
+  background: color-mix(in srgb, var(--attention) 16%, transparent);
+}
+
+.needsYou:hover {
+  background: color-mix(in srgb, var(--attention) 26%, transparent);
+}
+
+.needsYouDot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--attention);
+  flex: none;
+}
+
+.needsYou .needsYouDot {
+  animation: needsYouPulse 1.4s ease-in-out infinite;
+}
+
+.needsYouDotError {
+  background: var(--error);
+}
+
+.needsYouCount {
+  background: var(--attention);
+  color: var(--bg-primary);
+  border-radius: 8px;
+  padding: 0 6px;
+  font-size: var(--font-xs, 11px);
+  line-height: 16px;
+}
+
+@keyframes needsYouPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--attention) 70%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .needsYou .needsYouDot {
+    animation: none;
+  }
+}

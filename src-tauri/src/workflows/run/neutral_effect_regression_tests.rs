@@ -87,18 +87,24 @@ async fn expired_approved_effect_settles_and_later_sibling_runs() {
         at,
     )
     .unwrap();
-    assert!(
-        effect_command_at(
-            &owner,
-            &run,
-            "queued",
-            EffectCommand::Dispatch {
-                key: expired.clone(),
-            },
-            at
-        )
-        .unwrap_err()
-        .contains("resource conflict")
+    let run = effect_command_at(
+        &owner,
+        &run,
+        "queued",
+        EffectCommand::Dispatch {
+            key: expired.clone(),
+        },
+        at,
+    )
+    .unwrap();
+    assert_eq!(
+        run.effect(&expired)
+            .unwrap()
+            .resource_wait
+            .as_ref()
+            .unwrap()
+            .owner_effect,
+        holding.digest
     );
     let run = effect_command_at(
         &owner,

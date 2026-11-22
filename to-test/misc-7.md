@@ -64,6 +64,42 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 - [ ] After this frontend change lands on the main checkout (Vite HMR, no Rust restart), focus a Claude tab, a Codex tab and an ego tab bound to an anthropic or openai-codex subscription. Check that the agent badge shows the window percentage (for example `7d: 78%`) and that the ego badge uses the provider icon. Switch from Claude to Codex and check that the Claude percentage never shows on the Codex tab. Vitest covers the rule; the live check could not run from the worktree because the running frontend is the main checkout's Vite server.
 ## Agent badge shows registry usage (#3068-c03b)
 
-- [ ] Frontend part (hot-reloads once on main): on a Claude tab and on an ego tab bound to anthropic, the status-bar agent badge text holds the 7d percentage (live 2026-11-15: registry had Claude 78%, ego/anthropic 77%, but no badge showed it). Check with `debug invoke_js` that `.agentBadge .agentUsage` contains the percentage.
+- [ ] Frontend part (hot-reloads once on main): on a Claude tab and on an ego tab bound to anthropic, the status-bar agent badge text holds the 7d percentage (live 2026-11-15: registry had Claude 78%, ego/anthropic 77%, but no badge showed it). Check with `debug invoke_js` that `[class*="agentBadge"] [class*="agentUsage"]` contains the percentage.
 - [ ] Rust part, after a manual `make dev` restart: a Codex tab launched by TUIC (argv carries `-c projects=… -c check_for_update_on_startup=false -c developer_instructions=…`) appears in `get_provider_quotas` under `codex-cli/openai-codex` with its session id, and its badge shows the percentage. Before the fix the registry had no Codex view at all, because `codex_profile` refused every `-c` override.
 - [ ] After this frontend change lands on the main checkout (Vite HMR, no Rust restart), focus a Claude tab, a Codex tab and an ego tab bound to an anthropic or openai-codex subscription. Check that the agent badge shows the weekly percent with its reset and the monthly remaining (for example `7d: 78% -4d · mo: 99% left`; Codex/ego-Codex `credits: N left`), no tool name, and that it does not flicker across refreshes and that the ego badge uses the provider icon. Switch from Claude to Codex and check that the Claude percentage never shows on the Codex tab. Vitest covers the rule; the live check could not run from the worktree because the running frontend is the main checkout's Vite server.
+
+- [ ] **Linux ARM64 desktop 2.1.2 (3084-a4ba):** On the produced native Ubuntu
+  22.04 ARM64 package, record OS/architecture, artifact SHA256 and package metadata;
+  install it and open a desktop window with a working local terminal. Check ARM64
+  updater selection and CPU dictation without a usable Vulkan GPU. Requires an
+  actual ARM64 Linux desktop/display and the final native CI artifacts.
+  Native initial-desktop evidence now exists (2026-11-18) for the preserved
+  unsigned internal 2.1.1 DEB on Ubuntu 22.04.5, RPM on Fedora 44 and original
+  AppImage extract-and-run on Ubuntu 22.04.5. Each displayed the app and confirmed
+  actual WebView DOM readiness; this does not verify a working local terminal,
+  dictation, updater signatures/selection or default FUSE launch. Keep this item
+  open until the signed 2.1.2 candidate passes. See `docs/release-checklist.md`.
+
+- [ ] After a manual backend rebuild/restart, inspect `progress` in full and
+  collapsed MCP discovery. Check that it distinguishes finished outcomes from
+  questions that stop work, still asks for a chat reply, and exposes optional
+  Yes/No metadata without making discovery of the tool a prerequisite.
+
+## Story backend selection after rebuild (2026-11-18)
+
+Install/update Stories Ticker 1.1.0 only after rebuilding the matching 2.1.2 host; old hosts do not enforce plugin `minAppVersion` and cannot load the new `stories:read` capability. The daily app and installed plugin were left untouched.
+
+- [ ] After a manual backend rebuild/restart, open Plans and Stories for an automatically detected project with an already approved installed Wiz connector and unfinished native plans. The compact header disclosure beside Workflow must say Wiz; All plans must be selected by default, with optional plan filtering. Its open, non-archived All plans view must show the same open stories as the Stories ticker (no story-type filter). Choose native to confirm the old native records remain, then restore automatic selection. This changes the displayed backend; do not switch during a native workflow run.
+
+## Contextual Progress replies (2026-11-18)
+
+- [ ] After a manual backend rebuild/restart, report from two different agents and reply from the toast and journal while another repository stays selected. Confirm delivery to each original author, inline Reply with no blank closed row, shared drafts, and explicit Yes/No answers. Rust changes do not load through frontend hot reload.
+
+## Global scratchpad (2026-11-21)
+
+- [ ] After a manual backend rebuild/restart, click the notepad icon in the toolbar. An editor tab `scratchpad.md` opens, pinned. Write a line, save, switch to another repository: the same tab and text show there. Close and reopen it from the toolbar: the text is still there. Rust changes do not load through frontend hot reload.
+- [ ] In the scratchpad, select a block with the mouse and with Shift+arrows. A bar appears under the selection: **Add to Ideas** adds it as a global idea with a toast; **Send to agent** sends it to the active agent terminal and is disabled with no terminal session. The bar does not appear in other editor tabs.
+
+## MCP batch tool (2026-11-21)
+
+- [ ] After a manual backend rebuild/restart and an MCP reconnect, an agent lists `batch` among the TUIC tools (direct and collapsed surface). Call `batch` with `calls=[{tool:"session",arguments:{action:"list"}},{tool:"repo",arguments:{action:"list"}}]`: `results` holds both replies in order and `errors` is 0. Rust changes do not load through frontend hot reload.

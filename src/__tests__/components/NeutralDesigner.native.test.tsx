@@ -102,18 +102,22 @@ it("renders real binding-free native preparation and approval intent without dis
 	fireEvent.click(screen.getByRole("button", { name: "Preview sample IO and effect intents" }));
 	const result = await screen.findByRole("region", { name: "Resolved preview" });
 	const blocks = within(result).getAllByText((_, node) => node?.tagName === "PRE");
-	expect(JSON.parse(blocks[0].textContent ?? "null")).toEqual(captured.preparation.reply.value.activities[0].inputs);
-	expect(JSON.parse(blocks[1].textContent ?? "null")).toEqual(
+	const request = within(result).getByText("request", { selector: "dt" }).nextElementSibling;
+	expect(JSON.parse(request?.textContent ?? "null")).toEqual(captured.preparation.inputs.request);
+	expect(JSON.parse(blocks[0].textContent ?? "null")).toEqual(
 		captured.preparation.reply.value.activities[0].effect_intent,
 	);
 	expect(
-		requests.every((request) => ["catalog", "list_drafts", "templates", "preview"].includes(String(request.action))),
+		requests.every((request) =>
+			["catalog", "list_drafts", "list_runs", "templates", "preview"].includes(String(request.action)),
+		),
 	).toBe(true);
 });
 
 it("applies the actual admitted subflow and rejects its incompatible typed mapping before replacing the graph", async () => {
 	render(() => <NeutralDesigner project={captured.project} />);
 	await waitFor(() => expect(screen.getByRole("button", { name: "Save neutral draft" })).not.toBeDisabled());
+	fireEvent.click(screen.getByRole("tab", { name: "Advanced definition" }));
 	const editor = screen.getByLabelText("Neutral definition JSON");
 	fireEvent.change(editor, { target: { value: JSON.stringify(captured.subflow.valid.definition) } });
 	await waitFor(() =>

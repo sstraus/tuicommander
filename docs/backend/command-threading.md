@@ -448,3 +448,9 @@ Plugin `plugin_file_size` and `plugin_read_file_range` are async IPC/HTTP comman
 ## Provider quota commands
 
 `get_provider_quotas`, `get_session_quota_binding`, and `refresh_provider_quota` are async Tauri commands. The first two read registry state; refresh awaits the registry's single-flight read and policy. The matching HTTP routes use the same operations.
+
+### Contextual Progress replies
+
+`progress_reply` is an async IPC command. Its persistence and normal peer-mail
+operation run in `tokio::task::spawn_blocking`, not on the macOS main thread.
+The HTTP route calls the same service and returns the same receipt.

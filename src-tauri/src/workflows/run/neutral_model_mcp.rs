@@ -116,7 +116,7 @@ impl ModelMcpHost {
             .upgrade()
             .ok_or_else(|| refused("model owner unavailable"))?;
         let key = owner
-            .start_model_tool(call, arguments)
+            .start_model_tool(call.clone(), arguments.clone())
             .map_err(refused)?
             .key;
         loop {
@@ -129,6 +129,16 @@ impl ModelMcpHost {
                 .neutral_execution(&self.parent.fence.run)
                 .map_err(refused)?;
             let effect = run.effect(&key).map_err(refused)?;
+            if !effect.dispatched && effect.resource_wait.is_some() {
+                // The release notification resumes the original prepared call;
+                // admission and claiming still happen at the existing boundary.
+                let next = owner
+                    .start_model_tool(call.clone(), arguments.clone())
+                    .map_err(refused)?;
+                if next.dispatched {
+                    continue;
+                }
+            }
             if let Some(observation) = &effect.observation {
                 match &observation.outcome {
                     EffectOutcome::Completed { result } if observation.stopped => {

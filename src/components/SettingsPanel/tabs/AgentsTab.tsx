@@ -897,7 +897,7 @@ const AgentRow: Component<{
 	// Availability comes from the machine whose configuration this row edits.
 	const supportsHooks = () => HOOK_SUPPORT[props.agentType] && hookState() != null && hookState() !== "unsupported";
 	const supportsLaunchSignals = () => supportsHooks() && (props.agentType === "claude" || props.agentType === "codex");
-	const supportsGlobalHooks = () => ["codex", "gemini", "grok", "opencode", "pi"].includes(props.agentType);
+	const supportsGlobalHooks = () => ["codex", "agy", "grok", "opencode", "pi"].includes(props.agentType);
 
 	/**
 	 * The MCP bridge is installed on this machine only.

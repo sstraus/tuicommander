@@ -37,6 +37,8 @@ const story = {
 };
 
 beforeEach(() => {
+	// This subject exercises an explicitly selected plan, not the project-wide landing view.
+	storiesUi.reveal({ project: "/repo", planId: "p1", storyId: null });
 	storiesUi.setVisibility("all");
 	vi.mocked(invoke).mockReset();
 	vi.mocked(invoke).mockImplementation(async (_command, args) => {
@@ -51,6 +53,8 @@ beforeEach(() => {
 		if (action.action === "transition_history") return { type: "transitions", value: [] };
 		if (action.action === "list_notes") return { type: "notes", value: [] };
 		if (action.action === "list_plans") return { type: "plans", value: [plan] };
+		if (action.action === "project_story_view")
+			return { type: "project_story_view", value: { stories: [story], visibleStoryIds: [story.id], columns: [] } };
 		if (action.action === "plan_view")
 			return { type: "plan_view", value: { stories: [story], state: "active", wontFixCount: 0, allCancelled: false } };
 		if (action.action === "transition")

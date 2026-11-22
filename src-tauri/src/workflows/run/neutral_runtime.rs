@@ -1,7 +1,8 @@
 //! The existing run actor's neutral branch. Retained preparation and approval
 //! never replace current host admission. Reconciliation never invokes again.
 use super::neutral_effects::{
-    EffectCommand, EffectKey, EffectObservation, EffectOutcome, EffectPreparation, NeutralEffect,
+    EffectCommand, EffectKey, EffectObservation, EffectOutcome, EffectPreparation, EffectQuestion,
+    NeutralEffect,
 };
 use super::neutral_execution::{
     NeutralAttemptFence, NeutralExecution, NeutralExecutionCommand as Command, NeutralStatus,
@@ -65,6 +66,16 @@ pub(crate) trait NeutralHost: Send + Sync {
     fn cancel(&self, _effect: NeutralEffect) -> ObservationFuture {
         Box::pin(async { Err("neutral host has no proven stop for the original effect".into()) })
     }
+    /// Evidence about the original attempt, asked before an operator-approved
+    /// rerun. An error says the original process group may still be running. It
+    /// never proves that the group is ours (its id may be reused), so the runtime
+    /// puts the text to the operator as a new question instead of failing or
+    /// starting a second copy. No process is ever signalled on this evidence.
+    fn original_stopped(&self, _effect: &NeutralEffect) -> Result<(), String> {
+        Ok(())
+    }
+    /// The effect settled or its run ended: drop what `original_stopped` reads.
+    fn forget_original(&self, _effect: &NeutralEffect) {}
     /// False while the host lacks the caller binding of this run, as after a
     /// restart: the run then waits for a resume instead of failing its next step.
     fn bound(&self, _run: &str) -> bool {
@@ -117,9 +128,35 @@ impl RuntimeOwner {
         id: &str,
         command: EffectCommand,
     ) -> Result<NeutralExecution, String> {
+        self.neutral_effect_command_for_generation(id, command, None)
+    }
+
+    fn neutral_effect_command_for_generation(
+        &self,
+        id: &str,
+        command: EffectCommand,
+        generation: Option<u32>,
+    ) -> Result<NeutralExecution, String> {
         let command_id = format!("effect:{}", content_digest(&command)?);
         loop {
             let snapshot = self.store.neutral_execution(id)?;
+            let command_id = match &command {
+                EffectCommand::Observe { key, .. } => {
+                    let current = snapshot.effect(key)?.reruns;
+                    // A future belongs to the dispatch/reconciliation that created
+                    // it, not to whichever rerun is current when it finishes. The
+                    // expected sequence below makes this check atomic with admission.
+                    if generation.is_some_and(|expected| expected != current) {
+                        return Ok(snapshot);
+                    }
+                    if current > 0 {
+                        format!("{command_id}:rerun{current}")
+                    } else {
+                        command_id.clone()
+                    }
+                }
+                _ => command_id.clone(),
+            };
             match self.neutral_command(
                 id,
                 &command_id,
@@ -130,11 +167,12 @@ impl RuntimeOwner {
             ) {
                 Err(error) if error.contains("sequence changed") => continue,
                 result => {
-                    if result.is_ok() {
-                        // Resource release can unblock a different run, while
-                        // approval/callback wakes its branch in the same owner.
-                        self.wake_neutral_actors();
-                        self.neutral_effect_updates.notify_waiters();
+                    if let (Ok(next), EffectCommand::Observe { key, .. }) = (&result, &command)
+                        && let Ok(effect) = next.effect(key)
+                        && effect.settled()
+                        && let Some(host) = self.neutral_host.lock().clone()
+                    {
+                        host.forget_original(effect);
                     }
                     return result;
                 }
@@ -265,11 +303,11 @@ impl RuntimeOwner {
                 // and cannot prevent independent candidates from being examined.
                 Err(_) => continue,
             };
-            let (effect, sequence, newly_prepared) = if let Some(effect) = existing {
+            let (effect, sequence) = if let Some(effect) = existing {
                 if effect.key != prepared.key {
                     continue;
                 }
-                (effect.clone(), snapshot.sequence, false)
+                (effect.clone(), snapshot.sequence)
             } else {
                 let retained = match self.neutral_effect_command(
                     &snapshot.run.id,
@@ -285,40 +323,56 @@ impl RuntimeOwner {
                 if !prepared.approved() {
                     return Ok(true);
                 }
-                (prepared, retained.sequence, true)
+                (prepared, retained.sequence)
             };
             // Current permission and current resolved resource/approval policy
             // are checked above on every dispatch, including resumed approval.
-            let claimed = match self.neutral_command(
+            if effect.reruns > 0
+                && let Err(diagnostic) = host.original_stopped(&effect)
+            {
+                // The original attempt may still run. The operator decides again,
+                // with the evidence in the question; nothing starts meanwhile.
+                self.ask_operator(
+                    snapshot,
+                    &effect,
+                    format!(
+                        "{diagnostic}. Verify it is the original script and stop it, then answer run again; or abandon the activity."
+                    ),
+                )?;
+                return Ok(true);
+            }
+            let dispatch_id = if effect.reruns > 0 {
+                format!("effect-dispatch:{}:{}", effect.key.digest, effect.reruns)
+            } else {
+                format!("effect-dispatch:{}", effect.key.digest)
+            };
+            let claimed = self.neutral_command(
                 &snapshot.run.id,
-                &format!("effect-dispatch:{}", effect.key.digest),
+                &dispatch_id,
                 sequence,
                 Command::Effect {
                     command: EffectCommand::Dispatch {
                         key: effect.key.clone(),
                     },
                 },
-            ) {
-                Err(error) if error.contains("resource conflict") => {
-                    if newly_prepared {
-                        return Ok(true);
-                    }
-                    continue;
+            )?;
+            if claimed.effect(&effect.key)?.resource_wait.is_some() {
+                if claimed.sequence > snapshot.sequence {
+                    return Ok(true);
                 }
-                Err(error) => return Err(error),
-                Ok(claimed) => claimed,
-            };
+                continue;
+            }
             let effect = claimed.effect(&effect.key)?.clone();
             if !effect.dispatched {
                 // Expired approval settled this branch without adapter entry.
                 return Ok(true);
             }
-            let call = format!("invoke:{}", effect.key.digest);
+            let call = format!("invoke:{}:{}", effect.reruns, effect.key.digest);
             self.neutral_effect_calls.lock().insert(call.clone());
             let future = host.invoke_effect(effect.clone());
             self.observe_neutral_future(
                 snapshot.run.id.clone(),
-                effect.key.clone(),
+                &effect,
                 call,
                 future,
                 notify.clone(),
@@ -331,11 +385,13 @@ impl RuntimeOwner {
     pub(super) fn observe_neutral_future(
         self: &Arc<Self>,
         run: String,
-        key: EffectKey,
+        effect: &NeutralEffect,
         call: String,
         future: ObservationFuture,
         notify: Arc<Notify>,
     ) {
+        let key = effect.key.clone();
+        let generation = effect.reruns;
         let owner = Arc::downgrade(self);
         tokio::spawn(async move {
             let observation = future.await.unwrap_or_else(|diagnostic| EffectObservation {
@@ -343,12 +399,13 @@ impl RuntimeOwner {
                 stopped: false,
             });
             if let Some(owner) = owner.upgrade() {
-                if let Err(error) = owner.neutral_effect_command(
+                if let Err(error) = owner.neutral_effect_command_for_generation(
                     &run,
                     EffectCommand::Observe {
                         key: key.clone(),
                         observation,
                     },
+                    Some(generation),
                 ) {
                     // Malformed/lost completion is not proof that a write did
                     // not occur. Keep ownership and an explicit uncertainty.
@@ -358,12 +415,13 @@ impl RuntimeOwner {
                         },
                         stopped: false,
                     };
-                    if let Err(error) = owner.neutral_effect_command(
+                    if let Err(error) = owner.neutral_effect_command_for_generation(
                         &run,
                         EffectCommand::Observe {
                             key,
                             observation: uncertain,
                         },
+                        Some(generation),
                     ) {
                         tracing::warn!(source = "workflows", %run, %error, "Neutral observation unavailable");
                     }
@@ -372,6 +430,60 @@ impl RuntimeOwner {
             }
             notify.notify_one();
         });
+    }
+
+    /// One new question revision on the effect: run again, or abandon.
+    fn ask_operator(
+        &self,
+        snapshot: &NeutralExecution,
+        effect: &NeutralEffect,
+        title: String,
+    ) -> Result<(), String> {
+        let revision = effect.question.as_ref().map_or(1, |q| q.revision + 1);
+        self.neutral_command(
+            &snapshot.run.id,
+            &format!(
+                "daemon:script-rerun-question:{}:{revision}",
+                effect.key.digest
+            ),
+            snapshot.sequence,
+            Command::Effect {
+                command: EffectCommand::Question {
+                    key: effect.key.clone(),
+                    question: EffectQuestion {
+                        revision,
+                        title,
+                        deadline_ms: snapshot.deadline_ms,
+                    },
+                },
+            },
+        )?;
+        Ok(())
+    }
+
+    /// A read-only script whose output is lost waits for an operator decision, as
+    /// an effect approval does: run the original again, or abandon the activity.
+    fn ask_script_rerun(&self, snapshot: &NeutralExecution) -> Result<bool, String> {
+        if snapshot.status != NeutralStatus::Running {
+            return Ok(false);
+        }
+        let due = snapshot.effects.values().find(|effect| {
+            effect.rerun_candidate()
+                && effect
+                    .question
+                    .as_ref()
+                    .is_none_or(|_| effect.answer.is_some())
+                && snapshot.effect_attempt_pending(&effect.key)
+        });
+        let Some(effect) = due else {
+            return Ok(false);
+        };
+        self.ask_operator(
+            snapshot,
+            effect,
+            "The script output was lost. Run the script again, or abandon the activity?".into(),
+        )?;
+        Ok(true)
     }
 
     /// One observation per effect per actor lifetime, plus an independently
@@ -388,7 +500,7 @@ impl RuntimeOwner {
         for effect in snapshot
             .effects
             .values()
-            .filter(|effect| effect.dispatched && !effect.settled())
+            .filter(|effect| effect.dispatched && !effect.resources_released())
         {
             if effect.invocation.descriptor.handler.name == super::native_issue_publication::HANDLER
                 && matches!(
@@ -419,14 +531,14 @@ impl RuntimeOwner {
                         key: effect.key.clone(),
                     },
                 )?;
-                let call = format!("cancel:{}", effect.key.digest);
+                let call = format!("cancel:{}:{}", effect.reruns, effect.key.digest);
                 self.neutral_effect_calls.lock().insert(call.clone());
                 let mut effect = effect.clone();
                 effect.cancel_started = true;
                 let future = host.cancel(effect.clone());
                 self.observe_neutral_future(
                     snapshot.run.id.clone(),
-                    effect.key,
+                    &effect,
                     call,
                     future,
                     notify.clone(),
@@ -443,12 +555,12 @@ impl RuntimeOwner {
             }
             if !seen.contains(&effect.key) {
                 seen.push(effect.key.clone());
-                let call = format!("reconcile:{}", effect.key.digest);
+                let call = format!("reconcile:{}:{}", effect.reruns, effect.key.digest);
                 self.neutral_effect_calls.lock().insert(call.clone());
                 let future = host.reconcile(effect.clone());
                 self.observe_neutral_future(
                     snapshot.run.id.clone(),
-                    effect.key.clone(),
+                    effect,
                     call,
                     future,
                     notify.clone(),
@@ -483,7 +595,15 @@ pub(super) async fn actor(owner: Weak<RuntimeOwner>, id: &str, notify: &Arc<Noti
             notify.notified().await;
             continue;
         }
-        match current.recover_neutral_effects(&snapshot, notify, &mut observed) {
+        match current
+            .recover_neutral_effects(&snapshot, notify, &mut observed)
+            .and_then(|acted| {
+                if acted {
+                    Ok(true)
+                } else {
+                    current.ask_script_rerun(&snapshot)
+                }
+            }) {
             Ok(true) => {
                 tokio::task::yield_now().await;
                 continue;
@@ -494,6 +614,12 @@ pub(super) async fn actor(owner: Weak<RuntimeOwner>, id: &str, notify: &Arc<Noti
             _ => {}
         }
         if snapshot.status != NeutralStatus::Running {
+            if let Some(host) = current.neutral_host.lock().clone() {
+                snapshot
+                    .effects
+                    .values()
+                    .for_each(|effect| host.forget_original(effect));
+            }
             // Retained claims survive actor exit and restart. A later callback
             // may settle them but can never reopen this graph.
             return;

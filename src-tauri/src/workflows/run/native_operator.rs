@@ -124,7 +124,7 @@ pub(super) fn subject(
         || effect.cancel_started
         || effect.observation.is_some()
     {
-        return Err("operator wait is no longer the current owned subject".into());
+        return Err(crate::workflows::neutral_api::refusal::OPERATOR_SUBJECT_STALE.into());
     }
     Ok(())
 }
@@ -143,7 +143,7 @@ pub(super) fn answer(
         || answer.reason.trim().is_empty()
         || answer.reason.len() > 2000
     {
-        return Err("operator answer differs from exact current wait/sequence/reason".into());
+        return Err(crate::workflows::neutral_api::refusal::OPERATOR_ANSWER_CONFLICT.into());
     }
     subject(bound, effect, &answer.request)?;
     let receipt = AnswerReceipt {

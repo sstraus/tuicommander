@@ -1,5 +1,16 @@
 # Configuration
 
+## Local HTTP authentication
+
+Loopback HTTP connections (`127.0.0.1` and `::1`) need no credentials by default.
+Set `services.auth.require_local_auth` to `true` to require the existing token,
+session cookie or Basic Auth on local protected routes. The default is `false`,
+including when the field is absent from an existing configuration. The flag is
+read for each request after the updated backend has been loaded. Explicit
+credentials still use normal verification and retain their caller provenance.
+Non-loopback clients still require authentication. Host and Origin checks and
+endpoint-specific access rules are unchanged.
+
 ## Codex global hook trust
 
 The explicit global installer targets `CODEX_HOME/hooks.json` and its sibling
@@ -577,7 +588,7 @@ Each target uses the format its tool reads:
 | VS Code | `<user dir>/mcp.json` | JSON `servers` |
 | Zed | `~/.config/zed/settings.json` | JSON `context_servers` |
 | Amp | `~/.config/amp/settings.json` | JSON `amp.mcpServers` |
-| Gemini CLI | `~/.gemini/settings.json` | JSON `mcpServers` |
+| Antigravity CLI | `~/.gemini/config/mcp_config.json` | JSON `mcpServers` |
 | Droid | `~/.factory/mcp.json` | JSON `mcpServers` |
 | opencode | `~/.config/opencode/opencode.json[c]` | JSON `mcp`, `{type:"local", command:[…]}` |
 | Codex | `$CODEX_HOME/config.toml` or `~/.codex/config.toml` | TOML `[mcp_servers]` + `env_vars` allowlist |
@@ -622,9 +633,9 @@ which only the launch pass consults: Settings → Agents installs on demand
 through `ensure_spec_entry` directly, because pressing Install states that the
 target is there — that is an explicit request, not a guess.
 
-**Shared settings files need an explicit install.** Zed, Amp and Gemini keep
+**Shared settings files need an explicit install.** Zed and Amp keep
 their MCP server list inside the `settings.json` that also holds every other
-user preference, not a dedicated `mcp.json`. Those three carry
+user preference, not a dedicated `mcp.json`. Those two carry
 `shared_settings_file: true` and the launch pass never creates or edits them:
 TUICommander being on the machine is not consent to rewrite the user's editor
 configuration. Settings → Agents installs them on request, and once installed
@@ -1060,6 +1071,10 @@ struct PromptEntry {
 
 **Commands:** `load_notes()`, `save_notes(base, config)`. Planner `add_idea`, `list_ideas`, and `update_idea` use the same `ConfigFile` strict locked writer. UI saves remove only ids present in their baseline and merge only changed fields of existing records; concurrent additions survive and deleted records are not resurrected. Other top-level fields retain merge-patch semantics. Invalid JSON fails rather than becoming an empty snapshot. Planner additions retain a `source` string and use the owning repository's registered UI key as `repoPath`. Ideas reads and project mutations resolve filesystem-equivalent canonical paths, Windows extended/portable spellings and symlink aliases to that key. `load_notes` normalizes existing row paths in its response without rewriting the file. Paths with no matching registration remain unchanged; global Ideas stay global. Progress and story database project keys do not change. Successful mutation routes dual-emit `ideas-changed`; frontend reloads wait for queued local writes and never save a reload.
 
+### Scratchpad (`scratchpad.md`)
+
+**Type:** plain Markdown, user text. One file shared by every repository. `get_scratchpad_path()` / `GET /config/scratchpad-path` returns its path and creates it empty when missing; the editor tab reads and writes it with the external-file commands. Retention: keep (user data, one file of user-controlled size).
+
 ### Keybindings (`keybindings.json`)
 
 **Wire type:** array of typed `{action: string, key: string | null}` records. Null or an empty key disables an action. Rust validates unique bounded action IDs, bounded keys and modifier syntax. Any stable action string can round-trip, including unloaded plugin actions. Built-in action inventory is checked against `keybindingDefaults.ts`; dynamic choices explicitly report unavailable because plugin actions are frontend-registered and will bind in Step 9 UI parity.
@@ -1358,12 +1373,32 @@ also removes the `progress` tool from every agent's tool list; a per-agent off
 answers `progress_tracking_disabled` instead, because the tool index is built
 once and has no session context.
 
-## Native Story Storage (`stories.sqlite3`)
+## Database retention (`retention`)
+
+Days each store keeps a closed or dead record or file; `0` keeps it forever. Open
+records are never deleted. Applied by the cleanup job at startup and every 24
+hours; a change takes effect at the next run. Rules and the table inventory:
+[Persistence](persistence.md).
+
+| Key | Default | Deletes |
+|---|---|---|
+| `retention.progress_days` | 30 | Progress entries, except a blocked entry still newest on its terminal |
+| `retention.automation_run_days` | 90 | Finished automation runs and their deliveries |
+| `retention.mail_days` | 14 | All peer mail of a recipient with no new mail and nothing unacknowledged |
+| `retention.tunnel_audit_days` | 30 | Tunnel audit events |
+| `retention.mcp_usage_days` | 90 | Daily MCP usage rows |
+| `retention.launch_days` | 30 | Managed launch records in stage `created` or `blocked` |
+| `retention.instance_days` | 3 | `instances/*` config directories no running process holds |
+| `retention.session_file_days` | 30 | `agent-capabilities/` and `bg-wakes/` files of sessions no longer live or suspended |
+| `retention.capture_days` | 14 | `captures/` PTY captures and frame workload recordings |
+| `retention.bridge_revision_days` | 7 | `mcp-bridge/` revisions other than the current one |
+
+## Native Story Storage (`tuic.sqlite3`)
 
 **Module:** `src-tauri/src/stories/` (`model.rs`, `store.rs`, `store/records.rs`,
 `store/transitions.rs`)
 
-Native plans and stories use `<config dir>/stories.sqlite3` on the machine that
+Native plans and stories use `<config dir>/tuic.sqlite3` on the machine that
 owns the project. The plan row links a project path to a source document; its
 prose remains in that document. Story rows contain criteria, checked state,
 dependencies, priority, origin, declared file scope, status, revision and an
@@ -1371,9 +1406,8 @@ optional manual session claim. No story database files are written to a
 repository, and there is no import or export path.
 
 Each story action opens one SQLite connection in WAL mode with a five-second busy
-timeout and reuses it for the action's reads and transaction. Schema setup runs
-once at open. New databases are created at SQLite `PRAGMA user_version = 1`.
-Version 0 is upgraded in place because its schema is compatible with version 1;
+timeout and reuses it for the action's reads and transaction. The schema is part
+of the shared `tuic.sqlite3` migration list (see [Persistence](persistence.md));
 a database with a newer version is rejected rather than opened with an unknown
 schema. Mutations use an immediate transaction and an expected story revision.
 Dependency cycles, cross-plan dependencies and concurrent claims are rejected.
@@ -1382,11 +1416,11 @@ stored story statuses rather than stored separately or decoded a second time
 after a story list. A manual claim is released when its
 terminal closes.
 
-## Workflow Definition Storage (`workflows.sqlite3`)
+## Workflow Definition Storage (`tuic.sqlite3`)
 
 **Module:** `src-tauri/src/workflows/` (`definition.rs`, `store.rs`, `api.rs`)
 
-Project-scoped workflow drafts and immutable published revisions use `<config dir>/workflows.sqlite3` on the owning machine. Draft edits use an expected revision. Publication validates graph structure and pinned story-template references in an immediate SQLite transaction. The two built-in templates are seeded atomically once per project. This database holds definitions only; run events and attempts belong to the workflow runtime.
+Project-scoped workflow drafts and immutable published revisions use `<config dir>/tuic.sqlite3` on the owning machine. Draft edits use an expected revision. Publication validates graph structure and pinned story-template references in an immediate SQLite transaction. The two built-in templates are seeded atomically once per project. This database holds definitions only; run events and attempts belong to the workflow runtime.
 
 ## Workflow Run Storage (`workflow_runs.sqlite3`)
 
@@ -1821,7 +1855,7 @@ visible; it does not resume every inactive tab.
 
 `mcp_call_audit_enabled` in `config.json` gates recording and display of the MCP call audit. Default `true` when built with debug assertions, `false` otherwise, including when the field is absent from an older file. Live: no restart.
 
-`mcp_usage_rollup_enabled` in `config.json` gates the persistent daily MCP usage counts (#2808-5998). Default `true` in every build, including when the field is absent. Live: no restart. Data: `mcp_usage.sqlite3`, 90 days.
+`mcp_usage_rollup_enabled` in `config.json` gates the persistent daily MCP usage counts (#2808-5998). Default `true` in every build, including when the field is absent. Live: no restart. Data: `tuic.sqlite3`, `retention.mcp_usage_days` (90).
 
 ### Background tray and menu-bar icon
 
@@ -1941,7 +1975,7 @@ Legacy desktop and HTTP save adapters for notifications, preferences, repository
 
 ### Managed launch journal
 
-`managed-launches.sqlite` in the app data directory retains managed launch identities and request digests. It does not store prompt or environment bodies. Records remain as idempotency tombstones across process restarts; they do not imply the PTY survived. Use the same `launch_id` to inspect an old launch, never a new key to retry an uncertain creation.
+The `launches` table of `tuic.sqlite3` in the app data directory retains managed launch identities and request digests. It does not store prompt or environment bodies. Records remain as idempotency tombstones across process restarts until `retention.launch_days` after they reach `created` or `blocked`; they do not imply the PTY survived. Use the same `launch_id` to inspect an old launch, never a new key to retry an uncertain creation.
 ## Catalogue-backed Settings controls
 
 Native Settings controls carry stable catalogue IDs. `settingsCatalogue.ts` is generated by the Rust catalogue test, not edited by hand. Shared selects consume Rust enum values; descriptor keys supply label/help lookup. The All settings inspector uses `settings_action` with explicit target, concrete JSON pointer and owner CAS revision. Each edit is one field, not a cross-store save. String arrays use typed rows; credentials and structured records retain domain workflows.
@@ -1959,6 +1993,25 @@ Settings startup publishes `list_accounts` for GitHub metadata/presence and Ego
 and base credential owner, never a caller-selected program or profile. Its
 tracked terminal is human-operated; termination and handle expiry are not
 credential success. See [interactive login](settings-startup.md#interactive-login).
+
+Ego Settings reads `auth status --json` version 1, not human status text or
+model-source labels. The typed inventory keeps vendor and optional stable
+connection separate. Legacy presence uses `/credentials/<provider>`; named
+presence uses `/credentials/connection:<full-id>`, including an orphan whose
+vendor is unknown. Only legacy rows and actual managed auth keys create legacy
+`/auth/<provider>` fields. Presence means a declared local source exists, not
+remote validity or entitlement. Missing, blank and empty declared key sources
+are unset. Invalid versions, malformed identities and duplicate identities fail
+with a sanitized `store_failed`; there is no human-output fallback. The
+configured Ego must support the coordinated machine inventory contract.
+The decoder and internal snapshot retain full IDs. Existing generic pointer
+limits still apply to explicit reads: a decoded key is at most 256 bytes and a
+path is at most 2048 bytes. The `connection:` prefix uses 11 bytes, so named IDs
+through 245 ASCII bytes are individually readable; longer IDs return sanitized
+`unknown_path`. They do not break unrelated reads. There is no whole-store or
+catalogue-expansion API that lists these preserved keys. A request containing
+an oversized pointer fails as a whole. Credential descriptors remain Get-only;
+this read-addressability limit does not add an edit target or truncate an ID.
 
 ## Persistent PR visibility filters
 
@@ -2000,11 +2053,10 @@ Settings → Agents → Idle agent hibernation (Expert Mode) includes **Close ab
 
 ### Native story ingest ledger
 
-Schema v6 of `stories.sqlite3` adds `story_ingest`, beside the app configuration,
-not in a project. SQLite triggers update an independent revision, update time
-and deletion tombstone in the same transaction as each story write or appended
-note. Migration seeds existing stories and notes without changing their subject
-revisions or documents. Post-commit wakes and a 30-second reconnect sweep feed
+`tuic.sqlite3` holds `story_ingest`, beside the app configuration, not in a
+project. SQLite triggers update an independent revision, update time and
+deletion tombstone in the same transaction as each story write or appended
+note. Post-commit wakes and a 30-second reconnect sweep feed
 mdkb's `external.list`, `external.upsert` and `external.delete` methods through
 `mdkb_client.rs`. Only IDs in this instance's ledger are owned. The projection
 is optional and read-only; neither RPC failures nor daemon absence roll back
@@ -2031,26 +2083,19 @@ The agent silence rule (every agent session; parent mail and nudge for managed P
 
 A project without Wiz markers reports **Plans and stories are stored in
 TUICommander. Create a plan to begin.** This text names no internal tool. For a marked
-project, automatic detection retains native while native plans are open or pinned
-native executions are active. The header explains **Native retained while …**;
-this is not fallback after a failed Wiz connector. Expand backend details to choose
-**Use TUIC native** or **Use automatic selection**. Explicit Wiz cannot replace
-open native work, and selection changes cannot interrupt active executions.
+project, automatic detection selects Wiz even when native plans are unfinished.
+Expand backend details to choose **Use TUIC native** for retained native records
+or **Use automatic selection** to return to the connector.
 Registry scopes resolve local > project > user for the canonical owning project;
 remove duplicate winning-scope installations in the plugin manager if requested.
 Approval binds the displayed installation and entry/version identity. Dependencies
 are not fingerprinted. A changed entry/version between display and click requires
-refresh and a new approval. Active runs pin backend provenance in their existing
-snapshot: adapter identity, canonical approved installation and entry, and the
-approved entry/version generation. The Node runtime path is not part of this
-persistent identity, so a runtime path upgrade alone does not change the backend.
+refresh and a new approval. The Node runtime path is not part of the approval
+identity, so a runtime path upgrade alone does not require new approval.
 Runtime trust checks still reject repository-owned Node executables; the process
 cache restarts when its command or runtime changes.
 
-Active story runs admitted before pins existed resolve by the pre-pin rule: a
-legacy command binding, otherwise native. Overrides cannot be written while a run
-is active, so the current settings still answer it; an unpinned run on a project
-that has a backend override fails closed. Explicit cancellation remains available
-without reading the story backend. TUIC never cancels, restarts or reassigns runs
-automatically. No native or external records are migrated. Discovery overhead has
-not been measured; no cross-call discovery cache is used.
+Do not change backends during an active or paused workflow run. The current neutral
+engine does not pin story backend identity; use the explicit native override before
+continuing an existing native run. No native or external records are migrated.
+Discovery overhead has not been measured; no cross-call discovery cache is used.

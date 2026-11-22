@@ -302,19 +302,12 @@ const PaneGroupView: Component<{
 											const targetGroup = findPaneGroupAtPoint(x, y);
 											if (targetGroup && targetGroup !== props.groupId) {
 												paneLayoutStore.moveTab(props.groupId, targetGroup, tab.id);
-												const srcGroup = paneLayoutStore.state.groups[props.groupId];
-												if (srcGroup && srcGroup.tabs.length === 0) {
-													paneLayoutStore.reset();
-												} else {
-													paneLayoutStore.setActiveGroup(targetGroup);
-												}
+												paneLayoutStore.closePaneIfEmpty(props.groupId);
+												paneLayoutStore.setActiveGroup(targetGroup);
 											} else if (!targetGroup) {
 												// Dropped outside split area — detach
 												paneLayoutStore.removeTab(props.groupId, tab.id);
-												const groups = Object.values(paneLayoutStore.state.groups);
-												if (groups.some((g) => g.tabs.length === 0)) {
-													paneLayoutStore.reset();
-												}
+												paneLayoutStore.closePaneIfEmpty(props.groupId);
 											}
 										},
 									});
@@ -467,6 +460,7 @@ const TerminalPane: Component<{
 		<Show when={terminal()}>
 			<Terminal
 				id={props.tabId}
+				paneHosted
 				cwd={terminal()?.cwd || null}
 				onFocus={props.onFocus}
 				onSessionCreated={() => {}}

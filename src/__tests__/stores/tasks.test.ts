@@ -33,7 +33,7 @@ describe("tasksStore", () => {
 		it("increments IDs", () => {
 			testInScope(() => {
 				const id1 = store.create({ name: "T1", agentType: "claude" });
-				const id2 = store.create({ name: "T2", agentType: "gemini" });
+				const id2 = store.create({ name: "T2", agentType: "agy" });
 				expect(id1).toBe("task-1");
 				expect(id2).toBe("task-2");
 			});
@@ -163,7 +163,7 @@ describe("tasksStore", () => {
 		it("returns all tasks", () => {
 			testInScope(() => {
 				store.create({ name: "T1", agentType: "claude" });
-				store.create({ name: "T2", agentType: "gemini" });
+				store.create({ name: "T2", agentType: "agy" });
 				expect(store.getAll()).toHaveLength(2);
 			});
 		});

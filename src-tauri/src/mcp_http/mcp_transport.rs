@@ -171,7 +171,6 @@ use super::mcp_transport_session_agent::handle_agent_unified_with_parent_cwd;
 use super::mcp_transport_session_agent::handle_session;
 pub(super) use super::mcp_transport_session_agent::handle_session_submit;
 use super::mcp_transport_session_agent::handle_session_suspend;
-use super::mcp_transport_session_agent::handle_session_wait;
 #[cfg(test)]
 use super::mcp_transport_session_agent::is_direct_codex_executable;
 #[cfg(test)]
@@ -201,6 +200,7 @@ use super::mcp_transport_session_agent::suspend_refusal;
 use super::mcp_transport_session_agent::translate_special_key;
 #[cfg(test)]
 use super::mcp_transport_session_agent::uses_agent_command_injection;
+use super::mcp_transport_session_agent::{handle_session_input_and_read, handle_session_wait};
 
 /// Serialize a value to JSON, returning a structured error on failure instead of silent null.
 pub(super) fn to_json_or_error<T: serde::Serialize>(value: T) -> serde_json::Value {
@@ -223,7 +223,7 @@ pub(super) fn mark_upstream_tool_result(value: serde_json::Value) -> serde_json:
     serde_json::json!({ UPSTREAM_TOOL_RESULT_MARKER: value })
 }
 
-fn unmark_upstream_tool_result(value: serde_json::Value) -> serde_json::Value {
+pub(super) fn unmark_upstream_tool_result(value: serde_json::Value) -> serde_json::Value {
     value
         .as_object()
         .filter(|object| object.len() == 1)
@@ -239,7 +239,7 @@ pub(super) fn upstream_tool_result(value: &serde_json::Value) -> Option<&serde_j
         .and_then(|object| object.get(UPSTREAM_TOOL_RESULT_MARKER))
 }
 
-fn tool_result_is_error(result: &serde_json::Value) -> bool {
+pub(super) fn tool_result_is_error(result: &serde_json::Value) -> bool {
     if let Some(upstream) = upstream_tool_result(result) {
         return upstream["isError"].as_bool().unwrap_or(false);
     }
@@ -339,8 +339,8 @@ pub(super) fn resolve_agent_type(client_name: Option<&str>) -> Option<&'static s
         Some("codex")
     } else if name.contains("cursor") {
         Some("cursor")
-    } else if name.contains("gemini") {
-        Some("gemini")
+    } else if name.contains("antigravity") || name == "agy" {
+        Some("agy")
     } else if name.contains("amp") {
         Some("amp")
     } else if name.contains("goose") {
@@ -747,6 +747,8 @@ async fn dispatch_mcp_tool_call_with_context(
                 serde_json::json!({
                     "error": "This session action is restricted to localhost or authenticated connections"
                 })
+            } else if action == "input" && args.get("wait_ms").is_some_and(|v| !v.is_null()) {
+                handle_session_input_and_read(state, args, mcp_session_id).await
             } else if session_action_requires_blocking_pool(action) {
                 let state = state.clone();
                 let args = args.clone();
@@ -872,6 +874,9 @@ async fn dispatch_mcp_tool_call_with_context(
         "call_tool" => {
             handle_call_tool(state, caller, args, mcp_session_id, managed_parent_cwd).await
         }
+        super::mcp_batch::BATCH_TOOL_NAME => {
+            super::mcp_batch::handle(state, caller, args, mcp_session_id, managed_parent_cwd).await
+        }
         _ => serde_json::json!({"error": format!(
             "Unknown tool '{}'", name
         )}),
@@ -926,14 +931,34 @@ fn request_meta_client_name(body: &serde_json::Value) -> Option<&str> {
     body["params"]["_meta"][CLIENT_INFO_META_KEY]["name"].as_str()
 }
 
-/// Client kind for the usage rollup, from the client name or the user agent.
-fn usage_client_kind(headers: &HeaderMap, body: &serde_json::Value) -> &'static str {
-    super::mcp_usage_rollup::client_kind(
-        request_meta_client_name(body),
-        headers
-            .get(axum::http::header::USER_AGENT)
-            .and_then(|v| v.to_str().ok()),
-    )
+/// Client kind for the usage rollup: the request's own client identity, then the
+/// one its session named at `initialize`, then the user agent. A bridged client
+/// (Claude Code, Codex) names itself only at `initialize`; the bridge's own HTTP
+/// requests carry neither, so without the session they all read as `other`.
+fn usage_client_kind(
+    state: &AppState,
+    headers: &HeaderMap,
+    body: &serde_json::Value,
+    mcp_session_id: Option<&str>,
+) -> &'static str {
+    use super::mcp_usage_rollup::client_kind;
+    let named = request_meta_client_name(body).map(|name| client_kind(Some(name), None));
+    let session = || {
+        mcp_session_id
+            .and_then(|sid| state.mcp.sessions.get(sid))
+            .and_then(|meta| meta.client_kind)
+    };
+    named
+        .filter(|kind| *kind != "other")
+        .or_else(|| session().filter(|kind| *kind != "other"))
+        .unwrap_or_else(|| {
+            client_kind(
+                None,
+                headers
+                    .get(axum::http::header::USER_AGENT)
+                    .and_then(|v| v.to_str().ok()),
+            )
+        })
 }
 
 /// Whether this one request is on the stateless 2026-07-28 lifecycle.
@@ -1019,6 +1044,7 @@ pub(super) async fn mcp_post(
             let client_name = body["params"]["clientInfo"]["name"].as_str();
             let is_claude_code = detect_claude_code_client(client_name);
             let requires_meta_tools = client_requires_meta_tools(client_name);
+            let client_kind = super::mcp_usage_rollup::client_kind(client_name, None);
 
             // Extract repo_path from MCP initialize roots[0].uri (file:// URI)
             let repo_path = body["params"]["roots"]
@@ -1040,6 +1066,7 @@ pub(super) async fn mcp_post(
                 meta.last_activity = now;
                 meta.is_claude_code = is_claude_code;
                 meta.requires_meta_tools = requires_meta_tools;
+                meta.client_kind = Some(client_kind);
                 if repo_path.is_some() {
                     meta.repo_path = repo_path;
                 }
@@ -1051,6 +1078,7 @@ pub(super) async fn mcp_post(
                         last_activity: now,
                         is_claude_code,
                         requires_meta_tools,
+                        client_kind: Some(client_kind),
                         has_sse_stream: false,
                         sse_generation: 0,
                         repo_path,
@@ -1245,8 +1273,8 @@ pub(super) async fn mcp_post(
                 merged_tool_definitions(&state, list_session_id, request_meta_client_name(&body));
             if state.config.read().mcp_usage_rollup_enabled {
                 state.mcp.usage_rollup.record_catalogue(
-                    usage_client_kind(&headers, &body),
-                    super::caller_role::resolve(&state, list_session_id).as_str(),
+                    usage_client_kind(&state, &headers, &body, list_session_id),
+                    super::caller_role::rollup_role(&state, list_session_id),
                     serde_json::to_string(&tools).map_or(0, |text| text.len() as u64),
                 );
             }
@@ -1366,9 +1394,13 @@ pub(super) async fn mcp_post(
                     .mcp
                     .usage_rollup
                     .record_call(&super::mcp_usage_rollup::Observation {
-                        client: usage_client_kind(&headers, &body),
-                        role: super::caller_role::resolve(&state, session_id_str.as_deref())
-                            .as_str(),
+                        client: usage_client_kind(
+                            &state,
+                            &headers,
+                            &body,
+                            session_id_str.as_deref(),
+                        ),
+                        role: super::caller_role::rollup_role(&state, session_id_str.as_deref()),
                         operation: super::mcp_call_audit::operation_of(&state, name, call_args),
                         response_bytes: super::mcp_call_audit::response_text_bytes(&tool_result)
                             as u64,
@@ -1505,6 +1537,7 @@ pub(super) async fn mcp_get(
                 last_activity: std::time::Instant::now(),
                 is_claude_code: is_cc_ua,
                 requires_meta_tools: false,
+                client_kind: None,
                 has_sse_stream: false,
                 sse_generation: 0,
                 repo_path: None,

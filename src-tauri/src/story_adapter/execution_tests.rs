@@ -253,33 +253,19 @@ fn a_story_completed_outside_tuic_releases_no_dependent() {
 }
 
 #[test]
-fn a_project_with_an_open_native_plan_keeps_its_native_backend() {
-    // Catches: binding an external backend over open native work, which would
-    // hide those plans (or delete them) instead of refusing the switch.
+fn an_open_native_plan_does_not_veto_the_bound_external_backend() {
+    // Catches: retained native work choosing the backend (or being deleted)
+    // when the project is explicitly bound to an external adapter.
     let bound = bind_reference(Some("Native work"));
     let project = bound.project();
-    let error = act(&project, None, json!({"action": "list_plans"})).unwrap_err();
-    assert!(
-        error.starts_with(super::UNAVAILABLE) && error.contains("Native work"),
-        "{error}"
-    );
+    let plans = act(&project, None, json!({"action": "list_plans"})).unwrap();
+    assert_eq!(plans[0]["id"], "default", "{plans}");
     let native = StoryStore::open()
         .unwrap()
         .list_plans(&project.to_string_lossy())
         .unwrap();
     assert_eq!(native.len(), 1, "the native record stays");
-
-    StoryStore::open()
-        .unwrap()
-        .set_plan_archived(
-            &native[0].id,
-            native[0].revision,
-            true,
-            crate::stories::StoryTransitionActor::Human,
-        )
-        .unwrap();
-    let plans = act(&project, None, json!({"action": "list_plans"})).unwrap();
-    assert_eq!(plans[0]["id"], "default", "{plans}");
+    assert_eq!(native[0].title, "Native work");
 }
 
 #[test]

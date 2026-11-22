@@ -190,6 +190,17 @@ if [[ "${TUIC_TEST_FAKE_HOME:-}" == 1 ]]; then
   fi
   fake_home="$test_tmp/home"
   mkdir -p "$fake_home"
+  # mbx finds its config only through $HOME. Without it, the cargo shim takes a
+  # default cache under the throwaway home and re-links the checkout's target/
+  # there, which dangles once the test root is removed.
+  if [[ -n "$real_home" && "$real_home" != "~" ]]; then
+    for mbx_config in "Library/Application Support/mbx" ".config/mbx"; do
+      if [[ -d "$real_home/$mbx_config" ]]; then
+        mkdir -p "$(dirname "$fake_home/$mbx_config")"
+        ln -s "$real_home/$mbx_config" "$fake_home/$mbx_config"
+      fi
+    done
+  fi
   export HOME="$fake_home"
 fi
 "$@"

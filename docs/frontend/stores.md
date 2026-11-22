@@ -97,6 +97,21 @@ interface TabLayout {
 
 Manages saved repositories, branches, terminal associations, and PR status cache.
 
+### Repository refresh ownership
+
+The settings refresh coordinator owns repository reads and adoption. The legacy
+`repositories-changed` event invalidates the same `repositories_registration`
+reader as settings events. Notifications queued together share a read; a notice
+during a read invalidates that result and schedules a replacement. Reconnects
+also use this reader. No keyboard or rendering delay is added.
+
+Adoption waits for in-flight saves, keeps unsaved local intent, and advances the
+persisted baseline with adopted state. State and baseline changes are published
+in one reactive batch, so consumers see one complete document rather than each
+intermediate repository, group or order update. It inspects live repository intent only
+for records that changed on disk, rather than serializing every live workspace.
+Both notification formats remain supported on desktop and HTTP/SSE transports.
+
 ### State Shape
 
 | Field | Type | Description |
@@ -562,7 +577,9 @@ Active prompt overlay state and agent stats buffer.
 ### diffTabsStore (`diffTabs.ts`) / mdTabsStore (`mdTabs.ts`)
 Open diff and markdown tab management (identical API patterns).
 
-MCP native Markdown file tabs survive document reloads through a per-window `sessionStorage` snapshot. `initApp` restores their MCP identity, file target, repository/branch scope and pin state after terminal adoption. The store then saves relevant changes synchronously, including closes, pinning and selection, so native recovery does not depend on `beforeunload`. The unload handler also saves a final snapshot. Both automatic and explicit saves wait until initial restoration finishes, preserving the unread snapshot if another reload interrupts startup. Restoration consumes the prior snapshot only once per document and still runs if restoring the active repository branch fails. The selected document is selected again; background tabs remain inactive. A new MCP event received during startup takes precedence over the snapshot, including one that moves the identity to an editor tab. Snapshots are consumed before parsing so corrupt JSON is not replayed on the next initialization. Restoration indexes existing Markdown/editor identities once, accepts the first valid entry per identity, and appends the new tabs and their display order in one batch; duplicate-heavy snapshots do not rescan the growing tab collection. User-opened files and generated or iframe panels are not included. This is reload recovery, not backend persistence across app restarts.
+All non-terminal tabs survive a reload of the same window through per-window `sessionStorage` snapshots. This includes user-opened Markdown and code files, diffs, generated tabs and iframe panels. The shared tab manager restores definitions, repository/branch scope, pins and IDs before startup opens are handled. It restores display order too, and reserves restored IDs so new tabs cannot overwrite existing ones. Selection is applied after terminal and branch restoration; a new non-terminal open during startup takes precedence. Snapshots are not updated until initialization finishes, so an interrupted boot cannot replace the previous document with an empty snapshot. Later close, pin and selection changes are saved synchronously. Each editor change updates the single store-owned draft and its original disk baseline, not just the first dirty transition. Editor draft storage writes wait for 400 ms of idle; an abrupt WebContent failure can lose edits within that interval. Draft text plus baselines have a shared limit of 1,000,000 UTF-16 characters per snapshot. A draft over the remaining limit is omitted with a warning, while its tab definition and other eligible drafts remain recoverable. Save large files before reloading. Unload and native background snapshots also flush the current state. Recovering a draft does not write it to disk; if disk content changed in the meantime, the conflict banner remains visible unless disk already equals the draft. A failed disk read retains the draft, and saving clears it. If storage rejects an editor snapshot, it retries once without drafts to keep tab definitions. Browser storage failures are logged; if even definitions cannot be written, the stale key is removed. Large generated panels or PR diff bodies can exceed window storage and prevent recovery of that domain. This is same-window reload recovery, not backend persistence across app restarts or shared state between windows.
+
+The existing MCP-native Markdown snapshot remains supported. A current startup event wins over its old identity, including a move from Markdown to an editor. Corrupt or duplicate MCP snapshot entries are not reopened, and repeated initialization does not replay a consumed snapshot.
 
 `mdTabsStore.openUiTab` treats URL and HTML content as alternatives. Updating an existing URL tab with HTML clears its URL; updating an HTML tab with a URL clears its HTML. Visibility is decided by the tab renderers, which unload hidden plugin and URL iframes.
 

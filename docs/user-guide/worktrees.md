@@ -253,9 +253,12 @@ checkout into the archive pool and keeps its local branch and uncommitted change
 It does not merge unmerged commits. **Delete** removes the checkout and local branch;
 it is disabled unless every check passes. Submodule commits without a remote copy
 also block Delete. The backend repeats the checklist before deleting, so a stale
-dialog cannot authorize new dirty files, commits or sessions. The commit check uses
-actual containment in the default integration refs; a squash-equivalent branch can
-still have commits absent from those refs and must be archived instead.
+dialog cannot authorize new dirty files, commits or sessions. The commit check
+passes when the commits are contained in the default integration refs (merge or
+fast-forward), or when a squash or rebase merge put their changes there with a
+content proof that branch deletion accepts. In the second case the check reads
+"All changes are in … (squash merge)" and Delete states that the original commits
+are not kept.
 Enter selects Archive; Escape cancels. Explicit keep-branch removal and missing
 checkout registration cleanup retain their separate removal confirmations.
 

@@ -159,8 +159,11 @@ fn user_row(row: &Value) -> Vec<Value> {
     if prompt.trim().is_empty() {
         return Vec::new();
     }
+    // The prompt index is the message id: a direct-question capture files one
+    // entry per message and needs a stable key across reads.
     vec![json!({
         "sessionUpdate": "user_message_chunk",
+        "messageId": row.get("prompt_index").map(|i| format!("grok-prompt-{i}")),
         "content": { "type": "text", "text": clean(prompt, MAX_TEXT_CHARS) },
     })]
 }

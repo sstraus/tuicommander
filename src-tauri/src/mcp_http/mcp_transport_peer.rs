@@ -772,6 +772,31 @@ pub(super) fn call_session_context(
     Some(format!("managed-call:{peer}"))
 }
 
+/// Peers whose registered name contains the unresolved recipient, or is contained
+/// in it, so the repair needs no separate `list_peers` call. The same rows
+/// `list_peers` shows; at most five.
+fn recipient_candidates(state: &AppState, requested: &str) -> Vec<serde_json::Value> {
+    const MAX_CANDIDATES: usize = 5;
+    let wanted = requested.trim().to_lowercase();
+    if wanted.is_empty() {
+        return Vec::new();
+    }
+    let mut rows: Vec<(String, String)> = state
+        .peer_agents
+        .iter()
+        .filter(|entry| {
+            let name = entry.value().name.to_lowercase();
+            !name.is_empty() && (name.contains(&wanted) || wanted.contains(&name))
+        })
+        .map(|entry| (entry.value().name.clone(), entry.key().clone()))
+        .collect();
+    rows.sort();
+    rows.into_iter()
+        .take(MAX_CANDIDATES)
+        .map(|(name, tuic_session)| serde_json::json!({"to": tuic_session, "name": name}))
+        .collect()
+}
+
 /// Missing identity is not an argument typo. Repeating unchanged inbox/register
 /// calls cannot repair host context; callers must stop until that context changes.
 fn missing_identity_context(mcp_session_id: Option<&str>) -> serde_json::Value {
@@ -813,6 +838,7 @@ pub(super) fn refresh_mcp_session(
                     last_activity: std::time::Instant::now(),
                     is_claude_code,
                     requires_meta_tools: false,
+                    client_kind: None,
                     has_sse_stream: false,
                     sse_generation: 0,
                     repo_path: None,
@@ -1382,6 +1408,63 @@ pub(super) async fn webhook_send(
     .await
 }
 
+/// The human replies to a recorded identity; names and focused repositories are
+/// never recipient selectors here. Reuse normal mail and its message-id dedup.
+pub(crate) fn progress_reply_mail(
+    state: &Arc<AppState>,
+    author: Option<&str>,
+    pty: Option<&str>,
+    message: &str,
+    message_id: &str,
+) -> Result<crate::progress::ProgressReplyDelivery, String> {
+    if !state.config.read().mcp_capabilities.allows("agent", None) {
+        return Err("Tool 'agent' is disabled by configuration".into());
+    }
+    let author = author.ok_or("progress reply author is unavailable")?;
+    // A resumed author keeps its identity but can have a new terminal address.
+    if pty.is_some_and(|pty| !state.session_maps.sessions.contains_key(pty))
+        && state.live_pty_for_peer(author).is_none()
+    {
+        return Err("progress reply author terminal is closed".into());
+    }
+    if !state.peer_agents.contains_key(author) {
+        return Err("progress reply author is no longer registered".into());
+    }
+    let recipient = author.to_string();
+    if state.live_pty_for_peer(&recipient).is_none()
+        && crate::session_wake::retained(&recipient)?.is_some()
+    {
+        return Err("progress reply author terminal is closed".into());
+    }
+    let result = handle_messaging_with_message_id(
+        state,
+        &serde_json::json!({
+            "action": "send", "to": recipient, "message": message, "urgency": "normal"
+        }),
+        None,
+        Some(message_id),
+        Some("user"),
+    );
+    if let Some(error) = result.get("error") {
+        return Err(error
+            .as_str()
+            .unwrap_or("progress reply delivery failed")
+            .to_string());
+    }
+    if result
+        .get("message_id")
+        .and_then(|id| id.as_str())
+        .is_none()
+    {
+        return Err("progress reply was not accepted by the recipient inbox".into());
+    }
+    Ok(if result["delivered"].as_bool() == Some(true) {
+        crate::progress::ProgressReplyDelivery::Delivered
+    } else {
+        crate::progress::ProgressReplyDelivery::Queued
+    })
+}
+
 fn handle_messaging_with_message_id(
     state: &Arc<AppState>,
     args: &serde_json::Value,
@@ -1825,9 +1908,13 @@ fn handle_messaging_with_message_id(
             let message_timestamp = {
                 let _bind_guard = PEER_IDENTITY_BIND_LOCK.lock();
                 if !state.peer_agents.contains_key(to) {
-                    return serde_json::json!({"error": format!(
-                        "Recipient '{requested_to}' is not registered — it matched no tuic_session, registered name, PTY id or terminal alias. Use list_peers to find valid targets."
-                    )});
+                    return serde_json::json!({
+                        "error": format!(
+                            "Recipient '{requested_to}' is not registered — it matched no tuic_session, registered name, PTY id or terminal alias. Retry with one of `candidates`, or use list_peers."
+                        ),
+                        "code": "unknown_recipient", "effect": "not_started", "retryable": false,
+                        "candidates": recipient_candidates(state, requested_to),
+                    });
                 }
                 if let Some(id) = forwarded_message_id {
                     match super::remote_peer::enqueue_forwarded(state, to, msg) {
@@ -1866,16 +1953,21 @@ fn handle_messaging_with_message_id(
             // `$TUIC_SESSION`, which is not the key its PTY was filed under, so the
             // old `sessions.contains_key(to)` answered "no terminal" for every peer
             // that had not been spawned by the server itself.
-            let live_pty = match crate::session_wake::retained(to) {
-                Ok(Some(_)) => match crate::session_wake::ensure_live(state, to) {
-                    Ok(live) => Some(live),
+            let live_pty = if system_sender == Some("user") {
+                // Contextual human replies never create or resume a closed terminal.
+                state.live_pty_for_peer(to)
+            } else {
+                match crate::session_wake::retained(to) {
+                    Ok(Some(_)) => match crate::session_wake::ensure_live(state, to) {
+                        Ok(live) => Some(live),
+                        Err(error) => {
+                            return serde_json::json!({"message_id": msg_id, "delivered": false, "delivery_path": "inbox_only", "resume_error": error});
+                        }
+                    },
+                    Ok(None) => state.live_pty_for_peer(to),
                     Err(error) => {
-                        return serde_json::json!({"message_id": msg_id, "delivered": false, "delivery_path": "inbox_only", "resume_error": error});
+                        return serde_json::json!({"message_id": msg_id, "delivered": false, "resume_error": error});
                     }
-                },
-                Ok(None) => state.live_pty_for_peer(to),
-                Err(error) => {
-                    return serde_json::json!({"message_id": msg_id, "delivered": false, "resume_error": error});
                 }
             };
             let managed_recipient = live_pty.is_some();

@@ -21,7 +21,7 @@ impl DefinitionStore {
 
     fn migrated(file: ConfigFile<AutomationsConfig>) -> Self {
         if let Err(error) = file.rewrite_raw_with_backup(
-            crate::sqlite_once::LEGACY_BACKUP_SUFFIX,
+            crate::db::legacy::LEGACY_BACKUP_SUFFIX,
             strip_legacy_sections,
         ) {
             tracing::warn!(source = "automations", %error, "Legacy automation sections not removed");
@@ -256,7 +256,7 @@ mod legacy_section_tests {
         );
         let backup = dir.path().join(format!(
             "automations.json.{}",
-            crate::sqlite_once::LEGACY_BACKUP_SUFFIX
+            crate::db::legacy::LEGACY_BACKUP_SUFFIX
         ));
         let saved: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&backup).unwrap()).unwrap();

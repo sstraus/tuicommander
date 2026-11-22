@@ -7,10 +7,10 @@
  */
 export function formatRelativeTime(
 	timestamp: number | null | undefined,
-	options?: { showDateFallback?: boolean },
+	options?: { showDateFallback?: boolean; now?: number },
 ): string {
 	if (!timestamp) return "never";
-	const diff = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+	const diff = Math.max(0, Math.floor(((options?.now ?? Date.now()) - timestamp) / 1000));
 	if (diff < 5) return "just now";
 	if (diff < 60) return `${diff}s ago`;
 	const diffMin = Math.floor(diff / 60);
@@ -22,6 +22,15 @@ export function formatRelativeTime(
 	}
 	const diffDay = Math.floor(diffHr / 24);
 	return `${diffDay}d ago`;
+}
+
+/** Compact age without "ago" for tight spaces (e.g. "5s", "3m", "2d"), from elapsed milliseconds. */
+export function formatElapsedShort(elapsedMs: number): string {
+	if (elapsedMs < 5000) return "just now";
+	if (elapsedMs < 60000) return `${Math.floor(elapsedMs / 1000)}s`;
+	if (elapsedMs < 3600000) return `${Math.floor(elapsedMs / 60000)}m`;
+	if (elapsedMs < 86400000) return `${Math.floor(elapsedMs / 3600000)}h`;
+	return `${Math.floor(elapsedMs / 86400000)}d`;
 }
 
 /** Format a duration in milliseconds as a human-readable string (e.g. "2m 5s"). */

@@ -1,4 +1,16 @@
 /** Wire shapes from workflows/catalog.rs. Validation remains backend-owned. */
+export const VALUE_TYPES = [
+	"workspace_reference",
+	"artifact_reference",
+	"credential_reference",
+	"null",
+	"string",
+	"boolean",
+	"integer",
+	"number",
+	"object",
+	"array",
+] as const;
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type ValueType =
 	| "workspace_reference"

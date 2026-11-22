@@ -18,7 +18,12 @@ Tap the terminal to focus its keyboard input. Touch and mouse input use the same
 
 Each terminal tab runs an independent PTY (pseudo-terminal) session with your shell. Up to 50 concurrent sessions.
 
-Files uploaded through the mobile picker live in a session directory under TUICommander’s data directory. New Claude and Gemini sessions receive read access at launch. Closing the terminal or ending its process removes these uploads; resumed sessions need files uploaded again. Uploads leave your repository and Git excludes untouched. Old `.tuic/attachments/` directories can be removed by hand. Confined ego sessions need an existing user/profile read root; the picker shows an access notice.
+A steady blue **Background** indicator means the agent can receive input but
+still has tracked work running. It is distinct from a pulsing working indicator
+and from idle or unseen completion. It does not block typing or delivery of
+messages.
+
+Files uploaded through the mobile picker live in a session directory under TUICommander’s data directory. New Claude and Antigravity sessions receive read access at launch. Closing the terminal or ending its process removes these uploads; resumed sessions need files uploaded again. Uploads leave your repository and Git excludes untouched. Old `.tuic/attachments/` directories can be removed by hand. Confined ego sessions need an existing user/profile read root; the picker shows an access notice.
 
 Accents sent separately from their base letters remain part of terminal text
 when you scroll, select, copy or search. Search matches the exact characters
@@ -163,7 +168,7 @@ opened on that phone. Opening the session clears its purple status.
 
 Agent activity combines native lifecycle hooks, terminal movement (text
 changing above the input area means the agent is active), and the visible
-ready prompt. Claude, Codex, Gemini, Grok, pi, and OpenCode require a stable ready
+ready prompt. Claude, Codex, Antigravity, Grok, pi, and OpenCode require a stable ready
 screen before safety-sensitive actions such as auto-standby or queued agent
 message delivery. Pressing Ctrl-C or Escape requests interruption but does not
 turn the dot green until the agent confirms the interruption, returns to its
@@ -323,7 +328,7 @@ Also accessible via the "Search Terminals" command in the palette.
 
 - **Copy:** Select text in the terminal, then `Cmd+C`. A "Copied to clipboard" confirmation appears in the status bar. Multi-line Claude messages paste as clean text: the repeated `▎` visual gutter is removed while bullets, numbering, and indentation are preserved. Inside such a quote, rows that Claude broke only to fit the terminal width are joined back into one paragraph, so pasting into Slack or an email keeps whole sentences. Blank rows, list items and deeper indents keep their own line, and a quote that never reaches the terminal edge is copied exactly as shown.
   Claude prompt selections also remove the first `❯ ` marker and the two-column continuation margin. Width-supported wraps join, while short typed lines and additional content indentation remain. A glyph pasted inside the prompt remains part of the text. Composer cleanup applies only when the selection starts at column zero of the first composer row. Selecting body text or a VT soft-wrap continuation preserves literal markers and indentation.
-- **Paste:** `Cmd+V` writes clipboard content to the active terminal. Text takes priority when a copied Chat selection or other rich content also includes an image. Screenshot-only pastes and copied image filenames from Finder still send Ctrl+V so terminal agents can attach the image.
+- **Paste:** `Cmd+V` writes clipboard content to the active terminal. Text takes priority when a copied Chat selection or other rich content also includes an image. Screenshot-only pastes and copied image filenames from Finder still send Ctrl+V so terminal agents can attach the image. A paste with no text and no image, such as a file copied in Finder, also sends Ctrl+V, so the agent reads the file from the clipboard itself.
 
 ### Copy on Select
 
@@ -367,7 +372,7 @@ whose type is still unknown uses the longer Codex-safe pause.
 
 TUICommander detects rate limits, prompts, and status messages from AI agents:
 
-- **Rate limit detection** — Recognizes rate limit messages from Claude, Gemini, OpenCode, Codex
+- **Rate limit detection** — Recognizes rate limit messages from Claude, Antigravity, OpenCode, Codex
 - **Prompt interception** — Detects when agents ask yes/no questions or multiple choice
 - **Status tracking** — Parses token usage and timing from agent output
 - **Progress indicators** — Shows progress bars for long-running operations

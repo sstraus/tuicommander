@@ -244,7 +244,7 @@ ParsedEvent::ApiError {
 ```
 
 Detects errors from two tiers:
-- **Agent-specific**: Claude Code, Codex CLI, Gemini CLI, Copilot CLI (note: the generic "request failed unexpectedly" pattern was removed from Copilot detection due to false positives on Claude Code output)
+- **Agent-specific**: Claude Code, Codex CLI, Copilot CLI (the Google API patterns stay) (note: the generic "request failed unexpectedly" pattern was removed from Copilot detection due to false positives on Claude Code output)
 - **Provider-level**: OpenAI, Anthropic, Google, OpenRouter, MiniMax JSON error structures
 
 Claude Code has two 5xx renderings and both are covered. `claude-api-error` matches
@@ -353,7 +353,7 @@ parameters, not invented captured transcripts. Pattern names refer to
   final receipt bypasses startup/resize screen-history suppression; ordinary
   error-looking screen text still uses that suppression.
 
-Gemini's existing `API Error: got status: UNAVAILABLE` / `INTERNAL`, Copilot's
+The Google API `API Error: got status: UNAVAILABLE` / `INTERNAL`, Copilot's
 `Failed to get copilot token` / expired-token match, and provider JSON patterns
 remain unchanged. Grok has no new harness-specific terminal error pattern in
 this change; it retains the provider-level JSON path. These existing patterns
@@ -711,7 +711,7 @@ The `strip_ansi()` function pre-processes CUF (Cursor Forward, `\x1b[nC`) escape
 | Claude Code | `·`/`✢`/`✳`/`✶`/`✻`/`✽`/`*` + ellipsis | `✢Reading files… (12s)` or `· Considering…` |
 | Codex CLI | Bullet `•`/`◦` + task + parenthesized time | `• Working (4m 55s • esc to interrupt)` |
 | Copilot CLI | `∴`/`●`/`○` + task + dots/ellipsis | `∴ Thinking…` or `● Read file...` |
-| Gemini CLI | Braille spinner `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` + phrase | `⠋ Analyzing your codebase` |
+| Google CLIs (Gemini API) | Braille spinner `⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏` + phrase | `⠋ Analyzing your codebase` |
 | Amazon Q | Braille spinner + task + ASCII dots | `⠹ Thinking...` |
 | Cline | Braille spinner + mode + optional timer | `⠙ Planning (45s · esc to interrupt)` |
 | Generic | `[Running]` prefix | `[Running] npm test` |

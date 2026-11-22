@@ -1072,6 +1072,11 @@ fn is_claude_composer_row(row: &str) -> bool {
             .is_some_and(|hint| hint.starts_with("Try \""))
 }
 
+fn is_claude_interrupted_row(row: &str) -> bool {
+    row.trim_start_matches(|c: char| c.is_whitespace() || c == '\u{23BF}')
+        .starts_with("Interrupted \u{b7} What should Claude do instead?")
+}
+
 /// Claude's active status is presence-based because current Claude versions can
 /// keep the empty composer visible while a long tool call is still running.
 /// The live marker is deliberately semantic rather than glyph-only: an animated
@@ -1099,6 +1104,26 @@ pub(super) fn detect_claude_screen_activity(rows: &[String]) -> AgentScreenActiv
     }) {
         return AgentScreenActivity::Working;
     }
+    // Claude renders `⎿ Interrupted · What should Claude do instead?` when Esc
+    // or a rejected permission dialog ends the turn; it fires no Stop hook.
+    // Only the last transcript row above the composer counts: blank rows, the
+    // `─` frame and the finished-turn summary (`✻ Churned for 4s`, a spinner row
+    // that is not working, see above) sit between them. A banner further up is
+    // an earlier turn and must not hide a later one that ended normally.
+    if prompt_idx.is_some()
+        && rows[activity_start..activity_end]
+            .iter()
+            .rev()
+            .find(|row| {
+                let t = row.trim();
+                !t.is_empty()
+                    && !t.chars().all(|c| c == '\u{2500}')
+                    && !crate::chrome::is_spinner_row(row)
+            })
+            .is_some_and(|row| is_claude_interrupted_row(row))
+    {
+        return AgentScreenActivity::Interrupted;
+    }
     if prompt_idx.is_some() {
         AgentScreenActivity::Ready
     } else {
@@ -1120,7 +1145,10 @@ pub(super) fn claude_composer_holds_text(rows: &[String]) -> bool {
     .is_some()
 }
 
-fn gemini_prompt_present(rows: &[String]) -> bool {
+// DEFERRED (2026-11-21) — agy screen detection is UNVERIFIED. The installed agy
+// 1.5.10 was not signed in, so no working/idle/awaiting capture exists yet; this
+// reuses the bare `>` composer rule until `.tcap` fixtures prove the real chrome.
+fn agy_prompt_present(rows: &[String]) -> bool {
     find_live_prompt_row(rows, 3, |row| {
         let t = row.trim_start();
         t == ">" || t.starts_with("> ")
@@ -1129,8 +1157,8 @@ fn gemini_prompt_present(rows: &[String]) -> bool {
 }
 
 /// Prompt-based only — see `detect_claude_screen_activity` for the rationale.
-pub(super) fn detect_gemini_screen_activity(rows: &[String]) -> AgentScreenActivity {
-    if gemini_prompt_present(rows) {
+pub(super) fn detect_agy_screen_activity(rows: &[String]) -> AgentScreenActivity {
+    if agy_prompt_present(rows) {
         AgentScreenActivity::Ready
     } else {
         AgentScreenActivity::Unknown
@@ -1473,7 +1501,7 @@ pub(super) fn detect_agent_screen_activity_at(
     match agent_type {
         Some("claude") => detect_claude_screen_activity(rows),
         Some("codex") => detect_codex_screen_activity(rows),
-        Some("gemini") => detect_gemini_screen_activity(rows),
+        Some("agy") => detect_agy_screen_activity(rows),
         Some("grok") => detect_grok_screen_activity(rows),
         Some("pi") => detect_pi_screen_activity(rows),
         Some("opencode") => detect_opencode_screen_activity_at(rows, columns),
@@ -1540,7 +1568,7 @@ pub(crate) fn agent_submission_ack_kind(state: &AppState, session_id: &str) -> &
 pub(crate) fn has_ready_screen_adapter(agent_type: Option<&str>) -> bool {
     matches!(
         agent_type,
-        Some("claude" | "codex" | "gemini" | "grok" | "pi" | "opencode" | "goose" | "ego")
+        Some("claude" | "codex" | "agy" | "grok" | "pi" | "opencode" | "goose" | "ego")
     )
 }
 
@@ -1557,16 +1585,24 @@ pub(super) fn is_script_interpreter(name: &str) -> bool {
 }
 
 /// Look up the process name for a given PID using OS-native syscalls.
-/// On macOS uses `proc_pidpath`, on Linux resolves `/proc/{pid}/exe` with a comm fallback.
+/// On macOS uses `proc_pidpath` with a current-name fallback for unlinked images;
+/// on Linux resolves `/proc/{pid}/exe` with a comm fallback.
 /// Returns None if the lookup fails.
 #[cfg(target_os = "macos")]
 pub(crate) fn process_name_from_pid(pid: u32) -> Option<String> {
     let mut buf = [0u8; libc::MAXPATHLEN as usize];
     // SAFETY: proc_pidpath writes into the provided buffer up to buffersize bytes.
     // The buffer is stack-allocated with known size. pid is a valid u32 cast to i32.
-    let ret = unsafe { libc::proc_pidpath(pid as i32, buf.as_mut_ptr().cast(), buf.len() as u32) };
+    let mut ret =
+        unsafe { libc::proc_pidpath(pid as i32, buf.as_mut_ptr().cast(), buf.len() as u32) };
     if ret <= 0 {
-        return None;
+        // An updater can unlink a live image, making proc_pidpath return ENOENT.
+        // Read the current kernel name, not a cached pre-exec agent identity.
+        // SAFETY: proc_name writes at most buf.len() bytes into this buffer.
+        ret = unsafe { libc::proc_name(pid as i32, buf.as_mut_ptr().cast(), buf.len() as u32) };
+        if ret <= 0 {
+            return None;
+        }
     }
     let path = std::str::from_utf8(&buf[..ret as usize]).ok()?;
     if let Some(agent_type) = classify_agent_name_or_path(path) {
@@ -1996,7 +2032,9 @@ fn strip_version_suffix(name: &str) -> &str {
 fn exact_agent_name(process_name: &str) -> Option<&'static str> {
     match process_name {
         "claude" => Some("claude"),
-        "gemini" => Some("gemini"),
+        // `agy` is a wrapper that execs the `antigravity` binary, so the live
+        // process of an agy tab is named `antigravity`.
+        "agy" | "antigravity" => Some("agy"),
         "opencode" => Some("opencode"),
         "codex" => Some("codex"),
         "amp" => Some("amp"),

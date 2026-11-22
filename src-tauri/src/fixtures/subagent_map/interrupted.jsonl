@@ -1,0 +1,2 @@
+{"timestamp":"2026-11-20T22:04:05.913Z","type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}
+{"timestamp":"2026-11-20T22:04:05.901Z","type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}

@@ -117,6 +117,13 @@
 }
 
 .defaultMark {
-  color: var(--fg-muted);
   margin-left: auto;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--fg-muted);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
+  text-transform: uppercase;
 }

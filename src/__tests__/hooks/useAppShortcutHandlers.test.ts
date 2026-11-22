@@ -23,6 +23,7 @@ const { mockDialogs, mockInvoke, mockNavigate, mockStores } = vi.hoisted(() => (
 		},
 		prompts: { getAllPrompts: vi.fn(), markAsUsed: vi.fn(), toggleDrawer: vi.fn() },
 		repositories: {
+			getRepoPathForTerminal: vi.fn(() => null),
 			state: { activeRepoPath: "/repo" as string | null, repositories: { "/repo": { activeBranch: "main" } } },
 		},
 		terminals: {

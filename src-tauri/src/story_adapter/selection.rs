@@ -46,7 +46,7 @@ impl BackendStatus {
                 "Native override"
             } else {
                 // Shown to every user in the panel header: product terms only.
-                "Plans and stories are stored in TUICommander. Create a plan to begin."
+                "Plans and stories are stored in TUICommander."
             }
             .into(),
             availability: "available".into(),
@@ -214,7 +214,7 @@ fn resolve(
     resolve_detected(project, config, settings, force)
 }
 
-/// Passive discovery result reused by binding before applying native continuity.
+/// Passive discovery result reused by binding before resolving the connector.
 pub(super) fn detection_config(project: &Path) -> Result<Option<PathBuf>, String> {
     let config = claude_dir()?;
     Ok(detected(project, &config).then_some(config))

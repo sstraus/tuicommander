@@ -8,6 +8,24 @@ use crate::workflows::neutral_api::model::{NeutralAction, NeutralReply};
 use serde_json::{Value, json};
 use std::sync::Arc;
 impl RuntimeOwner {
+    pub(super) fn publish_neutral_question(&self, project: &str, run: &str, question: &str) {
+        if let Some(state) = self.state.lock().upgrade() {
+            let name = WorkflowStore::open()
+                .and_then(|store| {
+                    let run = self.store.neutral_run(run)?;
+                    store
+                        .get_neutral_draft(project, &run.request.publication.id)
+                        .map(|d| d.name)
+                })
+                .unwrap_or_else(|_| "Workflow".into());
+            let excerpt: String = question.chars().take(200).collect();
+            crate::state::AppState::send_mobile_push_url(
+                &state,
+                "/mobile".into(),
+                &format!("{name} · {run}: {excerpt}"),
+            );
+        }
+    }
     pub(super) fn publish_neutral_cursor(&self, project: &str, run_id: &str, sequence: i64) {
         if let Some(state) = self.state.lock().upgrade() {
             super::api::emit_run_cursor(&state, project, run_id, sequence);
@@ -23,11 +41,11 @@ fn inspect(
     after: i64,
     limit: usize,
 ) -> Result<Value, String> {
-    let (snapshot, events) = store.neutral_inspection(id, after, limit)?;
-    if snapshot.run.request.publication.project != project {
-        return Err("neutral run does not belong to project".into());
+    let view = store.neutral_inspection_view(id, after, limit)?;
+    if view["snapshot"]["run"]["request"]["publication"]["project"] != project {
+        return Err(crate::workflows::neutral_api::refusal::RUN_FOREIGN_PROJECT.into());
     }
-    Ok(json!({"snapshot":snapshot,"events":events}))
+    Ok(view)
 }
 
 pub(crate) fn run_action(
@@ -37,6 +55,9 @@ pub(crate) fn run_action(
     caller: Option<super::NativeCaller>,
 ) -> Result<NeutralReply, String> {
     match action {
+        NeutralAction::ListRuns {} => super::RunStore::open()?
+            .neutral_run_views(project)
+            .map(NeutralReply::Runs),
         NeutralAction::Inspect {
             run_id,
             after_sequence,
@@ -105,6 +126,73 @@ pub(crate) fn run_action(
                 NeutralExecutionCommand::Effect { command: effect },
             )
         }
+        NeutralAction::ResolveMutation {
+            run_id,
+            command_id,
+            expected_sequence,
+            key,
+            evidence,
+        } => {
+            let owner = state.workflow_runtime.neutral_owner()?;
+            let host = state.workflow_runtime.neutral_catalog_host()?;
+            host.authorize_effect_answer(&owner.store, &run_id, &key, caller.as_ref())
+                .map_err(|error| {
+                    // A restart drops the in-memory binding; only start/trigger recreates it.
+                    if error == crate::workflows::neutral_api::refusal::ANSWER_BINDING_NOT_FOUND {
+                        format!("{error}: after a restart, send the run's original start request again to rebind run {run_id}, then retry resolve_mutation")
+                    } else {
+                        error
+                    }
+                })?;
+            super::neutral_effects::validate_mutation_resolution(&evidence)?;
+            let snapshot = owner.store.neutral_execution(&run_id)?;
+            if snapshot.run.request.publication.project != project {
+                return Err(crate::workflows::neutral_api::refusal::RUN_FOREIGN_PROJECT.into());
+            }
+            let effect = snapshot.mutation_resolution_candidate(&key)?;
+            let stop_proof = if let Some(resolution) = &effect.mutation_resolution {
+                resolution.stop_proof.clone()
+            } else if effect.observation.as_ref().is_some_and(|o| o.stopped) {
+                super::neutral_effects::MutationStopProof::RecordedObservation
+            } else {
+                // DEFERRED (2026-11-20) — remote adapters need their own stop
+                // proof; the generic original_stopped default cannot prove it.
+                let proof = if matches!(
+                    effect.invocation.descriptor.target,
+                    Some(crate::workflows::catalog::ReusableTarget::Script { .. })
+                ) {
+                    // DEFERRED (2026-11-20) — Windows has no durable process-group
+                    // probe after restart; require recorded stop until it does.
+                    #[cfg(unix)]
+                    {
+                        host.original_stopped(effect)
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        Err("this platform requires a recorded stopped observation".into())
+                    }
+                } else {
+                    Err("this adapter has no original-process stop proof".into())
+                };
+                proof.map_err(|reason| format!("{}: effect {}. Stop the original operation, complete its retained reconciliation procedure and retry: {reason}",
+                    crate::workflows::neutral_api::refusal::MUTATION_RESOLUTION_STATE, key.digest))?;
+                super::neutral_effects::MutationStopProof::OriginalProcessGone
+            };
+            command(
+                state,
+                project,
+                &run_id,
+                &command_id,
+                expected_sequence,
+                NeutralExecutionCommand::Effect {
+                    command: EffectCommand::ResolveMutation {
+                        key,
+                        evidence,
+                        stop_proof,
+                    },
+                },
+            )
+        }
         NeutralAction::Answer {
             run_id,
             command_id,
@@ -146,7 +234,7 @@ fn start_request(
     caller: Option<super::NativeCaller>,
 ) -> Result<NeutralReply, String> {
     if request.publication.project != project {
-        return Err("neutral publication does not belong to project".into());
+        return Err(crate::workflows::neutral_api::refusal::PUBLICATION_FOREIGN_PROJECT.into());
     }
     let owner = state.workflow_runtime.neutral_owner()?;
     let _start = owner.neutral_start_lock.lock();
@@ -201,7 +289,7 @@ fn start_request(
 
 fn delivery_prefix(story: &str) -> Result<String, String> {
     if story.is_empty() || story.contains(':') {
-        return Err("story id must be nonempty and contain no ':'".into());
+        return Err(crate::workflows::neutral_api::refusal::STORY_ID_INVALID.into());
     }
     Ok(format!("{}{story}:", super::plan_delivery::RUN_PREFIX))
 }
@@ -217,7 +305,7 @@ fn start_delivery(
     caller: Option<super::NativeCaller>,
 ) -> Result<NeutralReply, String> {
     if key.is_empty() || key.len() > 200 {
-        return Err("delivery key must be nonempty and at most 200 bytes".into());
+        return Err(crate::workflows::neutral_api::refusal::DELIVERY_KEY_INVALID.into());
     }
     let request_id = format!("{}{key}", delivery_prefix(story)?);
     let owner = state.workflow_runtime.neutral_owner()?;
@@ -307,7 +395,7 @@ fn command(
 ) -> Result<NeutralReply, String> {
     let owner = state.workflow_runtime.neutral_owner()?;
     if owner.store.neutral_run(id)?.request.publication.project != project {
-        return Err("neutral run does not belong to project".into());
+        return Err(crate::workflows::neutral_api::refusal::RUN_FOREIGN_PROJECT.into());
     }
     let receipt = owner.neutral_command(id, command_id, sequence, command)?;
     state.workflow_runtime.wake(id);

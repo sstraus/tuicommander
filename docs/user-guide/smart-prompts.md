@@ -106,7 +106,7 @@ Prompts use `{variable_name}` syntax. Most variables are auto-resolved at execut
 
 | Variable | Description |
 |----------|-------------|
-| `{agent_type}` | Active agent type (claude, gemini, codex, etc.) |
+| `{agent_type}` | Active agent type (claude, agy, codex, etc.) |
 | `{cwd}` | Active terminal working directory |
 
 ### Manual Input Variables
@@ -142,7 +142,7 @@ Runs a one-shot subprocess without using the terminal. Useful for quick operatio
 **Setup:** Go to **Settings > Agents** and configure the "Headless Command Template" for each agent type. The template uses `{prompt}` as a placeholder:
 
 - Claude: `claude -p "{prompt}"`
-- Gemini: `gemini -p "{prompt}"`
+- Antigravity: `agy -p "{prompt}"`
 
 Without a template, headless prompts automatically fall back to inject mode. A prompt run from a branch menu, terminal menu or the command palette that cannot start (for example, no headless agent configured) shows a warning toast naming the reason.
 

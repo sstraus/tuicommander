@@ -400,7 +400,9 @@ pub(super) async fn spawn_agent_session(
             pixel_height: 0,
         },
         move || {
-            let mut cmd = CommandBuilder::new(&spawn_binary_path);
+            let mut cmd = CommandBuilder::new(crate::windows_launch::resolve_launch_program(
+                &spawn_binary_path,
+            ));
             crate::pty::sanitize_pty_parent_env(&mut cmd);
 
             let mut launch_args = Vec::new();

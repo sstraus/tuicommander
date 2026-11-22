@@ -269,9 +269,15 @@ pub(crate) fn inspect_worktree_removal(
     workspace_id: &str,
 ) -> WorktreeRemovalPreview {
     let lifecycle = inspect_workspace_lifecycle(state, repo_path, workspace_id);
-    let worktree_path = tuic_git::worktree::resolve_removable_workspace(repo_path, workspace_id)
-        .ok()
-        .map(|workspace| PathBuf::from(workspace.path));
+    let workspace = tuic_git::worktree::resolve_removable_workspace(repo_path, workspace_id).ok();
+    let worktree_path = workspace
+        .as_ref()
+        .map(|workspace| PathBuf::from(&workspace.path));
+    // A squash or rebase merge integrates the changes without the commits.
+    let content_proof = workspace
+        .as_ref()
+        .and_then(|workspace| lifecycle.content_integration_proof(repo_path, &workspace.branch))
+        .map(str::to_owned);
     let untracked_files = worktree_path.as_ref().and_then(|path| {
         git_cmd(path)
             .args([
@@ -353,7 +359,14 @@ pub(crate) fn inspect_worktree_removal(
         lifecycle.commit_status,
         WorkspaceCommitStatus::Merged | WorkspaceCommitStatus::InSync
     );
-    let commits_passed = integrated && commits.as_ref().is_ok_and(|(_, count)| *count == 0);
+    // Commits outside the default branch whose changes are already in it.
+    let squashed = content_proof
+        .is_some()
+        .then(|| commits.as_ref().ok().filter(|(_, count)| *count > 0))
+        .flatten()
+        .cloned();
+    let commits_passed =
+        integrated && (squashed.is_some() || commits.as_ref().is_ok_and(|(_, count)| *count == 0));
     let sessions_unknown = live_sessions
         .iter()
         .any(|session| session.session_id == "suspended-storage-unavailable");
@@ -368,9 +381,10 @@ pub(crate) fn inspect_worktree_removal(
         },
         ArchiveCheck {
             passed: commits_passed,
-            label: match &commits {
-                Ok((base, 0)) if integrated => format!("All commits are in {base}"),
-                Ok((base, count)) if *count > 0 => format!("{count} commits not in {base}"),
+            label: match (&commits, &squashed) {
+                (_, Some((base, _))) => format!("All changes are in {base} (squash merge)"),
+                (Ok((base, 0)), _) if integrated => format!("All commits are in {base}"),
+                (Ok((base, count)), _) if *count > 0 => format!("{count} commits not in {base}"),
                 _ => "Branch integration could not be verified".into(),
             },
         },
@@ -405,10 +419,15 @@ pub(crate) fn inspect_worktree_removal(
     }
     if let Ok((_, count)) = &commits
         && *count > 0
+        && squashed.is_none()
     {
         losses.push(format!("{count} commits"));
     }
-    let delete_explanation = if can_delete {
+    let delete_explanation = if let (true, Some((base, count))) = (can_delete, &squashed) {
+        format!(
+            "removes the folder and the local branch. Its {count} commits are not kept, but their changes are already in {base}."
+        )
+    } else if can_delete {
         "removes the folder and the local branch. Nothing is lost.".into()
     } else if !losses.is_empty() {
         format!(
@@ -1054,6 +1073,34 @@ pub(crate) fn remove_orphan_checkout(
     confirmed_sessions: &[String],
     expected_fingerprint: Option<&str>,
 ) -> Result<(), String> {
+    remove_orphan_checkout_impl(
+        state,
+        repo_path,
+        worktree_path,
+        safe_only,
+        confirmed_sessions,
+        expected_fingerprint,
+        safe_only,
+    )
+}
+
+pub(crate) fn remove_orphan_checkout_explicit(
+    state: &AppState,
+    repo_path: &str,
+    worktree_path: &str,
+) -> Result<(), String> {
+    remove_orphan_checkout_impl(state, repo_path, worktree_path, true, &[], None, false)
+}
+
+fn remove_orphan_checkout_impl(
+    state: &AppState,
+    repo_path: &str,
+    worktree_path: &str,
+    safe_only: bool,
+    confirmed_sessions: &[String],
+    expected_fingerprint: Option<&str>,
+    automatic: bool,
+) -> Result<(), String> {
     validate_worktree_path(repo_path, worktree_path)?;
     orphan_removal_guard(
         state,
@@ -1062,6 +1109,20 @@ pub(crate) fn remove_orphan_checkout(
         safe_only,
         confirmed_sessions,
     )?;
+    let _allocation = if automatic {
+        let guard = allocation_guard(Path::new(repo_path))?;
+        guard_recent_allocation(Path::new(repo_path), Path::new(worktree_path))?;
+        orphan_removal_guard(
+            state,
+            repo_path,
+            worktree_path,
+            safe_only,
+            confirmed_sessions,
+        )?;
+        Some(guard)
+    } else {
+        None
+    };
 
     let path = PathBuf::from(worktree_path);
     let worktree = WorktreeInfo {
@@ -1386,10 +1447,19 @@ pub(crate) fn finalize_merged_worktree_impl_with_confirmation(
             // show. Resolution here is also still safe to fail — nothing has been
             // mutated yet.
             let branch = resolve_workspace(&base_repo, &workspace_id)?.branch;
-            let archive_path = archive_worktree(&base_repo, &workspace_id, script.as_deref())?;
-            let branch_delete_warning = if action == ARCHIVE_AND_DROP_BRANCH
-                && outside.as_ref().is_ok_and(|(_, count)| *count == 0)
-            {
+            // A squash merge leaves the commits outside the default branch, but
+            // the archive keeps a recovery ref at the tip either way.
+            let integrated = outside.as_ref().is_ok_and(|(_, count)| *count == 0)
+                || (action == ARCHIVE_AND_DROP_BRANCH
+                    && inspect_workspace_lifecycle(state, &base_repo, &workspace_id)
+                        .content_integration_proof(&base_repo, &branch)
+                        .is_some());
+            let archive_path = if action == ARCHIVE_AND_DROP_BRANCH {
+                archive_worktree_automatic(&base_repo, &workspace_id, script.as_deref())?
+            } else {
+                archive_worktree(&base_repo, &workspace_id, script.as_deref())?
+            };
+            let branch_delete_warning = if action == ARCHIVE_AND_DROP_BRANCH && integrated {
                 tuic_git::worktree::retire_archived_branch(
                     &base_repo,
                     Path::new(&archive_path),
@@ -2375,6 +2445,67 @@ mod tests {
         );
     }
 
+    // Catches: a squash-merged branch keeps "N commits not in main" and blocks Delete,
+    // although the delete gate accepts its content proof.
+    #[test]
+    fn archive_checklist_allows_delete_after_squash_merge() {
+        let config = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+        let repo = setup_test_repo();
+        let worktree = worktree_with(repo.path(), "checklist-squash", false);
+        for name in ["one.txt", "two.txt"] {
+            fs::write(worktree.join(name), name).unwrap();
+            git_cmd(&worktree).args(["add", name]).run().unwrap();
+            git_cmd(&worktree)
+                .args(["commit", "-m", name])
+                .run()
+                .unwrap();
+        }
+        git_cmd(repo.path())
+            .args(["merge", "--squash", "checklist-squash"])
+            .run()
+            .unwrap();
+        git_cmd(repo.path())
+            .args(["commit", "-m", "feat: squash checklist-squash"])
+            .run()
+            .unwrap();
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let preview = inspect_worktree_removal(&state, repo.path(), "checklist-squash");
+        let checklist = &preview.archive_checklist;
+        assert!(checklist.can_delete, "{preview:?}");
+        assert!(checklist.checks[1].passed);
+        assert!(
+            checklist.checks[1].label.ends_with("(squash merge)"),
+            "{preview:?}"
+        );
+        assert!(
+            checklist
+                .delete_explanation
+                .contains("Its 2 commits are not kept, but their changes are already in "),
+            "{preview:?}"
+        );
+        remove_worktree_with_presence_confirmation(
+            &state,
+            &repo.path().to_string_lossy(),
+            "checklist-squash",
+            true,
+            None,
+            false,
+            false,
+            preview.lifecycle.dirty_fingerprint.as_deref(),
+            false,
+            true,
+        )
+        .unwrap();
+        assert!(!worktree.exists());
+        assert!(
+            git_cmd(repo.path())
+                .args(["show-ref", "--verify", "refs/heads/checklist-squash"])
+                .run()
+                .is_err()
+        );
+    }
+
     /// The post-merge cleanup dialog runs these one after another, and each was
     /// a plain `fn` command: a checkout, a branch delete that can take a whole
     /// worktree with it, and an archive that moves a directory. A plain `fn`
@@ -3007,11 +3138,45 @@ mod tests {
 
     /// Catches: the unattended sweep archiving a merged, clean agent worktree but
     /// leaving its branch behind forever, or deleting it without a recovery ref.
+    /// Age a plain `git worktree add` checkout past the five-minute cleanup grace.
+    fn backdate_worktree_creation(repo: &Path, admin_name: &str) {
+        let gitdir = repo.join(".git/worktrees").join(admin_name).join("gitdir");
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(301);
+        fs::OpenOptions::new()
+            .write(true)
+            .open(gitdir)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(old))
+            .unwrap();
+    }
+
+    // Catches: the sweep archiving an agent's own fresh worktree (no TUIC marker) before it starts.
+    #[test]
+    fn sweep_keeps_a_fresh_worktree_tuic_did_not_allocate() {
+        let (_cfg, _guard) = isolated_config();
+        let repo = setup_test_repo();
+        let agent = checked_out_feature_with_agent(repo.path(), "f1");
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let Err(error) = finalize_merged_worktree_impl(
+            &state,
+            repo.path().to_string_lossy().to_string(),
+            "worktree-agent-f1".to_string(),
+            ARCHIVE_AND_DROP_BRANCH.to_string(),
+            false,
+        ) else {
+            panic!("a fresh worktree was archived");
+        };
+        assert!(error.contains("five minutes"), "{error}");
+        assert!(agent.exists());
+        assert!(branch_exists(repo.path(), "worktree-agent-f1"));
+    }
+
     #[test]
     fn sweep_drops_branch_of_merged_clean_agent_worktree_keeping_recovery_ref() {
         let (_cfg, _guard) = isolated_config();
         let repo = setup_test_repo();
         let _agent = checked_out_feature_with_agent(repo.path(), "b1");
+        backdate_worktree_creation(repo.path(), "agent-b1");
         let tip = git_cmd(repo.path())
             .args(["rev-parse", "worktree-agent-b1"])
             .run()
@@ -3071,6 +3236,9 @@ mod tests {
             .unwrap();
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
 
+        for id in ["c1", "c2", "c3"] {
+            backdate_worktree_creation(repo.path(), &format!("agent-{id}"));
+        }
         for id in ["c1", "c2", "c3"] {
             let outcome = finalize_merged_worktree_impl(
                 &state,
@@ -3650,6 +3818,23 @@ mod tests {
                 &repo.to_string_lossy(),
                 &checkout.to_string_lossy(),
             )
+        }
+
+        // Catches: automatic orphan cleanup removes a recent allocation, or the grace blocks an explicit request.
+        #[test]
+        fn recent_orphan_survives_automatic_cleanup_but_explicit_removal_works() {
+            let repo = setup_test_repo();
+            let linked = detached(repo.path(), "recent-detached");
+            reserve_worktree(repo.path(), &linked).unwrap();
+            let state = crate::state::tests_support::make_test_app_state();
+            let repo_path = repo.path().to_string_lossy();
+            let linked_path = linked.to_string_lossy();
+            let error = remove_orphan_checkout(&state, &repo_path, &linked_path, true, &[], None)
+                .unwrap_err();
+            assert!(error.contains("five minutes"), "{error}");
+            assert!(linked.exists());
+            remove_orphan_checkout_explicit(&state, &repo_path, &linked_path).unwrap();
+            assert!(!linked.exists());
         }
 
         // Catches: confirmed removal bypassing the temp exclusion used by automatic cleanup.

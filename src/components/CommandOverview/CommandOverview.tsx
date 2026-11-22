@@ -2,6 +2,7 @@ import { type Component, createMemo, createSignal, For, onCleanup, Show } from "
 import { appLogger } from "../../stores/appLogger";
 import { type CommandBlock, terminalsStore } from "../../stores/terminals";
 import { onClickKeyDown } from "../../utils/a11y";
+import { formatRelativeTime } from "../../utils/time";
 import s from "./CommandOverview.module.css";
 
 /** Extract command text from a block using the terminal's buffer lines */
@@ -22,15 +23,6 @@ function formatDuration(ms: number): string {
 	const m = Math.floor(s / 60);
 	const rem = s % 60;
 	return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
-}
-
-/** Format relative time (e.g. "2m ago", "just now") */
-function formatAgo(timestamp: number, now: number): string {
-	const diff = now - timestamp;
-	if (diff < 5000) return "just now";
-	if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`;
-	if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`;
-	return `${Math.floor(diff / 3600_000)}h ago`;
 }
 
 interface TerminalOverviewEntry {
@@ -112,7 +104,7 @@ export const CommandOverview: Component = () => {
 					const ago = () => {
 						const b = block();
 						if (!b?.endedAt) return null;
-						return formatAgo(b.endedAt, now());
+						return formatRelativeTime(b.endedAt, { now: now() });
 					};
 
 					return (

@@ -1,0 +1,5 @@
+{"type":"thread.started","thread_id":"01a1fe4b-f0d2-7542-8a4e-1eb81b6cd781"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"intent: Risposta rapida e ripresa dell’attesa (Stato sessione)\n💬 La parola segreta va comunicata tramite il canale Secret.\n💬 La sessione principale ha eseguito `cat notes.md` e sta attendendo la conclusione di `sleep 150`."}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"💬 La parola segreta resta riservata.\n💬 La sessione principale ha avviato l’attesa, ma dopo l’interruzione il suo esito non è verificabile.\nsuggest: [Stato sessione | Ripeti attesa | Chiudi ]"}}
+{"type":"turn.completed","usage":{"input_tokens":459035,"cached_input_tokens":403328,"cache_write_input_tokens":0,"output_tokens":778,"reasoning_output_tokens":210}}

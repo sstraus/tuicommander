@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 pub enum StoryAction {
     /// Read selection and provenance even if the connector cannot initialize.
     BackendStatus,
+    /// Aggregate open, non-archived stories across non-archived plans.
+    OpenStoryCount,
     /// Human-only project selection. No repository file names executable code.
     SetBackend {
         backend: String,
@@ -182,10 +184,21 @@ pub enum StoryAction {
     },
 }
 
+/// Read-only aggregate: no story content is exposed to count consumers.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryCountSnapshot {
+    pub project: String,
+    pub backend: String,
+    pub generation: Option<String>,
+    pub open_count: usize,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
 pub enum StoryReply {
     BackendStatus(serde_json::Value),
+    OpenStoryCount(StoryCountSnapshot),
     Idea(serde_json::Value),
     Ideas(Vec<serde_json::Value>),
     Plan(Plan),
@@ -256,6 +269,7 @@ fn story_action_with_source(
         .to_string_lossy()
         .to_string();
     match &action {
+        StoryAction::OpenStoryCount => return open_story_count(&project),
         StoryAction::BackendStatus => {
             return Ok(StoryReply::BackendStatus(
                 serde_json::to_value(crate::story_adapter::binding::status(std::path::Path::new(
@@ -326,6 +340,7 @@ fn story_action_with_source(
     };
     match action {
         StoryAction::BackendStatus
+        | StoryAction::OpenStoryCount
         | StoryAction::SetBackend { .. }
         | StoryAction::ApproveConnector { .. } => {
             unreachable!("handled before backend access")
@@ -631,6 +646,63 @@ fn story_action_with_source(
     }
 }
 
+fn open_story_count(project: &str) -> Result<StoryReply, String> {
+    let path = std::path::Path::new(project);
+    let before = crate::story_adapter::binding::status(path);
+    if before.availability != "available" {
+        return Err(format!(
+            "story backend unavailable: {}",
+            before.error.as_deref().unwrap_or(&before.reason)
+        ));
+    }
+    let StoryReply::ProjectStoryView(view) = story_action_with_source(
+        project,
+        StoryAction::ProjectStoryView {
+            archived_plans: false,
+            filter: super::StoryFilter {
+                visibility: super::StoryVisibility::Open,
+                ..Default::default()
+            },
+        },
+        None,
+        false,
+    )?
+    else {
+        unreachable!("project view reply")
+    };
+    let after = crate::story_adapter::binding::status(path);
+    if after.availability != "available"
+        || before.backend != after.backend
+        || before.generation != after.generation
+    {
+        return Err("story backend changed during count read; refresh".into());
+    }
+    Ok(StoryReply::OpenStoryCount(StoryCountSnapshot {
+        project: project.into(),
+        backend: before.backend,
+        generation: before.generation,
+        open_count: view.visible_story_ids.len(),
+    }))
+}
+
+fn changes_story_count(action: &StoryAction) -> bool {
+    matches!(
+        action,
+        StoryAction::SetBackend { .. }
+            | StoryAction::ApproveConnector { .. }
+            | StoryAction::CreatePlan { .. }
+            | StoryAction::AddPlanSource { .. }
+            | StoryAction::CreateStory { .. }
+            | StoryAction::UpdateStory { .. }
+            | StoryAction::ArchiveStory { .. }
+            | StoryAction::UnarchiveStory { .. }
+            | StoryAction::ArchivePlan { .. }
+            | StoryAction::UnarchivePlan { .. }
+            | StoryAction::Claim { .. }
+            | StoryAction::Transition { .. }
+    )
+}
+
 /// A claim is bound to a live PTY in the same registered project.
 pub fn story_action_for_session(
     state: &crate::AppState,
@@ -655,7 +727,11 @@ pub(crate) fn story_action_for_acp_peer(
         action,
         StoryAction::AddIdea { .. } | StoryAction::UpdateIdea { .. }
     );
+    let changes_count = changes_story_count(&action);
     let reply = story_action_with_source(&project.to_string_lossy(), action, Some(peer_id), false)?;
+    if changes_count {
+        crate::boss_attention::changed(state);
+    }
     if changes_ideas {
         state.notify_ideas_changed();
     }
@@ -695,17 +771,7 @@ fn story_action_for_session_with_source(
         action,
         StoryAction::AddIdea { .. } | StoryAction::UpdateIdea { .. }
     );
-    let changes_attention = matches!(
-        action,
-        StoryAction::CreateStory { .. }
-            | StoryAction::UpdateStory { .. }
-            | StoryAction::ArchiveStory { .. }
-            | StoryAction::UnarchiveStory { .. }
-            | StoryAction::ArchivePlan { .. }
-            | StoryAction::UnarchivePlan { .. }
-            | StoryAction::Claim { .. }
-            | StoryAction::Transition { .. }
-    );
+    let changes_attention = changes_story_count(&action);
     let reply = story_action_with_source(project, action, session_id, unauthenticated_http)?;
     if changes_attention {
         crate::boss_attention::changed(state);

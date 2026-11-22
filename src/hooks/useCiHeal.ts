@@ -202,7 +202,7 @@ export function useCiHeal(): void {
 			// PTY injection rule: route through sendCommand so the prompt actually
 			// submits (Ink raw-mode agents ignore a trailing \n; only the split
 			// Ctrl-U/\r writes submit). A raw write_pty here silently failed to
-			// submit for Claude/Gemini.
+			// submit for Claude/Antigravity.
 			const shellFamily = await getShellFamily(terminal.sessionId);
 			await sendCommand(
 				(data) => rpc("write_pty", { sessionId: terminal.sessionId, data }),

@@ -157,68 +157,6 @@ fn qa_all_manual_claim_releases_ownership_but_not_dependencies() {
     );
 }
 
-/// Catches: schema expansion rewriting old JSON/revisions or breaking transition foreign keys.
-#[test]
-fn qa_schema_upgrade_preserves_existing_documents_and_history() {
-    let (dir, store, story) = setup(&["Development", "[MANUAL] Hardware"]);
-    let started = apply(&store, &story, StoryCommand::StartManual);
-    let db = dir.path().join("stories.sqlite3");
-    drop(store);
-    let conn = rusqlite::Connection::open(&db).unwrap();
-    let original: String = conn
-        .query_row(
-            "SELECT document FROM stories WHERE id=?1",
-            [&story.id],
-            |r| r.get(0),
-        )
-        .unwrap();
-    // Model the old CHECK constraint, using the actual stored document unchanged.
-    conn.execute_batch("PRAGMA foreign_keys=OFF;
-        BEGIN IMMEDIATE;
-        CREATE TABLE stories_v1 (
-            id TEXT PRIMARY KEY, plan_id TEXT NOT NULL REFERENCES plans(id), document TEXT NOT NULL,
-            status TEXT NOT NULL CHECK(status IN ('backlog','ready','in_progress','review','done','blocked','wontfix')),
-            revision INTEGER NOT NULL, claim_session TEXT);
-        INSERT INTO stories_v1 SELECT * FROM stories;
-        DROP TABLE stories;
-        ALTER TABLE stories_v1 RENAME TO stories;
-        CREATE INDEX stories_by_plan ON stories(plan_id);
-        CREATE UNIQUE INDEX one_story_per_session ON stories(claim_session) WHERE claim_session IS NOT NULL;
-        ALTER TABLE plans DROP COLUMN revision;
-        ALTER TABLE plans DROP COLUMN archived;
-        PRAGMA user_version=1;
-        COMMIT;").unwrap();
-    drop(conn);
-    let store = StoryStore::open_at(&db).unwrap();
-    assert_eq!(store.get_story(&story.id).unwrap(), started);
-    let conn = rusqlite::Connection::open(&db).unwrap();
-    let after: String = conn
-        .query_row(
-            "SELECT document FROM stories WHERE id=?1",
-            [&story.id],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert_eq!(after, original);
-    assert_eq!(store.transition_history(&story.id).unwrap().len(), 1);
-    let qa = apply(&store, &started, StoryCommand::CheckCriterion(0));
-    assert_eq!(qa.status, StoryStatus::Qa);
-    let violations: i64 = conn
-        .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| {
-            r.get(0)
-        })
-        .unwrap();
-    assert_eq!(violations, 0);
-    drop(store);
-    assert_eq!(
-        StoryStore::open_at(&db)
-            .unwrap()
-            .get_story(&story.id)
-            .unwrap(),
-        qa
-    );
-}
-
 /// Catches: QA disappearing from Open/Kanban or being included in Closed/other-type projections.
 #[test]
 fn qa_filters_and_kanban_keep_human_work_visible_and_unfinished() {

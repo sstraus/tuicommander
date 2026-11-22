@@ -14,7 +14,7 @@ describe("useAgentDetection", () => {
 	function batchResponse(available: Record<string, string | null> = {}) {
 		const allBinaries = [
 			"claude",
-			"gemini",
+			"agy",
 			"opencode",
 			"codex",
 			"amp",
@@ -45,7 +45,7 @@ describe("useAgentDetection", () => {
 
 				expect(mockInvoke).toHaveBeenCalledTimes(1);
 				expect(mockInvoke).toHaveBeenCalledWith("detect_all_agent_binaries", {
-					binaries: expect.arrayContaining(["claude", "gemini", "opencode"]),
+					binaries: expect.arrayContaining(["claude", "agy", "opencode"]),
 				});
 
 				const map = detections();
@@ -53,7 +53,7 @@ describe("useAgentDetection", () => {
 				// registry so adding an agent doesn't silently leave one undetected.
 				expect(map.size).toBe(AGENT_TYPES.length);
 				expect(map.get("claude")?.available).toBe(true);
-				expect(map.get("gemini")?.available).toBe(false);
+				expect(map.get("agy")?.available).toBe(false);
 				expect(map.get("opencode")?.available).toBe(true);
 				expect(map.get("codex")?.available).toBe(true);
 				expect(map.get("grok")?.available).toBe(false);

@@ -1724,6 +1724,7 @@ fn decide_branch_merge(
         source == "HEAD"
             || source == default_branch
             || source == format!("refs/heads/{default_branch}")
+            || (entries.is_empty() && source == tip)
     });
     let pull_upstream_is_default = entries.iter().any(|entry| entry == "pull: Fast-forward")
         && crate::git_reads::cached_repo(repo)
@@ -3032,6 +3033,32 @@ fn allocation_marker(base_repo: &Path, checkout: &Path) -> Result<PathBuf, Strin
 
 pub fn reserve_worktree(base_repo: &Path, checkout: &Path) -> Result<(), String> {
     write_allocation(base_repo, checkout, "reserved")
+}
+
+/// Refuse unattended cleanup during the first five minutes of an allocation.
+/// The marker is rewritten on reuse, unlike the checkout directory's birth time.
+/// Call while holding `allocation_guard` until the cleanup effect is complete.
+/// A checkout TUIC never allocated (plain `git worktree add`, e.g. an agent's own
+/// worktree) has no marker; its age is the `gitdir` file Git writes at creation.
+pub fn guard_recent_allocation(base_repo: &Path, checkout: &Path) -> Result<(), String> {
+    let marker = allocation_marker(base_repo, checkout)?;
+    let metadata = match std::fs::metadata(&marker) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::metadata(marker.with_file_name("gitdir"))
+        }
+        other => other,
+    }
+    .map_err(|error| format!("Cannot verify allocation age for automatic cleanup: {error}"))?;
+    let modified = metadata
+        .modified()
+        .map_err(|error| format!("Cannot read allocation age for automatic cleanup: {error}"))?;
+    let age = modified
+        .elapsed()
+        .map_err(|error| format!("Allocation timestamp is in the future: {error}"))?;
+    if age < std::time::Duration::from_secs(300) {
+        return Err("Automatic cleanup waits five minutes after allocation".into());
+    }
+    Ok(())
 }
 
 fn write_allocation(base_repo: &Path, checkout: &Path, state: &str) -> Result<(), String> {
@@ -4698,6 +4725,21 @@ fn require_integration_archive(
     Ok(())
 }
 
+impl WorkspaceLifecycleStatus {
+    /// The content proof when the branch's changes reached the default branch
+    /// while its own commits did not (squash or rebase merge). Branch deletion
+    /// accepts exactly these proofs; ancestry proofs are excluded because their
+    /// commits are already counted as integrated.
+    pub fn content_integration_proof(&self, repo: &Path, branch: &str) -> Option<&str> {
+        let proof = self.merge_proof.as_deref()?;
+        let tip = self.tip.as_deref()?;
+        (self.commit_status == WorkspaceCommitStatus::Merged
+            && !matches!(proof, "ancestry" | "integration_ancestry")
+            && require_integration_archive(repo, branch, tip, proof).is_ok())
+        .then_some(proof)
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct BranchIntegration {
     pub branch: String,
@@ -6206,7 +6248,35 @@ fn archive_worktree_at(
     archive_script: Option<&str>,
     clock: impl FnOnce() -> Result<u64, String>,
 ) -> Result<String, String> {
+    archive_worktree_at_impl(base_repo, workspace_id, archive_script, clock, false)
+}
+
+pub fn archive_worktree_automatic(
+    base_repo: &Path,
+    workspace_id: &str,
+    archive_script: Option<&str>,
+) -> Result<String, String> {
+    archive_worktree_at_impl(
+        base_repo,
+        workspace_id,
+        archive_script,
+        archive_clock_seconds,
+        true,
+    )
+}
+
+fn archive_worktree_at_impl(
+    base_repo: &Path,
+    workspace_id: &str,
+    archive_script: Option<&str>,
+    clock: impl FnOnce() -> Result<u64, String>,
+    automatic: bool,
+) -> Result<String, String> {
     let _allocation_guard = allocation_guard(base_repo)?;
+    if automatic {
+        let workspace = resolve_workspace(base_repo, workspace_id)?;
+        guard_recent_allocation(base_repo, Path::new(&workspace.path))?;
+    }
     // Resolve the checkout by id — the archive directory name is derived from the
     // record's branch, so a same-branch sibling can never be the one moved away.
     let workspace = resolve_workspace(base_repo, workspace_id)?;
@@ -7836,6 +7906,87 @@ mod tests {
         )
         .unwrap();
         assert!(reused_again.is_none());
+    }
+
+    // Catches: an unattended archive removes a newly allocated checkout before its agent starts.
+    #[test]
+    fn automatic_archive_waits_for_allocation_age_but_explicit_archive_does_not() {
+        let repo = setup_test_repo();
+        let directory = tempfile::tempdir().unwrap();
+        let (first, _) = create_workspace_recycling(
+            directory.path(),
+            &recycle_config(repo.path(), "first"),
+            None,
+            |_| true,
+        )
+        .unwrap();
+        assert!(archive_worktree_automatic(repo.path(), "first", None).is_err());
+        assert!(first.path.exists());
+        archive_worktree(repo.path(), "first", None).unwrap();
+
+        let (second, reused) = create_workspace_recycling(
+            directory.path(),
+            &recycle_config(repo.path(), "second"),
+            None,
+            |_| true,
+        )
+        .unwrap();
+        assert!(reused.is_some());
+        assert!(archive_worktree_automatic(repo.path(), "second", None).is_err());
+        assert!(second.path.exists());
+
+        let marker = allocation_marker(repo.path(), &second.path).unwrap();
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(marker)
+            .unwrap();
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(301);
+        file.set_times(std::fs::FileTimes::new().set_modified(old))
+            .unwrap();
+        let archived = archive_worktree_automatic(repo.path(), "second", None).unwrap();
+        assert!(Path::new(&archived).exists());
+        assert!(!second.path.exists());
+    }
+
+    // Catches: an automatic archive that read the allocation age before a concurrent
+    // reallocation finished, removing the checkout its new agent was about to use.
+    #[test]
+    fn automatic_archive_waiting_on_a_reallocation_sees_the_fresh_marker() {
+        let repo = setup_test_repo();
+        let directory = tempfile::tempdir().unwrap();
+        let (workspace, _) = create_workspace_recycling(
+            directory.path(),
+            &recycle_config(repo.path(), "shared"),
+            None,
+            |_| true,
+        )
+        .unwrap();
+        let marker = allocation_marker(repo.path(), &workspace.path).unwrap();
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(301);
+        let age = |when| {
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(&marker)
+                .unwrap()
+                .set_times(std::fs::FileTimes::new().set_modified(when))
+                .unwrap()
+        };
+        age(old);
+
+        let lock = allocation_guard(repo.path()).unwrap();
+        let base = repo.path().to_path_buf();
+        let archive = std::thread::spawn(move || archive_worktree_automatic(&base, "shared", None));
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(
+            !archive.is_finished(),
+            "archive must wait for the allocation lock"
+        );
+        reserve_worktree(repo.path(), &workspace.path).unwrap();
+        drop(lock);
+
+        let error = archive.join().unwrap().unwrap_err();
+        assert!(error.contains("five minutes"), "{error}");
+        assert!(workspace.path.exists());
     }
 
     // Catches: recycle creates the branch from a SHA, so the reflog says "Created from <sha>"
@@ -14492,6 +14643,29 @@ branch refs/heads/feat
         assert_eq!(status.commit_status, WorkspaceCommitStatus::InSync);
         assert_eq!(status.dirty_files, Some(0));
         assert_eq!(status.removal_safety, WorkspaceRemovalSafety::Safe);
+    }
+
+    // Catches: an explicit SHA for the default tip marks a new branch as merged.
+    #[test]
+    fn a_workspace_created_from_default_tip_sha_is_in_sync() {
+        let (_temp, repo, workspaces) = workspace_fixture();
+        let tip = rev_at(&repo, "HEAD").unwrap();
+        let config = WorktreeConfig {
+            task_name: "sha-origin".into(),
+            base_repo: repo.to_string_lossy().into_owned(),
+            branch: Some("sha-origin".into()),
+            create_branch: true,
+        };
+        let workspace = create_workspace_unwarmed(&workspaces, &config, Some(&tip)).unwrap();
+        let status = inspect_workspace_lifecycle(&repo, "sha-origin");
+        assert_eq!(status.commit_status, WorkspaceCommitStatus::InSync);
+        assert_eq!(status.dirty_files, Some(0));
+        commit_file(&repo, "default-advanced.txt", "new default work\n");
+        assert_eq!(
+            inspect_workspace_lifecycle(&repo, "sha-origin").commit_status,
+            WorkspaceCommitStatus::InSync
+        );
+        assert!(workspace.path.exists());
     }
 
     // Catches: a shared HEAD/config read is repeated once per workspace on every refresh.

@@ -25,6 +25,7 @@ import { repoDefaultsStore } from "../stores/repoDefaults";
 import { repoSettingsStore } from "../stores/repoSettings";
 import { placementWorkspaceFor, repositoriesStore, resolveRepoOwner, resolveRepoPathFor } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
+import { restoreNonTerminalTabsAfterReload, saveNonTerminalTabsForReload } from "../stores/tabReload";
 import { reconcileTerminalOwnership } from "../stores/terminalOwnership";
 import { terminalsStore } from "../stores/terminals";
 import { toastsStore } from "../stores/toasts";
@@ -375,6 +376,7 @@ export async function initApp(deps: AppInitDeps) {
 				async () => {
 					repositoriesStore.snapshotTerminals(collectTerminalSnapshots());
 					mdTabsStore.saveForReload();
+					saveNonTerminalTabsForReload();
 					await Promise.all([repositoriesStore.flushSave(), paneLayoutStore.saveForBackground()]);
 				},
 				(requestId) => invoke("ack_background_snapshot", { requestId }),
@@ -401,6 +403,7 @@ export async function initApp(deps: AppInitDeps) {
 		uiStore.flushSave();
 		paneLayoutStore.flushSave();
 		mdTabsStore.saveForReload();
+		saveNonTerminalTabsForReload();
 
 		// 1. Snapshot terminal metadata per repo/branch before closing
 		const snapshots = collectTerminalSnapshots();
@@ -1275,7 +1278,11 @@ export async function initApp(deps: AppInitDeps) {
 			}
 		}
 	} finally {
-		mdTabsStore.restoreAfterReload();
+		try {
+			mdTabsStore.restoreAfterReload();
+		} finally {
+			restoreNonTerminalTabsAfterReload();
+		}
 	}
 
 	// Lazy restore: don't create terminals on startup.

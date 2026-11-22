@@ -16,7 +16,7 @@ models. This document covers:
 Agent-specific documents:
 - [Claude Code](agents/claude-code.md) — Ink-based, ANSI cursor positioning
 - [Codex CLI](agents/codex.md) — Ink-based, absolute positioning + scroll regions
-- [Gemini CLI](agents/gemini-cli.md) — Ink-like, relative positioning + prompt box
+- [Antigravity CLI](agents/agy-cli.md) — Ink-like, relative positioning + prompt box
 - [OpenCode](agents/opencode.md) — Bubble Tea full-screen TUI
 - [pi](agents/pi.md) — full-frame snapshot adapter around a stable footer
 
@@ -29,10 +29,10 @@ Each agent class requires a different parsing strategy:
 | Claude Code | CLI inline (Ink) | Changed-rows delta analysis | Yes |
 | Codex CLI | CLI inline (Ink) | Changed-rows delta analysis | Yes |
 | OpenCode | Full-screen TUI (Bubble Tea) | Screen snapshot analysis | No (all rows are "chrome") |
-| Gemini CLI | CLI inline | Changed-rows delta analysis | Yes |
+| Antigravity CLI (unverified) | CLI inline | Changed-rows delta analysis | Yes |
 | pi | Full-screen TUI | Screen snapshot analysis | No (footer adapter) |
 
-**CLI inline agents** (CC, Codex, Gemini) render output into the
+**CLI inline agents** (CC, Codex, agy) render output into the
 terminal sequentially, with chrome at specific positions. `chrome.rs`
 functions work for these — `is_separator_line`, `is_prompt_line`,
 `is_chrome_row` classify individual rows.
@@ -67,7 +67,7 @@ The row where the user types input. Each agent uses a different character:
 |-------|------------|---------|
 | Claude Code | `❯` | U+276F |
 | Codex CLI | `›` | U+203A |
-| Gemini CLI | `>` | ASCII |
+| Antigravity CLI (unverified) | `>` | ASCII |
 
 ### Separator Lines
 
@@ -78,7 +78,7 @@ box-drawing characters (`─ ━ ═ — ╌ ╍`). Not all agents use separator
 |-------|----------------|-------|
 | Claude Code | Yes | `────` around prompt box |
 | Codex CLI | Partially | `────` between tool output and summary only |
-| Gemini CLI | No | — |
+| Antigravity CLI (unverified) | No | — |
 
 ### Interactive Menu Detection
 

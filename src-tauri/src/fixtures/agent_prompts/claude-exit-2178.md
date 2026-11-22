@@ -25,3 +25,7 @@ the markers. Full HTTP snapshots and screenshots are retained under
 
 The regression exercises the real HTTP log handler. The oracle is executed
 shell output and its literal prompt, not another projection's computed cutoff.
+
+Process exit with a dialog open is covered by
+`process_exit_clears_a_confident_awaiting_badge` (#3100-cafa): the exit itself
+clears `awaiting_input`, since no further output can.

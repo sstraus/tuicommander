@@ -12,10 +12,8 @@ Reference adapter: `scripts/story-adapter-reference/adapter.mjs`.
 
 ## Automatic selection and explicit bindings
 
-Automatic selection first retains native while an unarchived, unfinished native plan or a
-persisted active native execution exists. The header says **Native retained while …**.
-This continuity rule runs before connector discovery and approval; it is not fallback
-after connector failure. Otherwise, TUIC selects Wiz when passive project data contains a `.wiz` directory or a
+Automatic selection uses project markers, not the presence or state of retained
+native plans. TUIC selects Wiz when passive project data contains a `.wiz` directory or a
 recognized hashed Wiz story filename. A generic `stories/` directory is not a
 marker. Story-directory settings come from `.claude/settings.local.json`, then
 global Claude settings, then `stories`; absolute paths and parent traversal are
@@ -38,7 +36,7 @@ process even when its executable arguments are unchanged. The approved connector
 directly with an absolute Node runtime path and project cwd. Do not use `wiz-run`:
 its synchronous timeout wrapper cannot host a long-lived connector.
 
-An unmarked project uses TUIC native SQLite. After the native continuity rule, a detected Wiz project with a missing,
+An unmarked project uses TUIC native SQLite. A detected Wiz project with a missing,
 broken, ambiguous or unapproved connector stays unavailable; it never shows native
 content instead. Explicit overrides remain in `<config dir>/story-backends.json`:
 
@@ -53,16 +51,13 @@ content instead. Explicit overrides remain in `<config dir>/story-backends.json`
 Explicit overrides take precedence over detection. A malformed file or invalid
 binding is an error, not automatic selection. Legacy commands remain explicitly
 trusted machine settings; repository files cannot supply commands. A project
-switches to an external backend only when no native plan is open (unarchived and
-not done). A backend cannot change while an execution is running or paused, even after
-restart with no bound process. The existing durable run snapshot pins
-`storyBackendIdentity` at admission (native or command + approved generation).
-Active snapshot project paths use the same canonical owning-project resolver as
-story actions. A run admitted before pins existed resolves by the pre-pin rule: the
-legacy command binding, otherwise native. Overrides cannot be written while a run is
-active, so the current settings still answer it; a backend override on such a project
-fails closed. TUIC never infers provenance from possibly colliding plan IDs.
+can select an external backend while unfinished native plans remain. Selection does not
+complete, archive, migrate or delete native records. Choose the explicit native override
+to read or continue those records, and automatic selection to return to the connector.
 Existing native records stay in SQLite. Desktop and headless use the same selector.
+Do not change backends during an active or paused workflow run: the current neutral
+engine does not persist a story backend pin. Select the explicit native override
+before continuing an existing native run.
 
 The shared story action `backend_status` returns `{type:"backend_status",value:{
 backend,label,provenance,reason,availability,installation,version,error,generation}}` even
@@ -75,7 +70,7 @@ the installation, registry version and entry digest to reject stale suggestions 
 it saves approval; `expected_identity` is the displayed `generation` value. The shared
 human-only `set_backend {backend}` action accepts `native`, `automatic` (remove the
 override), or `wiz-stories`. The header offers native and automatic selection.
-Explicit Wiz still refuses an open native plan; selection writes refuse active runs.
+Unfinished native plans do not veto an explicit Wiz selection either.
 Legacy command-map entries continue to tolerate extra metadata keys.
 
 The dialog performs one final status confirmation after content reads. A changed
@@ -354,3 +349,9 @@ lock, so two processes cannot both acknowledge writes from one expected version.
 A lock timeout fails closed. After a writer crashes while holding the lock,
 stop all writers before removing `<store>.lock`; the reference implementation
 does not expire a lock by age, which could break a live writer's atomicity.
+
+`open_story_count` uses the existing story action envelope and returns
+`{type:"open_story_count",value:{project,backend,generation,openCount}}`. It counts
+open, non-archived stories across all non-archived plans through the selected
+backend project projection. It returns no story content; unavailable or changed
+backends fail without native or filesystem fallback.

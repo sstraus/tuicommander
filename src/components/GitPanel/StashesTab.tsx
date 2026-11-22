@@ -1,4 +1,4 @@
-import { type Component, createEffect, createSignal, For, on, Show } from "solid-js";
+import { type Component, createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { useSmartPrompts } from "../../hooks/useSmartPrompts";
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
@@ -19,6 +19,7 @@ interface StashEntry {
 }
 
 export interface StashesTabProps {
+	onRetainChange?: (retain: boolean) => void;
 	repoPath: string | null;
 }
 
@@ -47,6 +48,8 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
 	const [confirmTitle, setConfirmTitle] = createSignal("");
 	const [confirmMessage, setConfirmMessage] = createSignal("");
 	const [confirmAction, setConfirmAction] = createSignal<(() => void) | null>(null);
+	createEffect(() => props.onRetainChange?.(Boolean(confirmVisible() || busyRef())));
+	onCleanup(() => props.onRetainChange?.(false));
 
 	async function fetchStashes(repoPath: string) {
 		if (stashes().length === 0) setLoading(true);

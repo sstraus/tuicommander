@@ -488,6 +488,17 @@ describe("StatusBar", () => {
 			expect(container.querySelector(".tickerArea")?.textContent ?? "").not.toContain("78%");
 		});
 
+		// Catches: a correctly projected retry is dropped or placed in the rotating pool instead of the agent badge.
+		it("renders_the_quota_retry_in_the_active_agent_badge_not_the_ticker_pool", async () => {
+			const view = registryView("credits", "ego", "openai-codex", 21);
+			view.snapshot!.credits = "8418.4673090000";
+			await open([view], ["ego", "credits"]);
+			const { container } = render(() => <StatusBar {...defaultProps} />);
+			mockEmit("provider-quota-changed", { ...view, state: "backoff", retry_warning: true });
+			expect(container.querySelector(".agentUsage")?.textContent?.trim()).toBe("7d: 21% · credits: 8418 left · retry");
+			expect(container.querySelector(".tickerArea")?.textContent ?? "").not.toContain("retry");
+		});
+
 		// Catches: a Claude/Codex tab switch retaining the other provider's text or icon.
 		it("switching_native_providers_keeps_icon_and_text_on_the_active_session", async () => {
 			const ids = await open(

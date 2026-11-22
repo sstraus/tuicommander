@@ -3,6 +3,7 @@ import releaseNotes from "../../assets/release-notes.json";
 import { useGitHub } from "../../hooks/useGitHub";
 import { t } from "../../i18n";
 import type { ActivityItem } from "../../plugins/types";
+import { openScratchpad } from "../../services/scratchpad";
 import { openTaskConversation } from "../../services/taskNavigation";
 import { activityStore } from "../../stores/activityStore";
 import { commandPaletteStore } from "../../stores/commandPalette";
@@ -28,6 +29,7 @@ import { IdeLauncher } from "../IdeLauncher";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { SmartPromptsDropdown } from "../SmartPromptsDropdown/SmartPromptsDropdown";
 import { Button } from "../ui";
+import { NeedsYouButton } from "./NeedsYouButton";
 import { StoriesButton } from "./StoriesButton";
 import s from "./Toolbar.module.css";
 
@@ -491,12 +493,31 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 						<Show when={aheadBehind()}>{(ab) => <span class={s.aheadBehind}>{ab()}</span>}</Show>
 					</Button>
 				</Show>
+				<NeedsYouButton />
 			</div>
 
 			<div class={s.right}>
 				<Show when={props.repoPath}>
 					<StoriesButton repoPath={props.repoPath as string} />
 				</Show>
+				<Button
+					size="compact"
+					variant="ghost"
+					type="button"
+					class={s.watcherBtn}
+					onClick={() => void openScratchpad()}
+					title={t("toolbar.scratchpad", "Scratchpad")}
+					aria-label="Scratchpad"
+					data-testid="toolbar-scratchpad"
+				>
+					<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+						<path d="M2.5 2h9A1.5 1.5 0 0 1 13 3.5V7h-1V3.5a.5.5 0 0 0-.5-.5h-9a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5H6v1H2.5A1.5 1.5 0 0 1 1 12.5v-9A1.5 1.5 0 0 1 2.5 2ZM3.5 5h6v1h-6V5Zm0 2.5h4v1h-4v-1Z" />
+						<path
+							d="m12.6 8.1 2.3 2.3-5 5-2.9.6.6-2.9 5-5Zm0 1.4-4.2 4.2-.2 1 1-.2 4.2-4.2-.8-.8Z"
+							fill-rule="evenodd"
+						/>
+					</svg>
+				</Button>
 				{/* Notification group: smart prompts + last-item pill + bell.
 				    The pill is a preview of the bell's newest notification, so the two
 				    stay adjacent. */}

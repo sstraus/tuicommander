@@ -53,7 +53,7 @@ struct McpConfigSpec {
     /// proof that the add-on is installed.
     requires_existing_config: bool,
     /// The MCP server list lives inside the file that also holds every other
-    /// user preference — Zed, Amp and Gemini all keep it in their
+    /// user preference — Zed and Amp keep it in their
     /// `settings.json` rather than a dedicated `mcp.json`.
     ///
     /// Launch-time auto-install never creates or edits these. The edit itself is
@@ -182,14 +182,13 @@ fn get_mcp_config_spec(agent_type: &str) -> Option<McpConfigSpec> {
                 &["amp"],
             )
         }),
-        "gemini" => Some(McpConfigSpec {
-            shared_settings_file: true,
-            ..json(
-                h.join(".gemini/settings.json"),
-                vec!["mcpServers"],
-                &["gemini"],
-            )
-        }),
+        // agy's global MCP file is dedicated (`mcp_config.json`, `mcpServers` map),
+        // per its embedded MCP guide; it is not the settings document.
+        "agy" => Some(json(
+            h.join(".gemini/config/mcp_config.json"),
+            vec!["mcpServers"],
+            &["agy"],
+        )),
         "droid" => Some(json(
             h.join(".factory/mcp.json"),
             vec!["mcpServers"],
@@ -311,7 +310,7 @@ fn get_agent_settings_path(agent_type: &str) -> Option<PathBuf> {
     match agent_type {
         "claude" => Some(h.join(".claude/settings.json")),
         "cursor" => Some(h.join(".cursor")),
-        "gemini" => Some(h.join(".gemini/settings.json")),
+        "agy" => Some(h.join(".gemini/config/config.json")),
         "codex" => Some(codex_config_path()),
         "grok" => Some(h.join(".grok/config.toml")),
         "opencode" => Some(opencode_config_path()),
@@ -464,6 +463,14 @@ fn locate_installed_bridge(source: Option<&std::path::Path>) -> Option<PathBuf> 
         .map(|(_, path)| path)
 }
 
+/// The installed revision agents are pointed at now: the copy of the bundled
+/// bridge, else the newest valid copy. The cleanup job never deletes it.
+pub(crate) fn current_bridge_revision() -> Option<String> {
+    let path = locate_installed_bridge(locate_bridge_binary().as_deref())
+        .or_else(|| locate_installed_bridge(None))?;
+    path.parent()?.file_name()?.to_str().map(str::to_owned)
+}
+
 /// Every published bridge copy, valid or not: the startup exec-probe must reach
 /// a copy the kernel kills, whatever its bytes look like.
 pub(crate) fn installed_bridge_paths() -> Vec<PathBuf> {
@@ -536,9 +543,11 @@ fn copy_verified_bridge(
 /// an identical executable: Windows may have it open in an existing MCP session.
 fn install_bridge_binary(source: &std::path::Path) -> Result<PathBuf, String> {
     use sha2::{Digest, Sha256};
-    // DEFERRED (2026-10-03): retain revisions until every agent config root
-    // (including private/CLAUDE_CONFIG_DIR roots) can be discovered. Pruning an
-    // unknown root's referenced revision would recreate the original ENOENT.
+    // Old revisions are deleted by `db::retention` (story 3106-327c): the
+    // current one is always kept, others once untouched for
+    // `retention.bridge_revision_days`. A config root TUIC does not discover
+    // (a private CLAUDE_CONFIG_DIR) can still name a deleted revision; setting
+    // the days to 0 keeps every revision.
 
     if !usable_executable(source) {
         return Err(format!("Bridge is not executable: {}", source.display()));
@@ -762,7 +771,7 @@ fn write_text_file_if_unchanged(
 
 /// Supported agent types for auto-install
 const SUPPORTED_AGENTS: &[&str] = &[
-    "claude", "cursor", "windsurf", "vscode", "zed", "amp", "gemini", "codex", "grok", "opencode",
+    "claude", "cursor", "windsurf", "vscode", "zed", "amp", "agy", "codex", "grok", "opencode",
     "droid", "goose", "pi",
 ];
 
@@ -2533,7 +2542,7 @@ mod tests {
             ("vscode", McpFormat::Json),
             ("zed", McpFormat::Json),
             ("amp", McpFormat::Json),
-            ("gemini", McpFormat::Json),
+            ("agy", McpFormat::Json),
             ("droid", McpFormat::Json),
             ("pi", McpFormat::Json),
             ("opencode", McpFormat::OpenCode),
@@ -2837,7 +2846,7 @@ mod tests {
         }
 
         // Agents NOT in disabled list should proceed
-        for agent in &["cursor", "vscode", "zed", "amp", "gemini", "codex"] {
+        for agent in &["cursor", "vscode", "zed", "amp", "agy", "codex"] {
             assert!(
                 !disabled.iter().any(|d| d == agent),
                 "{agent} should NOT be in disabled list",
@@ -4634,7 +4643,7 @@ mod tests {
 
     #[test]
     fn a_shared_settings_file_is_not_written_at_launch() {
-        // Zed, Amp and Gemini keep their MCP list inside the settings document
+        // Zed and Amp keep their MCP list inside the settings document
         // that holds every other user preference. Being on the machine is not
         // consent to edit it.
         let dir = TempDir::new().unwrap();
@@ -4671,12 +4680,12 @@ mod tests {
     }
 
     #[test]
-    fn zed_amp_and_gemini_are_the_shared_settings_targets() {
-        for agent in ["zed", "amp", "gemini"] {
+    fn zed_and_amp_are_the_shared_settings_targets() {
+        for agent in ["zed", "amp"] {
             let spec = get_mcp_config_spec(agent).expect("supported");
             assert!(spec.shared_settings_file, "{agent} shares a settings file");
         }
-        for agent in ["cursor", "vscode", "windsurf", "droid", "claude"] {
+        for agent in ["cursor", "vscode", "windsurf", "droid", "claude", "agy"] {
             let spec = get_mcp_config_spec(agent).expect("supported");
             assert!(
                 !spec.shared_settings_file,
@@ -5246,7 +5255,7 @@ mod tests {
             Some(&source),
             [
                 ("claude", spec_at(bad.clone())),
-                ("gemini", spec_at(good.clone())),
+                ("agy", spec_at(good.clone())),
             ],
         );
         assert_eq!(std::fs::read(&bad).unwrap(), b"{malformed");

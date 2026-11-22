@@ -184,7 +184,7 @@ describe("toUsageAgent", () => {
 
 	it("rejects agents without one, so the ticker keeps the last known agent", () => {
 		expect(toUsageAgent("opencode")).toBeNull();
-		expect(toUsageAgent("gemini")).toBeNull();
+		expect(toUsageAgent("agy")).toBeNull();
 		expect(toUsageAgent(null)).toBeNull();
 		expect(toUsageAgent(undefined)).toBeNull();
 	});

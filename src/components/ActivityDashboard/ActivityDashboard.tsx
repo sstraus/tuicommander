@@ -30,6 +30,7 @@ export const statusClasses = {
 	error: s.statusError,
 	waiting: s.statusWaiting,
 	working: s.statusWorking,
+	background: s.statusBackground,
 	idle: s.statusIdle,
 };
 

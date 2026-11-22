@@ -19,6 +19,16 @@ function makeSession(overrides: Partial<NonNullable<SessionInfo["state"]>> = {})
 }
 
 describe("deriveStatus", () => {
+	it("does not let lifecycle working or unseen hide background work at a ready composer", () => {
+		expect(deriveStatus(makeSession({ shell_state: "idle", agent_state: "working", background_work: true }))).toBe(
+			"background",
+		);
+		expect(deriveStatus(makeSession({ shell_state: "idle", agent_state: "completed", background_work: true }))).toBe(
+			"background",
+		);
+		expect(deriveStatus(makeSession({ shell_state: "busy", background_work: true }))).toBe("busy");
+	});
+
 	it("returns idle when state is undefined", () => {
 		const session: SessionInfo = { session_id: "x", cwd: null, worktree_path: null, worktree_branch: null };
 		expect(deriveStatus(session)).toBe("idle");

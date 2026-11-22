@@ -18,13 +18,14 @@ Manual checks that need a live build, a phone, Windows or Boss's eye. The list i
 - [workflows-stories-1.md](to-test/workflows-stories-1.md) — 30 items
 - [workflows-stories-2.md](to-test/workflows-stories-2.md) — 17 items
 - [workflows-stories-3.md](to-test/workflows-stories-3.md) — 19 items
-- [workflows-stories-4.md](to-test/workflows-stories-4.md) — 8 items
-- [workflows-stories-5.md](to-test/workflows-stories-5.md) — 1 items
+- [workflows-stories-4.md](to-test/workflows-stories-4.md) — 39 items
+- [workflows-stories-5.md](to-test/workflows-stories-5.md) — 17 items
 
 ## Agents, hooks and PTY state
 
 - [agents-pty-1.md](to-test/agents-pty-1.md) — 28 items
-- [agents-pty-2.md](to-test/agents-pty-2.md) — 7 items
+- [agents-pty-2.md](to-test/agents-pty-2.md) — 46 items
+- [agents-pty-3.md](to-test/agents-pty-3.md) — 7 items
 
 ## Other areas
 
@@ -34,12 +35,12 @@ Manual checks that need a live build, a phone, Windows or Boss's eye. The list i
 - [misc-4.md](to-test/misc-4.md) — 25 items
 - [misc-5.md](to-test/misc-5.md) — 27 items
 - [misc-6.md](to-test/misc-6.md) — 39 items
-- [misc-7.md](to-test/misc-7.md) — 10 items
+- [misc-7.md](to-test/misc-7.md) — 11 items
 
 ## Settings, themes, tabs, panels and terminal UI
 
 - [settings-ui-1.md](to-test/settings-ui-1.md) — 24 items
-- [settings-ui-2.md](to-test/settings-ui-2.md) — 32 items
+- [settings-ui-2.md](to-test/settings-ui-2.md) — 35 items
 
 ## Mobile and phone PWA
 
@@ -62,11 +63,12 @@ Manual checks that need a live build, a phone, Windows or Boss's eye. The list i
 ## Remote access, relay, daemon and MCP upstreams
 
 - [remote-relay-1.md](to-test/remote-relay-1.md) — 29 items
-- [remote-relay-2.md](to-test/remote-relay-2.md) — 8 items
+- [remote-relay-2.md](to-test/remote-relay-2.md) — 7 items
 
 ## Git, GitHub and repositories
 
 - [git-repos.md](to-test/git-repos.md) — 33 items
+- [git-repos-2.md](to-test/git-repos-2.md) — 1 item
 
 ## Archive
 

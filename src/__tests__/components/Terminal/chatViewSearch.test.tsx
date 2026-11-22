@@ -28,6 +28,7 @@ vi.mock("../../../components/Terminal/glyphCache", async (importOriginal) => ({
 const canvas = vi.hoisted(() => ({
 	focus: vi.fn(),
 	refresh: vi.fn(),
+	lostGrid: () => false,
 	searchClear: vi.fn(),
 	searchFind: vi.fn().mockResolvedValue({ index: 0, count: 1 }),
 	searchNext: vi.fn().mockReturnValue({ index: 0, count: 1 }),

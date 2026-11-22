@@ -290,7 +290,7 @@ arguments and the managed-launch wrapper warning.
 | **Native status signals** | Claude and Codex only. Enabled by default; injects process-scoped status configuration at launch without changing global agent files. The **Signals: at launch** badge identifies this mode. |
 | **Prevent alternate screen** | Enabled by default for every agent. TUIC applies a verified native-scrollback control when the installed CLI supports one. Turning it off leaves new launches without TUIC's screen control. Existing shells need to be reopened to receive the changed policy. |
 | **Accept workspace trust for managed spawns** | Claude, Codex and ego only. In Expert Mode, expand the agent's card to change whether agent-to-agent spawns skip that agent's workspace trust question in a new folder. |
-| **Install hooks globally** | Codex, Gemini, Grok, and OpenCode. Explicitly installs/removes sentinel-owned lifecycle hooks in the agent's global configuration. Off by default. Codex verifies native trust; **Hooks: review in /hooks** requires normal Codex review. Profile-specific hooks require review in that profile. |
+| **Install hooks globally** | Codex, Antigravity, Grok, and OpenCode. Explicitly installs/removes sentinel-owned lifecycle hooks in the agent's global configuration. Off by default. Codex verifies native trust; **Hooks: review in /hooks** requires normal Codex review. Profile-specific hooks require review in that profile. |
 | **Show agent intent as tab title** | When agents declare their current work phase, update the tab name with a short title |
 | **Show suggested follow-up actions** | Display actionable suggestions from agents after completing a task |
 | **Collect project progress** | Global switch for the Progress journal. On by default. Off removes the `progress` tool from every agent's tool list, stops the reporting obligation being sent, and records nothing — including the `intent:` markers TUICommander writes itself. |
@@ -718,6 +718,16 @@ General also exposes content-index memory budget, attachment byte limit and back
 The explicit source ledgers distinguish read-only identities, derived credentials, legacy snapshots and separate domain controls. CircleCI credentials use the write-only `circleci.token` owner. Dictation corrections use stable heard-text keys in the machine-owned `corrections` collection; edits reuse TextCorrector and refresh open Voice pages without microphone access. Global PR visibility filters persist in config.json. Nullable repository overrides persist in repo-settings.json; null inherits the global filter and false explicitly shows matching PRs.
 
 ## Assisted startup
+
+Ego credential presence uses the configured Ego's machine inventory. Named
+accounts and legacy provider slots stay separate, even when their names match.
+Presence does not confirm remote access. Named accounts do not create legacy
+authentication edit fields. An older Ego without the machine inventory contract
+returns a failed owner read instead of using human status text.
+The inventory retains full account IDs, but the existing Settings pointer limit
+allows individual reads only through 245 ASCII bytes for named IDs. Longer
+pointers return `unknown_path`; unrelated settings remain readable. Credential
+presence stays read-only, and no account-key enumeration API is added.
 
 The [Settings startup contract](../backend/settings-startup.md) describes discoverable GitHub device/Enterprise workflows and Ego settings/readback. GitHub `list_accounts` discovers existing account IDs and credential presence. Typed Ego `begin_login` opens a terminal for you to authenticate; `login_status` reports process lifetime and owner credential readback separately. Native inventory completeness does not mean every onboarding or live UI check is complete.
 

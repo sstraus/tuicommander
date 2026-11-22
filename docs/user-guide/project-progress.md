@@ -8,7 +8,9 @@ what you do not want to keep. There is nothing else to operate.
 
 ## What lands in the journal
 
-Five kinds of entry.
+Seven kinds of entry. The list shows `done`, `blocked`, `question` and
+`answer` by default; the **Activity** toggle adds the host trace (`intent`,
+`delegated`, `message`), which the Flow view always draws.
 
 | Kind | Written by | Meaning |
 |---|---|---|
@@ -17,6 +19,19 @@ Five kinds of entry.
 | `intent` | TUICommander | The agent said what it was starting. Recorded from its `intent:` marker. |
 | `delegated` | TUICommander | The agent started another agent with `agent action=spawn`. The text is the task it handed over. |
 | `message` | TUICommander | The agent sent another agent a message with `agent action=send`. |
+| `question` | TUICommander | You asked the agent: a side question from the journal (step `side`), or a direct question captured from the terminal (step `direct`). |
+| `answer` | TUICommander | The answer, its step the classification (`answer`, `action`, `unknown`) or `failed`/`cancelled`. **Thread** opens the full texts inline. |
+
+## Side questions
+
+With a terminal selected, the box above the list asks the agent a question
+without interrupting it (`Cmd+Alt+Q` opens Progress there with the box
+focused). TUIC answers it in a read-only fork of the agent's session that
+reuses the session's prompt cache; follow-ups in the thread continue the same
+fork. A question you type to a Claude agent directly in its terminal, ending
+with `?`, is filed with its final answer when the turn ends. **All projects**
+lists every project's entries, with kind and unread filters; a click opens the
+project and its terminal.
 
 A `delegated` or `message` entry keeps its text redacted and cut to 500
 characters. Status mail that TUICommander sends on an agent's behalf is not
@@ -43,18 +58,20 @@ agents send their final `RESULT` or `BLOCKED` report to the parent agent with
 parent's address; it does not create a journal outcome, notification, or waiting
 badge. Host-observed intents and agent mail can still appear in the journal.
 
-The MCP `progress` tool takes three fields.
+The MCP `progress` tool uses these fields:
 
 | Field | Required | Limit | Meaning |
 |---|---|---|---|
-| `type` | yes | `done` or `blocked` | The kind of entry |
-| `text` | yes | 500 characters | One standalone sentence |
-| `step` | no | 80 characters | What the entry belongs to |
+| `type` | yes | `done` or `blocked` | A finished outcome, or a question the agent must stop and wait for |
+| `text` | yes | 500 characters | The outcome, or the exact question and what is needed next |
+| `step` | no | 80 characters | A free-text display label |
+| `question` | no | `{"kind":"yes_no"}` | On `blocked` only; shows Yes/No buttons if the report can be routed back to its author. Omit for free text. |
 
 ```json
 {"type": "done", "text": "OpenRouter applications can now be identified.", "step": "Shadow AI Detection"}
 ```
 
+The agent should also reply in chat so you can act without opening the journal.
 A `blocked` report marks the agent's tab as waiting for your answer. The mark
 clears when you reply in the terminal, or when the same terminal later reports
 `done` or starts another agent. A progress report never clears a question that
@@ -132,6 +149,7 @@ time scale.
 - A delegation is an arrow from the parent to the child, labelled with the task.
 - A child's `done` (green) or `blocked` (red) is an arrow back to its parent.
 - A message is an arrow from sender to recipient.
+- An interrupted subagent has no final report arrow.
 - A subagent's task (dashed) and its final report are arrows between it and its
   terminal.
 - An `intent` is a muted note on its own column, and the newest one is also

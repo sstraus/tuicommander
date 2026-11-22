@@ -13,6 +13,7 @@ import { keyFor } from "../../utils/hotkey";
 import { markdownDocumentPanelId } from "../../utils/markdownDocumentPanelId";
 import type { LeafRect } from "../../utils/paneTreeGeometry";
 import { getRepoColor } from "../../utils/repoColor";
+import { showsBackgroundWork } from "../../utils/terminalVisualState";
 import { GlobeIcon } from "../GlobeIcon";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
@@ -105,12 +106,14 @@ export const TerminalTabView: Component<TerminalTabViewProps> = (props) => {
 	const terminal = () => terminalsStore.get(props.id);
 	const isActive = () => terminalsStore.state.activeId === props.id;
 	const isDetached = () => terminalsStore.isDetached(props.id);
-	const isBusy = () => terminalsStore.isBusy(props.id);
+	const hasBackground = () => showsBackgroundWork(terminal()?.shellState, terminal()?.backgroundWork);
+	const isBusy = () => !hasBackground() && terminalsStore.isBusy(props.id);
 	const isStalled = () => terminal()?.stalled === true;
 	const isIdle = () => !isBusy() && terminal()?.shellState === "idle";
 	const isExited = () => terminal()?.shellState === "exited";
 	const isUnseen = () => !isActive() && terminal()?.unseen;
 	const awaitingInput = () => terminal()?.awaitingInput;
+	const showBackground = () => !awaitingInput() && !isStalled() && !terminal()?.providerRecovery && hasBackground();
 	const progress = () => terminal()?.progress;
 	const isPromoted = () => globalWorkspaceStore.isPromoted(props.id);
 	const [hovered, setHovered] = createSignal(false);
@@ -137,8 +140,9 @@ export const TerminalTabView: Component<TerminalTabViewProps> = (props) => {
 					awaitingInput() && AWAITING_CLASSES[awaitingInput()!],
 					!awaitingInput() && !terminal()?.providerRecovery && isBusy() && !isStalled() && s.shellBusy,
 					!awaitingInput() && isStalled() && s.shellStalled,
-					!awaitingInput() && !isBusy() && isUnseen() && s.shellUnseen,
-					!awaitingInput() && isIdle() && !isUnseen() && s.shellIdle,
+					showBackground() && s.shellBackground,
+					!awaitingInput() && !hasBackground() && !isBusy() && isUnseen() && s.shellUnseen,
+					!awaitingInput() && !hasBackground() && isIdle() && !isUnseen() && s.shellIdle,
 					isExited() && s.shellExited,
 					terminal()?.isExternallyCreated && s.remoteTab,
 					terminal()?.standby && s.standby,
@@ -156,7 +160,7 @@ export const TerminalTabView: Component<TerminalTabViewProps> = (props) => {
 					}
 				}}
 				onContextMenu={(event) => props.onContextMenu(event, props.id)}
-				title={`${terminal()?.alias ?? `Terminal ${props.index + 1}`}${props.index < 9 ? ` (${keyFor(`switch-tab-${props.index + 1}`)})` : ""}${terminal()?.lastError ? `\n${terminal()?.lastError}` : ""}`}
+				title={`${terminal()?.alias ?? `Terminal ${props.index + 1}`}${props.index < 9 ? ` (${keyFor(`switch-tab-${props.index + 1}`)})` : ""}${showBackground() ? `\n${t("tabBar.backgroundWork", "Background work")}` : ""}${terminal()?.lastError ? `\n${terminal()?.lastError}` : ""}`}
 				onPointerDown={(event) => !props.isEditing && props.onPointerDown(event, props.id)}
 				onMouseEnter={() => setHovered(true)}
 				onMouseLeave={() => setHovered(false)}

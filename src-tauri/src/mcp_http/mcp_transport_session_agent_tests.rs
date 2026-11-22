@@ -64,7 +64,7 @@ async fn critic_codex_profile_named_review_keeps_task_submission() {
 async fn critic_named_wrappers_deliver_positional_task_for_every_agent() {
     use std::os::unix::fs::PermissionsExt;
     for agent in [
-        "claude", "codex", "gemini", "grok", "opencode", "amp", "cursor", "goose", "droid", "pi",
+        "claude", "codex", "agy", "grok", "opencode", "amp", "cursor", "goose", "droid", "pi",
         "ego",
     ] {
         let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
@@ -3585,6 +3585,7 @@ async fn parent_registration_after_spawn_links_existing_child() {
             last_activity: std::time::Instant::now(),
             is_claude_code: false,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: false,
             sse_generation: 0,
             repo_path: None,
@@ -4353,7 +4354,7 @@ fn saved_aider_settings_load_but_are_ignored_for_agent_spawns() {
             .is_none()
     );
     for agent in [
-        "claude", "codex", "gemini", "grok", "opencode", "amp", "cursor", "goose", "droid", "pi",
+        "claude", "codex", "agy", "grok", "opencode", "amp", "cursor", "goose", "droid", "pi",
         "ego",
     ] {
         assert_eq!(
@@ -4456,8 +4457,8 @@ async fn literal_codex_default_does_not_ignore_settings_or_restore_removed_bypas
 #[test]
 fn resolve_run_config_falls_back_to_agent_type() {
     let cfg = make_agents_config();
-    let resolved = resolve_run_config("gemini", &cfg);
-    assert_eq!(resolved.agent_type, "gemini");
+    let resolved = resolve_run_config("agy", &cfg);
+    assert_eq!(resolved.agent_type, "agy");
     assert!(resolved.command.is_none());
     assert!(resolved.args.is_none());
     assert!(resolved.env.is_empty());
@@ -4505,6 +4506,75 @@ fn substitute_prompt_multiple_placeholders() {
 }
 
 // -----------------------------------------------------------------------
+// Catches: missing Ego fallback, headless `run`, deferred delivery, or split/duplicated task bytes.
+#[test]
+fn ego_default_spawn_keeps_one_interactive_positional_prompt() {
+    let resolved = resolve_run_config("ego", &crate::config::AgentsConfig::default());
+    assert!(resolved.args.is_none());
+    let template = crate::agent::default_prompt_args(&resolved.agent_type)
+        .expect("Ego has a built-in interactive prompt mapping");
+    for prompt in [
+        "perform the task",
+        "quotes ' \" and $HOME;\nUnicode: café {prompt}",
+        "",
+    ] {
+        let (argv, deferred) = compose_mcp_spawn_args(McpSpawnArgs {
+            agent_type: &resolved.agent_type,
+            args: &template,
+            prompt,
+            model: None,
+            print_mode: false,
+            output_format: None,
+            default_template: true,
+        })
+        .unwrap();
+        assert_eq!(argv, [prompt], "prompt={prompt:?}");
+        assert_eq!(deferred, None, "prompt={prompt:?}");
+    }
+}
+
+// Catches: Claude-only output flags switch Ego away from its interactive default or lose model.
+#[test]
+fn ego_default_spawn_merges_model_without_claude_output_flags() {
+    let template = crate::agent::default_prompt_args("ego").unwrap();
+    let (argv, deferred) = compose_mcp_spawn_args(McpSpawnArgs {
+        agent_type: "ego",
+        args: &template,
+        prompt: "perform the task",
+        model: Some("ollama/qwen3"),
+        print_mode: true,
+        output_format: Some("json"),
+        default_template: true,
+    })
+    .unwrap();
+    assert_eq!(argv, ["perform the task", "--model", "ollama/qwen3"]);
+    assert_eq!(deferred, None);
+}
+
+// Catches: adding the fallback overrides an explicit headless choice or drops flags-only tasks.
+#[test]
+fn ego_explicit_spawn_args_remain_authoritative() {
+    for (args, expected) in [
+        (vec!["run", "{prompt}"], vec!["run", "perform the task"]),
+        (vec!["--bare"], vec!["--bare", "perform the task"]),
+        (vec![], vec!["perform the task"]),
+    ] {
+        let args = args.into_iter().map(String::from).collect::<Vec<_>>();
+        let (argv, deferred) = compose_mcp_spawn_args(McpSpawnArgs {
+            agent_type: "ego",
+            args: &args,
+            prompt: "perform the task",
+            model: None,
+            print_mode: false,
+            output_format: None,
+            default_template: false,
+        })
+        .unwrap();
+        assert_eq!(argv, expected);
+        assert_eq!(deferred, None);
+    }
+}
+
 // finalize_spawn_args tests (story 091 — prefill-only TUIs)
 // -----------------------------------------------------------------------
 

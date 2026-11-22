@@ -105,10 +105,9 @@ impl RunStore {
             .collect()
     }
 
-    /// Delete at most 256 final rows per owner tick; default retention is 90 days.
-    pub fn prune(&self, now_ms: i64, retention_days: Option<u32>) -> Result<usize, String> {
-        self.require_owner()?;
-        let days = retention_days.unwrap_or(90);
+    /// Delete at most 256 final rows finished before the retention window. The
+    /// database cleanup (`crate::db::retention`) repeats it until nothing is left.
+    pub fn prune(&self, now_ms: i64, days: u32) -> Result<usize, String> {
         if days == 0 {
             return Err("automation retention must be positive".into());
         }

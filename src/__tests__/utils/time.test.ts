@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatRelativeTime, relativeTime } from "../../utils/time";
+import { formatElapsedShort, formatRelativeTime, relativeTime } from "../../utils/time";
 
 describe("relativeTime", () => {
 	afterEach(() => {
@@ -118,5 +118,44 @@ describe("formatRelativeTime", () => {
 		expect(result).toMatch(/^\d+d ago$/);
 		const days = parseInt(result, 10);
 		expect(days).toBeGreaterThan(10000);
+	});
+});
+
+describe("formatElapsedShort", () => {
+	it("returns 'just now' for <5s", () => {
+		expect(formatElapsedShort(0)).toBe("just now");
+		expect(formatElapsedShort(4999)).toBe("just now");
+	});
+
+	it("returns Xs for 5s..59s", () => {
+		expect(formatElapsedShort(5000)).toBe("5s");
+		expect(formatElapsedShort(59999)).toBe("59s");
+	});
+
+	it("returns Xm for 60s..59m", () => {
+		expect(formatElapsedShort(60000)).toBe("1m");
+		expect(formatElapsedShort(3599999)).toBe("59m");
+	});
+
+	it("returns Xh for 1h..23h", () => {
+		expect(formatElapsedShort(3600000)).toBe("1h");
+		expect(formatElapsedShort(86399999)).toBe("23h");
+	});
+
+	it("returns Xd for >=24h", () => {
+		expect(formatElapsedShort(86400000)).toBe("1d");
+		expect(formatElapsedShort(86400000 * 7)).toBe("7d");
+	});
+
+	it("handles negative values gracefully", () => {
+		expect(formatElapsedShort(-1000)).toBe("just now");
+	});
+});
+
+describe("formatRelativeTime with an injected clock", () => {
+	it("measures from the given now, not the wall clock", () => {
+		// catches: a caller with a reactive clock (CommandOverview) never re-rendering its age
+		expect(formatRelativeTime(1_000, { now: 61_000 })).toBe("1m ago");
+		expect(formatRelativeTime(1_000, { now: 3_601_000 })).toBe("1h ago");
 	});
 });

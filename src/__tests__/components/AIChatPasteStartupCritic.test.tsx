@@ -24,6 +24,8 @@ it.each(["switch", "clear", "park", "start"])("keeps startup-delayed paste owner
 		phase: () => (connected && sessionId() ? "live" : "starting"),
 		busy: () => false,
 		queuedPrompts: () => [],
+		sendingPrompts: () => [],
+		retrySending: vi.fn(),
 		configOptions: () => [],
 		capabilities: () => (connected ? { promptImage: true } : null),
 		ensureStarted: () => starting,

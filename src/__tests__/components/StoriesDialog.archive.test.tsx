@@ -29,6 +29,8 @@ let story: {
 };
 
 beforeEach(() => {
+	// This subject exercises an explicitly selected plan, not the project-wide landing view.
+	storiesUi.reveal({ project: "/archive", planId: "plan", storyId: null });
 	storiesUi.setVisibility("all");
 	storiesUi.setStoryType("all");
 	storiesUi.setView("list");
@@ -70,12 +72,13 @@ beforeEach(() => {
 				return { type: "plans", value: !!action.archived === plan.archived ? [{ ...plan }] : [] };
 			case "list_plan_sources":
 				return { type: "plan_sources", value: [] };
+			case "project_story_view":
 			case "plan_view":
 			case "filtered_plan_view": {
 				const archived = !!(action.filter as { archived?: boolean } | undefined)?.archived;
 				const stories = archived === story.archived ? [{ ...story }] : [];
 				return {
-					type: "plan_view",
+					type: action.action === "project_story_view" ? "project_story_view" : "plan_view",
 					value: {
 						stories,
 						visibleStoryIds: stories.map((item) => item.id),
@@ -134,6 +137,7 @@ it("catches archived plans having no restore route or enabling new work before r
 		action: { action: "archive_plan", plan_id: "plan", expected_revision: 7 },
 	});
 	fireEvent.click(ui.getByLabelText("Archived plans"));
+	fireEvent.click(await ui.findByRole("button", { name: "Archive plan fixture" }));
 	const restore = await ui.findByRole("button", { name: "Restore plan" });
 	expect((ui.getByRole("button", { name: "New story" }) as HTMLButtonElement).disabled).toBe(true);
 	expect(ui.queryByRole("button", { name: "Start work" })).toBeNull();

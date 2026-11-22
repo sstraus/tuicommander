@@ -446,15 +446,16 @@ fn try_timer_idle_transition(
         // release the transport claim while the native producer remains idle.
         let native_idle_claim = silence.native_state.activity() == Some(SHELL_IDLE)
             && silence.busy_source_is("user-submit");
-        // Codex does not send its hook Stop when Esc cancels a turn. Its
-        // recorded interrupt banner confirms the interrupt we requested.
-        let codex_interrupted = agent_type == Some("codex")
+        // Neither Codex nor Claude sends its Stop hook when Esc cancels a turn
+        // or a permission dialog is rejected. Their recorded interrupt banner
+        // confirms the interrupt or dialog answer we saw written.
+        let banner_interrupted = matches!(agent_type, Some("codex" | "claude"))
             && screen_activity == AgentScreenActivity::Interrupted
-            && silence.interrupt_pending();
+            && (silence.interrupt_pending() || silence.dialog_answer_pending());
         if agent_type.is_some()
             && silence.native_state.activity().is_some()
             && !native_idle_claim
-            && !codex_interrupted
+            && !banner_interrupted
         {
             if agent_type == Some("ego")
                 && screen_activity == AgentScreenActivity::Ready
@@ -860,9 +861,16 @@ fn spawn_silence_timer(
                 }
             }
 
-            // Tool-error turn-end: `Error: Exit code N` + silence = fire playError.
-            // Checked before question detection — a tool error is not a question.
-            if let Some(text) = silence.lock().check_tool_error() {
+            // Tool-error turn-end: `Error: Exit code N` + silence + idle shell =
+            // fire playError. Re-read the shell state: the idle transition above
+            // may have happened in this tick. Checked before question detection —
+            // a tool error is not a question.
+            let turn_ended = state
+                .session_maps
+                .shell_states
+                .get(&session_id)
+                .is_some_and(|shell| shell.load(Ordering::Acquire) != SHELL_BUSY);
+            if let Some(text) = silence.lock().check_tool_error(turn_ended) {
                 let parsed = ParsedEvent::ToolError { matched_text: text };
                 if let Ok(json) = serde_json::to_value(&parsed) {
                     #[cfg(feature = "desktop")]
@@ -1612,13 +1620,8 @@ struct ChunkProcessor {
     startup_deadline: std::time::Instant,
     /// The startup toast is shown once per PTY.
     alt_screen_toasted: bool,
-    /// TUIC_SESSION UUID for this PTY — used to create flag files that
-    /// signal the shell wrapper to stop injecting `--session-id`.
+    /// TUIC_SESSION UUID for this PTY, passed to the agent hook receivers.
     tuic_session: Option<String>,
-    /// Last time we created a no-session-inject flag file in response to
-    /// an `AgentSessionConflict` event. Gates subsequent marks so a single
-    /// burst of conflict output fires the mitigation exactly once.
-    last_session_conflict_mark: Option<std::time::Instant>,
     /// Absolute buffer line of the last heuristic agent-block start.
     /// Used to emit AgentBlock end when the next block starts or agent exits.
     last_agent_block_line: Option<usize>,
@@ -1740,8 +1743,14 @@ impl ChunkProcessor {
         session_id: &str,
         payload: &str,
     ) -> bool {
+        let session_active = self.ego_events.session_active();
         let before = self.ego_events.stop_generation();
         let edge = self.ego_events.receive(payload);
+        if session_active && !self.ego_events.session_active() {
+            // session_end retires owned work before its following coarse idle,
+            // which no longer belongs to an active native session.
+            note_ego_owned_work(state, session_id, "idle");
+        }
         if self.ego_events.stop_generation() != before {
             revoke_background_completion_origin(state, session_id);
         }
@@ -1841,7 +1850,6 @@ impl ChunkProcessor {
             startup_deadline: std::time::Instant::now() + ALT_SCREEN_STARTUP_WINDOW,
             alt_screen_toasted: false,
             tuic_session,
-            last_session_conflict_mark: None,
             last_agent_block_line: None,
             title_awaiting: false,
             codex_approval_question: None,
@@ -1894,6 +1902,7 @@ impl ChunkProcessor {
                 // The agent is gone: its open question requests went with it.
                 self.claude_hooks.clear();
                 self.ego_events.clear();
+                note_ego_owned_work(state, session_id, "idle");
                 self.agent_tools.clear();
                 crate::codex_binding::revoke(state, session_id);
                 transition_explicit_shell_state(state, session_id, SHELL_IDLE, "idle", false);
@@ -1960,48 +1969,6 @@ impl ChunkProcessor {
             Some(normalize_path(&joined).to_string_lossy().into_owned())
         } else {
             None
-        }
-    }
-
-    /// Create a flag file that tells the shell wrapper to stop injecting
-    /// `--session-id $TUIC_SESSION` into `claude` invocations. This is the
-    /// safe alternative to writing `export TUIC_SESSION=…` into the PTY,
-    /// which can corrupt fullscreen TUI output or race with user input.
-    ///
-    /// Guarded by a 3-second cooldown: Claude prints the error line multiple
-    /// times as it exits, and we want exactly one flag per conflict burst.
-    fn mark_session_no_inject(&mut self, kind: &str) {
-        const COOLDOWN: std::time::Duration = std::time::Duration::from_secs(3);
-        let now = std::time::Instant::now();
-        if self
-            .last_session_conflict_mark
-            .is_some_and(|t| now.duration_since(t) < COOLDOWN)
-        {
-            return;
-        }
-        self.last_session_conflict_mark = Some(now);
-
-        let Some(ref tuic_session) = self.tuic_session else {
-            return;
-        };
-
-        let flag_path =
-            crate::config::config_dir().join(format!("no-session-inject.{tuic_session}"));
-        match std::fs::write(&flag_path, b"") {
-            Ok(()) => {
-                tracing::info!(
-                    tuic_session = %tuic_session,
-                    kind = %kind,
-                    "Created no-session-inject flag after agent-session-conflict"
-                );
-            }
-            Err(e) => {
-                tracing::warn!(
-                    tuic_session = %tuic_session,
-                    error = %e,
-                    "Failed to create no-session-inject flag"
-                );
-            }
         }
     }
 
@@ -3500,13 +3467,14 @@ impl ChunkProcessor {
                 _ => {}
             }
 
-            if let ParsedEvent::AgentSessionConflict { kind, .. } = event
+            // A session conflict printed at the shell prompt is the agent's
+            // own exit message, not agent output to forward.
+            if matches!(event, ParsedEvent::AgentSessionConflict { .. })
                 && matches!(
                     self.terminal_mode,
                     crate::ai_agent::tui_detect::TerminalMode::Shell
                 )
             {
-                self.mark_session_no_inject(kind);
                 continue;
             }
 

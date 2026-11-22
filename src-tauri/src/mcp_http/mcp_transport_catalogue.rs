@@ -279,9 +279,7 @@ pub(super) fn render_mcp_instructions(
     // Keep inventory out of this cached prefix: it changes between handshakes.
     // The tools serve current peers and terminals when the caller needs them.
     out.push_str("## Multi-Agent Work\n\n");
-    if ctx.role == super::caller_role::CallerRole::ManagedChild {
-        out.push_str(super::caller_role::CHILD_MISSING_LINE);
-    } else if ctx.role == super::caller_role::CallerRole::Agent {
+    if ctx.role == super::caller_role::CallerRole::Agent {
         out.push_str(super::caller_role::AGENT_MISSING_LINE);
     } else if !launch_channel {
         out.push_str("- Delegate or parallelize via TUIC `agent action=spawn`/`launch`, not client-native subagents; peers stay visible, mailable and managed.\n");
@@ -530,6 +528,7 @@ fn native_reference_tool_definitions() -> serde_json::Value {
                 "input": { "type": "string", "description": "Non-empty command (action=submit) or raw text (action=input)" },
                 "pty_description": { "type": ["string", "null"], "description": "Short orchestrator-supplied description shown above the PTY (action=submit or input)" },
                 "special_key": { "type": "string", "description": "Special key: enter, tab, ctrl+c, ctrl+d, ctrl+z, ctrl+l, ctrl+a, ctrl+e, ctrl+k, ctrl+u, ctrl+w, ctrl+r, up, down, left, right, home, end, backspace, delete, escape (action=input)" },
+                "wait_ms": { "type": "integer", "minimum": 1, "maximum": 30000, "description": "action=input, shells only: after typing, wait until the terminal stops printing (or this many ms pass) and return the text it printed after the write as `output`, with `settled` and `truncated` (64 KiB). Saves a separate wait and output read." },
                 "rows": { "type": "integer", "description": "Terminal rows (action=create or resize)" },
                 "cols": { "type": "integer", "description": "Terminal cols (action=create or resize)" },
                 "shell": { "type": "string", "description": "Shell binary path (action=create)" },
@@ -581,7 +580,7 @@ fn native_reference_tool_definitions() -> serde_json::Value {
                 "message": { "type": "string", "description": "Message content, max 64KB (action=send, required even with report)" },
                 "report": crate::agent_report::schema(),
                 "urgency": { "type": "string", "enum": ["normal", "urgent", "interrupt"], "description": "action=send: normal (default) keeps payloads in the inbox and uses safe idle wakes. urgent and interrupt force the same Esc, confirmed-idle (up to 5 s), full-message flow for Claude/Codex/ego. A refusal stays inbox-only; no busy Enter or queued fallback. See send for receipt fields." },
-                "capabilities": { "type": "array", "uniqueItems": true, "items": { "type": "string", "enum": crate::agent_capabilities::Capability::NAMES }, "description": "action=spawn (launch: spawn.capabilities): fixed set of the new agent; child default none, capped spawner grants only its own. children=spawn/launch; progress=progress tool; land/push/tag via git env TUIC_CAPABILITIES. Refusal: code=capability_denied, parent mailed once per capability." },
+                "capabilities": { "type": "array", "uniqueItems": true, "items": { "type": "string", "enum": crate::agent_capabilities::Capability::NAMES }, "description": "action=spawn (launch: spawn.capabilities): omit it. operator=automation cutover/rollback and workflow approval answers; a child gets it only when named, and a capped spawner grants only its own." },
                 "keep_open": { "type": "boolean", "description": "launch: required explicit child lifetime; spawn: keep this child open; send: set or clear the recipient child's keep-open flag." },
                 "limit": { "type": "integer", "minimum": 1, "maximum": crate::state::AGENT_INBOX_CAPACITY, "description": "Max inbox entries (action=inbox; default and maximum 100). Read again while has_more." },
                 "subscription_id": { "type":"string", "minLength":1, "maxLength":64, "pattern":"^[A-Za-z0-9_-]+$", "description":"Independent durable reader (subscribe, inbox, wait, ack, unsubscribe). Reuse the same peer identity and id on reconnect." },
@@ -637,7 +636,7 @@ fn native_reference_tool_definitions() -> serde_json::Value {
 
         {
             "name": "story",
-            "description": "Native stories, plans and Ideas of the calling session's project (bound managed terminal or live ACP origin). Arguments are one StoryAction: action plus its fields at the top level, no input envelope; unknown fields are rejected before effects. Actions: add_idea (text, optional source; repo is the calling project; source defaults to bound session), list_ideas (project plus global Ideas), update_idea (idea_id, text; project-owned only); Idea replies use type=idea or ideas and camelCase notes.json records; all writes publish ideas-changed and stale UI saves merge per id and field. Native plan actions: create_plan, update_plan (plan_id, expected_revision, patch={title?,source?}; atomic persisted revision check; changing source requires no running plan coordinator, finish or cancel it first; title-only/unchanged source allowed), list_plans (optional archived=true selects archived plans; default false), list_plan_sources, add_plan_source, get_plan, plan_state, plan_view, filtered_plan_view (plan_id and filter={visibility: all|open|closed, storyType: feature|fix|refactor|chore|task|null, untypedOnly: boolean, archived: boolean (default false)}; type and untypedOnly are mutually exclusive), project_story_view (archived_plans=false selects active plans; true selects archived plans only; same filter as filtered_plan_view; reply type=project_story_view with stories, visibleStoryIds and columns), summary, create_story, update_story, list_stories (plan_id; optional conjunctive state, priority=1..3, story_type, archived (default false; true selects archived stories); optional limit=1..100 and cursor; absent limit returns all filtered stories in id order, limited replies keep value as Story[] and add next_cursor when more matches remain; cursor is bound to plan and filters), get_story, available_transitions (story_id, expected_revision; read-only reply with revision and legal moves), transition_history, archive_story, unarchive_story, archive_plan, unarchive_plan (id and expected_revision; reversible, refused while claimed or run-owned), story_archive_history, plan_archive_history, add_note (story_id, expected_revision, nonblank text up to 16000 characters, optional receipts=[{runId,commandId}] up to 16 distinct persisted same-project/plan receipt references; backend actor/time/current subject revision, no story revision change, append-only), list_notes (story_id; append order), add_dependency, remove_dependency, claim and transition; actor identity is provenance and never restricts an action. update_story takes story_id, expected_revision and a camelCase patch for title, priority, fileScope, origin, storyType, problem, risk, ordered criteria and dependencies; only unclaimed backlog/ready stories without active run ownership may be amended; nullable storyType/problem/risk clear their fields, changed criteria are unchecked; remove_dependency remains administrative; add_dependency on a ready story moves it to backlog when its dependency is not done or lacks a required integration receipt; backend_status reads the repository story backend, its availability and provenance; set_backend and approve_connector change the backend and are refused to MCP callers (authenticated human UI only).",
+            "description": "Native stories, plans and Ideas of the calling session's project (bound managed terminal or live ACP origin). Arguments are one StoryAction: action plus its fields at the top level, no input envelope; unknown fields are rejected before effects. Actions: add_idea (text, optional source; repo is the calling project; source defaults to bound session), list_ideas (project plus global Ideas), update_idea (idea_id, text; project-owned only); Idea replies use type=idea or ideas and camelCase notes.json records; all writes publish ideas-changed and stale UI saves merge per id and field. Native plan actions: create_plan, update_plan (plan_id, expected_revision, patch={title?,source?}; atomic persisted revision check; changing source requires no running plan coordinator, finish or cancel it first; title-only/unchanged source allowed), list_plans (optional archived=true selects archived plans; default false), list_plan_sources, add_plan_source, get_plan, plan_state, plan_view, filtered_plan_view (plan_id and filter={visibility: all|open|closed, storyType: feature|fix|refactor|chore|task|null, untypedOnly: boolean, archived: boolean (default false)}; type and untypedOnly are mutually exclusive), project_story_view (archived_plans=false selects active plans; true selects archived plans only; same filter as filtered_plan_view; reply type=project_story_view with stories, visibleStoryIds and columns), summary, create_story, update_story, list_stories (plan_id; optional conjunctive state, priority=1..3, story_type, archived (default false; true selects archived stories); optional limit=1..100 and cursor; absent limit returns all filtered stories in id order, limited replies keep value as Story[] and add next_cursor when more matches remain; cursor is bound to plan and filters), get_story, available_transitions (story_id, expected_revision; read-only reply with revision and legal moves), transition_history, archive_story, unarchive_story, archive_plan, unarchive_plan (id and expected_revision; reversible, refused while claimed or run-owned), story_archive_history, plan_archive_history, add_note (story_id, expected_revision, nonblank text up to 16000 characters, optional receipts=[{runId,commandId}] up to 16 distinct persisted same-project/plan receipt references; backend actor/time/current subject revision, no story revision change, append-only), list_notes (story_id; append order), add_dependency, remove_dependency, claim and transition; actor identity is provenance and never restricts an action. update_story takes story_id, expected_revision and a camelCase patch for title, priority, fileScope, origin, storyType, problem, risk, ordered criteria and dependencies; only unclaimed backlog/ready stories without active run ownership may be amended; nullable storyType/problem/risk clear their fields, changed criteria are unchecked; remove_dependency remains administrative; add_dependency on a ready story moves it to backlog when its dependency is not done or lacks a required integration receipt; open_story_count returns {project,backend,generation,openCount} for open non-archived stories across all non-archived plans from the selected backend, with no content or fallback; backend_status reads the repository story backend, its availability and provenance; set_backend and approve_connector change the backend and are refused to MCP callers (authenticated human UI only).",
             "inputSchema": super::mcp_transport_ancillary::story_action_schema()
         },
 
@@ -652,11 +651,12 @@ fn native_reference_tool_definitions() -> serde_json::Value {
             // Claude Code defers MCP tools behind ToolSearch unless told not to;
             // a deferred `progress` is a tool Claude agents never call.
             "_meta": { "anthropic/alwaysLoad": true },
-            "description": "Managed children must not call this tool; send RESULT or BLOCKED to their parent with agent action=send to=<parent> message=<report>. Root sessions: record what happened, for the user who walked away. Mandatory: type=done when the work an `intent:` announced is finished, type=blocked when you stop and wait for the user because you cannot proceed without them. A blocked report marks your tab as waiting for an answer until the user replies or you report done. If you keep working while the user does something in parallel, report that with type=done, not blocked.",
+            "description": "Managed children must not call progress: mail RESULT/BLOCKED to your parent via agent action=send. Roots: record finished work (type=done) or ask a question you must stop for (type=blocked, marks the tab waiting). If work continues, report only finished outcomes, not a blocker. Also reply in chat with the outcome or blocker and next step.",
             "inputSchema": { "type": "object", "properties": {
+                "question": { "type": "object", "properties": { "kind": { "type": "string", "enum": ["yes_no"] } }, "required": ["kind"], "additionalProperties": false, "description": "Blocked only. Yes/No buttons for attributable reports; omit for free text. Replies arrive by agent mail." },
                 "type": { "type": "string", "enum": ["done", "blocked"] },
-                "text": { "type": "string", "maxLength": 500, "description": "Outcome, not implementation." },
-                "step": { "type": "string", "maxLength": 80, "description": "Optional free label — a crumb the human reads. Nothing is keyed on it." }
+                "text": { "type": "string", "maxLength": 500, "description": "Outcome or the exact question." },
+                "step": { "type": "string", "maxLength": 80, "description": "Optional display label, not an ID." }
             }, "required": ["type", "text"] }
         },
         {
@@ -757,16 +757,10 @@ pub(super) fn native_tool_help(name: &str) -> Option<serde_json::Value> {
 /// Agent-facing action contracts. Field types and bounds remain in the schema.
 fn compact_native_description(name: &str) -> Option<&'static str> {
     Some(match name {
-        "session" => {
-            "PTY multiplexer (tmux): input=send-keys, output=capture-pane. help: full usage and response guide. All session_id actions accept PTY id, tuic_session, alias, unique short PTY prefix or unique display name; ambiguity errors.\nlist: local and connected remote inventory; optional session_id/compact. All active sessions and states in one call; never fan out per-session status calls. Optional fields are omitted, not null; background_work/standby only when true. completed requires a suggest marker.\ncreate: new PTY. submit: one non-empty command to a confirmed-idle managed agent; bounded receipt. Use one call; never split text and Enter; never poll after it. Never queues; partial composers, dialogs, busy agents, and older queued commands reject before writing. Acknowledgement means child terminal movement after Enter, not semantic application acceptance. composer_state (tracked InputLineBuffer, not application state). force_retry: submit /retry once only during ego provider recovery; never queues or retries automatically. input: Raw text/key compatibility surface. Send text and/or special_key; ok confirms PTY write only.\noutput: bounded retained terminal output; anomaly fallback only when a child failed to send its result, not normal orchestration. Tail hides empty composer/HUD; raw preserves it. Byte-budget chunks bound compact envelope bytes, not MCP framing; concatenate chunk values then parse JSON. Continue with same action/session and opaque token; expires after 300s/eviction. Follow has_more/next_cursor without rerunning commands; raw cursors are source bytes. Evicted output is unrecoverable.\n- status: state. wait: server-side idle/exited wait, not a polling loop. resize: dimensions. rename: non-empty display name; sticky unless is_custom=false. \n- keep_open: managed child enabled=true disables idle closure; enabled=false restores it. suspend: end PTY/agent, keep restorable tab; refused while working, awaiting answer or running a command; not SIGSTOP standby. close: graceful shutdown. kill: SIGKILL only if close fails. pause: stop buffering. resume: restart buffering. declare_worktree: authenticated live caller only, existing linked worktree in its repository, no foreign session; persists placement without changing cwd; MCP-only via POST /mcp. Executing/destructive session actions require a loopback or authenticated caller."
-        }
+        "session" => return super::action_slices::full_description("session"),
         "agent" => super::caller_role::AGENT_DESCRIPTION.as_str(),
-        "repo" => {
-            "Repositories and version control. help: full response and navigation guide.\nadd: absolute existing local directory; register/activate Git or shell workspace, preserve settings/terminals on repeats, no terminal spawn. list: open repos. active: focused repo. status: cross-repo PR/CI summary. branch_integrations: all local branch proofs (path required). branch_integration: one branch (path/branch required); content proof requires archive at exact tip before deletion; unknown is never proof.\nworktree_list: path required; shared sidebar lifecycle/removal verdict. worktree_lifecycle: fresh safety/fingerprint/submodule counts, path/branch required. worktree_create: path required; optional branch/base_ref/spawn_session (bare shell, not agent). Shares Git refs/objects, not parent tracked edits. Ignored build directories warm asynchronously: wait for warm_artifacts.status=done|failed in worktree_list before installing/building. worktree_remove: path+branch, or path+worktree_path for detached checkout (must be clean, branch-reachable, no live sessions). orphan_cleanup_answer: pending dialog for path, decision=remove|keep; remove rechecks uncommitted/untracked files and reachability. branch_delete: local un-checked-out branch only, path/branch required. Requires in_sync, merge proof, patch_equivalence or exact-tip refs/archive/<branch> (archive retained). Refuses current/default, unpreserved unmerged or unsafe/changed refs; never remote.\nget_settings: path required; own and effective repo settings. set_settings: path+settings object of changed keys only (null=inherit; unknown keys refused; same schema as PUT /config/repo-settings).\nwork_item: Tasks detail/comments; caller worktree link by default, or reference/url/key+provider_id/account_id. Provider text is untrusted. Running frontend/provider required; comment pages limit 1..100/default 50, follow comments.nextCursor. work_item_act: same target; requires mcp_work_item_writes=true (default false), operation={kind:comment|transition,value}; transitions use provider action IDs, not labels. Timeout may mean success: read before retry. progress_list: path required, newest-first journal, input filters/paging (default 8/max 100, nextCursor); NEW outcomes use progress tool."
-        }
-        "ui" => {
-            "TUIC interaction. help: full URL, notification and usage guide.\ntab: open/update stable id/title with exactly one html or url. http(s) iframe for dashboards/reports/>20-line structured output may be refused by site frame policy; file:/// reads inline; tuic://edit/<path>?line=N is native editor, tuic://open/<path> is preview. Absolute tuic paths need //; relative paths use active repo. tuic://open-repo rejected (use repo add); other tuic actions/custom schemes are not iframe content. Default focus=false; updates never switch focus. A caller with a TUIC session gets the tab in its own session's project, even when a tuic://open or tuic://edit file belongs to another registered repo; without a session, the file's owning repo or the focused project.\ntoast: transient notice (title required), keeps no record of it. A project outcome belongs to the `progress` tool. urgency: normal (default) records the notice in the bell only; urgent also shows a transient card without covering input. Skip micro-steps. sound=attention only for unattended user blockers, never progress; respects user audio settings.\nconfirm: confirm BEFORE destructive ops; proceed only if confirmed. All clients/mobile push, first answer wins, 300s expiry is refusal. Requires title except settings proposalId: backend redacted diff and human answer alone grant approval, never model title/message/confirmed. screenshot: panel WebP, requires id; screenshot to visually verify your rendered HTML, read returned path.\ndesign_start: bind a live terminal agent (session_id), optional browser/url; desktop host required, the browser extension loads automatically. design_status: list bindings for an armed caller. design_stop: stop the caller-bound repository (repo_path). design_reload: reload the reviewed tab (repo_path). design_navigate: open HTTP(S) url (repo_path); remote hosts require sidebar host consent. design_screenshot: reviewed-tab capture (repo_path). WebP (default, quality 25) for text and layout; quality 50+ for small glyphs and icons; PNG for pixel-exact detail. Optional format=webp|png, quality=1..100 (WebP only), max_long_edge pixels downsizes before encoding. Returns image, path, format, quality (null for PNG), bytes, mediaType and downscaled (over 512 KiB). Token cost follows pixel dimensions, not format or bytes (Claude: about 1,296 tokens per megapixel, capped at 1,568 standard / 4,784 high-res). design_errors: captured page errors (repo_path). design_eval: run script (repo_path), sidebar host consent required; next page via result_offset=next_offset. Design actions retain armed caller/repository checks and Design Mode capability denials."
-        }
+        "repo" => return super::action_slices::full_description("repo"),
+        "ui" => return super::action_slices::full_description("ui"),
         "voice" => {
             "Caller-bound hands-free speech, not application audio. help: full conversation/utterance guide. status: check first; if available is false reply in text. Mode notices come from TUICommander rather than from the user; off is final. The user can turn those notices off: absence proves nothing, status does. You do not choose the language or voice: write text in status.language. Speech supplements, never replaces normal reply.\nspeak: text required, max 2000 characters; supply status/notice turn to reject a stale reply, omission means now. Accepting a reply is NOT the same as the user hearing it: queued utterance_id is not heard; inspect status with that id; finished=heard to end, interrupted=user talked (normal), failed=never audible, unknown=too old. stop: immediately stop/drop queue and open new turn; use when reply is wrong."
         }
@@ -805,6 +799,7 @@ pub(super) fn meta_tool_definitions(state: &Arc<AppState>) -> serde_json::Value 
         "Find relevant TUICommander tools by natural-language query. Returns a BM25-ranked \
          list of tool names + one-line summaries, plus a complete top_schema when it fits \
          schema_byte_budget (default 16384 UTF-8 bytes, maximum 65536; 0 disables it). \
+         Multi-action tools come per action as `<tool>_<action>`; `schemas` adds related definitions. \
          Use top_schema directly; otherwise call `get_tool_schema` for the selected tool. A tool already on your \
          list, or one whose schema you fetched earlier on this connection, is callable \
          without searching for it again.\n\n\
@@ -1084,6 +1079,7 @@ pub(super) fn merged_tool_definitions_for_mode(
         {
             tools.push(progress);
         }
+        tools.push(super::mcp_batch::tool_definition());
         return serde_json::Value::Array(tools);
     }
 
@@ -1094,6 +1090,7 @@ pub(super) fn merged_tool_definitions_for_mode(
         .upstream_registry
         .aggregated_tools_for_repo(allowed.as_deref());
     tools.extend(upstream_tools);
+    tools.push(super::mcp_batch::tool_definition());
 
     serde_json::Value::Array(tools)
 }
@@ -1119,11 +1116,11 @@ pub(super) fn searchable_tool_definitions(state: &Arc<AppState>) -> Vec<serde_js
 /// Called on startup and on every `mcp_tools_changed` signal (native tool
 /// toggle, upstream add/remove, upstream tools/list_changed).
 pub(crate) fn rebuild_tool_search_index(state: &Arc<AppState>) {
-    let tools = searchable_tool_definitions(state);
-    let generation = crate::tool_search::ToolSearchIndex::catalogue_generation(&tools);
+    let docs = super::action_slices::index_documents(&searchable_tool_definitions(state));
+    let generation = crate::tool_search::ToolSearchIndex::docs_generation(&docs);
     let mut index = state.mcp.tool_search_index.write();
     if index.generation() != generation {
-        *index = crate::tool_search::ToolSearchIndex::build(&tools);
+        *index = crate::tool_search::ToolSearchIndex::build_docs(docs);
     }
 }
 
@@ -1181,13 +1178,25 @@ pub(super) fn handle_search_tools_for_session(
     // the caller's role and state decide which native tools it may find.
     let native = filtered_native_tools_for_session(state, mcp_session_id);
     let registered = native_tool_definitions();
-    let available = |name: &str| {
-        !registered
-            .as_array()
-            .unwrap()
+    let available = |entry: &crate::tool_search::ToolEntry| {
+        let name = entry.name.as_str();
+        let Some(action) = entry.action.as_deref() else {
+            return !registered
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|tool| tool["name"] == name)
+                || native.iter().any(|tool| tool["name"] == name);
+        };
+        // An action entry exists only while the caller may use that action.
+        let Some((tool_name, _)) = super::action_slices::split_action_tool_name(name) else {
+            return false;
+        };
+        native
             .iter()
-            .any(|tool| tool["name"] == name)
-            || native.iter().any(|tool| tool["name"] == name)
+            .find(|tool| tool["name"] == tool_name)
+            .and_then(|tool| super::action_slices::action_slice(tool, action))
+            .is_some()
     };
     let mut results = index.search(query, 100);
     // These phrases request the story owner, not the workflow execution tool.
@@ -1202,34 +1211,94 @@ pub(super) fn handle_search_tools_for_session(
 
     let ranked: Vec<serde_json::Value> = results
         .iter()
-        .filter(|e| available(&e.name))
+        .filter(|e| available(e))
         .take(limit)
         .map(|e| serde_json::json!({ "name": e.name, "summary": e.summary }))
         .collect();
-    // Include one complete definition only: never truncate a schema into an
-    // unusable contract. The budget measures its serialized UTF-8 bytes.
+    // Never truncate a schema into an unusable contract: a definition fits whole
+    // or is left out. The budget measures serialized UTF-8 bytes.
     let budget = args["schema_byte_budget"]
         .as_u64()
         .unwrap_or(16384)
         .min(65536) as usize;
-    let top_schema = ranked
-        .first()
-        .and_then(|entry| entry["name"].as_str())
-        .and_then(|name| {
-            native
+    let definition = |entry: &crate::tool_search::ToolEntry| -> Option<serde_json::Value> {
+        let Some(action) = entry.action.as_deref() else {
+            return native
                 .iter()
-                .find(|tool| tool["name"] == name)
-                .or_else(|| index.get_schema(name))
-        })
-        .filter(|schema| serde_json::to_vec(schema).is_ok_and(|bytes| bytes.len() <= budget));
+                .find(|tool| tool["name"] == entry.name.as_str())
+                .or_else(|| index.get_schema(&entry.name))
+                .cloned();
+        };
+        let (tool_name, _) = super::action_slices::split_action_tool_name(&entry.name)?;
+        let tool = native.iter().find(|tool| tool["name"] == tool_name)?;
+        super::action_slices::action_slice(tool, action)
+    };
+    let fits = |schema: &serde_json::Value, budget: usize| {
+        serde_json::to_vec(schema).is_ok_and(|bytes| bytes.len() <= budget)
+    };
+    let shown: Vec<&crate::tool_search::ToolEntry> = results
+        .iter()
+        .copied()
+        .filter(|e| available(e))
+        .take(limit)
+        .collect();
+    let top_schema = shown
+        .first()
+        .and_then(|entry| definition(entry))
+        .filter(|schema| fits(schema, budget));
+    // A discovery round trip costs a whole model turn; a few more schemas cost a
+    // few KB. Ship what the next step usually needs: the top action's
+    // prerequisites, then the next action results, within a fixed cap.
+    let mut schemas = Vec::new();
+    if let Some(top) = &top_schema {
+        let mut room = budget.min(RELATED_SCHEMA_BYTES);
+        let mut seen = vec![top["name"].clone()];
+        let prerequisites = shown
+            .first()
+            .and_then(|entry| {
+                let action = entry.action.as_deref()?;
+                let (tool_name, _) = super::action_slices::split_action_tool_name(&entry.name)?;
+                let tool = native.iter().find(|tool| tool["name"] == tool_name)?;
+                Some(
+                    super::action_slices::prerequisites(tool_name, action)
+                        .iter()
+                        .filter_map(|needed| super::action_slices::action_slice(tool, needed))
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .unwrap_or_default();
+        let following = shown
+            .iter()
+            .skip(1)
+            .filter(|entry| entry.action.is_some())
+            .take(RELATED_RESULTS)
+            .filter_map(|entry| definition(entry));
+        for schema in prerequisites.into_iter().chain(following) {
+            let size = serde_json::to_vec(&schema).map_or(usize::MAX, |bytes| bytes.len());
+            if seen.contains(&schema["name"]) || size > room {
+                continue;
+            }
+            room -= size;
+            seen.push(schema["name"].clone());
+            schemas.push(schema);
+        }
+    }
     let mut response = serde_json::json!({
         "results": ranked, "count": ranked.len(), "catalogue_generation": index.generation()
     });
     if let Some(schema) = top_schema {
-        response["top_schema"] = schema.clone();
+        response["top_schema"] = schema;
+    }
+    if !schemas.is_empty() {
+        response["schemas"] = serde_json::Value::Array(schemas);
     }
     response
 }
+
+/// Byte cap for the schemas a search adds after `top_schema`.
+const RELATED_SCHEMA_BYTES: usize = 8 * 1024;
+/// How many further action results a search may add complete schemas for.
+const RELATED_RESULTS: usize = 2;
 
 /// Handle `get_tool_schema` meta-tool — exact-name lookup of a tool's full definition.
 #[cfg(test)]
@@ -1254,14 +1323,34 @@ pub(super) fn handle_get_tool_schema_for_session(
         }
     };
 
+    // `<tool>_<action>` names one action of a multi-action native tool.
+    if let Some((native_name, action)) = super::action_slices::split_action_tool_name(tool_name) {
+        return filtered_native_tools_for_session(state, mcp_session_id)
+            .into_iter()
+            .find(|tool| tool["name"] == native_name)
+            .and_then(|tool| super::action_slices::action_slice(&tool, action))
+            .unwrap_or_else(|| serde_json::json!({"error": format!("Tool '{tool_name}' not found or not available to this caller. Use search_tools to discover available tools.")}));
+    }
+
     if native_tool_definitions()
         .as_array()
         .unwrap()
         .iter()
         .any(|tool| tool["name"] == tool_name)
     {
-        return filtered_native_tools_for_session(state, mcp_session_id).into_iter().find(|tool| tool["name"] == tool_name)
-            .unwrap_or_else(|| serde_json::json!({"error": format!("Tool '{tool_name}' not found. Use search_tools to discover available tools.")}));
+        let tool = filtered_native_tools_for_session(state, mcp_session_id)
+            .into_iter()
+            .find(|tool| tool["name"] == tool_name);
+        let action = args["action"]
+            .as_str()
+            .filter(|action| !action.trim().is_empty());
+        return match (tool, action) {
+            (None, _) => serde_json::json!({"error": format!("Tool '{tool_name}' not found. Use search_tools to discover available tools.")}),
+            (Some(tool), Some(action)) if super::action_slices::SLICED_TOOLS.contains(&tool_name) => {
+                super::action_slices::action_slice(&tool, action).unwrap_or_else(|| serde_json::json!({"error": format!("Action '{action}' of tool '{tool_name}' is not available to this caller. Use search_tools to discover available actions.")}))
+            }
+            (Some(tool), _) => tool,
+        };
     }
     let index = state.mcp.tool_search_index.read();
 
@@ -1298,6 +1387,11 @@ pub(super) async fn handle_call_tool(
 
     // Block recursive meta-tool invocation — meta-tools are invoked directly,
     // not routed through call_tool.
+    if tool_name == super::mcp_batch::BATCH_TOOL_NAME {
+        return serde_json::json!({
+            "error": "call_tool cannot invoke batch; call batch directly"
+        });
+    }
     if META_TOOL_NAMES.contains(&tool_name.as_str()) {
         return serde_json::json!({
             "error": format!(
@@ -1307,10 +1401,33 @@ pub(super) async fn handle_call_tool(
         });
     }
 
-    let tool_args = args
+    let mut tool_args = args
         .get("arguments")
         .cloned()
         .unwrap_or(serde_json::json!({}));
+
+    // `<tool>_<action>` dispatches to the native tool with that action. The
+    // handler and its complete validator decide whether the action exists.
+    let mut tool_name = tool_name;
+    if let Some((native_name, action)) = super::action_slices::split_action_tool_name(&tool_name)
+        .map(|(native_name, action)| (native_name, action.to_owned()))
+    {
+        let action = action.as_str();
+        match tool_args.get("action").and_then(serde_json::Value::as_str) {
+            Some(given) if given != action => {
+                return serde_json::json!({
+                    "error": format!("'{tool_name}' is action '{action}'; arguments.action '{given}' conflicts. Omit action or call '{native_name}_{given}'."),
+                    "code": "invalid_arguments", "effect": "not_started", "retryable": false
+                });
+            }
+            _ => {}
+        }
+        if !tool_args.is_object() {
+            tool_args = serde_json::json!({});
+        }
+        tool_args["action"] = serde_json::json!(action);
+        tool_name = native_name.to_owned();
+    }
 
     let is_upstream = tool_name.contains("__");
     if is_upstream {

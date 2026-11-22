@@ -3,7 +3,6 @@ use super::RunStore;
 use super::check::{clean_artifact, git_output};
 use super::native_operations::NativeContext;
 use super::neutral_effects::EffectKey;
-use crate::agent_capabilities::Capability;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug)]
@@ -153,13 +152,7 @@ pub(super) fn push(
     key: &EffectKey,
     request: &PushRequest,
 ) -> Result<PushReceipt, NativeFailure> {
-    let state = context.authorize(
-        store,
-        key,
-        "native.publication.push",
-        request,
-        Some(Capability::Push),
-    )?;
+    let state = context.authorize(store, key, "native.publication.push", request, None)?;
     context.require_artifact(&request.commit, &request.tree)?;
     let path = context.workspace_path();
     if !request.target.starts_with("refs/heads/")

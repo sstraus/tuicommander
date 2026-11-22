@@ -52,7 +52,7 @@ impl AutomationRuntime {
             return;
         }
         let weak = Arc::downgrade(state);
-        let path = crate::config::config_dir().join("automation_runs.sqlite3");
+        let path = crate::db::path(crate::db::AUTOMATION_RUNS_DB);
         let definitions = crate::config::config_dir().join("automations.json");
         tokio::spawn(async move {
             let owner = match tokio::task::spawn_blocking(move || {
@@ -171,7 +171,7 @@ impl AutomationRuntime {
     /// process left open: owner acquisition settles Reserved/Running runs. Without a ledger there is
     /// nothing to settle, and none is created. No scheduler or intake starts.
     fn settle_left_over_runs() {
-        let path = crate::config::config_dir().join("automation_runs.sqlite3");
+        let path = crate::db::path(crate::db::AUTOMATION_RUNS_DB);
         if !path.exists() {
             return;
         }

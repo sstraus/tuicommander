@@ -130,6 +130,7 @@ export function createAcpClient(open: AcpStreamOpener = openAcpStream) {
 	 * good.
 	 */
 	function receive(connectionId: AcpConnectionId, entry: Live, frame: AcpStreamFrame): void {
+		if (entry.abandoned || live.get(connectionId) !== entry) return;
 		entry.spent = 0;
 		acpStore.applyFrame(connectionId, frame);
 		acpTranscript.applyFrame(frame);
@@ -143,7 +144,11 @@ export function createAcpClient(open: AcpStreamOpener = openAcpStream) {
 			replaying.delete(frame.sessionId);
 			acpTranscript.settleReplayed(frame.sessionId);
 		}
+		if (frame.kind === "event" && frame.event.kind === "connectionState" && frame.event.state !== "ready") {
+			acpTranscript.stopReasoning(connectionId);
+		}
 		if (frame.kind !== "event") {
+			acpTranscript.stopReasoning(connectionId);
 			// `gap` and `end` are both terminal and neither is recoverable by
 			// reading again: a gap means the journal no longer holds what the
 			// cursor asks for, an end means there is nothing left to hold.
@@ -157,6 +162,7 @@ export function createAcpClient(open: AcpStreamOpener = openAcpStream) {
 			appLogger.warn("ai-chat", "stream stopped after repeated failures to resume", { connectionId });
 			entry.abandoned = true;
 			acpStore.markStopped(connectionId);
+			acpTranscript.stopReasoning(connectionId);
 			return;
 		}
 		entry.spent += 1;
@@ -254,6 +260,7 @@ export function createAcpClient(open: AcpStreamOpener = openAcpStream) {
 		async reconnect(connectionId: AcpConnectionId, root: string): Promise<AcpConnectionSnapshot> {
 			const snapshot = await invoke<AcpConnectionSnapshot>("acp_reconnect", { connectionId, root });
 			if (snapshot.connectionId !== connectionId) {
+				acpTranscript.stopReasoning(connectionId);
 				forget(connectionId);
 				acpStore.forget(connectionId);
 			}
@@ -264,6 +271,7 @@ export function createAcpClient(open: AcpStreamOpener = openAcpStream) {
 		refresh,
 
 		async disconnect(connectionId: AcpConnectionId): Promise<AcpConnectionSettlement> {
+			acpTranscript.stopReasoning(connectionId);
 			forget(connectionId);
 			try {
 				return await invoke<AcpConnectionSettlement>("acp_disconnect", { connectionId });
@@ -361,6 +369,7 @@ export function createAcpClient(open: AcpStreamOpener = openAcpStream) {
 
 		async closeSession(connectionId: AcpConnectionId, sessionId: AcpSessionId): Promise<void> {
 			await invoke("acp_session_close", { connectionId, sessionId });
+			acpTranscript.stopReasoning(connectionId, sessionId);
 			await this.refresh(connectionId);
 		},
 

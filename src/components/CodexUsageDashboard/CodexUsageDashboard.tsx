@@ -3,7 +3,7 @@ import { type CodexRateWindow, type CodexUsageApiResponse, windowLabel } from ".
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { providerQuotaStore } from "../../stores/providerQuota";
-import { formatQuotaWindow } from "../../utils/sessionUsageFormatting";
+import { formatQuotaWindow, formatTokens } from "../../utils/sessionUsageFormatting";
 // Reuses the Claude dashboard's CSS module on purpose: same card grid, same bar,
 // same insight tiles. A second stylesheet would drift on the first theme change.
 import s from "../ClaudeUsageDashboard/ClaudeUsageDashboard.module.css";
@@ -46,16 +46,6 @@ interface LabelledWindow {
 // ---------------------------------------------------------------------------
 // Formatting
 // ---------------------------------------------------------------------------
-
-/** Compact token counts: 25241643691 -> "25.2B". Raw digits are unreadable. */
-export function formatTokens(n: number | null): string {
-	if (n === null || !Number.isFinite(n)) return "--";
-	const abs = Math.abs(n);
-	if (abs >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
-	if (abs >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-	if (abs >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
-	return String(n);
-}
 
 /** Longest turn in seconds -> "17h 6m". Codex reports turns that run for hours. */
 export function formatDuration(seconds: number | null): string {

@@ -156,10 +156,7 @@ pub(crate) fn resolve(request: &ResumeRequest) -> ResumeResolution {
             .map(|run| run.env.clone())
             .unwrap_or_default();
     }
-    let discovery = matches!(
-        agent,
-        "claude" | "gemini" | "codex" | "grok" | "ego" | "goose"
-    );
+    let discovery = matches!(agent, "claude" | "agy" | "codex" | "grok" | "ego" | "goose");
     let id = request.agent_session_id.as_deref().or_else(|| {
         (agent == "goose")
             .then_some(request.tuic_session.as_deref())
@@ -182,9 +179,10 @@ pub(crate) fn resolve(request: &ResumeRequest) -> ResumeResolution {
         verified = true;
     }
     let flags = match (agent, id) {
-        ("claude", Some(id)) | ("gemini", Some(id)) | ("grok", Some(id)) => {
+        ("claude", Some(id)) | ("grok", Some(id)) => {
             vec!["--resume".into(), crate::prompt::shell_quote(id)]
         }
+        ("agy", Some(id)) => vec!["--conversation".into(), crate::prompt::shell_quote(id)],
         ("codex", Some(id)) | ("ego", Some(id)) => {
             vec!["resume".into(), crate::prompt::shell_quote(id)]
         }
@@ -194,8 +192,7 @@ pub(crate) fn resolve(request: &ResumeRequest) -> ResumeResolution {
             "--name".into(),
             crate::prompt::shell_quote(id),
         ],
-        ("claude" | "grok" | "pi", _) => vec!["--continue".into()],
-        ("gemini", _) => vec!["--resume".into()],
+        ("claude" | "grok" | "pi" | "agy", _) => vec!["--continue".into()],
         ("codex", _) => vec!["resume".into(), "--last".into()],
         ("ego" | "cursor", _) => vec!["resume".into()],
         ("goose", _) => vec!["session".into(), "--resume".into()],

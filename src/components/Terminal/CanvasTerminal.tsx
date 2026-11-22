@@ -12,7 +12,6 @@ import { isTauri } from "../../transport";
 import { getSessionConnection } from "../../transportRuntime";
 import { filterMatchesToBlock } from "../../utils/blockSearchFilter";
 import { writeClipboard } from "../../utils/clipboard";
-import { formatRelativeTime } from "../../utils/formatRelativeTime";
 import { isHandlerLink } from "../../utils/handlerLink";
 import { ensureKeyboardViewportTracking, keyboardOcclusion } from "../../utils/keyboardViewport";
 import { handleOpenUrl, openConfirmedLink } from "../../utils/openUrl";
@@ -21,6 +20,7 @@ import { isPerfDebug } from "../../utils/perfDebug";
 import { markPerf, noteFrameRequest } from "../../utils/perfTrace";
 import { stripAnswerMarkers } from "../../utils/stripAnswerMarkers";
 import { applyPinchFontDelta } from "../../utils/terminalZoom";
+import { formatElapsedShort } from "../../utils/time";
 import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
 import { AnswersPanel } from "./AnswersPanel";
 import { type AnswersTurn, newTurnCache, readAnswersHistory, readTurnRows, sameAnswersHistory } from "./answersTurn";
@@ -140,6 +140,8 @@ export interface CanvasTerminalRef {
 	focus: () => void;
 	refresh: () => void;
 	resubscribe: () => Promise<void>;
+	/** True when another instance of this session has taken the grid channel. */
+	lostGrid: () => boolean;
 	getSelectionText: () => string;
 	searchFind: (query: string, blockScope?: boolean) => Promise<{ index: number; count: number }>;
 	searchNext: () => { index: number; count: number };
@@ -826,13 +828,17 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		const viewportTop = currentFrame.historySize - currentFrame.displayOffset;
 		const screenLines = currentFrame.screenRows || lastResizeRows;
 		const viewportBottom = viewportTop + screenLines;
-		if (match.row >= viewportTop && match.row < viewportBottom) return;
-		const targetOffset = currentFrame.historySize - match.row + Math.floor(screenLines / 2);
-		const clamped = Math.max(0, Math.min(targetOffset, currentFrame.historySize));
-		const delta = clamped - currentFrame.displayOffset;
-		if (delta !== 0) {
-			invokeRef("terminal_scroll", { sessionId: props.sessionId, delta }).catch(ipcErr("terminal_scroll"));
-		}
+		const visible = match.row >= viewportTop && match.row < viewportBottom;
+		if (visible && scroll.position === null && scroll.pendingOffset === null && !scroll.inFlight) return;
+		const targetOffset = visible
+			? currentFrame.displayOffset
+			: currentFrame.historySize - match.row + Math.floor(screenLines / 2);
+		// Explicit search navigation takes ownership from the wheel/cache renderer.
+		// Cancel its queued target too, then use the same latest-wins anchor path:
+		// a relative delta can be applied to a newer backend offset than this frame.
+		resetSmoothScroll(false);
+		scroll.pendingOffset = Math.max(0, Math.min(targetOffset, currentFrame.historySize));
+		scheduleScrollFlush();
 	}
 
 	/** Run `searchQuery` against the backend grid and adopt the result.
@@ -1002,7 +1008,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			if (vpRow === null) continue;
 			const y = vpRow * m.cellHeight;
 			if (y < lastLabelBottom) continue;
-			const label = formatRelativeTime(Date.now() - block.startedAt);
+			const label = formatElapsedShort(Date.now() - block.startedAt);
 			const tw = octx.measureText(label).width;
 			octx.fillText(label, canvasW - tw - 8, y + m.cellHeight * 0.75);
 			lastLabelBottom = y + m.cellHeight;
@@ -1133,6 +1139,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			getRow,
 			prompts.map((row) => row - base),
 			boundary,
+			{ base, generation },
 		);
 		if (prior !== undefined && plan.promptBoundary)
 			markerPromptEnds.set(prior, { ...plan.promptBoundary, end: plan.promptBoundary.end + base });
@@ -3157,19 +3164,16 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		});
 
 		bindings.listen(keyInputRef, "paste", (e: ClipboardEvent) => {
-			if (isImagePaste(e)) {
+			const text = e.clipboardData?.getData("text");
+			// A copied file (a Finder .mov, a PDF) reaches WebKit with no text and no
+			// path. Cmd+V then forwards Ctrl+V as for a screenshot, so the agent reads
+			// the host pasteboard itself instead of the paste vanishing.
+			if (isImagePaste(e) || !text) {
 				e.preventDefault();
 				writePty("\x16");
 				return;
 			}
-			const text = e.clipboardData?.getData("text");
-			if (text) {
-				if (currentFrame?.bracketedPaste) {
-					writePty(`\x1b[200~${text}\x1b[201~`);
-				} else {
-					writePty(text);
-				}
-			}
+			writePty(currentFrame?.bracketedPaste ? `\x1b[200~${text}\x1b[201~` : text);
 			e.preventDefault();
 		});
 
@@ -3701,6 +3705,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				awaitingFullFrame = false;
 				await transport?.resubscribe();
 			},
+			lostGrid: () => transport?.lostGrid?.() ?? false,
 			searchFind: async (query: string, blockScope?: boolean) => {
 				if (!query || !invokeRef) {
 					clearSearchState();

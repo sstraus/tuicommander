@@ -761,3 +761,51 @@ fn project_catalog_loads_verified_versions_before_resolving_subflows() {
         .unwrap();
     assert_eq!(root.subflow_pins.len(), 1);
 }
+
+// Catches: a backend-built subflow operation whose pin is computed over anything
+// other than the stored publication (e.g. a view with editor metadata), or whose
+// interface drifts from the child; either is refused by SaveOperation, so the
+// Designer's "use as subflow" action could never register a publication.
+#[test]
+fn published_subflow_registers_the_exact_publication_without_a_caller_supplied_hash() {
+    let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let store = WorkflowStore::open_at(&dir.path().join("workflow.sqlite3")).unwrap();
+    let mut catalog = WorkflowCatalog::new();
+    let child = store
+        .save_neutral_contract_fixture("/project", "child", 0, definition(), &catalog, &handlers())
+        .unwrap();
+    let id = DescriptorId {
+        namespace: "project".into(),
+        name: "child-flow".into(),
+        version: 1,
+    };
+    let descriptor = super::reusable_operation::published_subflow(id.clone(), &child).unwrap();
+    store
+        .save_reusable_operation("/project", 0, descriptor.clone(), &catalog, &registry())
+        .unwrap();
+    let saved = store
+        .get_reusable_operation("/project", &id, &catalog, &registry())
+        .unwrap();
+    assert_eq!(saved, descriptor);
+    assert_eq!(
+        saved.target,
+        Some(ReusableTarget::Subflow {
+            publication: PublicationPin {
+                reference: PublicationRef {
+                    project: "/project".into(),
+                    id: "child".into(),
+                    revision: 1,
+                },
+                sha256: content_digest(&child).unwrap(),
+            },
+        })
+    );
+    // A parent can use it: the publication closure carries exactly this child pin.
+    catalog.register(saved.clone()).unwrap();
+    let mut root = definition();
+    root.instances.push(instance(&saved));
+    let parent = store
+        .save_neutral_contract_fixture("/project", "root", 0, root, &catalog, &handlers())
+        .unwrap();
+    assert_eq!(parent.subflow_pins.len(), 1);
+}

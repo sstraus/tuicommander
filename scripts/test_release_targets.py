@@ -37,6 +37,7 @@ class ReleaseTargets(unittest.TestCase):
         self.public = self.git('rev-parse', 'HEAD')
         self.git('remote', 'add', 'origin', str(self.remote))
         self.git('push', 'origin', 'main')
+        self.git('branch', '-m', 'main', 'master')
         (self.repo / 'stories').mkdir()
         (self.repo / 'stories/private.md').write_text('Private development record\n')
         (self.repo / 'app.txt').write_text('new public behavior\n')
@@ -69,11 +70,11 @@ class ReleaseTargets(unittest.TestCase):
         result = self.run_cmd('git', 'merge-base', '--is-ancestor', self.private, commit, ok=False)
         self.assertEqual(result.returncode, 1, 'private development ancestry reached public remote')
 
-    # Catches: make nightly sends private main and moves a different tag.
+    # Catches: make nightly sends private master and moves a different tag.
     def test_nightly_keeps_main_private_and_moves_only_nightly_snapshot_and_tag(self):
         self.make('nightly', 'NIGHTLY_DATE=2026-11-02')
         self.assertEqual(self.remote_ref('refs/heads/main'), self.public,
-                         'make nightly published private main')
+                         'make nightly published private master')
         commit = self.remote_ref('refs/heads/nightly')
         self.assert_snapshot(commit, self.public)
         self.assertEqual(self.remote_ref('refs/tags/nightly'), commit)
@@ -82,22 +83,19 @@ class ReleaseTargets(unittest.TestCase):
         self.assert_snapshot(self.remote_ref('refs/heads/nightly'), commit)
         self.assertNotEqual(self.make('nightly', 'NIGHTLY_DATE=2026-11-03', ok=False).returncode, 0)
 
-    # Catches: nightly publishes a clean, unmerged branch instead of private main.
-    def test_nightly_never_publishes_unmerged_head_instead_of_private_main(self):
+    # Catches: nightly reads stale local main or unmerged HEAD instead of private master.
+    def test_nightly_never_publishes_stale_main_or_unmerged_head_instead_of_private_master(self):
+        self.git('branch', 'main', self.public)
         self.git('branch', 'unmerged-preview')
         self.git('symbolic-ref', 'HEAD', 'refs/heads/unmerged-preview')
-        (self.repo / 'app.txt').write_text('unfinished feature, not merged into main\n')
+        (self.repo / 'app.txt').write_text('unfinished feature, not merged into master\n')
         self.git('add', 'app.txt')
         self.git('commit', '-m', 'unfinished feature')
-        before = self.git('ls-remote', 'origin')
-        result = self.make('nightly', 'NIGHTLY_DATE=2026-11-02', ok=False)
-        if result.returncode:
-            self.assertEqual(self.git('ls-remote', 'origin'), before)
-        else:
-            snapshot = self.remote_ref('refs/heads/nightly')
-            self.assertEqual(self.git('show', f'{snapshot}:app.txt'),
-                             'new public behavior',
-                             'nightly published unmerged HEAD instead of private main')
+        self.make('nightly', 'NIGHTLY_DATE=2026-11-02')
+        snapshot = self.remote_ref('refs/heads/nightly')
+        self.assertEqual(self.git('show', f'{snapshot}:app.txt'),
+                         'new public behavior',
+                         'nightly must publish private master, not stale main or unmerged HEAD')
 
     # Catches: release tags private HEAD before the public PR is integrated.
     def test_release_tags_only_the_integrated_snapshot(self):

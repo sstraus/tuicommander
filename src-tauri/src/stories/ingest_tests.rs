@@ -77,34 +77,6 @@ fn ingest_ledger_is_atomic_and_survives_reopen_and_deletion() {
     assert!(!dir.path().join(".tuic").exists());
 }
 
-// Catches: schema migration omitting existing stories and their revision-preserving notes.
-#[test]
-fn ingest_migration_seeds_existing_stories_without_changing_subjects() {
-    let (dir, store, story) = fixture();
-    store
-        .add_note(
-            &story.id,
-            story.revision,
-            "Legacy note",
-            StoryTransitionActor::Human,
-            vec![],
-        )
-        .unwrap();
-    drop(store);
-    let conn = rusqlite::Connection::open(dir.path().join("stories.sqlite3")).unwrap();
-    conn.execute_batch("DROP TRIGGER story_ingest_insert; DROP TRIGGER story_ingest_update; DROP TRIGGER story_ingest_delete; DROP TRIGGER story_ingest_note; DROP TABLE story_ingest; PRAGMA user_version=5;").unwrap();
-    drop(conn);
-    let reopened = StoryStore::open_at(&dir.path().join("stories.sqlite3")).unwrap();
-    assert_eq!(reopened.get_story(&story.id).unwrap(), story);
-    let doc = reopened
-        .ingest_document(&story.id)
-        .unwrap()
-        .document
-        .unwrap();
-    assert!(doc.body.contains("Legacy note"));
-    assert_eq!(doc.title, "Searchable native story");
-}
-
 // Catches: revision-independent notes being lost when two handles append concurrently.
 #[test]
 fn ingest_concurrent_notes_have_distinct_durable_owner_revisions() {

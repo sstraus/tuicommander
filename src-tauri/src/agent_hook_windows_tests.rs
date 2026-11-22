@@ -6,7 +6,7 @@ use super::*;
 fn every_map(t: &HookTransport) -> Vec<HookEntry> {
     [
         claude_hook_map_on(t),
-        gemini_hook_map_on(t),
+        agy_hook_map_on(t),
         grok_hook_map_on(t),
         codex_hook_map_on(t),
     ]

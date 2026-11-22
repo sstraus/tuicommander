@@ -1,3 +1,4 @@
+import { createEffect, createRoot, on } from "solid-js";
 import { urlResolverRegistry } from "../components/CommandPalette/urlPaste";
 import type { ReviewThreadsPage } from "../components/PrDiffTab/reviewThreads";
 import { startWork } from "../hooks/git/startWork";
@@ -18,6 +19,8 @@ import { sidebarPluginStore } from "../stores/sidebarPluginStore";
 import { statusBarTicker } from "../stores/statusBarTicker";
 import { terminalsStore } from "../stores/terminals";
 import { workItemLinksStore } from "../stores/workItemLinks";
+import { owningConnectionFor, subscribeEvents } from "../transport";
+import { getRemoteBaseUrl } from "../transportRuntime";
 import type { WorkItemRef } from "../types/work-items.gen";
 import type { GitRemote } from "../types/workItemLinks";
 import { randomId, randomUuid } from "../utils/randomId";
@@ -49,6 +52,7 @@ import type {
 	RepoSettingsSnapshot,
 	RepoSnapshot,
 	StateChangeEvent,
+	StoryCountSnapshot,
 	TerminalAction,
 	TerminalStateSnapshot,
 	TuiPlugin,
@@ -500,6 +504,59 @@ function createPluginRegistry() {
 					awaitingInput: terminal.awaitingInput,
 					repoPath,
 				};
+			},
+
+			async getStoryCount(repoPath: string): Promise<StoryCountSnapshot> {
+				requireCapability(pluginId, capabilities, "stories:read");
+				if (!repositoriesStore.get(repoPath)) throw new Error("Story count requires a registered repository");
+				const reply = await invoke<{ type: string; value: StoryCountSnapshot }>("story_action_command", {
+					project: repoPath,
+					action: { action: "open_story_count" },
+				});
+				if (reply.type !== "open_story_count") throw new Error("Unexpected story count reply");
+				return reply.value;
+			},
+
+			async watchStoryCount(repoPath: string, callback: () => void): Promise<Disposable> {
+				requireCapability(pluginId, capabilities, "stories:read");
+				if (!repositoriesStore.get(repoPath)) throw new Error("Story count requires a registered repository");
+				let disposed = false;
+				const cleanups: Array<() => void> = [];
+				const disposable = track({
+					dispose() {
+						disposed = true;
+						for (const cleanup of cleanups) cleanup();
+					},
+				});
+				const guarded = guardPluginCallback(pluginId, "story count invalidation", callback);
+				const notify = () => {
+					if (!disposed && isActive()) guarded();
+				};
+				try {
+					const owner = owningConnectionFor("story_action_command", { project: repoPath });
+					const baseUrl = owner ? getRemoteBaseUrl(owner) : undefined;
+					if (owner && !baseUrl) throw new Error("Story backend is disconnected");
+					const stop = await subscribeEvents(
+						{
+							"stories-changed": notify,
+							"boss-attention-changed": notify,
+							"workflow-run-changed": notify,
+						},
+						{ baseUrl, onResync: notify },
+					);
+					if (disposed) stop();
+					else {
+						cleanups.push(stop);
+						createRoot((dispose) => {
+							cleanups.push(dispose);
+							createEffect(on(() => repositoriesStore.getRevision(repoPath), notify, { defer: true }));
+						});
+					}
+					return disposable;
+				} catch (error) {
+					disposable.dispose();
+					throw error;
+				}
 			},
 
 			onStateChange(callback: (event: StateChangeEvent) => void): Disposable {

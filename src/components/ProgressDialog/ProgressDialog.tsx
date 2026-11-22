@@ -14,8 +14,12 @@ import { Button } from "../ui/Button";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { Select } from "../ui/Select";
 import { Switch } from "../ui/Switch";
+import { DiscussionAsk } from "./DiscussionAsk";
+import { DiscussionThread } from "./DiscussionThread";
 import s from "./ProgressDialog.module.css";
 import { ProgressFlow } from "./ProgressFlow";
+import { ProgressRecent } from "./ProgressRecent";
+import { ProgressReply } from "./ProgressReply";
 
 const KIND_ICON: Record<ProgressKind, string> = {
 	// A check, a warning triangle and a small arrow. Monochrome paths, never emoji.
@@ -25,6 +29,9 @@ const KIND_ICON: Record<ProgressKind, string> = {
 	// A fork into two branches, and a speech bubble.
 	delegated: "M6 3v6a6 6 0 0 0 6 6h6m-4-4 4 4-4 4M6 21V9",
 	message: "M4 5h16v11H8l-4 4z",
+	// A question mark in a circle, and a reply arrow.
+	question: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zm-2.9-13a3 3 0 0 1 5.8 1c0 2-3 3-3 3m.1 4h.01",
+	answer: "M9 17 4 12l5-5m-5 5h12a4 4 0 0 1 4 4v2",
 };
 
 const KindIcon: Component<{ kind: ProgressKind }> = (props) => (
@@ -61,7 +68,6 @@ export interface ProgressDialogProps {
  * where the last visit ended, and on-demand older pages.
  */
 export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
-	progressStore.setProgressOnly(!!props.embedded);
 	if (!props.embedded) registerModal(() => void progressStore.close());
 	createEffect(() => {
 		if (!props.embedded || !props.projects?.length) return;
@@ -77,6 +83,9 @@ export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
 	const [filtersOpen, setFiltersOpen] = createSignal(false);
 	const [detailEntry, setDetailEntry] = createSignal<number | null>(null);
 	const [expandedEntries, setExpandedEntries] = createSignal<number[]>([]);
+	const [openThread, setOpenThread] = createSignal<number | null>(null);
+	/** Re-read an open thread whenever the journal list moves (an answer landed). */
+	const listRevision = () => `${entries().length}:${entries()[0]?.id ?? 0}`;
 	createEffect(() => {
 		project();
 		setExpandedEntries([]);
@@ -124,7 +133,19 @@ export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
 	});
 
 	const showProjectSelector = createMemo(() => !!props.embedded && (props.projects?.length ?? 0) > 0);
-	const isFlow = () => progressStore.view() === "flow";
+	/** The cross-project list, a third view beside List and Flow. */
+	const [allProjects, setAllProjects] = createSignal(false);
+	const isFlow = () => !allProjects() && progressStore.view() === "flow";
+	const viewValue = () => (allProjects() ? "all" : isFlow() ? "flow" : "list");
+	const chooseView = (next: "list" | "flow" | "all") => {
+		setAllProjects(next === "all");
+		if (next !== "all") progressStore.setView(next);
+	};
+	const viewOptions = [
+		{ id: "list", label: "List" },
+		{ id: "flow", label: "Flow" },
+		{ id: "all", label: "All projects" },
+	] as const;
 	const flowState = () => {
 		const path = project();
 		return path ? progressStore.state.flows?.[path] : undefined;
@@ -178,12 +199,9 @@ export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
 						<SegmentedControl
 							class={s.viewToggle}
 							aria-label="Progress view"
-							options={[
-								{ id: "list", label: "List" },
-								{ id: "flow", label: "Flow" },
-							]}
-							value={isFlow() ? "flow" : "list"}
-							onChange={(view) => progressStore.setView(view)}
+							options={viewOptions}
+							value={viewValue()}
+							onChange={chooseView}
 						/>
 						<Show when={!isFlow()}>
 							<label class={s.filter}>
@@ -193,6 +211,14 @@ export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
 									onChange={(e) => progressStore.setBlockedOnly(e.currentTarget.checked)}
 								/>
 								Blocked only
+							</label>
+							<label class={s.filter} title="Intents, messages and delegations">
+								<input
+									type="checkbox"
+									checked={progressStore.showActivity()}
+									onChange={(e) => progressStore.setShowActivity(e.currentTarget.checked)}
+								/>
+								Activity
 							</label>
 						</Show>
 						<Show when={!props.embedded}>
@@ -243,12 +269,9 @@ export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
 					<div class={s.mobileViewRow}>
 						<SegmentedControl
 							aria-label="Progress view"
-							options={[
-								{ id: "list", label: "List" },
-								{ id: "flow", label: "Flow" },
-							]}
-							value={isFlow() ? "flow" : "list"}
-							onChange={(view) => progressStore.setView(view)}
+							options={viewOptions}
+							value={viewValue()}
+							onChange={chooseView}
 						/>
 						<span class={s.scope}>
 							{progressStore.selectedPtyId() ? terminalName(progressStore.selectedPtyId()!) : "All agents"}
@@ -274,10 +297,10 @@ export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
 								</label>
 								<label>
 									<Switch
-										checked={!progressStore.progressOnly()}
-										onChange={(event) => progressStore.setProgressOnly(!event.currentTarget.checked)}
+										checked={progressStore.showActivity()}
+										onChange={(event) => progressStore.setShowActivity(event.currentTarget.checked)}
 									/>
-									Messages and delegations
+									Activity
 								</label>
 							</Show>
 						</div>
@@ -315,7 +338,15 @@ export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
 				</Show>
 			</Show>
 
-			<div class={s.list} hidden={isFlow()}>
+			<Show when={allProjects()}>
+				<ProgressRecent revision={progressStore.liveRevision()} />
+			</Show>
+
+			<Show when={!allProjects() && !isFlow() && progressStore.selectedPtyId()}>
+				{(ptyId) => <DiscussionAsk sessionId={ptyId()} />}
+			</Show>
+
+			<div class={s.list} hidden={isFlow() || allProjects()}>
 				<Show
 					when={entries().length > 0}
 					fallback={
@@ -363,21 +394,33 @@ export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
 															intent: "Started",
 															message: "Message",
 															delegated: "Delegated",
+															question: "Question",
+															answer: "Answer",
 														}[entry.type]
 													}
 												</span>
 												<time>{formatRelativeTime(entry.createdAtMs, { showDateFallback: true })}</time>
 											</div>
 										</Show>
-										<p
-											class={s.text}
-											classList={{
-												[s.textCollapsed]:
-													!!props.embedded && isLong(entry.text) && !expandedEntries().includes(entry.id),
-											}}
-										>
-											{entry.text}
-										</p>
+										<ProgressReply entry={entry}>
+											{/* An open thread shows the question and the answer in full:
+											    the row text would repeat them. An answer is a preview. */}
+											<Show when={openThread() !== entry.id}>
+												<p
+													class={s.text}
+													classList={{
+														[s.textCollapsed]:
+															(entry.type === "answer" || (!!props.embedded && isLong(entry.text))) &&
+															!expandedEntries().includes(entry.id),
+													}}
+												>
+													{entry.text}
+												</p>
+											</Show>
+										</ProgressReply>
+										<Show when={openThread() === entry.id}>
+											<DiscussionThread entryId={entry.id} revision={listRevision()} />
+										</Show>
 										<Show when={props.embedded && isLong(entry.text)}>
 											<Button
 												type="button"
@@ -418,6 +461,17 @@ export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
 													<Show when={!progressStore.selectedPtyId()}>
 														<span>· {entry.ptyId ? terminalName(entry.ptyId) : "Terminal unknown"}</span>
 													</Show>
+													<Show when={entry.type === "question" || entry.type === "answer"}>
+														<Button
+															type="button"
+															variant="ghost"
+															class={s.more}
+															aria-expanded={openThread() === entry.id}
+															onClick={() => setOpenThread(openThread() === entry.id ? null : entry.id)}
+														>
+															{openThread() === entry.id ? "Hide thread" : "Thread"}
+														</Button>
+													</Show>
 												</div>
 											}
 										>
@@ -442,6 +496,11 @@ export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
 													<span>{entry.ptyId ? terminalName(entry.ptyId) : "Terminal unknown"}</span>
 													<Show when={entry.targetPtyId || entry.targetName}>
 														<span>To: {entry.targetName || terminalName(entry.targetPtyId!)}</span>
+													</Show>
+													<Show when={entry.type === "question" || entry.type === "answer"}>
+														<Button onClick={() => setOpenThread(openThread() === entry.id ? null : entry.id)}>
+															{openThread() === entry.id ? "Hide thread" : "Thread"}
+														</Button>
 													</Show>
 													<Button
 														variant="danger"

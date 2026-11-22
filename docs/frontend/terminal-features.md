@@ -1,5 +1,12 @@
 # Terminal Features & Keyboard Shortcuts
 
+## Search result navigation
+
+Find, Next and Previous cancel an active smooth-scroll gesture and its queued
+scroll target before revealing the selected match. Search jumps use the shared
+latest-wins history-anchor path, so wheel scrolling cannot overwrite the jump
+or leave search highlights on a different viewport from the terminal text.
+
 ## Returning to terminal tabs
 
 When you return to a terminal tab, it repaints the last visible viewport while it
@@ -172,6 +179,7 @@ Clickable file paths in terminal output resolve against the terminal working dir
 - **Drag-and-drop** to reorder tabs
 - **Double-click** tab title to rename
 - **Unseen activity badge** when tab has new output
+- **Window reload recovery** keeps non-terminal tabs (files, diffs and generated/iframe panels), their order, pin state and selected pane in the same window. Editor drafts retain their disk baseline so an external change still shows a conflict. Draft writes are coalesced for 400 ms and bounded to 1,000,000 characters including baselines; oversized drafts are omitted with a warning, so save large files first. This does not add cross-window or app-restart persistence.
 
 ### Split Panes
 - Max 4 panes per branch
@@ -257,3 +265,5 @@ their normal arrow-key behavior.
 ### Compose queue item actions
 
 The Compose **N queued** list has a labelled **Cancel** action for each item and keeps **Clear all**. Supported items also show **Steer**, which uses the same backend delivery as Session Chat Send now. Claude Code, Codex and ego interrupt the running turn, confirm idle, then submit the selected full text. The tooltip states that the current request stops. Steer is hidden while a native question waits.
+
+Externally created PTY tabs show their cyan underline only while that terminal tab is focused; inactive tabs retain their status dot without an underline.

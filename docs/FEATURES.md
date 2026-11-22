@@ -1,5 +1,15 @@
 # TUICommander — Complete Feature Reference
 
+The neutral Workflow Designer has a graph-first workspace with named routes,
+click-to-connect, fit/zoom, a searchable installed catalog and a focused node
+inspector. Typed input/return forms, preview/retained runs and advanced definitions
+have separate views. Backend validation and the shared IPC/HTTP/MCP contracts
+remain authoritative. See [Workflow Designer](frontend/workflow-designer.md).
+
+Linux ARM64 desktop packaging is prepared for 2.1.2. Native package architecture
+and install/update selection are checked; actual ARM64 installation and desktop
+smoke remain release gates. See [the platform contract](guides/ci.md#native-linux-arm64-desktop-packages-212).
+
 The parallel Catalog authoring view includes trigger bindings: select a pinned workflow, map installed source fields, preview normalized payloads and inspect overlap revisions before explicit enable acknowledgement. A stored binding that an installed-source prerequisite holds without intake shows its reason ("No intake: …") next to it in the binding list. Authoring uses the shared desktop/HTTP action contract; native activities require the installed backend catalog/provider. Catalog failures remain explicit while independent saved drafts stay available.
 
 ### Neutral catalog authoring
@@ -80,7 +90,7 @@ The Plans column groups Edit plan with Archive plan and keeps the archived toggl
 
 Workflows is a separate space (palette **Workflows**) with Definitions/Designer and every project run; it links to and from Plans and Stories, which keeps planning and linked plan runs.
 
-Plans and Stories offers an explicit All plans choice for a combined List/Kanban view. Rust supplies the project-scoped stories, visible ids and columns. Rows and cards label their plan; existing filters and archive scopes still apply. Story actions and dependency candidates retain plan ownership. Select one plan for plan actions or story creation (#2358-b0b2).
+Plans and Stories opens with All plans for a combined List/Kanban view; choosing one plan is optional. Rust supplies the project-scoped stories, visible ids and columns. Rows and cards label their plan; existing filters and archive scopes still apply. Story actions and dependency candidates retain plan ownership. Select one plan for plan actions or story creation (#2358-b0b2).
 
 Native story API and CLI lists support combined state, priority and type filters, with optional cursor pages of 1–100 records; existing full-list reads and dispatch order are unchanged (#2174-6b3f).
 
@@ -193,6 +203,10 @@ The component is available for Tasks shell integration; it does not add a tab by
 - Preview comes from ego's effective view for the AI Chat workspace/profile.
   The exec-sandbox badge reports unverified enforcement when ego says `not_checked`
   and renders measured capability arrays without inferring enforcement from backend names.
+
+## Discussion side questions
+
+The Progress journal holds both directions of the exchange with an agent: its `done` and `blocked` reports, and your `question`s with their `answer`s. `Cmd+Alt+Q` (or "Ask the agent a side question" in the Command Palette) opens Progress on the active terminal with the ask box focused. TUIC runs the question in a headless, read-only fork of the agent's session (`claude -p --resume <id> --fork-session --permission-mode plan`) that reuses the session's prompt cache: about $0.007 on a 46k-token session. The answer is classified (`answer`, `action`, `unknown`), toasts like `done`, and opens inline with follow-up, copy and "send to agent" (queued for the agent's next idle window). Questions asked directly in a Claude, Codex, Grok or ego terminal and ending with `?` are captured when the turn ends, from the same normalized transcript the Chat view reads; the capture retries for a few seconds when the final reply is not written yet. Answers in the journal, captured or forked, are filed without the `💬`, `intent:` and `suggest:` markers (code blocks keep them). The default list hides the host trace (`intent`, `delegated`, `message`) behind an Activity toggle; "All projects" lists every project's entries. The backend also answers for Codex (`codex exec fork --ephemeral`, read-only sandbox, hooks off; a follow-up forks the main session again and replays the thread in its prompt, because an ephemeral fork cannot be resumed). For ego in a terminal it runs `ego fork` and then `ego resume <fork> <question> --mode plan --no-hooks --output jsonl`; a follow-up resumes the same fork. An ego fork reads the prompt cache only with an ego release later than 0.4.18. The ask box accepts Claude, Codex and ego terminals.
 
 ## How to use this reference
 
@@ -321,7 +335,7 @@ Expanded tool rows use theme colours for Bash/execute commands, flags, strings a
 - Tab type colors: red gradient=diff, blue gradient=editor, teal gradient=markdown, purple gradient=panel, amber gradient=remote PTY session
 - Remote PTY sessions (created via HTTP/MCP) show "PTY:" prefix and amber styling
 - Progress bar (OSC 9;4)
-- Context menu (right-click): Close Tab, Close Other Tabs, Close Tabs to the Right, Detach to Window, Copy Path. Terminal tabs also offer Copy session ID, Copy process ID and Copy alias when available.
+- Context menu (right-click): Close Tab, Close Other Tabs, Close Tabs to the Right, Detach to Window, Copy Path. Terminal tabs show clickable **Session: <full ID>** and **Alias: <value>** rows when available. Each row copies its displayed value; the tab menu does not show a process ID.
   - Copy Path appears on every file-backed tab — diff, editor, markdown, HTML preview, and a plugin panel opened from a `file://` url — and copies the ABSOLUTE path with `$HOME` shortened to `~`. The tab stores keep `filePath` relative to the tab's filesystem root, so the root is joined back on before copying
   - "Open in Browser" on a `file://` plugin panel hands the file to the OS default application, not to the URL allowlist (which permits only http/https/mailto, because the URLs it was built for come off a PTY)
 - **Context menu shortcut chords** — while a context menu is open, pressing a menu item's keyboard shortcut chord (modifier + key, or Enter) fires that action directly without needing to click. Modifier-only keystrokes (Cmd, Shift, etc.) do not close the menu so multi-key chords can form; any other non-matching key closes the menu normally
@@ -604,7 +618,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Toolbar button (left of the filter icon) cycles rich, compact and harness-only and prints the mode (R, C, H); H keeps rich rows and only branches with live harness sessions; the mode is saved in UI prefs (`sidebar_density`)
 - Compact: one-line rows. Rich: compact-sized navigation with inline branch facts and expanded intent only for working agents. H: only branches with live harness sessions, using rich rows
 - Rich branch row: PR state word and title; last-commit age, ahead/behind the upstream, diff stats, dirty-file count (opens Changes), merged, stale (no commit for 30 days), unknown (removal blocked), unmerged; never stale, merged, dirty or unknown on a main checkout. Compact carries the age, ahead/behind and stale rule on the branch name tooltip
-- Rich agent row: state (working, idle, needs input, error) and the agent's intent, task or last prompt; in-session subagents (state, title, tool calls, age; more than 3 fold into a count); TUIC child sessions nested under the parent. Compact carries state and line on the row tooltip
+- Rich agent row: state (working, idle, needs input, error) and the agent's intent, task or last prompt; in-session subagents (state, title, tool calls, age; more than 3 fold into a count); TUIC child sessions nested under the parent with a connecting guide. Compact carries state and line on the row tooltip
 - Rich repo header: current branch, open PR count, worktree count, age of the last remote poll
 
 ### 2.8 Active-Only Filter
@@ -619,6 +633,7 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Keeps only session rows whose harness is alive (working, idle or awaiting input); shell-only terminals and ended harness sessions are dropped
 - Keeps only branches with such a session, repositories with a kept branch and groups with a kept repository; other branches of a qualifying repository are hidden. Order, indentation, icons and badges of the kept rows are unchanged
 - Shares the banner, the `shown / total` count and the "Show all" empty state with the Active-only filter; visibility follows session state live
+- Selecting a hidden repository with `Cmd+P` clears the sidebar filters. Selecting a visible repository keeps them in place.
 - Session-only (not persisted across restarts)
 
 ---
@@ -662,6 +677,9 @@ Replaced by the Git Panel's Changes tab (section 3.8). `Cmd+Shift+D` now opens t
   - **Rendering**: highlights are wrapped in the DOM *after* markdown parsing, so a selection that straddles inline formatting (`**bold**`, `` `code` ``) stays intact and the highlight spans contiguously. Implemented in `ContentRenderer`, whose consumers are the Markdown panel and the AI Chat transcript
 
 ### 3.4 File Browser Panel (`Cmd+E`)
+
+The inline File Browser and Git panels are mounted on first use and release their views after 60 seconds closed. They reload file and Git data on reopening while keeping lightweight navigation state. The File Browser restores the top visible row and its offset after expanded folders load, even when reopened before the timeout. Unfinished forms or confirmations defer release; detached windows are unchanged.
+
 
 - **Bounded remote file API**: `/fs/read` can return exact byte pages as base64, including files above the text editor limit. Pages are capped at 1 MiB with total size, continuation and clamp fields. Existing text reads are unchanged.
 
@@ -822,6 +840,9 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 - Powered by `actionRegistry.ts` (`ACTION_META` map)
 
 ### 3.12 Activity Dashboard (`Cmd+Shift+A`)
+
+Agent tabs, sidebar rows, mobile sessions and the Activity Dashboard distinguish
+**Background** from idle when a ready composer still has tracked work.
 - Open from the status bar **Agents** ticker by clicking its label or counts, or focus it and press Enter or Space. The cycle badge advances tickers without opening the dashboard
 - Real-time view of all active terminal sessions in a compact list
 - The inline overlay stays close to the detached window's compact width and fits narrow main windows
@@ -910,7 +931,13 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 - Click: `.md`/`.mdx` files open in Markdown panel; others open in IDE
 - Dismiss (×) button to hide without opening
 
-### 4.4 Notification Bell
+### 4.4 Scratchpad
+- Notepad icon (right side, left of the notification bell) opens the global scratchpad
+- One Markdown file, `scratchpad.md` in the config directory, shared by every repository
+- Opens in the regular code editor tab, pinned in every repository; save with the editor's usual save action
+- Select a block: a small bar under the selection offers **Add to Ideas** (global idea) and **Send to agent** (active terminal, disabled without a session)
+
+### 4.5 Notification Bell
 - Bell icon with count badge when notifications are available
 - Click: opens popover listing all active notifications
 - Empty state: shows "No notifications" when nothing is pending
@@ -924,7 +951,7 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 - Click PR notification: opens full PR detail popover for that branch
 - Individual dismiss (×) per notification, section "Dismiss All", auto-dismiss after 5min focused time
 
-### 4.5 IDE Launcher
+### 4.6 IDE Launcher
 
 - The Terminals section opens a TUICommander shell tab in the active repository or worktree.
 - Button with current IDE icon — click to open repo/file in IDE
@@ -951,7 +978,7 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
   2. Matching Claude or Codex Usage API ticker: live utilization from the active provider (click opens that provider's dashboard)
   3. PTY usage limit: weekly/session percentage from terminal output detection
   4. Agent name (lowest): icon + name of detected agent
-  - Claude usage HTTP 429 returns an immediate **rate-limited, retry HH:MM** badge in host local time, with a shared per-profile two-to-five-minute cooldown and credential-free profile diagnostics. The request never sleeps through a provider retry hint or invokes a generating fallback for that throttle.
+  - The remaining-credits ticker keeps the last good quota during transient read failures. The first two actual failed reads stay quiet; from the third, it adds `retry`. Without a previous value it shows `updating` before that threshold. A successful read or newer passive quota clears the warning. Authentication and response-contract errors remain immediate. This display policy does not change provider reads, retry timing or cooldowns.
   - The subscription quota registry registers Claude and Codex readers. Codex can use recorded rollout limits; active reads use non-generating usage endpoints. An expired Claude login is rejected before a request. The Claude usage dashboard no longer sends a generating fallback when the usage request fails.
   - The status-bar quota display shares the registry store with the Claude and Codex dashboards. Switching between bound sessions selects cached quota, with no provider request or frontend quota interval. Mobile session details read cached Claude/Codex quota from the registry through the session usage endpoint. A Grok reader joins the registry: the Grok CLI's ACP `_x.ai/billing` request runs with the bound `GROK_HOME` (TUIC never reads the Grok token store), the current period gives the window, and a failed read waits for the registry cooldown; an expired login waits for a new `grok login`. The Grok dashboard reads the same registry entry, so it no longer starts the CLI on every refresh.
   - The registry also registers an ego reader. It reads only ego's `rate_limits` contract: passively from the usage report v6 that the session usage reader already runs, and actively from `ego auth usage <provider> --json` with the bound `EGO_HOME`. No Claude, Codex or Grok CLI is needed. This requires an ego release with `auth usage`; an older ego reports the quota as unavailable.
@@ -983,6 +1010,10 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 
 ## 6. AI Agent Support
 
+On macOS, process detection falls back to the current kernel process name if an
+update unlinks a running executable. Existing foreground and composer guards
+still apply; unknown names do not gain agent identity.
+
 - **Env-prefixed Claude launches** — named Unix launches and resumes receive status hooks and init instructions through the same PATH shim, including `env CLAUDE_CONFIG_DIR=… claude`. Explicit settings and administrative commands retain precedence.
 
 - **Independent ego advisors** — the Unix shim isolates headless and redirected advisors from implicit parent UI instructions, attachments and MCP identity. Direct terminals and explicit one-launch hosted peers retain their context.
@@ -1007,7 +1038,7 @@ The terminal context menu offers **Inspect Launch Instructions…**. Collapsible
 | Agent | Binary | Resume Command |
 |-------|--------|----------------|
 | Claude Code | `claude` | `claude --resume <uuid>` (session-aware) / `claude --continue` (fallback) |
-| Gemini CLI | `gemini` | `gemini --resume <uuid>` (session-aware) / `gemini --resume` (fallback) |
+| Antigravity CLI | `agy` | `agy --conversation <uuid>` (session-aware) / `agy --continue` (fallback) |
 | OpenCode | `opencode` | `opencode -c` |
 | Codex CLI | `codex` | `codex resume <uuid>` (session-aware) / `codex resume --last` (fallback) |
 | Amp | `amp` | `amp threads continue` |
@@ -1017,13 +1048,13 @@ The terminal context menu offers **Inspect Launch Instructions…**. Collapsible
 | pi | `pi` | `pi --continue` |
 | Git (background) | `git` | — |
 
-The per-agent **Prevent alternate screen** setting defaults on. New TUIC shells export Claude's environment control and, after a supported-CLI probe, the Codex/Grok `--no-alt-screen` and OpenCode `--mini` choices for manually typed commands. A timed-out help probe is cached for that binary version and its child process tree is stopped, so later launches do not repeat the delay. One Rust policy also covers menu, IPC/HTTP/MCP, worktree, and resume launches. A CLI without a verified control receives no invented option; an unexpected alternate-screen entry emits one warning per session.
+The per-agent **Prevent alternate screen** setting defaults on. New TUIC shells export Claude's environment control and, after a supported-CLI probe, the Codex/Grok `--no-alt-screen`, OpenCode `--mini` and Antigravity `--settings={"altScreenMode":"never"}` choices for manually typed commands. A timed-out help probe is cached for that binary version and its child process tree is stopped, so later launches do not repeat the delay. One Rust policy also covers menu, IPC/HTTP/MCP, worktree, and resume launches. A CLI without a verified control receives no invented option; an unexpected alternate-screen entry emits one warning per session.
 
 ### 6.1.1 Session-Aware Resume
 When an agent is detected running in a terminal, TUICommander automatically discovers its session ID from the filesystem and stores it per-terminal (`agentSessionId`). On restore, this enables session-specific resume instead of generic fallback commands.
 
 - **Claude Code** — Sessions stored as `~/.claude/projects/<slug>/<uuid>.jsonl`; UUID from filename. Windows drive colons become dashes in the project slug (`C:\Users\foo\bar` → `C--Users-foo-bar`).
-- **Gemini CLI** — Sessions stored in `~/.gemini/tmp/<project>/chats/session-*.jsonl` (legacy `.json` also supported). Discovery and restore match the recorded `projectHash` to the session project and read `sessionId` from metadata. Discovery selects the newest unclaimed recent session; multiple tabs in the same project remain heuristic.
+- **Antigravity CLI (`agy`)** — Conversations stored as `~/.gemini/antigravity-cli/conversations/<uuid>.db`; UUID from filename. The files carry no readable project, so discovery selects the newest unclaimed recent conversation and multiple tabs stay heuristic. Resume uses `agy --conversation <id>`.
 - **Codex CLI** — Sessions stored in `~/.codex/sessions/YYYY/MM/DD/rollout-*-<UUID>.jsonl`; UUID from filename. Codex does *not* partition by project, so candidates are filtered on the working directory recorded in the rollout's first `session_meta` record — otherwise a terminal in one project would bind to another project's session. A rollout whose `cwd` can't be read is rejected rather than accepted
 - **Goose turn completion** — A reply followed by the ready composer returns the tab to idle and allows the next submission, without the five-minute stale recovery (#1812-022d).
 - **Goose** — Sessions stored in SQLite (`~/Library/Application Support/Block/goose/sessions/sessions.db`); shell wrapper injects `--name $TUIC_SESSION` for deterministic binding on normal `session`/`run` launches, preserving explicit names, paths, resume and stateless arguments; resume by name
@@ -1038,7 +1069,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - **Automatic session binding**: Shell integration injects wrapper functions that transparently bind agent sessions to the current tab (zsh, bash, fish):
   - **Claude Code**: `claude()` adds `--session-id $TUIC_SESSION`; bypassed when `--session-id`, `--resume`, or `--continue` are explicit
   - **Goose**: `goose()` adds `--name $TUIC_SESSION` to `session` and `run` subcommands; bypassed when `--name`, `-n`, `--resume`, or `-r` are explicit
-  - **Session conflict handling**: When an agent reports a session conflict (in-use or not-found), TUICommander creates a `no-session-inject.$TUIC_SESSION` flag file in the config directory. Shell wrappers check for this file and skip `--session-id` injection when it exists — avoiding PTY writes that could corrupt TUI output
+  - **Session conflict handling**: When an agent reports a session conflict (in-use or not-found) at the shell prompt, TUICommander drops the message and writes nothing to the PTY
 - **Automatic resume**: On restore, TUICommander verifies if the session file exists on disk (`verify_agent_session`) before using `--resume $TUIC_SESSION`
 - **UI spawn coherence**: When spawning agents via the context menu, `TUIC_SESSION` is used as `--session-id` automatically
 - **Custom scripts**: `$TUIC_SESSION` is available as a stable key for any tab-specific state
@@ -1078,6 +1109,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - Codex `/plan` questions export narrow-layout choices with separate wrapped hints and retain Input through delayed idle hooks until answered. Native counter and footer anchors remain required.
 - Recognizes interactive prompts (yes/no, multiple choice, numbered options)
 - Tab dot turns orange (pulsing) when awaiting input; sidebar branch icon shows `?` in orange
+- **Needs you** — While any session waits for input or reports an error, an orange **Needs you** pill with the count appears in the toolbar centre. Click it for the list (repository / branch · question · time waiting, oldest first) and pick a row to open that session; **Cmd+U** jumps to the next one in the same order. A closed repository shows `N need you` in its header (an orange ring when collapsed to initials), and a banner above the sidebar list appears while a waiting session's row is closed, filtered out or scrolled away; clicking it opens the repository and the oldest such session.
 - Prompt overlay: keyboard navigation (↑/↓, Enter, number keys 1-9, Escape)
 - Two detection strategies run in priority order:
   1. **Screen-based** (Strategy 1): reads the live terminal screen, finds the last chat line above the prompt box (delimited by separator lines), checks if it ends with `?`. Works with Claude Code, Codex (`›` prompt), and Gemini (`> ` prompt) layouts
@@ -1122,8 +1154,8 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
   cap, and prepaid balance from Grok Build's official `_x.ai/billing` ACP
   extension, read through the quota registry. The short-lived connection is
   telemetry-only; normal Grok tabs remain PTY sessions.
-- **Gemini:** terminal rate-limit detection remains available, but there is no
-  account dashboard because Gemini CLI has no stable machine-readable account
+- **Antigravity CLI:** terminal rate-limit detection remains available, but there is no
+  account dashboard because Antigravity CLI has no stable machine-readable account
   quota interface. Session-local `/stats` is not treated as account headroom.
 
 ### Coordinator mail address
@@ -1145,7 +1177,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 ### 6.8 API Error Detection
 - Detects API errors (server errors, auth failures) from agent output and provider-level JSON error responses
 - Claude friendly auth/transport detection excludes tool receipts and their indented diagnostic continuations
-- Covers Claude Code, Codex CLI, Gemini CLI, Copilot, and raw API error JSON from providers (OpenAI, Anthropic, Google, OpenRouter, MiniMax)
+- Covers Claude Code, Codex CLI, Antigravity CLI, Copilot, and raw API error JSON from providers (OpenAI, Anthropic, Google, OpenRouter, MiniMax)
 - Retains final failures in the red Error state through idle and unsuccessful auto-retry; supports Claude connection-loss prose, Codex native final-error rows and ego native provider-failure notifications. Native recovery countdowns do not set Error.
 - Triggers error notification sound and logs to the Error Log Panel
 
@@ -1158,8 +1190,8 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - **Run configurations:** Named command templates per agent (binary, args, optional model, env vars). MCP spawn can override the model and environment per child.
 - **Default config:** One run config per agent marked as default for quick launching. Codex defaults carry the approvals/sandbox bypass explicitly in editable args, with a warning icon; removing the argument persists.
 - **MCP bridge install:** One-click install/remove of `tui-mcp-bridge` into agent's native MCP config file
-- **Supported MCP agents:** Claude, Cursor, Windsurf, VS Code, Zed, Amp, Gemini, Codex, Grok, OpenCode, Droid, Goose, pi (through pi-mcp-adapter)
-- **Shared settings files are opt-in:** Zed, Amp and Gemini store MCP servers inside their general `settings.json`, so those three are never written automatically — the panel says so and the Install button does it on request
+- **Supported MCP agents:** Claude, Cursor, Windsurf, VS Code, Zed, Amp, Antigravity, Codex, Grok, OpenCode, Droid, Goose, pi (through pi-mcp-adapter)
+- **Shared settings files are opt-in:** Zed and Amp store MCP servers inside their general `settings.json`, so those two are never written automatically — the panel says so and the Install button does it on request
 - **Remove all MCP integrations:** Lists every client holding a bridge entry and clears them in one action, so uninstalling TUICommander does not leave a dangling `tuic-bridge` server behind
 - **Edit agent config:** Opens agent's own configuration file in the user's preferred IDE
 - **Context menu integration:** Right-click terminal > Agents submenu with per-agent run configurations; selected environment variables apply only to the launched agent, including from the sidebar menu
@@ -1191,6 +1223,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - `slash_mode` cleared on user-input events and status-line events
 
 ### 6.13 Inter-Agent Messaging
+- **Ego interactive spawn**: the built-in MCP spawn fallback sends the task as one positional argument, without the headless `run` subcommand. Explicit arguments and named run profiles keep precedence.
 - **Claude background output**: managed MCP peers default to `CLAUDE_CODE_TMPDIR=$HOME/Gits/.tmp/claude/`, created before spawn; explicit inherited, run-config or caller values take precedence.
 - Agent-to-agent coordination when multiple agents are spawned in parallel, carried by the `agent` MCP tool — there is no separate `messaging` tool
 - **Identity**: Each agent uses its `$TUIC_SESSION` env var (stable tab UUID) as its messaging identity. A headerless external caller may `register` without `tuic_session` to be issued an MCP-scoped UUID, or supply a stable UUID to reclaim an existing identity
@@ -1204,6 +1237,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - **Durable task handles**: `agent action=spawn` returns `task_id` and `poll_interval_ms` alongside `session_id`. The `agent` MCP tool polls that handle without blocking — `agent action=task_get` returns `{task_id, status, status_message?, result?, error_detail?, poll_interval_ms}` where status is `working|input_required|completed|failed|cancelled` (the last three final), and `agent action=task_cancel` marks the task cancelled **without** killing the agent (`session action=kill` does that). Use this instead of `agent action=wait` / `session action=wait` when work runs past their 300 s cap or when the client may reconnect: the outcome is recorded by the session exit path whether or not anyone was listening. Tasks live for the TUICommander process only — they are deliberately not persisted, because a restart tears down every PTY
 
 ### 6.14 AI Chat Panel (`Cmd+Alt+A`) — ego over ACP
+- **Transient reasoning** — After ego accepts and dispatches a prompt, AI Chat shows an italic **Processing** placeholder, then the public reasoning text of that turn in italics as it streams. Queued prompts keep their queue state until dispatch. The transient row disappears when the answer starts, the turn ends or fails, or its stream closes; the stored thought stays available in the transcript. Late chunks never revive a finished turn or appear in another conversation. Desktop and mobile use the same projection; private provider continuation data is never displayed.
 - When no ego executable is configured, AI Chat offers the detected path with **Use this**. Only confirmation saves it; **Configure ego** remains available.
 
 AI Chat keeps the active conversation usable while saved-conversation discovery is pending or fails. Background saved-tab load failures do not replace the selected conversation’s state. **New chat** opens a fresh session without first replaying the saved conversation, so an old greeting title or refused replay cannot block it.
@@ -1764,7 +1798,7 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 | `{pr_open_threads}` | `get_pr_open_threads` | Open, current review threads as a fenced untrusted list (max 30, most severe first) |
 | `{merge_status}` | GitHub store | PR mergeable status |
 | `{review_decision}` | GitHub store | PR review decision |
-| `{agent_type}` | terminal store | Active agent type (claude, gemini, etc.) |
+| `{agent_type}` | terminal store | Active agent type (claude, agy, etc.) |
 | `{cwd}` | terminal store | Active terminal working directory |
 | `{issue_number}` | manual | Prompted from user at execution time |
 
@@ -1798,12 +1832,18 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 
 - Settings → Agents → per-agent "Headless Command Template" field
 - Template uses `{prompt}` placeholder for the resolved prompt text
-- Example: `claude -p "{prompt}"`, `gemini -p "{prompt}"`
+- Example: `claude -p "{prompt}"`, `agy -p "{prompt}"`
 - Required for headless execution mode; without it, headless prompts fall back to inject
 
 ---
 
 ## 11. Settings
+
+Ego credential inventory uses versioned machine output. Full named-account IDs,
+legacy provider slots and missing local sources stay distinct. Named and orphan
+accounts do not generate legacy auth edit targets; malformed inventory fails
+without a human-text fallback.
+
 
 AI Chat settings retain model controls when ego health diagnostics fail, with a non-blocking explanation and preserved credential evidence.
 
@@ -2120,6 +2160,7 @@ Terminal Compose uses `Enter` to send, `Ctrl+Enter` or `Shift+Enter` for a new l
 | `Cmd+Shift+M` | MCP servers popup (per-repo) |
 | `Cmd+I` | Toggle compose panel |
 | `Cmd+Alt+L` | Toggle outline panel |
+| `Cmd+Alt+Q` | Ask the active agent a side question (opens Progress) |
 
 ### Git
 | Shortcut | Action |
@@ -2319,7 +2360,7 @@ shortcuts and the Global Hotkey. Keys macOS itself claims before the process
 
 ### 17.5 Preinstalled External Plugins
 - **Plan Tracker** — Detects agent plan files from structured events and opens them as background tabs
-- **Stories Ticker** — Shows the active repository's open story count in the shared status ticker
+- **Stories Ticker** — Shows the selected backend's open, non-archived story count across all non-archived plans for the active repository. The dedicated `stories:read` PluginHost aggregate and invalidation subscription share the Plans and Stories projection, with no filename inference or backend fallback
 - Both are seeded once during migration, then remain independently uninstallable and updateable through the plugin catalog
 
 > **Note:** Claude Usage Dashboard was promoted from a plugin to a native SolidJS feature (see section 6.6). It is managed via Settings > Agents > Claude > Usage Dashboard toggle.
@@ -2388,7 +2429,7 @@ Unsupported actions are hidden. Menus close on outside tap or Escape and use
 - Hero metrics header: Working, Idle and Awaiting counts with large tabular-nums display. Counts share the row badge state and Working hold across poll updates. Sub-tasks rows count as Working; Finished, Error and Rate Limited rows count in none of these totals. Exited sessions leave the live list.
 - Search button at the top right filters the live session list by name, repository path, worktree path, branch, or agent type; closing search restores the full list
 - Waiting sessions appear first; the list preserves order within waiting, idle-agent, and shell groups. Session names keep their original casing, and busy state reads "Working".
-- The new-session sheet selects Claude Code, Codex, or Gemini, searches repositories, and opens the created agent session. Its close button and backdrop dismiss the sheet.
+- The new-session sheet selects Claude Code, Codex, or Antigravity, searches repositories, and opens the created agent session. Its close button and backdrop dismiss the sheet.
 - Question banners identify the session and repository; the AWAITING tile is the only awaiting total and opens the first waiting session.
 - Elevated session cards with agent icon, status badge, project/branch, relative time
 - Rich sub-rows per card: agent intent (crosshair icon) or last prompt (speech bubble), current task (gear icon) with inline progress bar, usage limit percentage
@@ -2469,9 +2510,7 @@ Unsupported actions are hidden. Menus close on outside tap or Escape and use
 - Mobile session and AI Chat composers accept camera photos and files from one
   picker. Binary files stream to `attachments/<session>/` under TUIC's data
   directory. Uploads never create repository files or edit `.git/info/exclude`.
-  Claude gets `--add-dir` and Gemini gets `--include-directories`. Gemini uses a
-  session-owned trusted-folders overlay that preserves existing trust decisions
-  and trusts only this upload directory; global Gemini settings stay unchanged.
+  Claude and agy get `--add-dir`; TUIC writes no trust configuration for agy.
   Codex and Grok need no extra flag. Ego PTY launches get `--read-only-dir` for
   this directory, including confined runs; no stored ego configuration changes.
 - Close, kill and process exit delete that session's uploads. Startup removes
@@ -2483,7 +2522,7 @@ Unsupported actions are hidden. Menus close on outside tap or Escape and use
   upload error asking for a new session. Absolute binary paths bypass shell
   shims; use TUIC's structured agent launch to receive its directory grant.
   Custom wrapper binaries keep their arguments without added harness grant flags.
-  A wrapper that calls Claude/Gemini/ego by name uses the inherited shell shim; an
+  A wrapper that calls Claude/agy/ego by name uses the inherited shell shim; an
   absolute harness hop must arrange its own read access. Disabling launch marker
   instructions does not disable the Claude directory grant.
   Typed ego commands receive the same read-only directory grant. Structured ego
@@ -2585,6 +2624,7 @@ and their child processes may continue.
 - Tool routing: names containing `__` are routed to the upstream registry; all others handled natively
 
 ### 19.1.1 Lazy Tool Discovery (`collapse_tools`)
+- `batch` runs up to 32 tool calls of any tools, in order, in one request (`calls=[{tool,arguments},…]`). Each call passes the same gates as a separate call; results return in call order with an error count, and `stop_on_error=true` stops at the first failure. Listed in both the direct and the collapsed catalogue.
 - Native MCP switches in Settings use domain sections, with rare and conditional tools separate. Each tool retains its own saved switch and existing permission gates.
 - When `collapse_tools: true` (Settings > MCP > TUIC Tools > "Collapse tools"), the full tool list is replaced with 3 meta-tools: `search_tools`, `get_tool_schema`, `call_tool`
 - Grok sessions (`clientInfo.name` matching `grok-shell-*`) receive the same 3 meta-tools automatically because Grok rejects nested qualified names such as `tuicommander__upstream__tool`; this per-session compatibility mode leaves the global setting and other clients unchanged, and the bridge restores it after TUIC reconnects
@@ -2967,8 +3007,8 @@ and their child processes may continue.
   desktop restart so Connect can rejoin the same daemon
 
 ### 24.3 Authentication
-- Both desktop and `tuic-remote` require credentials on protected TCP requests, including loopback and LAN. Origin/Host checks reject foreign websites and DNS rebinding before any handler. Local IPC retains its existing trust.
-- `tuic-remote` authenticates every TCP request: the headless build has no loopback bypass and `run_remote` forces `lan_auth_bypass` off, so an SSH tunnel does not make it local. `GET /health` is the only unauthenticated route
+- Loopback HTTP is credential-free by default on desktop and `tuic-remote`. Set `services.auth.require_local_auth=true` to require local credentials. Non-loopback clients still require authentication. Origin/Host checks and local IPC trust are unchanged.
+- `tuic-remote` keeps remote authentication; `run_remote` still forces the obsolete `lan_auth_bypass` off. Loopback follows `require_local_auth`, including SSH tunnels that terminate locally. `GET /health` remains public
 - On connect, the backend trades the vault password for the daemon's session token (`GET /api/auth/session-token`, Basic Auth) — in Rust, so the password never reaches the WebView
 - The token is appended as `?token=` to HTTP, the terminal WebSocket and the `/events` SSE stream by the single helper `withRemoteToken` (`transportRuntime.ts`). A WS upgrade cannot set a header and `Access-Control-Allow-Origin: *` rules out credentialed cookies, so the query string is the only credential all three share
 - Held in memory only, never persisted: the daemon mints a new one on every restart, and a 401 from the status poll triggers one re-authentication
@@ -3083,6 +3123,7 @@ Missing machine selection or missing ego acknowledgement refuses attachment.
 
 ## 27. Terminal Progress
 
+- **Contextual replies:** Reply appears in the existing action row beside Open Progress. Open it to type below; Enter sends and Shift+Enter adds a line without changing the selected repository. Structured binary questions show Yes and No. Failed drafts remain, retries are deduplicated, and status distinguishes queued from delivered. The toast remains visible while editing or sending.
 - **Session-only popup mute:** select Mute on a completion popup, then Unmute in Terminal Progress to restore future popups. Existing and queued completion cards close, but journal entries, unread counts and blocked warning popups remain. Restart or browser reload restores popups; native notification settings do not change.
 
 - One append-only journal per project with each new entry attributed to its source PTY when known: entries are written once, then kept or deleted. No pause, clear, correction, revision, deduplication or Markdown export
@@ -3212,7 +3253,7 @@ In rich mode, sessions idle for more than two hours fold into an expandable coun
 
 Rich working agent rows reserve two clamped intent lines. Idle, awaiting-input and error rows stay on one line with status dots; their full intent, task or prompt remains in the tooltip. Compact rows keep their one-line layout.
 
-Rich navigation keeps compact typography and padding. Branch identity and facts share one line, with names truncated and full PR/lifecycle facts in tooltips. Repository metadata disappears when PR and worktree counts are both zero. Header controls use compact sizing to protect repo names. Returned subagents fold into an expandable count independently of running work.
+Rich navigation keeps compact typography and padding. Branch identity and facts share one line, with names truncated and full PR/lifecycle facts in tooltips. Repository metadata disappears when PR and worktree counts are both zero. Header controls use compact sizing to protect repo names. Returned subagents fold into an expandable count. Interrupted subagents are labeled **Interrupted** and do not count as returned.
 
 In rich mode, ungrouped repositories with open terminals appear first, followed by an Idle section. Manual order is preserved inside each section. Idle headers start on one line; disclosure reveals their branches without changing activity or saved order. Headers count agents in the backend working state, independently of open-terminal membership.
 
@@ -3646,18 +3687,27 @@ Native story notes: the shared project-scoped story service appends immutable co
 
 ## AI Chat slash commands
 
+Local **Sending…** receipts show submitted text and attachments before the ACP
+receipt. Backend queue, active-turn, or settlement evidence clears each receipt.
+Failed submissions retain their payload for explicit retry without changing newer
+drafts. These local receipts have no cancel or recall action. Agent-advertised
+slash offers stay available when no active host handler owns the same name.
+
 A leading `/` opens the selected conversation's ACP command offer with descriptions,
 input hints, prefix filtering and keyboard/mouse completion. Agent invocations keep
 `/<name> <arguments>` prompt text. Supported host actions (`/new`, `/clear`, `/quit`
 with `/q`, `/usage`, and advertised `/compact`, `/fork`, `/pause`, `/resume`) use the
-existing controls, not model prompts. Unknown or unsupported commands retain the
+existing controls, not model prompts. `/clear` resets agent context through the
+same fresh-session action as **New**, without deleting saved history. It keeps
+the source draft on failure and refuses during running or paused turns. An agent
+offer named `clear` cannot replace this host action. Unknown or unsupported commands retain the
 draft and show an inline list of available commands (#2393-19fc). A leading path
 token with another `/` is prompt text unless it is an advertised command name;
 bare unknown names remain command attempts (#2421-6e0a).
 
 ### Ego terminal usage (#2386-6f7c)
 
-Ego terminal usage uses the exact live pid lease and `ego usage --json --session <id>` reports v3–v6. The badge does not show the ego model or context. Subscription quotas come from the provider quota registry under the key that the foreground ego harness owns; an ego session never borrows a Claude or Codex CLI account. The status bar reads that quota from the shared registry store, with no provider request on a session switch. The ego quota owner reads only ego's `rate_limits` contract: passively, the provider-limit observations in the usage report v6 supply the badge quota for every provider; actively, `ego auth usage <provider> --json` runs with the bound `EGO_HOME`. Ego ledger costs do not supply badge quotas; session details still show ledger accounting. Unsupported report versions return an error and log one warning per process, rather than silently emptying the badge. The executable comes from the live terminal, not the AI Chat setting.
+Ego terminal usage uses the exact live pid lease and `ego usage --json --session <id>` reports v3–v6. The badge does not show the ego model or context. Subscription quotas come from the provider quota registry under the key that the foreground ego harness owns; an ego session never borrows a Claude or Codex CLI account. The status bar reads that quota from the shared registry store, with no provider request on a session switch. The ego quota owner reads only ego's `rate_limits` contract: passively, the provider-limit observations in the usage report v6 supply the badge quota for every provider; actively, `ego auth usage <provider> --json` runs with the bound `EGO_HOME` for a legacy session. A named session uses the manifest's stable `connection` ID and `ego auth --connection <id> usage --json`. Registry keys and both observation paths keep the vendor and connection separate, including when an account ID equals a vendor name. Named OAuth model routes use their vendor identity for quota matching (`openai-codex` → `openai`, `xai-oauth` → `xai`, `minimax-oauth` → `minimax`); legacy route identities stay unchanged. Missing or null connection means legacy; malformed connection identity leaves quota unavailable rather than selecting legacy credentials. Ego ledger costs do not supply badge quotas; session details still show ledger accounting. Unsupported report versions return an error and log one warning per process, rather than silently emptying the badge. The executable comes from the live terminal, not the AI Chat setting.
 
 ### Story drafts from requests
 
@@ -3873,3 +3923,8 @@ Mediated model restart continuation reconciles owned tool effects, then sends th
 Review policy composition exposes a durable shared reviewer admission budget, source-bound role findings and native proposal dispositions through `native.review.bounded`, `native.correction.policy.assess` and the shared `correction_policy_region` action. Native independent review/current configured checks remain required. Accounting separates reviews, corrections, check attempts and proposals; exhaustion routes to the existing operator port. See [backend workflow policy composition](backend/workflows.md#retained-review-and-correction-policy-composition).
 
 - **Retained workflow operator decisions:** exact typed waits, human and proof-gated automatic closure, and frozen-scope release consent through existing native authorities. See [contract](backend/workflow-operator-decisions.md).
+
+Workflow runs are discoverable from a project run list, with live pinned-graph
+node states and a distinct approval wait state. Retained approvals use shared
+desktop/mobile dialogs with Markdown evidence, attention cards, a pending inbox
+count and mobile push, while existing sequence and revision fences select one answer.

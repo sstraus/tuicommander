@@ -32,6 +32,8 @@ const updates = () =>
 		.mocked(invoke)
 		.mock.calls.filter(([, args]) => (args as { action?: { action: string } })?.action?.action === "update_story");
 beforeEach(() => {
+	// This subject exercises an explicitly selected plan, not the project-wide landing view.
+	storiesUi.reveal({ project: "/edit-test", planId: "plan", storyId: null });
 	status = "ready";
 	claimSession = null;
 	conflict = false;

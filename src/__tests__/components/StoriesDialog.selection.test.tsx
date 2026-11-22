@@ -30,6 +30,8 @@ const stories = ["A1", "A2", "B1"].map((id) => ({
 let pendingNotes: Map<string, () => void>;
 
 beforeEach(() => {
+	// This subject exercises an explicitly selected plan, not the project-wide landing view.
+	storiesUi.reveal({ project: "/selection", planId: "A", storyId: null });
 	storiesUi.setVisibility("all");
 	storiesUi.setStoryType("all");
 	storiesUi.setView("list");

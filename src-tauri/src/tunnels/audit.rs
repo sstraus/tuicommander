@@ -24,9 +24,18 @@ pub enum EventKind {
     Stopped,
 }
 
-/// How long tunnel events are kept. Enforced when the connection is first
-/// opened, which happens at most once per app start.
-const RETENTION_DAYS: u32 = 30;
+const SCHEMA: crate::db::Schema = crate::db::Schema {
+    name: "tunnel audit",
+    migrations: &[&["CREATE TABLE tunnel_events (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+            tunnel_id TEXT    NOT NULL,
+            kind      TEXT    NOT NULL,
+            detail    TEXT    NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX idx_tunnel_events_tunnel_id ON tunnel_events(tunnel_id);
+        CREATE INDEX idx_tunnel_events_timestamp ON tunnel_events(timestamp);"]],
+};
 
 pub struct AuditLog {
     db_path: PathBuf,
@@ -62,43 +71,14 @@ impl AuditLog {
         Ok(self.conn.get().expect("connection was just stored"))
     }
 
-    /// Open the database, ensure the schema, and enforce retention.
+    /// Open the database and ensure the schema. Retention: `crate::db::retention`.
     fn connect(db_path: &Path) -> Result<Connection> {
-        let conn = Connection::open(db_path)?;
-
-        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
-
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS tunnel_events (
-                id        INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-                tunnel_id TEXT    NOT NULL,
-                kind      TEXT    NOT NULL,
-                detail    TEXT    NOT NULL DEFAULT '{}'
-            );
-            CREATE INDEX IF NOT EXISTS idx_tunnel_events_tunnel_id
-                ON tunnel_events(tunnel_id);
-            CREATE INDEX IF NOT EXISTS idx_tunnel_events_timestamp
-                ON tunnel_events(timestamp);",
-        )?;
-
-        // Enforce retention here: connecting happens at most once per app start,
-        // and it was the missing caller — `rotate` existed but nothing ever
-        // invoked it, so the table only ever grew.
-        match rotate_conn(&conn, RETENTION_DAYS) {
-            Ok(0) => {}
-            Ok(deleted) => tracing::info!(
-                source = "audit",
-                "Rotated {deleted} tunnel event(s) older than {RETENTION_DAYS} days"
-            ),
-            // Retention is housekeeping — a failure must not stop tunnels from
-            // being auditable at all.
-            Err(e) => {
-                tracing::warn!(source = "audit", error = %e, "Tunnel audit rotation failed")
-            }
-        }
-
-        Ok(conn)
+        crate::db::open_with(db_path, &SCHEMA).map_err(|e| {
+            rusqlite::Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
+                Some(e),
+            )
+        })
     }
 
     /// Insert a new event and return the `rowid` of the inserted row.
@@ -134,41 +114,6 @@ impl AuditLog {
         let rows = stmt.query_map(params![tunnel_id, limit as i64], row_to_event)?;
         rows.collect()
     }
-
-    /// Return all events whose timestamp falls within `[from, to]`.
-    pub fn query_by_time_range(
-        &self,
-        from: DateTime<Utc>,
-        to: DateTime<Utc>,
-    ) -> Result<Vec<TunnelEvent>> {
-        let from_str = from.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
-        let to_str = to.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
-
-        let mut stmt = self.conn()?.prepare(
-            "SELECT id, timestamp, tunnel_id, kind, detail
-             FROM tunnel_events
-             WHERE timestamp >= ?1 AND timestamp <= ?2
-             ORDER BY id ASC",
-        )?;
-
-        let rows = stmt.query_map(params![from_str, to_str], row_to_event)?;
-        rows.collect()
-    }
-
-    /// Delete events older than `max_age_days` days and return the number deleted.
-    pub fn rotate(&self, max_age_days: u32) -> Result<usize> {
-        rotate_conn(self.conn()?, max_age_days)
-    }
-}
-
-/// Retention against a raw connection, so [`AuditLog::connect`] can enforce it
-/// before the `AuditLog` exists.
-fn rotate_conn(conn: &Connection, max_age_days: u32) -> Result<usize> {
-    let age_spec = format!("-{max_age_days} days");
-    conn.execute(
-        "DELETE FROM tunnel_events WHERE timestamp < datetime('now', ?1)",
-        params![age_spec],
-    )
 }
 
 /// Map a SQLite row to a [`TunnelEvent`].
@@ -210,7 +155,6 @@ fn row_to_event(row: &rusqlite::Row<'_>) -> rusqlite::Result<TunnelEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Duration;
     use std::env;
 
     fn temp_db() -> (AuditLog, tempfile::TempDir) {
@@ -243,31 +187,6 @@ mod tests {
     }
 
     #[test]
-    fn query_by_time_range_filters_correctly() {
-        let (log, _dir) = temp_db();
-
-        // Insert an event (uses DB default timestamp = now).
-        log.insert("t2", EventKind::Connected, serde_json::json!({}))
-            .expect("insert");
-
-        let now = Utc::now();
-        let from = now - Duration::minutes(1);
-        let to = now + Duration::minutes(1);
-
-        let events = log.query_by_time_range(from, to).expect("query");
-        assert!(
-            !events.is_empty(),
-            "should find the recently inserted event"
-        );
-
-        // Range entirely in the past should return nothing.
-        let old_from = now - Duration::days(10);
-        let old_to = now - Duration::days(9);
-        let old_events = log.query_by_time_range(old_from, old_to).expect("query");
-        assert!(old_events.is_empty(), "should be empty for old range");
-    }
-
-    #[test]
     fn query_limit_returns_most_recent() {
         let (log, _dir) = temp_db();
 
@@ -281,31 +200,6 @@ mod tests {
 
         // Newest first — seq 9 should be first.
         assert_eq!(events[0].detail["seq"], 9);
-    }
-
-    #[test]
-    fn rotation_deletes_old_events() {
-        let (log, _dir) = temp_db();
-
-        // Insert an "old" event by manipulating the timestamp directly.
-        log.conn()
-            .expect("connect")
-            .execute(
-                "INSERT INTO tunnel_events (timestamp, tunnel_id, kind, detail)
-                 VALUES (datetime('now', '-40 days'), 't4', 'started', '{}')",
-                [],
-            )
-            .expect("insert old");
-
-        // Insert a recent event.
-        log.insert("t4", EventKind::Stopped, serde_json::json!({}))
-            .expect("insert recent");
-
-        let deleted = log.rotate(30).expect("rotate");
-        assert_eq!(deleted, 1, "should delete exactly the one old event");
-
-        let remaining = log.query_by_tunnel("t4", 10).expect("query");
-        assert_eq!(remaining.len(), 1, "one recent event should remain");
     }
 
     /// Performance test: 10 000 inserts must complete in under 500 ms.
@@ -328,47 +222,9 @@ mod tests {
         );
     }
 
-    /// `rotate` existed but nothing ever called it, so the file only ever grew.
-    /// Opening the log is the one moment guaranteed to happen exactly once per
-    /// app start, which makes it the place retention belongs.
-    #[test]
-    fn open_rotates_events_past_the_retention_window() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("audit.db");
-
-        {
-            let log = AuditLog::open(&path).expect("open");
-            log.conn()
-                .expect("connect")
-                .execute(
-                    &format!(
-                        "INSERT INTO tunnel_events (timestamp, tunnel_id, kind, detail)
-                         VALUES (datetime('now', '-{} days'), 'old', 'started', '{{}}')",
-                        RETENTION_DAYS + 10
-                    ),
-                    [],
-                )
-                .expect("insert stale");
-            log.insert("fresh", EventKind::Started, serde_json::json!({}))
-                .expect("insert fresh");
-        }
-
-        let log = AuditLog::open(&path).expect("reopen");
-        assert!(
-            log.query_by_tunnel("old", 10).expect("query").is_empty(),
-            "reopening must drop events past the retention window"
-        );
-        assert_eq!(
-            log.query_by_tunnel("fresh", 10).expect("query").len(),
-            1,
-            "recent events must survive rotation"
-        );
-    }
-
     /// The WAL needs no manual checkpoint: SQLite's default
     /// `wal_autocheckpoint` (1000 pages) bounds it while the connection stays
-    /// open, and the last connection to close checkpoints and unlinks it. This
-    /// test pins both, so setting `wal_autocheckpoint=0` — the one change that
+    /// open. This test pins it, so setting `wal_autocheckpoint=0` — the one change that
     /// would let the sidecar outgrow the database — cannot pass unnoticed.
     #[test]
     fn the_write_ahead_log_stays_bounded_without_a_manual_checkpoint() {
@@ -411,12 +267,6 @@ mod tests {
             auto
         };
         assert!(pages > 0);
-
-        // Closing the last connection checkpoints and removes the sidecar.
-        assert!(
-            !wal.exists(),
-            "closing the last connection must unlink the WAL"
-        );
     }
 
     /// `AppState::new` builds this on every launch; most launches never start a
@@ -483,11 +333,5 @@ mod tests {
             .query_by_tunnel("nonexistent", 10)
             .expect("query should not panic");
         assert!(events.is_empty());
-
-        let now = Utc::now();
-        let range = log
-            .query_by_time_range(now - Duration::hours(1), now)
-            .expect("time range query should not panic");
-        assert!(range.is_empty());
     }
 }

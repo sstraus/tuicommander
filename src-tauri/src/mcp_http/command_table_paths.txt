@@ -116,6 +116,7 @@
 /config/repo-settings/has-custom
 /config/repositories
 /config/repositories/stale-temp
+/config/scratchpad-path
 /config/telegram
 /config/themes
 /config/ui-prefs
@@ -156,6 +157,9 @@
 /dictation/start
 /dictation/status
 /dictation/stop
+/discussion/x
+/discussion/x/cancel
+/discussion/x/follow-up
 /ego/perimeter
 /ego/perimeter/network
 /ego/perimeter/roots
@@ -222,6 +226,8 @@
 /progress/flow/detail
 /progress/list
 /progress/projects
+/progress/recent
+/progress/reply
 /progress/report
 /progress/viewed
 /prompt/execute-headless
@@ -340,6 +346,7 @@
 /sessions/x
 /sessions/x/chat-view
 /sessions/x/chat-view/messages/x/full-text
+/sessions/x/discussion
 /sessions/x/force-retry
 /sessions/x/foreground
 /sessions/x/has-foreground

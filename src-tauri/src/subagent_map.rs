@@ -88,6 +88,7 @@ pub(crate) struct Row {
     /// the subagent answered. When it is the last row, the subagent has
     /// finished.
     pub reply: bool,
+    pub interrupted: bool,
     /// The row calls `SubagentHandback`, the tool a subagent reports through
     /// when Claude Code delivers its final report that way: the call's id and
     /// the report text. No `end_turn` row follows it.
@@ -165,10 +166,18 @@ pub(crate) fn parse_row(line: &str) -> Option<Row> {
         None => true,
         Some(reason) => reason.as_str().is_some_and(|r| r != "tool_use"),
     };
+    // These exact synthetic user rows are the two interruption shapes observed
+    // in live subagent transcripts. A tool result or assistant quote is not one.
+    let interrupted = row.get("type").and_then(|t| t.as_str()) == Some("user")
+        && message.get("role").and_then(|r| r.as_str()) == Some("user")
+        && matches!(blocks, [b] if block_type(b) == Some("text")
+            && matches!(b.get("text").and_then(|t| t.as_str()),
+                Some("[Request interrupted by user]" | "[Request interrupted by user for tool use]")));
     let has_text = row_text_of(message).is_some_and(|t| !t.trim().is_empty());
     Some(Row {
         at_ms,
         reply: assistant && tool.is_none() && handback.is_none() && ends_turn && has_text,
+        interrupted,
         tool,
         handback,
         result_ids,
@@ -225,10 +234,11 @@ pub(crate) struct LaneSummary {
     pub other_tools: u32,
     pub started_at_ms: Option<i64>,
     pub ended_at_ms: Option<i64>,
-    /// The last row read was a reply or a `SubagentHandback` call or result. The lane's own last row is the only
+    /// The last row was a reply, a handback call or result, or an interruption. The lane's last row is the only
     /// evidence a subagent finished: the parent's tool_result acknowledges the
     /// spawn for 691 of 795 sampled calls and never carries the report.
     pub finished: bool,
+    pub interrupted: bool,
     /// Decoded text of the first row that carries any: the spawn prompt as the
     /// subagent received it. Never changes once written.
     pub first_text: String,
@@ -245,12 +255,14 @@ impl LaneSummary {
     fn absorb(&mut self, text: &str) -> usize {
         let before = self.rows;
         for line in text.lines() {
+            let parsed = parse_row(line);
             if self.first_text.is_empty()
+                && !parsed.as_ref().is_some_and(|row| row.interrupted)
                 && let Some(first) = row_text(line)
             {
                 self.first_text = first;
             }
-            let Some(row) = parse_row(line) else { continue };
+            let Some(row) = parsed else { continue };
             self.rows += 1;
             self.started_at_ms.get_or_insert(row.at_ms);
             self.ended_at_ms = Some(row.at_ms);
@@ -262,8 +274,12 @@ impl LaneSummary {
                     .handback_id
                     .as_ref()
                     .is_some_and(|id| row.result_ids.contains(id));
-            self.finished = row.reply || handed_back;
-            if let Some(handback) = row.handback {
+            self.interrupted = row.interrupted;
+            self.finished = row.reply || handed_back || row.interrupted;
+            if row.interrupted {
+                self.last_reply.clear();
+                self.handback_id = None;
+            } else if let Some(handback) = row.handback {
                 self.last_reply = redact_and_cap(&handback.message);
                 self.handback_id = Some(handback.id);
             } else if row.reply
@@ -722,6 +738,7 @@ pub(crate) struct SubagentFlow {
     pub title: String,
     pub agent_type: Option<String>,
     pub running: bool,
+    pub interrupted: bool,
     pub started_at_ms: Option<i64>,
     pub ended_at_ms: Option<i64>,
     pub tool_calls: u32,
@@ -744,6 +761,7 @@ pub(crate) fn subagent_flows(
             agent_id: d.lane.agent_id,
             parent_agent_id: d.lane.parent_agent_id,
             running: d.lane.running,
+            interrupted: d.summary.interrupted,
             started_at_ms: d.lane.started_at_ms,
             ended_at_ms: d.lane.ended_at_ms,
             tool_calls: d.summary.tool_calls(),
@@ -1497,6 +1515,28 @@ mod tests {
         assert!(l.running);
         assert_eq!(l.ended_at_ms, None);
         assert_eq!(l.report, "");
+    }
+
+    // Both recorded interrupt markers must close the lane without inventing a report.
+    #[test]
+    fn subagent_map_flow_closes_interrupted_lanes_without_a_report() {
+        let tmp = tempfile::tempdir_in(crate::test_support::test_temp_root()).expect("tempdir");
+        let (dir, parent) = session_tree(tmp.path(), "");
+        let transcript = dir.join("agent-alane-fixture.jsonl");
+        let mut failures = Vec::new();
+        for marker in include_str!("fixtures/subagent_map/interrupted.jsonl").lines() {
+            std::fs::write(&transcript, format!("{marker}\n")).expect("lane");
+            let l = &flows(&dir, &parent)[0];
+            if l.running
+                || !l.interrupted
+                || l.ended_at_ms.is_none()
+                || !l.report.is_empty()
+                || !l.prompt.is_empty()
+            {
+                failures.push(format!("{marker}: {l:?}"));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 
     /// The Flow nests subagents by `parentAgentId`, so the lane must carry it

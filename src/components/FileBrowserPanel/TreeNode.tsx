@@ -90,6 +90,7 @@ export const TreeNode: Component<TreeNodeProps> = (props) => {
 				onContextMenu={(e) => props.onContextMenu(e, props.entry)}
 				onPointerDown={(e) => props.onPointerDragStart?.(absPath(), e)}
 				data-drop-target={props.entry.is_dir ? "folder" : undefined}
+				data-browser-row={props.entry.path}
 				data-abs-path={props.entry.is_dir ? absPath() : undefined}
 			>
 				<Show when={props.entry.is_dir}>

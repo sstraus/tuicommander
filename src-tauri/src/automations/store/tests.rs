@@ -77,7 +77,6 @@ fn owner_lock_blocks_competing_runtime_and_readers_cannot_mutate_live_runs() {
             .transition(&run.id, RunStatus::Completed, RunDetails::default(), 2)
             .is_err()
     );
-    assert!(reader.prune(100, None).is_err());
     assert!(
         reader
             .claim_notification(&run.id, "done", "native", 2)
@@ -321,31 +320,11 @@ fn history_pages_utc_windows_and_retention_preserve_open_runs() {
     );
     assert!(store.history(None, 0, 0).is_err());
     assert!(store.history(None, 101, 0).is_err());
-    assert!(store.prune(now, Some(0)).is_err());
-    assert_eq!(store.prune(now, None).unwrap(), 1);
+    assert!(store.prune(now, 0).is_err());
+    assert_eq!(store.prune(now, 90).unwrap(), 1);
     assert!(store.get(&old_final.id).is_err());
     assert!(store.get(&old_open.id).is_ok());
     assert!(store.get(&boundary.id).is_ok());
-}
-
-// Catches: schema downgrade or opportunistic replacement of an unknown populated database.
-#[test]
-fn unsupported_schemas_fail_closed_without_modifying_existing_database() {
-    for version in [3, -1, 0] {
-        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-        let path = dir.path().join("automation_runs.sqlite3");
-        let conn = Connection::open(&path).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE future_data(secret TEXT); INSERT INTO future_data VALUES('preserve')",
-        )
-        .unwrap();
-        conn.pragma_update(None, "user_version", version).unwrap();
-        drop(conn);
-        let before = std::fs::read(&path).unwrap();
-        assert!(RunOwner::acquire_at(&path, 1).is_err());
-        assert!(RunStore::open_at(&path).is_err());
-        assert_eq!(std::fs::read(&path).unwrap(), before);
-    }
 }
 
 // Catches: notification ambiguity replaying sends or changing successful execution status.
@@ -496,11 +475,11 @@ fn retention_prunes_bounded_batches_without_replaying_consumed_schedules() {
     .unwrap();
     tx.commit().unwrap();
     let now = 100 * SummaryWindow::Day.millis();
-    assert_eq!(store.prune(now, None).unwrap(), 256);
+    assert_eq!(store.prune(now, 90).unwrap(), 256);
     assert_eq!(store.history(None, 100, 0).unwrap().len(), 1);
     assert_eq!(store.scheduled_cursor("daily").unwrap(), Some(123));
-    assert_eq!(store.prune(now, None).unwrap(), 1);
-    assert_eq!(store.prune(now, None).unwrap(), 0);
+    assert_eq!(store.prune(now, 90).unwrap(), 1);
+    assert_eq!(store.prune(now, 90).unwrap(), 0);
     assert_eq!(store.scheduled_cursor("daily").unwrap(), Some(123));
 }
 

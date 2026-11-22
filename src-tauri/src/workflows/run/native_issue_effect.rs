@@ -3,7 +3,6 @@ use super::native_git::NativeFailure;
 use super::native_host::NativeBinding;
 use super::native_issue_source::IssueSource;
 use super::neutral_effects::EffectKey;
-use crate::agent_capabilities::Capability;
 use crate::github_pr_api::{PrApi, RepoApi};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -95,13 +94,9 @@ pub(super) async fn publish(
 ) -> Result<IssueEffectReceipt, NativeFailure> {
     request.validate()?;
     request.source.require(bound, key)?;
-    let state = bound.context.authorize(
-        &bound.store,
-        key,
-        "native.issue.effect",
-        request,
-        Some(Capability::Push),
-    )?;
+    let state = bound
+        .context
+        .authorize(&bound.store, key, "native.issue.effect", request, None)?;
     let api = RepoApi::resolve(&state, &bound.context.workspace_path().to_string_lossy()).await?;
     if api.account.id != request.source.account
         || format!("{}/{}", api.owner, api.repo).to_ascii_lowercase() != request.source.repository
@@ -123,13 +118,9 @@ pub(super) async fn publish_with(
 ) -> Result<IssueEffectReceipt, NativeFailure> {
     request.validate()?;
     request.source.require(bound, key)?;
-    bound.context.authorize(
-        &bound.store,
-        key,
-        "native.issue.effect",
-        request,
-        Some(Capability::Push),
-    )?;
+    bound
+        .context
+        .authorize(&bound.store, key, "native.issue.effect", request, None)?;
     let number = request.source.number;
     let current = api
         .rest("GET", &format!("issues/{number}"), Value::Null)
@@ -138,13 +129,9 @@ pub(super) async fn publish_with(
     // Recheck after the network read: revocation/cancellation while awaiting GET
     // must not turn a previously approved intent into a fresh write.
     request.source.require(bound, key)?;
-    bound.context.authorize(
-        &bound.store,
-        key,
-        "native.issue.effect",
-        request,
-        Some(Capability::Push),
-    )?;
+    bound
+        .context
+        .authorize(&bound.store, key, "native.issue.effect", request, None)?;
     let write = super::native_issue_policy::resolve(bound, key, request)?;
     let (endpoint, body) = match &write {
         super::native_issue_policy::IssueWrite::Comment(body) => {

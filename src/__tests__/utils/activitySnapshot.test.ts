@@ -158,7 +158,7 @@ describe("terminalStatusLabel", () => {
 		effectiveActivityState = (await import("../../utils/activitySnapshot")).effectiveActivityState;
 	});
 
-	const cls = { rateLimited: "RL", error: "ERR", waiting: "WAIT", working: "WORK", idle: "IDLE" };
+	const cls = { rateLimited: "RL", error: "ERR", waiting: "WAIT", working: "WORK", background: "BG", idle: "IDLE" };
 
 	it("rate-limited wins over everything", () => {
 		expect(terminalStatusLabel("busy", "error", true, cls)).toEqual({ label: "Rate limited", className: "RL" });
@@ -182,11 +182,11 @@ describe("terminalStatusLabel", () => {
 		expect(terminalStatusLabel(null, null, false, cls)).toEqual({ label: "—", className: "IDLE" });
 	});
 
-	it("shows a ready composer as idle even when Codex retains a background terminal", () => {
-		expect(effectiveActivityState("idle", null, false, "working", true)).toBe("idle");
+	it("does not show a ready composer as idle while background work remains", () => {
+		expect(effectiveActivityState("idle", null, false, "working", true)).toBe("background");
 		expect(terminalStatusLabel("idle", null, false, cls, "working", true)).toEqual({
-			label: "Idle",
-			className: "IDLE",
+			label: "Background",
+			className: "BG",
 		});
 	});
 

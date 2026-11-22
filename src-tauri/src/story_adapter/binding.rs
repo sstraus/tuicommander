@@ -62,18 +62,17 @@ fn configured(project: &Path) -> Result<Option<Setting>, String> {
     Ok(setting)
 }
 
+// DEFERRED (2026-11-18) — workflow consumers resolve the current project backend;
+// the neutral run engine has no persisted backend pin. Do not switch backends
+// during a native run; unfinished plans alone must not choose the content store.
 fn selected(project: &Path) -> Result<(BackendStatus, Option<AdapterCommand>), String> {
     let Some(setting) = configured(project)? else {
         // Marker detection is passive. Unmarked native projects need no retention reason.
         let Some(config) = super::selection::detection_config(project)? else {
             return Ok((BackendStatus::native(false), None));
         };
-        // Continuity precedes connector resolution/approval, never a failure fallback.
-        if let Some(reason) = native_continuity(project)? {
-            let mut status = BackendStatus::native(false);
-            status.reason = format!("Native retained while {reason}");
-            return Ok((status, None));
-        }
+        // Retained native data does not choose the backend. A detected project
+        // uses its connector; an explicit native override still exposes SQLite.
         return super::selection::automatic_detected(project, &config);
     };
     match (setting.backend.as_deref(), setting.command) {
@@ -107,7 +106,7 @@ fn legacy_command(program: String, args: Vec<String>) -> (BackendStatus, Option<
     )
 }
 
-/// Status remains readable when approval, the native-plan guard or initialization fails.
+/// Status remains readable when approval or initialization fails.
 pub(crate) fn status(project: &Path) -> BackendStatus {
     let (mut status, command) = match selected(project) {
         Ok(selection) => selection,
@@ -186,8 +185,6 @@ pub(crate) fn external_for(project: &Path) -> Result<Option<Arc<ExternalBackend>
     {
         return checked_backend(&status, backend);
     }
-    // Checked when the binding starts: once bound, no native plan can be created.
-    require_no_open_native_plan(project)?;
     let mut bound = lock(&BOUND);
     if let Some(existing) = bound.get(project) {
         if existing.command == command && existing.generation == status.generation {
@@ -227,35 +224,10 @@ fn checked_backend(
     Ok(Some(backend))
 }
 
-fn native_continuity(project: &Path) -> Result<Option<String>, String> {
-    let store = crate::stories::StoryStore::open()?;
-    for plan in store.list_plans(&project.to_string_lossy())? {
-        if store.plan_state(&plan.id)? != crate::stories::PlanState::Done {
-            return Ok(Some(format!(
-                "native plan \"{}\" ({}) is still open",
-                plan.title, plan.id
-            )));
-        }
-    }
-    Ok(None)
-}
-
-fn require_no_open_native_plan(project: &Path) -> Result<(), String> {
-    if let Some(reason) = native_continuity(project)? {
-        return Err(format!(
-            "story backend unavailable: {reason}; complete or archive native work before this project uses an external backend"
-        ));
-    }
-    Ok(())
-}
-
 /// Human-only shared action calls this after authenticating the caller.
 pub(crate) fn set_override(project: &Path, backend: &str) -> Result<(), String> {
     if !matches!(backend, "automatic" | "native" | "wiz-stories") {
         return Err("Invalid backend override".into());
-    }
-    if backend == "wiz-stories" {
-        require_no_open_native_plan(project)?;
     }
     let path = crate::config::config_dir().join(SETTINGS_FILE);
     let mut settings: serde_json::Map<String, serde_json::Value> = match std::fs::read(&path) {
@@ -361,6 +333,18 @@ fn publish(
     project: &Path,
     payload: serde_json::Value,
 ) {
+    #[cfg(feature = "desktop")]
+    if let Some(state) = STATE.get().and_then(std::sync::Weak::upgrade)
+        && let Some(app) = state.app_handle.read().as_ref()
+    {
+        use tauri::Emitter;
+        let _ = app.emit(
+            "stories-changed",
+            serde_json::json!({
+                "repo_path": project.to_string_lossy(), "payload": payload,
+            }),
+        );
+    }
     let _ = bus.send(crate::state::AppEvent::StoriesChanged {
         repo_path: project.to_string_lossy().into_owned(),
         payload,
@@ -372,17 +356,18 @@ fn has_news(payload: &serde_json::Value) -> bool {
     payload["rescan"] == true || payload["ids"].as_array().is_some_and(|ids| !ids.is_empty())
 }
 
-/// The bus of the running daemon, set once by [`spawn_poller`].
-static BUS: OnceLock<tokio::sync::broadcast::Sender<crate::state::AppEvent>> = OnceLock::new();
+/// The running daemon, held weakly for desktop invalidations without extending its lifetime.
+static STATE: OnceLock<std::sync::Weak<crate::AppState>> = OnceLock::new();
 
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Polls `changes` of every running adapter on a timer, for backends that send
 /// no notification and declare no watch path. Never starts an adapter.
-pub(crate) fn spawn_poller(bus: tokio::sync::broadcast::Sender<crate::state::AppEvent>) {
-    if BUS.set(bus.clone()).is_err() {
+pub(crate) fn spawn_poller(state: &Arc<crate::AppState>) {
+    if STATE.set(Arc::downgrade(state)).is_err() {
         return;
     }
+    let bus = state.event_bus.clone();
     let spawned = std::thread::Builder::new()
         .name("story-adapter-poll".into())
         .spawn(move || {
@@ -434,10 +419,10 @@ fn remember(project: &Path, backend: &Arc<ExternalBackend>, cursor: ChangeCursor
 mod selection_regressions {
     use super::*;
 
-    /// Catches: claiming native was retained for Wiz on an ordinary unmarked project,
-    /// and the header naming internal tooling ("No Wiz project markers") to every user.
+    /// Catches: an ordinary unmarked project showing internal marker/retention
+    /// terminology instead of the product storage explanation.
     #[test]
-    fn plain_open_native_plan_has_no_markers_reason_until_markers_are_detected() {
+    fn unmarked_native_project_has_product_storage_reason() {
         let config = tempfile::TempDir::new_in(crate::test_support::test_temp_root()).unwrap();
         let project_dir = tempfile::TempDir::new_in(crate::test_support::test_temp_root()).unwrap();
         let project = std::fs::canonicalize(project_dir.path()).unwrap();
@@ -455,22 +440,14 @@ mod selection_regressions {
         assert!(!plain.reason.contains("Wiz"), "{}", plain.reason);
         assert_eq!(
             plain.reason,
-            "Plans and stories are stored in TUICommander. Create a plan to begin."
+            "Plans and stories are stored in TUICommander."
         );
-        std::fs::create_dir(project.join(".wiz")).unwrap();
-        let marked = status(&project);
-        assert_eq!(marked.backend, "native");
-        assert_eq!(marked.availability, "available");
-        assert!(
-            marked
-                .reason
-                .starts_with("Native retained while native plan"),
-            "{}",
-            marked.reason
+        assert_eq!(
+            crate::stories::StoryStore::open()
+                .unwrap()
+                .get_plan(&plan.id)
+                .unwrap(),
+            plan
         );
-        assert!(marked.reason.contains(&plan.id));
-        // A missing/invalid connector installation never needs to execute to
-        // preserve access to the original native work.
-        assert!(external_for(&project).unwrap().is_none());
     }
 }

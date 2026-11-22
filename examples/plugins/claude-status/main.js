@@ -3,7 +3,7 @@
  *
  * Demonstrates the agentTypes manifest field: this plugin only receives
  * events from terminals running Claude Code. Output watchers are silently
- * skipped for plain shells, Gemini, Codex, or any other agent.
+ * skipped for plain shells, Antigravity, Codex, or any other agent.
  *
  * Tracks:
  * - Usage limit warnings ("You've used X% of your weekly limit")

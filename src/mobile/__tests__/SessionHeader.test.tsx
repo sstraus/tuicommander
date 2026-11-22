@@ -248,7 +248,7 @@ it("shows only CLI when a session loses Chat support", async () => {
 		/>
 	));
 	await fireEvent.click(view.getByRole("tab", { name: "Chat" }));
-	setCurrent(session("mode-cli-only-2459", "gemini", "CLI-only mode"));
+	setCurrent(session("mode-cli-only-2459", "agy", "CLI-only mode"));
 	expect(view.queryByRole("tablist", { name: "Terminal view" })).toBeNull();
 	expect(view.getByTestId("terminal-output").hidden).toBe(false);
 	expect(view.queryByTestId("terminal-chat-view")).toBeNull();

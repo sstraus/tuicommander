@@ -1,3 +1,4 @@
+mod asset_cache;
 pub(crate) mod assets;
 pub(crate) mod service;
 

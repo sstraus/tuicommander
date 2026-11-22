@@ -291,7 +291,7 @@ pub(crate) fn is_tailscale_ip(ip_str: &str) -> bool {
 /// Basic Auth middleware that validates credentials against config.
 ///
 /// Flow:
-/// 1. Only login assets and CORS preflight bypass credential checks.
+/// 1. Login assets, CORS preflight and loopback (unless require_local_auth) need no credentials.
 /// 2. Requests with a valid session cookie pass through (fast path — no bcrypt).
 /// 3. Requests with a valid `Authorization: Basic` header pass through AND get
 ///    a session cookie set so subsequent JS fetch() calls are authenticated.
@@ -321,7 +321,7 @@ pub async fn basic_auth_middleware(
 
     // Mark the request as authenticated for downstream route guards
     // (require_local_or_auth). Reaching a handler implies the request passed
-    // one of the auth gates below (session cookie, URL
+    // one of the admission gates below (loopback, session cookie, URL
     // token, or Basic Auth); every failed path short-circuits with 401/429
     // here and never runs the handler, so the marker only ever propagates to
     // authenticated handler invocations. (Boss 2026-06-27: token-auth = full
@@ -371,13 +371,14 @@ pub async fn basic_auth_middleware(
         return response;
     }
 
-    let (rate_max, rate_window_secs, username, hash) = {
+    let (rate_max, rate_window_secs, username, hash, require_local_auth) = {
         let config = state.config.read();
         (
             config.services.auth.auth_rate_limit_max,
             config.services.auth.auth_rate_limit_window_secs,
             config.services.auth.username.clone(),
             config.services.auth.password_hash.clone(),
+            config.services.auth.require_local_auth,
         )
     };
     let client_ip = addr.ip();
@@ -390,6 +391,11 @@ pub async fn basic_auth_middleware(
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .map(String::from);
+    // The local OS user is the trust boundary. Explicit credentials still take
+    // their normal path so verified callers retain UserAuthenticated provenance.
+    if client_ip.is_loopback() && !require_local_auth && auth_header.is_none() {
+        return next.run(req).await;
+    }
     // Requests that cannot verify credentials do not need rate state. Keeping
     // them out of the map prevents unauthenticated scans from retaining an IP
     // entry for the whole rate-limit window.

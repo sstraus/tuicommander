@@ -6,6 +6,99 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- New MCP tool `batch`: send up to 32 tool calls, of any tools, in one request and receive the results in the same order. Each call passes the same checks as a separate call. Orchestrators that message, spawn or inspect several agents in a row need one call instead of many.
+
+- Antigravity CLI (`agy`) replaces Gemini CLI as an agent. TUIC detects it (its process is `antigravity`), launches it with `--add-dir` for session uploads, resumes with `--conversation <id>` or `--continue`, discovers its conversation from `~/.gemini/antigravity-cli/conversations`, installs its MCP bridge into `~/.gemini/config/mcp_config.json`, and can install busy/idle hooks in `~/.gemini/config/hooks.json`. Settings stored under `gemini` are dropped. Working, idle and awaiting detection for agy is unverified until it is recorded from a signed-in session.
+
+- Preserve the visible file or folder when reopening the File Browser, including when expanded folders load asynchronously.
+
+- Progress and Discussion are one journal. `Cmd+Alt+Q` asks the agent in a Claude, Codex or ego terminal a side question without interrupting it: a read-only fork of the session answers it from the prompt cache, and the classified answer lands in Progress with a toast; follow-ups continue the thread. Questions you ask the agent directly in a Claude, Codex, Grok or ego terminal, ending with `?`, are filed with their answer when the turn ends; journal answers drop the terminal markers (`💬`, `intent:`, `suggest:`). The list now shows `done`, `blocked`, `question` and `answer` by default; intents, messages and delegations move behind an Activity toggle. "All projects" lists every project's entries.
+
+- A notepad button in the toolbar opens a global scratchpad: one Markdown file (`scratchpad.md` in the config folder) in an editor tab that stays pinned in every repository. Selecting a block offers Add to Ideas and Send to agent.
+
+- The inline File Browser and Git panels now release their views after one minute closed, keeping lightweight navigation state and protecting unfinished edits.
+
+- TUIC keeps its durable data (stories, workflow definitions, managed launches, MCP usage) in one `tuic.sqlite3`; progress, automation runs, workflow runs, mail and tunnel audit keep their own `.sqlite3` files. **Breaking:** the first start deletes the old database files and their `.legacy-workflows.bak` copies without migrating them, so native stories, workflow drafts and histories start empty.
+- A cleanup job at startup and once a day deletes closed or dead records past a configurable age (`retention` in `config.json`) and removes stopped instance folders under `instances/`, old captures, unused MCP bridge revisions and the capability and wake files of closed sessions; open records are never touched.
+
+- Spawned agents are no longer capped: a child can spawn its own agents, push and tag like the session that started it; it still reports to its parent by mail, not through `progress`. The `land`, `push`, `tag`, `children` and `progress` capabilities, their git shim and `TUIC_CAPABILITIES` are gone; briefs that still name them spawn normally. Only `operator` remains, and native workflow publication stays gated by its approval question.
+
+- Selecting a repository hidden by the sidebar filter in Cmd+P switches the sidebar to the unfiltered view.
+
+- The Rich sidebar connects nested child sessions to their parent with a vertical guide.
+
+- Show **Background** instead of idle or finished when an agent is ready for input but still has tracked work running.
+
+- AI Chat shows an italic Processing placeholder as soon as ego dispatches your prompt, then the model's public reasoning in italics until the answer starts. The stored thought stays in the transcript.
+
+- Lazy tool discovery returns multi-action native tools (agent, session, repo, ui) one action at a time, each under its own name (`agent_send`, `session_input`): a search for one action no longer loads the whole tool schema, the matching action ranks first, and a search also returns the schemas the next step usually needs.
+- `session input` can wait for a shell command to finish printing and return its output in the same call (`wait_ms`); `agent send` to an unknown recipient lists the peers it probably meant.
+- MCP usage statistics attribute bridged clients (Claude Code, Codex) correctly and keep the `tuic` command line and unregistered callers apart.
+
+- **Needs you** pill in the toolbar: shows how many agents wait for you, lists them oldest first and opens the chosen one; closed repositories and an out-of-view sidebar banner point to waiting sessions (Cmd+U follows the same order).
+
+- Cmd+V of a file copied in Finder now reaches terminal agents as Ctrl+V instead of pasting nothing.
+
+- Preserve non-terminal tabs, their order and selection across window reloads, including recoverable unsaved editor drafts.
+
+- Keep tab-scroll arrows opaque so tab titles do not show through their backgrounds.
+
+- Show the cyan PTY-tab underline only on the focused terminal tab, not on inactive PTY tabs.
+
+### Stories
+
+- Plans and Stories defaults to all plans, with optional plan filtering. Connection and backend details are compact beside Workflow and remain accessible through a disclosure.
+
+- Automatically detected Wiz projects use their approved installed connector even when unfinished native plans remain. Native records stay available through the explicit native override.
+- The Stories ticker reads the same selected-backend open-story projection as Plans and Stories across all non-archived plans. It no longer infers status from filenames, and clears stale counts on backend failure.
+
+### Workflow Designer
+
+- List active and recent workflow runs, inspect their pinned graphs live, and distinguish execution, approval and resource waits.
+- Surface retained approvals in an actionable Markdown dialog with attention notifications, a persistent pending count and mobile push. Answers retain the existing revision and sequence fencing.
+
+- Replace the flat neutral control-node list with a two-dimensional graph, named routes, fit/zoom controls and click-to-connect authoring. Keep node configuration in a separate inspector and search installed catalog activities in the palette.
+- Separate Design, Inputs & returns, Preview & runs and Advanced definition workspaces. Typed root interface forms retain the existing neutral draft, validation and publication contracts; preview never starts a run.
+## [2.1.2] - 2026-11-19
+
+### AI Chat and agent spawning
+
+- MCP agent spawn now supports Ego's interactive positional prompt without explicit arguments or a named run profile. Explicit arguments and configured profiles keep their existing behavior.
+- AI Chat `/clear` now resets agent context through the New conversation action instead of only deleting the draft. Saved history remains; busy or failed resets keep the draft and attachments.
+- AI Chat shows submitted content as Sending before ACP confirmation and retains failed payloads for retry without changing newer drafts. Agent-advertised slash commands are no longer hidden by host names that have no active handler.
+### New features
+
+- Reply directly to a Progress report without switching repositories. Reply shares the existing compact action row with Open Progress; explicit binary questions show Yes and No. Failed drafts survive retry, and delivery distinguishes queued from sent.
+
+- Prepare native Linux ARM64 desktop deb, rpm and AppImage builds for 2.1.2, with architecture-specific install/update checks. Native package installation and desktop smoke verification remain release gates.
+
+### Fixes
+
+- Push-to-talk dictation now opens the microphone before loading the speech model, so words spoken while the model loads are transcribed instead of lost.
+
+- Move the List/Kanban switch into the Stories header, immediately before New story.
+
+- Keep remaining credits visible through transient quota-read failures and show `retry` only from the third failed read, without changing cooldowns.
+
+- Terminal search navigation now cancels pending smooth scrolling before revealing and highlighting the selected result, so wheel scrolling cannot hold the viewport on an older position.
+- Deleting a worktree whose branch was squash- or rebase-merged into the default branch is no longer blocked by "N commits not in main": the removal checklist accepts the same content proof as branch deletion and says that the original commits are not kept. Plain merges and fast-forwards keep the ancestry check.
+- Repository notifications now share one refresh coordinator and no longer serialize unchanged live repositories during adoption, reducing synchronous work that can interrupt terminal input and rendering.
+
+- Ego terminal quotas keep named accounts separate from other same-vendor accounts and legacy credentials. Active reads and passive updates use the selected connection identity (#3092-e0ee).
+- Repository notifications now share one refresh coordinator, skip unchanged live repository serialization, and publish adopted changes in one reactive batch, reducing synchronous work that can interrupt terminal input and rendering.
+
+- Protect new worktree allocations from automatic cleanup for five minutes, and do not mark a fresh branch created from the default tip SHA as merged.
+- Toasts no longer cover the header buttons of an open dialog such as the Workflow Designer: they move to the bottom left while a dialog is open, and the empty area around them no longer blocks clicks.
+- On macOS, an update that unlinks a running native agent executable no longer blocks queued input when its current process name still identifies the agent.
+
+- A scheduled workflow trigger whose project directory was deleted no longer stops every other scheduled trigger from starting.
+- A trigger event that a newer event for the same resource replaced before it started now shows `superseded` instead of staying `pending` forever.
+
+- AI Chat shows only the first line of a long notice, such as the compaction summary; the rest opens on click (#3088-ef63).
+- Workflow actions over HTTP now answer 400, 403, 404 or 409 when they refuse a request (unknown id, stale approval, stale revision) instead of 500, so clients no longer treat a refusal as a server fault.
+- A workflow run whose read-only script lost its output in a restart now asks the operator to run the script again or abandon the activity, instead of waiting forever with no question. The script never runs again without that answer.
+- A scheduled workflow run that was started before an app restart now resumes after the restart instead of staying stuck until its deadline, and the first scheduled run after a restart is no longer refused as "handler unavailable". One old run that cannot be resumed no longer blocks the other scheduled starts of its project.
+
 ## [2.1.1] - 2026-11-15
 
 ### Fixes
@@ -17,6 +110,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The status bar agent badge shows subscription usage again on Claude, Codex and ego tabs. An ego tab shows the usage of the subscription it is bound to. The badge shows the weekly percent, what is left before the monthly limit and the time to each reset (`7d: 78% -4d · mo: 99% left`), no longer repaints on unchanged refreshes, and no longer shows tool names (#3068-c03b).
 ### Fixed
 
+- MCP `progress` errors now explain how to correct the call: `question` on a `done` report says to omit it or use `type=blocked`, and a malformed question or wrong `type` lists the accepted values.
 - Refresh remote repository worktrees after creation or removal on the owning daemon, and restore watchers after reconnection (#150).
 
 ## [2.1.0] - 2026-11-14

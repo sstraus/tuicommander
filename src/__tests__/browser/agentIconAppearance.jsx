@@ -10,7 +10,7 @@ const palette=light?paper.appChrome:commander.appChrome;
 document.documentElement.style.setProperty('--fg-primary',palette.foreground);
 document.documentElement.style.setProperty('--bg-primary',palette.background);
 document.documentElement.style.colorScheme=light?'light':'dark';
-const agents=['claude','gemini','codex','amp','cursor','opencode','droid'];
+const agents=['claude','agy','codex','amp','cursor','opencode','droid'];
 render(()=><main style="padding:24px;background:var(--bg-primary);color:var(--fg-primary)">
 <h1>Shared production icon audit</h1>
 <section id="agent-icons"><h2>Agent identity — same requested size</h2><For each={[14,16,22,64]}>{size=><div style="display:flex;gap:24px;align-items:center;padding:12px"><span style="width:45px">{size}px</span><For each={agents}>{agent=><div data-agent={agent} data-size={size} style="width:110px;display:flex;align-items:center;gap:8px"><AgentIcon agent={agent} size={size}/><span>{agent}</span></div>}</For></div>}</For></section>

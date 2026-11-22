@@ -52,6 +52,28 @@ pub(crate) struct EffectObservation {
     pub stopped: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ResourceWait {
+    pub resource: String,
+    pub owner_run: String,
+    pub owner_effect: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum MutationStopProof {
+    RecordedObservation,
+    OriginalProcessGone,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct MutationResolution {
+    pub evidence: String,
+    pub stop_proof: MutationStopProof,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct NeutralEffect {
@@ -71,6 +93,20 @@ pub(crate) struct NeutralEffect {
     pub tool: Option<ModelToolCall>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_session: Option<ModelSession>,
+    /// Operator-approved dispatches after the first, under the same effect key.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub reruns: u32,
+    // DEFERRED (2026-11-20) — ended runs retain their last resource blocker;
+    // consumers must check run lifecycle before presenting it as an active wait.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_wait: Option<ResourceWait>,
+    /// Explicit operator evidence, separate from the original uncertain result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mutation_resolution: Option<MutationResolution>,
+}
+
+fn is_zero(value: &u32) -> bool {
+    *value == 0
 }
 
 impl NeutralEffect {
@@ -111,6 +147,9 @@ impl NeutralEffect {
             observation: None,
             tool: None,
             model_session: None,
+            reruns: 0,
+            resource_wait: None,
+            mutation_resolution: None,
         })
     }
 
@@ -135,6 +174,31 @@ impl NeutralEffect {
         )
     }
 
+    pub fn resources_released(&self) -> bool {
+        self.settled() || self.mutation_resolution.is_some()
+    }
+
+    /// A read-only script whose output is lost has nothing to roll back, so the
+    /// operator may run the original again. Any mutating effect keeps its
+    /// uncertainty and its reconciliation procedure.
+    pub fn rerun_candidate(&self) -> bool {
+        self.tool.is_none()
+            && self.dispatched
+            && !self.preparation.mutation
+            && !self.cancel_started
+            && matches!(
+                self.invocation.descriptor.target,
+                Some(crate::workflows::catalog::ReusableTarget::Script { .. })
+            )
+            && matches!(
+                &self.observation,
+                Some(EffectObservation {
+                    outcome: EffectOutcome::Uncertain { .. },
+                    ..
+                })
+            )
+    }
+
     pub fn approved(&self) -> bool {
         self.question.is_none() || self.answer == Some(true)
     }
@@ -143,6 +207,15 @@ impl NeutralEffect {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum EffectCommand {
+    ResourceWait {
+        key: EffectKey,
+        wait: ResourceWait,
+    },
+    ResolveMutation {
+        key: EffectKey,
+        evidence: String,
+        stop_proof: MutationStopProof,
+    },
     BindModel {
         key: EffectKey,
         session: ModelSession,
@@ -187,6 +260,14 @@ pub(crate) enum EffectCommand {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum EffectDecision {
+    ResourceWait {
+        key: EffectKey,
+        wait: ResourceWait,
+    },
+    ResolveMutation {
+        key: EffectKey,
+        resolution: MutationResolution,
+    },
     BindModel {
         key: EffectKey,
         session: ModelSession,
@@ -231,6 +312,24 @@ pub(crate) enum EffectDecision {
 }
 
 impl NeutralExecution {
+    pub(super) fn mutation_resolution_candidate(
+        &self,
+        key: &EffectKey,
+    ) -> Result<&NeutralEffect, String> {
+        let effect = self.effect(key)?;
+        if self.status == NeutralStatus::Running
+            || !effect.preparation.mutation
+            || !effect.dispatched
+            || effect.settled()
+        {
+            return Err(crate::workflows::neutral_api::refusal::MUTATION_RESOLUTION_STATE.into());
+        }
+        Ok(effect)
+    }
+    // DEFERRED (2026-11-15) — an Answer naming an unknown effect key still answers
+    // HTTP 500 (3076-306f review follow-up). This text is shared with an internal
+    // callback identity mismatch, which is a fault, so it is not classified as a
+    // 404 by text alone; telling the two apart needs a typed error here.
     pub(super) fn effect(&self, key: &EffectKey) -> Result<&NeutralEffect, String> {
         self.effects
             .get(&key.digest)
@@ -311,6 +410,73 @@ impl NeutralExecution {
         at_ms: i64,
     ) -> Result<Option<EffectDecision>, String> {
         match command {
+            EffectCommand::ResourceWait { key, wait } => {
+                let effect = self.effect(key)?;
+                if !effect.preparation.mutation
+                    || !effect.preparation.resources.contains(&wait.resource)
+                    || wait.owner_run.trim().is_empty()
+                    || wait.owner_effect.trim().is_empty()
+                    || (wait.owner_run == key.fence.run && wait.owner_effect == key.digest)
+                    || !matches!(
+                        self.decide_effect(&EffectCommand::Dispatch { key: key.clone() }, at_ms)?,
+                        Some(EffectDecision::Dispatch { .. })
+                    )
+                {
+                    return Err(
+                        "resource wait requires a dispatchable mutation and a conflicting owner"
+                            .into(),
+                    );
+                }
+                if effect.resource_wait.as_ref() == Some(wait) {
+                    return Ok(None);
+                }
+                Ok(Some(EffectDecision::ResourceWait {
+                    key: key.clone(),
+                    wait: wait.clone(),
+                }))
+            }
+            EffectCommand::ResolveMutation {
+                key,
+                evidence,
+                stop_proof,
+            } => {
+                let effect = self.mutation_resolution_candidate(key)?;
+                validate_mutation_resolution(evidence)?;
+                let proven = match stop_proof {
+                    MutationStopProof::RecordedObservation => {
+                        effect.observation.as_ref().is_some_and(|o| o.stopped)
+                    }
+                    MutationStopProof::OriginalProcessGone => matches!(
+                        effect.invocation.descriptor.target,
+                        Some(crate::workflows::catalog::ReusableTarget::Script { .. })
+                    ),
+                };
+                if !proven {
+                    return Err(format!(
+                        "{}: effect {} has no backend stop proof; stop the original operation and reconcile using the retained procedure",
+                        crate::workflows::neutral_api::refusal::MUTATION_RESOLUTION_STATE,
+                        key.digest
+                    ));
+                }
+                let resolution = MutationResolution {
+                    evidence: evidence.clone(),
+                    stop_proof: stop_proof.clone(),
+                };
+                if let Some(original) = &effect.mutation_resolution {
+                    return if original == &resolution {
+                        Ok(None)
+                    } else {
+                        Err(
+                            crate::workflows::neutral_api::refusal::MUTATION_RESOLUTION_IMMUTABLE
+                                .into(),
+                        )
+                    };
+                }
+                Ok(Some(EffectDecision::ResolveMutation {
+                    key: key.clone(),
+                    resolution,
+                }))
+            }
             EffectCommand::ResumeModel {
                 key,
                 previous,
@@ -458,6 +624,10 @@ impl NeutralExecution {
             }
             EffectCommand::Observe { key, observation } => {
                 let effect = self.effect(key)?;
+                // A late callback cannot rewrite an explicit terminal disposition.
+                if effect.mutation_resolution.is_some() {
+                    return Ok(None);
+                }
                 if !effect.dispatched {
                     return Err("neutral effect was not dispatched".into());
                 }
@@ -559,7 +729,7 @@ impl NeutralExecution {
             }
             EffectCommand::Question { key, question } => {
                 let effect = self.effect(key)?;
-                if effect.dispatched
+                if (effect.dispatched && !effect.rerun_candidate())
                     || effect.answer == Some(false)
                     || !self.effect_attempt_pending(key)
                 {
@@ -632,17 +802,22 @@ impl NeutralExecution {
                     || at_ms >= question.deadline_ms
                     || question.revision != *revision
                     || effect.answer.is_some()
-                    || effect.dispatched
+                    || (effect.dispatched && !effect.rerun_candidate())
                 {
-                    return Err("neutral approval is expired, stale or already answered".into());
+                    return Err(crate::workflows::neutral_api::refusal::APPROVAL_STALE.into());
                 }
                 let result = if *approved {
                     None
                 } else {
+                    let diagnostic = if effect.dispatched || effect.reruns > 0 {
+                        "script output was lost and the operator abandoned the activity"
+                    } else {
+                        "neutral effect approval declined"
+                    };
                     self.callback_decision(
                         key,
                         &NeutralResult::Failed {
-                            diagnostic: "neutral effect approval declined".into(),
+                            diagnostic: diagnostic.into(),
                         },
                         at_ms,
                     )?
@@ -669,6 +844,18 @@ impl NeutralExecution {
 
     pub(super) fn apply_effect(&mut self, decision: &EffectDecision) -> Result<(), String> {
         match decision {
+            EffectDecision::ResourceWait { key, wait } => {
+                self.effects
+                    .get_mut(&key.digest)
+                    .ok_or("neutral effect unavailable")?
+                    .resource_wait = Some(wait.clone());
+            }
+            EffectDecision::ResolveMutation { key, resolution } => {
+                self.effects
+                    .get_mut(&key.digest)
+                    .ok_or("neutral effect unavailable")?
+                    .mutation_resolution = Some(resolution.clone());
+            }
             EffectDecision::BindModel { key, session }
             | EffectDecision::ResumeModel { key, session, .. } => {
                 self.effects
@@ -682,10 +869,12 @@ impl NeutralExecution {
                 result,
             } => {
                 // No adapter entry occurred, so failure and stop are known.
-                self.effects
+                let effect = self
+                    .effects
                     .get_mut(&key.digest)
-                    .ok_or("neutral effect unavailable")?
-                    .observation = Some(EffectObservation {
+                    .ok_or("neutral effect unavailable")?;
+                effect.resource_wait = None;
+                effect.observation = Some(EffectObservation {
                     stopped: true,
                     outcome: EffectOutcome::Completed {
                         result: NeutralResult::Failed {
@@ -703,10 +892,12 @@ impl NeutralExecution {
             }
             EffectDecision::Dispatch { key } => {
                 self.attempt_mut(&key.fence)?.dispatched = true;
-                self.effects
+                let effect = self
+                    .effects
                     .get_mut(&key.digest)
-                    .ok_or("neutral effect unavailable")?
-                    .dispatched = true;
+                    .ok_or("neutral effect unavailable")?;
+                effect.dispatched = true;
+                effect.resource_wait = None;
             }
             EffectDecision::Observe {
                 key,
@@ -746,6 +937,16 @@ impl NeutralExecution {
                     .ok_or("neutral effect unavailable")?;
                 effect.answer = Some(*approved);
                 effect.answer_receipt = receipt.clone();
+                // Approval of a lost read-only script re-opens the original
+                // dispatch; the same key and the same retained invocation run again.
+                let rerun = *approved && effect.dispatched;
+                if rerun {
+                    effect.dispatched = false;
+                    effect.observation = None;
+                    effect.handle = None;
+                    effect.reruns += 1;
+                    self.attempt_mut(&key.fence)?.dispatched = false;
+                }
                 if let Some(result) = result {
                     self.apply(result)?;
                 }
@@ -776,6 +977,13 @@ fn validate_question(
     Ok(())
 }
 
+pub(super) fn validate_mutation_resolution(evidence: &str) -> Result<(), String> {
+    if evidence.trim().is_empty() || evidence.len() > 4096 {
+        return Err(crate::workflows::neutral_api::refusal::MUTATION_RESOLUTION_EVIDENCE.into());
+    }
+    Ok(())
+}
+
 /// This is only the transactionally maintained conflict projection of the
 /// existing effect ledger, not a work queue. Adapter-owned claims still apply.
 pub(super) fn project_resources(
@@ -788,24 +996,14 @@ pub(super) fn project_resources(
             let effect = execution.effect(key)?;
             if effect.preparation.mutation {
                 for resource in &effect.preparation.resources {
-                    let owner: Option<(String, String)> = conn.query_row(
-                        "SELECT run_id,effect_id FROM neutral_effect_resources WHERE resource=?1", [resource],
-                        |row| Ok((row.get(0)?, row.get(1)?)),
-                    ).optional().map_err(|e| format!("read neutral resource: {e}"))?;
-                    if owner.as_ref().is_some_and(|owner| {
-                        owner != &(key.fence.run.clone(), key.digest.clone())
-                            && !super::native_issue_publication::shares_unknown(
-                                execution, effect, &owner.0, &owner.1,
-                            )
-                    }) {
-                        return Err("neutral effect resource conflict".into());
-                    }
                     conn.execute("INSERT OR IGNORE INTO neutral_effect_resources(resource,run_id,effect_id) VALUES (?1,?2,?3)", params![resource, key.fence.run, key.digest])
                         .map_err(|e| format!("claim neutral resource: {e}"))?;
                 }
             }
         }
-        EffectDecision::Observe { key, .. } if execution.effect(key)?.settled() => {
+        EffectDecision::Observe { key, .. } | EffectDecision::ResolveMutation { key, .. }
+            if execution.effect(key)?.resources_released() =>
+        {
             conn.execute(
                 "DELETE FROM neutral_effect_resources WHERE run_id=?1 AND effect_id=?2",
                 params![key.fence.run, key.digest],
@@ -815,6 +1013,45 @@ pub(super) fn project_resources(
         _ => {}
     }
     Ok(())
+}
+
+/// Read under the command's IMMEDIATE transaction, before any claim or event.
+/// A wait is journalled atomically with the exact owner that prevented dispatch.
+pub(super) fn resource_conflict(
+    conn: &Connection,
+    execution: &NeutralExecution,
+    key: &EffectKey,
+) -> Result<Option<ResourceWait>, String> {
+    let effect = execution.effect(key)?;
+    if !effect.preparation.mutation {
+        return Ok(None);
+    }
+    for resource in &effect.preparation.resources {
+        let owner: Option<(String, String)> = conn
+            .query_row(
+                "SELECT run_id,effect_id FROM neutral_effect_resources WHERE resource=?1",
+                [resource],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| format!("read neutral resource: {e}"))?;
+        if let Some((owner_run, owner_effect)) = owner
+            && (owner_run != key.fence.run || owner_effect != key.digest)
+            && !super::native_issue_publication::shares_unknown(
+                execution,
+                effect,
+                &owner_run,
+                &owner_effect,
+            )
+        {
+            return Ok(Some(ResourceWait {
+                resource: resource.clone(),
+                owner_run,
+                owner_effect,
+            }));
+        }
+    }
+    Ok(None)
 }
 
 pub(super) type Effects = BTreeMap<String, NeutralEffect>;

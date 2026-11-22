@@ -76,6 +76,11 @@ beforeEach(() => {
 		if (action.action === "transition_history") return { type: "transitions", value: [] };
 		if (action.action === "list_notes") return { type: "notes", value: [] };
 		if (action.action === "available_transitions") return { type: "available_transitions", value: { moves: [] } };
+		if (action.action === "project_story_view")
+			return {
+				type: "project_story_view",
+				value: { stories, visibleStoryIds: stories.map((story) => story.id), columns: [] },
+			};
 		if (action.action === "plan_view") {
 			const selected = stories.filter((story) => story.planId === action.plan_id);
 			return {

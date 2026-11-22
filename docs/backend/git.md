@@ -14,6 +14,8 @@ Workflow launch uses `validate_branch_worktree_path`: the canonical path must id
 
 Worktree allocation finds registrations under `git rev-parse --git-common-dir`, resolved from the base repository. This supports normal, bare and linked-worktree bases. Each registration must still match the requested checkout path before TUIC writes its allocation marker; foreign and unregistered checkouts remain rejected.
 
+Automatic merged-worktree archive and safe orphan cleanup wait five minutes after the last TUIC allocation marker was written. The marker lives in the Git worktree administration directory, so reusing an older checkout starts a new window. Missing or unreadable allocation age prevents unattended cleanup; explicit removal remains available. A fresh branch created from the default tip by SHA is classified as in sync, not as merged work.
+
 Orphan scans and orphan removal share the temporary-path policy in
 `tuic_core::temp_paths`. OS/environment temp roots, `~/Gits/.tmp` and Unix
 `/tmp`, `/private/tmp`, `/var/folders`, `/private/var/folders` are excluded

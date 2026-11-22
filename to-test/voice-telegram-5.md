@@ -52,3 +52,4 @@
   and question revision; a duplicate/old question must not answer a newer wait.
   Requires a configured bot, authorized private chat and explicit live-write
   permission. No such credentials or permission were supplied to the implementer.
+- [ ] Push-to-talk during a cold model load: after Boss restarts the Rust build, wait for "Whisper model unloaded after idle period" (or restart the app), hold Fn and speak immediately while the model loads, release after speaking. The words spoken during the load must be transcribed (log: `Streaming stopped for final transcription` `audio_s` ≈ the whole hold, not only the time after `Model loaded`). Root cause 2026-11-20: the microphone opened only after the 3 s load, so a 4.3 s hold kept 1.04 s and Whisper returned the filtered "Grazie.".

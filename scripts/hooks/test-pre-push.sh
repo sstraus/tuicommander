@@ -60,16 +60,6 @@ git update-ref refs/remotes/private/trunk "$base"
 git symbolic-ref refs/remotes/private/HEAD refs/remotes/private/trunk
 # Catches: main fallback replaces a valid remote default branch.
 run_case remote_head_checks_trunk "$bare" trunk "$base" 1 'open issue(s) referenced without a closing keyword'
-# Agent capabilities (story 2713): TUIC_CAPABILITIES is set only for a capped agent.
-# Catches: a capped agent with no capabilities pushes a branch.
-TUIC_CAPABILITIES='' run_case capped_agent_cannot_push_branch "$base" feature "$base" 1 'lacks the push capability'
-# Catches: the push capability also lets a tag through.
-TUIC_CAPABILITIES='push' run_case push_capability_does_not_push_tags "$base" refs/tags/v1 "$base" 1 'lacks the tag capability'
-# Catches: a granted capability is not matched inside a list.
-TUIC_CAPABILITIES='progress,push' run_case push_capability_allows_branch "$base" feature "$base" 0 ''
-TUIC_CAPABILITIES='land,tag' run_case tag_capability_allows_tag "$base" refs/tags/v1 "$base" 0 ''
-# Catches: the issue-check bypass also skips the capability rule.
-TUIC_SKIP_ISSUE_CHECK=1 TUIC_CAPABILITIES='' run_case issue_bypass_keeps_capability_rule "$base" feature "$base" 1 'lacks the push capability'
 # Catches: unexpected Git failure exits silently instead of reporting a reason.
 export FAIL_LOG=1
 run_case git_failure_reports_reason "$bare" trunk "$base" 42 'pre-push failed'

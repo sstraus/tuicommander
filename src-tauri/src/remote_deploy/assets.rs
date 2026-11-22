@@ -202,7 +202,7 @@ pub(crate) fn asset_url(version: &str, target: &str) -> String {
     format!("https://github.com/sstraus/tuicommander/releases/download/{tag}/tuic-remote-{target}")
 }
 
-async fn ensure_local_from_url(
+pub(super) async fn ensure_local_from_url(
     version: &str,
     target: &str,
     url: &str,
@@ -211,7 +211,9 @@ async fn ensure_local_from_url(
     validate_component("version", version)?;
     validate_component("target", target)?;
 
-    let directory = crate::config::config_dir().join("remote-bin").join(version);
+    let root = crate::config::config_dir().join("remote-bin");
+    super::asset_cache::prune_other_versions(&root, version).await;
+    let directory = root.join(version);
     let destination = directory.join(format!("tuic-remote-{target}"));
     if destination.is_file() {
         return local_asset(destination).await;

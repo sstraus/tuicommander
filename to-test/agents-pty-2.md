@@ -1,7 +1,27 @@
+## Sidebar child-session guides
+
+- [ ] In Rich mode, open a branch with an agent and several child sessions. Check that the guide starts under the parent dot, meets each child's row, ends at the last child's dot level, and does not continue into the next unrelated row. Switch to Compact mode and check that the guide disappears.
+
+## Ego interactive spawn fallback — Rust restart required
+
+- [ ] After a manual `make dev` restart or release rebuild, use a throwaway session to call `agent action=spawn agent_type=ego prompt="<task>"` with no explicit args or named profile. Verify the task runs once in the interactive terminal and the session remains available for a second task. Repeat with a configured model and with an explicit headless profile; the explicit profile must remain authoritative. The argv regression tests cover the mapping, not live provider submission or persistence. Do not restart the daily instance until losing its current sessions is acceptable.
+
 ## Managed Claude background output (1012-f12e) — backend rebuild required (continued)
 - [ ] #1596-df57: In macOS desktop, focus a terminal on a branch with an automatically opened PR detail popover. Wheel over the sidebar without clicking; it must scroll, and typing must still reach the terminal. Click outside the popover: it closes and that first click activates the underlying control. Repeat with no popover, after a pane resize, and after a tab drag. Browser hit-testing reproduces the old full-window overlay; native wheel and visuals need Boss’s next-build check. _(audit 2026-10-13: HUMAN — Exact check acts on Boss active native window/repository or named pre-existing worktree; no live interaction outside owned disposable sessions authorized.)_ _(triage 2026-10-14: WAITS — Prior browser hit-testing evidence retained; actual native wheel, typing focus and first-click dispatch require available desktop interaction.)_ _(HUMAN 2026-11-05: Native macOS wheel/hit-testing; not reachable in browser mode.)_
 
 - [ ] #1597-fab6: In macOS desktop, with each of the status-bar ticker popover (right-click a ticker), the status info balloon (click truncated status text), the sidebar GitHub panel (GitHub badge on a repo) and the Smart Prompts dropdown open, wheel over the sidebar without clicking; it must scroll. Click a sidebar control outside the popup: the popup closes and that first click activates the control. Clicking the GitHub badge or the info text again must close its popup (not re-open it). Browser hit-testing reproduces the old overlays; native wheel needs Boss’s next-build check. _(audit 2026-10-13: HUMAN — Exact check acts on Boss active native window/repository or named pre-existing worktree; no live interaction outside owned disposable sessions authorized.)_ _(triage 2026-10-14: WAITS — Prior browser overlay hit-testing evidence retained; native wheel and first-click activation remain unobserved, with desktop interaction unavailable.)_ _(HUMAN 2026-11-05: Native macOS wheel/popups; not reachable.)_
+## Agent background indicator
+
+- [ ] In an isolated agent session, run two tracked background jobs that finish at different times. At a ready composer, confirm the tab and sidebar stay steady blue and Activity Dashboard reads Background until the last job settles. Verify a question takes priority and an unseen completion returns to purple.
+
+## Recent worktree allocation protection — Rust restart required
+
+- [ ] After a manual `make dev` restart or release rebuild, use a disposable repository to create a worktree from the default tip by SHA. Confirm automatic cleanup keeps it during the first five minutes, including when an old checkout is reused. Confirm an explicit removal still works. Do not use active worktrees.
+
+## Agent update process identity (3087-5ad5) — Rust restart required
+
+- [ ] After a manual `make dev` restart or release rebuild, use an isolated session with a disposable native agent executable. Remove that executable while its agent remains at an idle composer. Confirm process detection still recognizes its current OS name and the existing guarded submit/queued-notice path can proceed. Repeat with a returned shell and a foreground child: neither may receive unintended agent input. Native regression tests cover real signed executable unlink, root ownership, unknown names and process exit; do not restart the daily app or modify its live queues for this check.
+
 ## Goose reply completion (1812-022d) — Rust restart required
 
 - [ ] After Boss restarts `make dev` or installs `make build`, send two prompts to Goose 1.49.0 with ollama. Each reply must return the tab to idle shortly after the ready composer appears; the second submit must be accepted without a five-minute wait or 409. The recorded first-turn replay covers the backend transition; this live check remains open until restart. _(triage 2026-10-14: WAITS — Needs Goose 1.49.0 and a running ollama model.)_ _(HUMAN 2026-11-05: needs Goose 1.49.0 + ollama. Replay tests PASS: pty::tests::captured_goose_submitted_turn_returns_idle_without_protocol_stale (core_tests.rs:9549), goose_idle_capture_reads_ready (:9663).)_
@@ -91,3 +111,55 @@
 ## Grok quota through the registry (2999-998f) — Rust rebuild/restart required
 
 - [ ] After a rebuild, open a Grok tab with a valid `grok login`: the status-bar quota shows one Grok window from the billing period, and the Grok dashboard shows the same billing data. Refresh the dashboard twice within a minute: no second `grok agent stdio` process starts. With an expired login the badge shows the login state and no new CLI process starts until `grok login` rewrites `~/.grok/auth.json`.
+
+## Ego named-account quota binding (3092-e0ee) — Rust restart required
+
+- [ ] After Boss chooses to rebuild/restart the backend and installs the coordinated ego account-publication change, open two ego terminal sessions with distinct named OAuth accounts for the same vendor. Confirm each badge shows its own quota, refresh stays on that account, and passive usage updates do not replace the other account or a remaining legacy account. Repeat with an account ID equal to its vendor name. Automated checks cover synthetic distinct quotas without network/auth tokens; real provider values and the daily desktop were not exercised. Do not restart the daily app during active sessions.
+
+- [ ] After the 2.1.2 candidate backend is rebuilt, repeat the named-account and legacy-account quota check above. The release CI correction replaces nested optional connection states with explicit legacy, named and invalid states; account selection must stay unchanged. Rust does not hot-reload, and no daily instance was restarted.
+
+## Ego Settings machine credential inventory (3093-8d1b) — Rust restart required
+
+- [ ] After Boss chooses to rebuild/restart the backend and installs the coordinated Ego machine-inventory producer, read Ego Settings with named and legacy credentials for the same vendor, including equal-spelling IDs and an ID longer than 64 characters. Confirm independent presence, missing/empty declared sources unset, and no named-account legacy auth edit targets. Automated replay uses actual isolated producer output; the daily app and authenticated sources were not exercised. Do not restart the daily app during active sessions.
+
+- [ ] [HUMAN] Copy a non-image file (a `.mov` screen recording or a PDF) in Finder, focus a Claude Code terminal and press Cmd+V. Confirm the file reaches Claude as with Ctrl+V. Plain-text Cmd+V must still paste the text. Cross-app clipboard, so it needs a human. Covered by `CanvasTerminal-paste.test.tsx` (non-image file → `\x16`).
+
+- [ ] [VISUAL] **Needs you** (frontend, arrives by HMR): with two agents waiting in different repositories, the toolbar centre shows an orange pulsing **Needs you 2** pill; clicking it lists `repo / branch · question · age` oldest first, and a row opens that session. Cmd+U visits the same order. Close one repository: its header shows `1 need you` and the sidebar banner `N need you · <repos> ↓` appears; clicking the banner opens the repository and the session. With nothing waiting, the pill and the banner disappear. Component render was checked headless in Chrome; the real toolbar and sidebar layout still need a look.
+
+- [ ] After a manual `make dev` restart (Rust change, no hot reload): in a Claude Code session, make the agent run a command that fails (exit 1) and then continue with another step. **Needs you** and the red badge must not appear while the agent keeps working. A turn that really stops on the failed row still raises the badge once the session is idle. Covered by `test_tool_error_waits_for_turn_end_while_agent_keeps_working`.
+
+## Ego session without a named account under ego ≥ 0.4.15 — Rust restart required
+
+- [ ] After the backend restart, keep an ego session that started before its account was named (manifest without `connection`). Its badge must read unavailable with "ego session has no named account; restart it", not a contract error, and never another account's quota. A new ego session on the named account must show its own quota. Unit coverage: `ego_legacy_key_without_legacy_publication_is_unavailable`.
+
+## Spawned agents are no longer capped — Rust restart required
+
+- [ ] After a manual `make dev` restart: have the orchestrator spawn a worker with no `capabilities`, then have that worker spawn its own agent and `git push` a scratch branch to a throwaway remote. Both must work with no `capability_denied` and no "lacks the push capability" message. Unit coverage: `child_without_capabilities_may_spawn`, `spawned_child_may_spawn_but_not_orchestrate`.
+
+## Discussion in the Progress journal (stories 3107–3111, 3115) — Rust restart required
+
+- [ ] After the `make dev` restart, ask five questions ending in `?` directly in a Claude terminal, then one each in a Codex, a Grok and an ego terminal. Every question must appear in Progress with its answer (the capture now reads the Chat view and retries up to ~7 s when the final record lands after the idle). Answers must show no `💬`, `intent:` or `suggest:` markers; a fork answer to `Cmd+Alt+Q` likewise. The ask field and the Ask button sit on one row, and an open thread hides the row text it repeats. Entry 9 filed before the fix still carries its markers.
+
+- [ ] After a manual `make dev` restart, in a Claude terminal that is working: press Cmd+Alt+Q. Progress opens on that terminal with the ask box focused. Ask "what are you doing now?": a `question` entry appears at once, then an `answer` entry with a toast. The main agent's turn is not interrupted and its transcript gains no message. **Thread** shows the full answer without the header line; `/logs?source=discussion` has no "no classification header" warning.
+- [ ] In the same thread send a follow-up: it continues the fork (shown `warm`). Ask "create a file x.txt": no file appears (plan mode).
+- [ ] Cancel a running question: an `answer` entry with step `cancelled`. Three questions at once in one terminal: the third is refused with "2 questions are already running". Restart TUIC while one runs: it answers `failed` "interrupted by a restart".
+- [ ] Type to the Claude agent directly "which file holds the parser?" and let it answer: when the turn ends, a `question` (step `direct`) and its `answer` land in Progress, once. A plain instruction ("fix the parser") files nothing.
+- [ ] The default list hides intents, messages and delegations; the Activity toggle shows them; Flow is unchanged. "All projects" lists entries of two repositories with kind and unread filters; a click opens the project and terminal.
+- [ ] A Grok terminal shows "Side questions support Claude, Codex and ego terminals for now." Visual check of the ask box, thread and All projects view (screenshot).
+- [ ] Codex backend (story 3112), after the restart, in a Codex terminal that is working, with its session id from the tab: `curl -X POST localhost:9876/sessions/<id>/discussion -H 'Content-Type: application/json' -d '{"question":"what are you doing now?"}'`. A `question` entry, then an `answer` whose turn in `GET /discussion/<entry_id>` has `cacheReadTokens` close to the main session's context size. `POST /discussion/<entry_id>/follow-up` with "what did I ask before?" names the first question. The Codex turn is not interrupted, `codex resume` lists no new session, and "create a file x.txt" creates nothing.
+- [ ] ego backend (story 3114), after the restart, with an ego release later than 0.4.18 (it must contain the prefix cache key), in an ego terminal that is working: press Cmd+Alt+Q and ask "what are you doing now?". A `question` entry, then an `answer` whose turn in `GET /discussion/<entry_id>` has `cacheReadTokens` close to the main session's context size (with ego 0.4.18 the first fork reads 0). A follow-up "what did I ask before?" names the first question and reads the cache again. The ego turn is not interrupted, "create a file x.txt" creates nothing, and `ego ls` in that workspace lists one new session per thread (the stored fork). An AI Chat ego conversation has no ask box target.
+
+## Interrupted subagents — Rust restart required
+
+- [ ] In the rich sidebar, open the agent row for a session with interrupted subagents (or interrupt a subagent in a disposable session). Verify the row reads **Interrupted**, is not counted as returned, and is not highlighted as running. A subagent that reports normally still appears under the returned count.
+## Ego session without a named account under ego ≥ 0.4.15 — Rust restart required
+
+- [ ] After the backend restart, keep an ego session that started before its account was named (manifest without `connection`). Its badge must read unavailable with "ego session has no named account; restart it", not a contract error, and never another account's quota. A new ego session on the named account must show its own quota. Unit coverage: `ego_legacy_key_without_legacy_publication_is_unavailable`.
+
+## Interrupted or rejected dialog returns to idle — Rust restart required
+
+- [ ] After the backend restart, in a disposable Claude session with hooks, run a prompt that asks for a Bash permission, then reject it (option 3/No) and, in a second run, press Esc. After the "Interrupted" banner the tab must reach idle within a few seconds without sending another prompt. Repeat with a Codex approval and Esc. Unit coverage: `claude_permission_cancel_or_reject_returns_to_idle_without_stop`, `codex_canceled_approval_capture_returns_to_idle_without_stop`.
+
+## Needs you clears when the agent process dies — Rust restart required
+
+- [ ] After the backend restart, open a permission dialog in a disposable Claude session, then kill the agent process (`kill -9` its pid). The tab must drop "Needs you" as soon as the session shows exited. Unit coverage: `process_exit_clears_a_confident_awaiting_badge`.

@@ -5,12 +5,13 @@ use sha2::{Digest, Sha256};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
+/// Built-in owners; an owner registered earlier under the same name stays.
 pub(crate) fn register(registry: &QuotaRegistry) {
-    registry.register_owner(Arc::new(ClaudeCode));
-    registry.register_owner(Arc::new(CodexCli));
-    registry.register_owner(Arc::new(super::grok::GrokCli::default()));
-    registry.register_owner(Arc::new(super::ego::Ego::default()));
-    registry.register_owner(Arc::new(super::pi::Pi));
+    registry.register_default_owner(Arc::new(ClaudeCode));
+    registry.register_default_owner(Arc::new(CodexCli));
+    registry.register_default_owner(Arc::new(super::grok::GrokCli::default()));
+    registry.register_default_owner(Arc::new(super::ego::Ego::default()));
+    registry.register_default_owner(Arc::new(super::pi::Pi));
 }
 
 fn now_ms() -> u64 {

@@ -702,6 +702,7 @@ fn initialize_tells_a_reconnect_apart_from_a_first_contact() {
             last_activity: std::time::Instant::now(),
             is_claude_code: false,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: false,
             sse_generation: 0,
             repo_path: None,
@@ -1239,6 +1240,7 @@ fn initialize_identity_reclaims_stale_owner_and_retires_old_routing() {
                 - std::time::Duration::from_secs(1),
             is_claude_code: false,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: true,
             sse_generation: 0,
             repo_path: None,
@@ -1518,6 +1520,7 @@ fn refresh_mcp_session_repairs_lost_peer_binding() {
             last_activity: std::time::Instant::now(),
             is_claude_code: false,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: false,
             sse_generation: 0,
             repo_path: None,
@@ -1881,6 +1884,7 @@ fn register_renames_auto_bound_caller_without_hijack_rejection() {
             last_activity: std::time::Instant::now(),
             is_claude_code: false,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: false,
             sse_generation: 0,
             repo_path: None,
@@ -2466,6 +2470,55 @@ async fn mcp_delivery_regression_agent_wait_remains_pending_beyond_ten_seconds_t
     assert_eq!(response["messages"][0]["content"], "wake the wait");
 }
 
+// Catches: the lazy-discovery `call_tool` route dispatching `agent wait` without the
+// caller's MCP session, so the wait never sees the recipient inbox and runs to timeout.
+#[tokio::test]
+async fn agent_wait_through_call_tool_wakes_on_send() {
+    let state = test_state();
+    let sender_mcp = "mcp-call-tool-wait-sender";
+    let recipient_mcp = "mcp-call-tool-wait-recipient";
+    register_peer(&state, TEST_UUID_A, "sender", sender_mcp);
+    register_peer(&state, TEST_UUID_B, "recipient", recipient_mcp);
+
+    let waiting_state = Arc::clone(&state);
+    let waiter = tokio::spawn(async move {
+        post_test_tool_call(
+            waiting_state,
+            recipient_mcp,
+            "call_tool",
+            serde_json::json!({
+                "tool_name": "agent",
+                "arguments": {"action": "wait", "since": 0, "timeout_ms": 30_000},
+            }),
+        )
+        .await
+    });
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(
+        !waiter.is_finished(),
+        "the wait must block until mail arrives"
+    );
+    let sent = handle_messaging(
+        &state,
+        &serde_json::json!({"action": "send", "to": TEST_UUID_B, "message": "wake via call_tool"}),
+        Some(sender_mcp),
+    );
+    assert_eq!(sent["delivery_path"], "waiter_and_inbox");
+
+    let rpc = tokio::time::timeout(std::time::Duration::from_secs(2), waiter)
+        .await
+        .expect("a call_tool wait must wake right after inbox delivery, not at its timeout")
+        .unwrap();
+    let text = rpc["result"]["content"][0]["text"]
+        .as_str()
+        .expect("MCP result text");
+    let response: serde_json::Value = serde_json::from_str(text).unwrap();
+    assert_eq!(response["met"], true);
+    assert_eq!(response["timed_out"], false);
+    assert_eq!(response["messages"][0]["content"], "wake via call_tool");
+}
+
 #[tokio::test]
 async fn mcp_delivery_regression_agent_wait_replayed_cursor_times_out_after_observation() {
     let state = test_state();
@@ -2868,6 +2921,7 @@ fn mcp_regression_reconnect_reclaims_ttl_entry_and_retires_old_routing() {
                 - std::time::Duration::from_secs(1),
             is_claude_code: true,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: true, // historical flag alone is not live ownership
             sse_generation: 0,
             repo_path: None,
@@ -3098,6 +3152,7 @@ fn mcp_delivery_regression_completed_claude_sse_submits_through_pty() {
             last_activity: std::time::Instant::now(),
             is_claude_code: true,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: true,
             sse_generation: 0,
             repo_path: None,
@@ -3173,6 +3228,7 @@ fn mcp_send_wakes_ready_claude_with_background_work_instead_of_sse() {
             last_activity: std::time::Instant::now(),
             is_claude_code: true,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: true,
             sse_generation: 0,
             repo_path: None,
@@ -3230,6 +3286,7 @@ fn mcp_send_wakes_idle_claude_instead_of_sse() {
             last_activity: std::time::Instant::now(),
             is_claude_code: true,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: true,
             sse_generation: 0,
             repo_path: None,
@@ -3300,6 +3357,7 @@ fn mcp_send_does_not_type_into_partial_claude_composer_with_background_work() {
             last_activity: std::time::Instant::now(),
             is_claude_code: true,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: true,
             sse_generation: 0,
             repo_path: None,
@@ -3614,7 +3672,7 @@ fn urgent_mail_reports_why_busy_delivery_is_unsafe() {
     for (agent_type, question, expected_reason) in [
         ("codex", true, "dialog_open"),
         ("ego", true, "dialog_open"),
-        ("gemini", false, "unknown_agent_type"),
+        ("agy", false, "unknown_agent_type"),
     ] {
         let state = test_state();
         register_peer(&state, TEST_UUID_A, "sender", "mcp-sender");
@@ -3789,6 +3847,7 @@ fn working_orchestrator_is_inbox_only_even_with_claude_channel() {
             last_activity: std::time::Instant::now(),
             is_claude_code: true,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: true,
             sse_generation: 0,
             repo_path: None,
@@ -3858,6 +3917,7 @@ fn mcp_delivery_regression_working_claude_queues_wake_without_steering_turn() {
             last_activity: std::time::Instant::now(),
             is_claude_code: true,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: true,
             sse_generation: 0,
             repo_path: None,
@@ -4226,6 +4286,7 @@ async fn external_channel_mail_remains_available_to_wait_before_cursor_advances(
             last_activity: std::time::Instant::now(),
             is_claude_code: true,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: true,
             sse_generation: 0,
             repo_path: None,
@@ -4528,6 +4589,7 @@ fn mcp_delivery_regression_codex_live_sse_submits_through_pty_before_working() {
             // authoritative cross-check for channel-turn support.
             is_claude_code: true,
             requires_meta_tools: false,
+            client_kind: None,
             has_sse_stream: true,
             sse_generation: 0,
             repo_path: None,
@@ -7082,4 +7144,85 @@ async fn mail_that_the_child_read_is_not_a_failed_delivery() {
     tokio::time::sleep(std::time::Duration::from_secs(21)).await;
 
     assert_eq!(delivery_failures(&state), Vec::<serde_json::Value>::new());
+}
+
+// Catches calling inbox-only mail delivered, losing message-id dedup, and routing by a display alias.
+#[test]
+fn contextual_progress_reply_mail_reports_acceptance_and_deduplicates() {
+    use crate::progress::ProgressReplyDelivery;
+    let state = test_state();
+    register_peer(&state, TEST_UUID_B, "recipient", "mcp-recipient");
+    let send = |id| {
+        crate::mcp_http::progress_reply_mail(
+            &state,
+            Some(TEST_UUID_B),
+            None,
+            "User reply to Progress #42: Yes",
+            id,
+        )
+    };
+    assert_eq!(
+        send("contextual-one").unwrap(),
+        ProgressReplyDelivery::Queued
+    );
+    assert_eq!(
+        send("contextual-one").unwrap(),
+        ProgressReplyDelivery::Queued
+    );
+    assert_eq!(state.agent_inbox.get(TEST_UUID_B).unwrap().len(), 1);
+    assert!(
+        crate::mcp_http::progress_reply_mail(&state, Some("recipient"), None, "wrong", "alias")
+            .is_err()
+    );
+    assert!(
+        crate::mcp_http::progress_reply_mail(
+            &state,
+            Some(TEST_UUID_B),
+            Some("closed-pty"),
+            "closed",
+            "closed"
+        )
+        .is_err()
+    );
+    assert_eq!(state.agent_inbox.get(TEST_UUID_B).unwrap().len(), 1);
+
+    let mut channel = external_claude_channel_probe(&state);
+    assert_eq!(
+        send("contextual-two").unwrap(),
+        ProgressReplyDelivery::Delivered
+    );
+    assert!(channel.try_recv().is_ok());
+    assert_eq!(state.agent_inbox.get(TEST_UUID_B).unwrap().len(), 2);
+}
+
+// Catches: a report's old PTY preventing a reply to the same author after resume.
+#[tokio::test]
+async fn contextual_progress_reply_reaches_author_after_terminal_rebinding() {
+    let state = test_state();
+    let session_id =
+        create_test_session(&state).expect("live PTY prerequisite for identity rebind regression");
+    state.bind_live_pty(TEST_UUID_B, &session_id);
+    register_peer(
+        &state,
+        TEST_UUID_B,
+        "resumed-recipient",
+        "mcp-rebound-recipient",
+    );
+    let result = crate::mcp_http::progress_reply_mail(
+        &state,
+        Some(TEST_UUID_B),
+        Some("old-terminal"),
+        "Reply to the same author",
+        "rebound-progress-reply",
+    );
+    let received = state
+        .agent_inbox
+        .get(TEST_UUID_B)
+        .and_then(|inbox| inbox.back().map(|message| message.content.clone()));
+    kill_test_session(&state, &session_id);
+    assert!(
+        result.is_ok(),
+        "a recorded PTY is presentation, not author identity: {result:?}"
+    );
+    assert_eq!(received.as_deref(), Some("Reply to the same author"));
 }

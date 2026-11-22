@@ -15,7 +15,8 @@ fn spawn_process(state: &crate::AppState, id: &str, config: &str) {
             pixel_height: 0,
         })
         .unwrap();
-    let mut command = CommandBuilder::new("/bin/sleep");
+    let sleep = crate::test_support::env_readable_system_binary("sleep");
+    let mut command = CommandBuilder::new(&sleep);
     command.arg("30");
     command.env("CLAUDE_CONFIG_DIR", config);
     command.env_remove("ANTHROPIC_API_KEY");
@@ -38,7 +39,7 @@ fn spawn_process(state: &crate::AppState, id: &str, config: &str) {
             display_name_is_custom: false,
             display_name_from_spawn: false,
             is_remote: false,
-            shell: "/bin/sleep".into(),
+            shell: sleep.to_string_lossy().into_owned(),
         }),
     );
     let session = SessionState {
@@ -137,7 +138,14 @@ async fn codex_launched_by_tuic_binds_its_codex_home() {
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
     let program = dir.path().join("codex");
-    std::fs::write(&program, "#!/bin/sh\nread input\n").unwrap();
+    std::fs::write(
+        &program,
+        format!(
+            "#!{}\nread input\n",
+            crate::test_support::env_readable_system_binary("bash").display()
+        ),
+    )
+    .unwrap();
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
     let codex_home = dir.path().join("codex-home");
     let state = Arc::new(make_test_app_state());
@@ -212,7 +220,14 @@ async fn ego_process_never_binds_to_cli_credentials() {
     use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
     let program = dir.path().join("ego");
-    std::fs::write(&program, "#!/bin/sh\nread input\n").unwrap();
+    std::fs::write(
+        &program,
+        format!(
+            "#!{}\nread input\n",
+            crate::test_support::env_readable_system_binary("bash").display()
+        ),
+    )
+    .unwrap();
     std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
     let ego_home = dir.path().join("ego-home");
     let session_dir = ego_home.join("sessions/01a02491-6a90-7ae2-9089-fd6a8532eb82");
@@ -283,6 +298,14 @@ async fn ego_process_never_binds_to_cli_credentials() {
         &format!("EGO_HOME={}", ego_home.to_string_lossy()),
     )
     .await;
+    // Pin the quota reader to an ego without `auth usage`, so an ego installed
+    // on the host cannot answer for this throwaway EGO_HOME.
+    let no_usage = dir.path().join("ego-without-usage");
+    std::fs::write(&no_usage, "#!/bin/sh\nexit 1\n").unwrap();
+    std::fs::set_permissions(&no_usage, std::fs::Permissions::from_mode(0o700)).unwrap();
+    state
+        .provider_quota
+        .register_owner(Arc::new(super::ego::Ego::with_program(no_usage)));
     let result = bindings_after_first_pass(&state, &["ego"]).await;
     if let Some((_, session)) = state.session_maps.sessions.remove("ego") {
         let mut session = session.lock();
@@ -295,6 +318,96 @@ async fn ego_process_never_binds_to_cli_credentials() {
         SubscriptionKey::new("ego", "openai-codex", ego_home.to_string_lossy())
     );
     let view = state.provider_quota.ensure(&key).await;
-    assert!(matches!(view.state, QuotaState::Unavailable { .. }));
+    assert!(
+        matches!(view.state, QuotaState::Unavailable { .. }),
+        "{:?}",
+        view.state
+    );
     assert!(view.snapshot.is_none());
+}
+
+/// Pin the PTY report to an OS-unreadable process without mocking the process reader.
+struct UnreadableProcessMaster(Box<dyn portable_pty::MasterPty + Send>);
+impl portable_pty::MasterPty for UnreadableProcessMaster {
+    fn resize(&self, size: PtySize) -> Result<(), anyhow::Error> {
+        self.0.resize(size)
+    }
+    fn get_size(&self) -> Result<PtySize, anyhow::Error> {
+        self.0.get_size()
+    }
+    fn try_clone_reader(&self) -> Result<Box<dyn std::io::Read + Send>, anyhow::Error> {
+        self.0.try_clone_reader()
+    }
+    fn take_writer(&self) -> Result<Box<dyn std::io::Write + Send>, anyhow::Error> {
+        self.0.take_writer()
+    }
+    fn process_group_leader(&self) -> Option<libc::pid_t> {
+        Some(0)
+    }
+    fn as_raw_fd(&self) -> Option<portable_pty::unix::RawFd> {
+        self.0.as_raw_fd()
+    }
+    fn tty_name(&self) -> Option<std::path::PathBuf> {
+        self.0.tty_name()
+    }
+}
+
+/// Catches: reconcile silently dropping an unreadable environment, or warning every tick.
+#[tokio::test]
+async fn reconcile_logs_unreadable_process_environment_once() {
+    use std::io::Write;
+    #[derive(Clone)]
+    struct LogSink(Arc<std::sync::Mutex<Vec<u8>>>);
+    impl Write for LogSink {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogSink {
+        type Writer = Self;
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    // A real OS read establishes the failure condition before exercising reconcile.
+    assert!(crate::process_env::read_process_environment(0).is_err());
+    let state = Arc::new(make_test_app_state());
+    let id = "reconcile-unreadable-environment";
+    spawn_process(&state, id, "/quota-test/unreadable");
+    let (_, session) = state.session_maps.sessions.remove(id).unwrap();
+    let mut session = session.into_inner();
+    session._child.kill().unwrap();
+    session._child.wait().unwrap();
+    session.master = Box::new(UnreadableProcessMaster(session.master));
+    state
+        .session_maps
+        .sessions
+        .insert(id.into(), Mutex::new(session));
+    assert_eq!(crate::pty::session_leaf_pid(&state, id), Some(0));
+
+    let log = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(LogSink(log.clone()))
+        .with_ansi(false)
+        .finish();
+    // reconcile reads processes on spawn_blocking, so a thread-local dispatcher cannot
+    // observe its warnings. This is the only global subscriber in the library tests.
+    tracing::subscriber::set_global_default(subscriber).unwrap();
+    for _ in 0..3 {
+        super::binding::reconcile(state.clone()).await;
+    }
+    assert_eq!(state.provider_quota.binding(id), None);
+    let log = String::from_utf8(log.lock().unwrap().clone()).unwrap();
+    let warnings: Vec<_> = log.lines().filter(|line| line.contains(id)).collect();
+    assert_eq!(warnings.len(), 1, "{log}");
+    assert!(warnings[0].contains("Quota binding unavailable"), "{log}");
+    assert!(
+        warnings[0].contains("process environment unreadable"),
+        "{log}"
+    );
 }

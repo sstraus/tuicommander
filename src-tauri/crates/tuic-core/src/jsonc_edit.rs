@@ -1,7 +1,7 @@
 //! Surgical edits to third-party JSONC configuration files.
 //!
 //! Every JSON target we install the MCP bridge into is a file the *user* owns —
-//! and for Zed, Amp and Gemini it is the editor's entire settings document, not
+//! and for Zed and Amp it is the editor's entire settings document, not
 //! a dedicated `mcp.json`. Round-tripping such a file through
 //! `serde_json::Value` destroys it in three ways at once: comments and trailing
 //! commas fail to parse at all, `serde_json::Map` is a `BTreeMap` so surviving

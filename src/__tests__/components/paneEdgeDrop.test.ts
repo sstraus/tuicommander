@@ -4,7 +4,14 @@ vi.mock("../../invoke", () => ({
 	invoke: vi.fn(() => Promise.resolve(null)),
 }));
 
-import { applyEdgeDrop, dropZoneAt } from "../../components/PaneTree/paneEdgeDrop";
+import {
+	applyEdgeDrop,
+	dropZoneAt,
+	hideEdgeDropPreview,
+	type Rect,
+	showEdgeDropPreview,
+	zonePreviewRect,
+} from "../../components/PaneTree/paneEdgeDrop";
 import { _testCancelPendingTimers } from "../../hooks/useSplitPanes";
 import { allLeafIds, type PaneBranch, paneLayoutStore, resetGroupCounter } from "../../stores/paneLayout";
 import { terminalsStore } from "../../stores/terminals";
@@ -35,6 +42,74 @@ describe("dropZoneAt", () => {
 		expect(dropZoneAt(rect, 300, 60)).toBe("top");
 		expect(dropZoneAt(rect, 300, 240)).toBe("bottom");
 		expect(dropZoneAt(rect, 300, 150)).toBe("center");
+	});
+});
+
+/** Same shape as the browser's DOMRect: geometry lives in prototype getters,
+ *  not in own properties, so an object spread copies none of it. */
+class GetterRect implements Rect {
+	readonly #r: Rect;
+	constructor(left: number, top: number, width: number, height: number) {
+		this.#r = { left, top, width, height };
+	}
+	get left() {
+		return this.#r.left;
+	}
+	get top() {
+		return this.#r.top;
+	}
+	get width() {
+		return this.#r.width;
+	}
+	get height() {
+		return this.#r.height;
+	}
+}
+
+describe("zonePreviewRect", () => {
+	// Terminal area to the right of a 125px sidebar, below a 40px tab bar.
+	const pane = () => new GetterRect(125, 40, 640, 460);
+
+	// catches: the preview copied with `{ ...rect }`, which drops every getter of a
+	// real DOMRect, so the left zone started at the window edge (over the sidebar).
+	it.each([
+		["left", { left: 125, top: 40, width: 320, height: 460 }],
+		["right", { left: 445, top: 40, width: 320, height: 460 }],
+		["top", { left: 125, top: 40, width: 640, height: 230 }],
+		["bottom", { left: 125, top: 270, width: 640, height: 230 }],
+		["center", { left: 125, top: 40, width: 640, height: 460 }],
+	] as const)("covers the %s part of a DOMRect-shaped pane", (zone, expected) => {
+		expect({ ...zonePreviewRect(pane(), zone) }).toEqual(expected);
+	});
+});
+
+describe("showEdgeDropPreview", () => {
+	afterEach(() => hideEdgeDropPreview());
+	const preview = () => document.querySelector<HTMLElement>(".pane-edge-drop-preview");
+	const box = () => {
+		const s = preview()!.style;
+		return { left: s.left, top: s.top, width: s.width, height: s.height };
+	};
+
+	// catches: a zone change that leaves the previous zone's left/top/height on the
+	// reused preview element (the stale overlay seen when moving between edges).
+	it("redraws the full geometry when the drag moves from one edge to another", () => {
+		const rect = new GetterRect(125, 40, 640, 460);
+		showEdgeDropPreview({ groupId: null, zone: "bottom", rect });
+		expect(box()).toEqual({ left: "125px", top: "270px", width: "640px", height: "230px" });
+		showEdgeDropPreview({ groupId: null, zone: "left", rect });
+		expect(box()).toEqual({ left: "125px", top: "40px", width: "320px", height: "460px" });
+		showEdgeDropPreview({ groupId: "g1", zone: "right", rect: new GetterRect(400, 300, 200, 100) });
+		expect(box()).toEqual({ left: "500px", top: "300px", width: "100px", height: "100px" });
+	});
+
+	// catches: a null target that leaves the last overlay on screen after the
+	// pointer leaves every pane.
+	it("removes the overlay when there is no target", () => {
+		showEdgeDropPreview({ groupId: null, zone: "top", rect: new GetterRect(0, 0, 100, 100) });
+		expect(preview()).not.toBeNull();
+		showEdgeDropPreview(null);
+		expect(preview()).toBeNull();
 	});
 });
 

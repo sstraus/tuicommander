@@ -40,6 +40,10 @@ jobs:
           - platform: ubuntu-22.04
             args: '--features vulkan'
             label: Linux-x64
+          # Native runner: frontend and both sidecars inherit the ARM64 host.
+          - platform: ubuntu-22.04-arm
+            args: '--features vulkan'
+            label: Linux-ARM64
           - platform: windows-latest
             args: '--bundles nsis --features vulkan'
             label: Windows-x64
@@ -68,21 +72,31 @@ jobs:
         run: bash scripts/release-flags.sh "$(jq -r '.version' src-tauri/tauri.conf.json)" >> "$GITHUB_OUTPUT"
 
       - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+        if: startsWith(matrix.platform, 'ubuntu-')
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev mold libvulkan-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev mold libvulkan-dev rpm rpm2cpio cpio binutils libarchive-tools
 
       # whisper-rs-sys needs VULKAN_SDK (headers, glslc, the Windows import
       # library) for the vulkan feature. The stripped-down SDK has no Linux
       # libvulkan.so; libvulkan-dev above links it.
       - name: Install Vulkan SDK
-        if: matrix.platform != 'macos-latest'
+        if: matrix.platform != 'macos-latest' && matrix.label != 'Linux-ARM64'
         uses: jakoch/install-vulkan-sdk-action@655818d26aa39d663e587b5620dd26519358981f # v1.5.4
         with:
           vulkan_version: 1.4.309.0
           cache: true
           stripdown: true
+
+      # The SDK action downloads x64 binaries; Ubuntu 22.04 has no glslc package.
+      - name: Configure native ARM64 Vulkan tools
+        if: matrix.label == 'Linux-ARM64'
+        run: |
+          test "$(uname -m)" = aarch64
+          sudo apt-get install -y cmake ninja-build python-is-python3 pkg-config
+          bash scripts/build-linux-arm64-glslc.sh "$RUNNER_TEMP/glslc-source" "$RUNNER_TEMP/glslc"
+          echo "$RUNNER_TEMP/glslc/bin" >> "$GITHUB_PATH"
+          echo "VULKAN_SDK=$RUNNER_TEMP/glslc" >> "$GITHUB_ENV"
 
       # Keep the Windows build/target dir short (C:/t): whisper.cpp's nested
       # CMake TryCompile paths can exceed the 260-char MAX_PATH that MSBuild's
@@ -113,6 +127,15 @@ jobs:
       - name: Upgrade CMake (Windows)
         if: matrix.platform == 'windows-latest'
         uses: lukka/get-cmake@latest
+
+      # MSVC 14.52 (VS 18) rejects any Clang older than 22 with a static_assert
+      # (STL1000) in yvals_core.h, so bindgen's libclang parse of the
+      # webrtc-audio-processing headers fails. bindgen only reads declarations:
+      # use MSVC's documented opt-out for that check.
+      - name: Let bindgen parse the VS 18 STL (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: echo "BINDGEN_EXTRA_CLANG_ARGS=-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH" >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:
@@ -235,7 +258,7 @@ jobs:
           CMAKE_C_COMPILER_LAUNCHER: "sccache"
           CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
           # mold linker on Linux
-          RUSTFLAGS: ${{ matrix.label == 'Linux-x64' && '-C link-arg=-fuse-ld=mold' || '' }}
+          RUSTFLAGS: ${{ startsWith(matrix.label, 'Linux-') && '-C link-arg=-fuse-ld=mold' || '' }}
           # macOS signing — uses certificate imported in previous step
           APPLE_CERTIFICATE: ${{ secrets.DEVELOPER_ID_CERT_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
@@ -258,8 +281,8 @@ jobs:
           GGML_NATIVE: "OFF"
           # The NSIS hook fails the build instead of shipping without the loader.
           TUIC_REQUIRE_VULKAN_LOADER: ${{ matrix.label == 'Windows-x64' && '1' || '' }}
-          CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || matrix.label == 'Windows-x64' && '-Z7' || '' }}
-          CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || matrix.label == 'Windows-x64' && '-Z7' || '' }}
+          CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-ARM64' && '-fPIC -march=armv8-a' || matrix.label == 'Linux-x64' && '-fPIC' || matrix.label == 'Windows-x64' && '-Z7' || '' }}
+          CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-ARM64' && '-fPIC -march=armv8-a' || matrix.label == 'Linux-x64' && '-fPIC' || matrix.label == 'Windows-x64' && '-Z7' || '' }}
         with:
           tauriScript: pnpm tauri
           tagName: v__VERSION__
@@ -274,15 +297,23 @@ jobs:
       # Proves the shipped ggml has no AVX-512 (zmm) code. A failure keeps the
       # draft release from being published by finalize-release.
       - name: Check ggml x86-64 baseline (no AVX-512)
-        if: matrix.label != 'macOS-ARM'
+        if: matrix.label == 'Linux-x64' || matrix.label == 'Windows-x64'
         shell: bash
         run: bash scripts/check-ggml-x86-baseline.sh "${CARGO_TARGET_DIR:-src-tauri/target}"
 
       # The vulkan build imports libvulkan.so.1 and does not start without it.
       # The .deb/.rpm declare the loader package; the AppImage must carry it.
       - name: Check AppImage carries the Vulkan loader
-        if: matrix.label == 'Linux-x64'
+        if: startsWith(matrix.label, 'Linux-')
         run: bash scripts/check-appimage-vulkan-loader.sh src-tauri/target/release/bundle/appimage
+
+      - name: Verify native Linux desktop packages and publish checksums
+        if: startsWith(matrix.label, 'Linux-')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash scripts/check-linux-desktop-packages.sh src-tauri/target/release "${{ matrix.label }}"
+          gh release upload "v$(jq -r .version src-tauri/tauri.conf.json)" src-tauri/target/release/bundle/SHA256SUMS-${{ matrix.label }}.txt --clobber
 
       - name: Cleanup macOS keychain
         if: always() && startsWith(matrix.platform, 'macos-')
@@ -313,6 +344,14 @@ jobs:
       - name: Check tag matches version
         if: github.ref_type == 'tag'
         run: bash scripts/check-release-tag.sh "$GITHUB_REF_NAME"
+
+      - name: Verify complete desktop updater target selection
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p .tmp/tuic-tests/updater
+          gh release download "v$(jq -r .version src-tauri/tauri.conf.json)" --pattern latest.json --dir .tmp/tuic-tests/updater
+          python3 scripts/check-linux-updater.py .tmp/tuic-tests/updater/latest.json
 
       - name: Build release notes
         id: publish
@@ -358,6 +397,10 @@ jobs:
               \`TUICommander-${VERSION}-1.x86_64.rpm\`
           * 🐧 **Linux** (portable)
               \`TUICommander_${VERSION}_amd64.AppImage\`
+          * 🐧 **Linux ARM64** (Ubuntu 22.04+ / compatible distributions)
+              \`TUICommander_${VERSION}_arm64.deb\`
+              \`TUICommander-${VERSION}-1.aarch64.rpm\`
+              \`TUICommander_${VERSION}_aarch64.AppImage\`
           FILENAMES
             cat <<'FOOTER'
 

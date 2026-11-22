@@ -34,9 +34,9 @@ export const AgentLaunchMenu: Component<Omit<ContextMenuProps, "items" | "size">
 					<Show when={item.configName}>
 						<span class={s.configName}>{item.configName}</span>
 					</Show>
-					<Show when={item.isDefault}>
+					<Show when={item.configName && item.isDefault}>
 						<span class={s.defaultMark} title="Default configuration" aria-hidden="true">
-							✓
+							default
 						</span>
 					</Show>
 				</span>

@@ -48,3 +48,80 @@ button.node[data-control-layout="card"] { display: flex; flex-direction: column;
 
 .sidebar label { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
 .sidebar pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--font-xs); }
+
+/* Neutral graph workspace: only the palette, canvas and inspector scroll. */
+.workspaceTabs, .graphToolbar, .graphPorts { composes: toolbar from "../ui/FormControls.module.css"; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.workspacePanel { min-height: 0; flex: 1; margin: 0; padding: 16px; border: 0; overflow: auto; }
+.interfaceEditor { display: flex; flex-direction: column; gap: 20px; max-width: 960px; margin: 0 auto; }
+.interfaceEditor label { display: flex; flex-direction: column; gap: 6px; }
+.interfaceField, .interfaceAdd { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.interfaceField > strong { min-width: 140px; overflow-wrap: anywhere; }
+.workspacePanel[hidden], .body[hidden] { display: none; }
+.graphWorkspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-primary); overflow: hidden; }
+.graphToolbar { justify-content: space-between; flex-shrink: 0; }
+.graphPorts { min-height: 22px; flex-shrink: 0; }
+.graphHint { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0; padding: 8px 12px; color: var(--fg-secondary); font-size: var(--font-xs); }
+.graphViewport { overflow: auto; flex: 1; min-height: 200px; min-width: 0; background-image: radial-gradient(var(--border) 1px, transparent 1px); background-size: 20px 20px; }
+.graphViewport > div { margin: 0 auto; }
+.graphStage { position: relative; transform-origin: top left; }
+.graphEdges { position: absolute; inset: 0; color: var(--fg-secondary); pointer-events: none; overflow: visible; }
+.graphEdges text { fill: var(--fg-primary); font: var(--font-xs) var(--font-mono); stroke: var(--bg-primary); stroke-width: 5px; paint-order: stroke; stroke-linejoin: round; }
+.graphNodeSlot { position: absolute; width: 196px; height: 84px; }
+.catalogName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette > button { min-width: 0; width: 100%; }
+button.graphNode[data-control-layout="card"] { display: flex; flex-direction: column; justify-content: center; gap: 8px; width: 100%; height: 100%; padding: 12px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius-lg); background: var(--bg-secondary); color: var(--fg-primary); text-align: left; cursor: pointer; }
+button.graphNode[data-control-layout="card"][aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 3px; background: var(--bg-highlight); }
+.graphNode strong { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; font: 600 var(--font-sm) var(--font-mono); }
+.graphNode small { color: var(--fg-secondary); font-size: var(--font-xs); }
+.scopeTopology { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.scopeViewport { flex: 1; overflow: auto; min-height: 340px; }
+.scopeStage { position: relative; min-height: 340px; margin: 0 auto; }
+.scopeBoundary { position: absolute; width: 220px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-secondary); text-align: center; color: var(--fg-secondary); font-size: var(--font-xs); }
+@media (max-width: 760px) { .graphWorkspace { min-height: 340px; } }
+
+
+/* Mapping rows: a bordered group whose legend sits inside the padding, never across the border. */
+.mappings fieldset { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 8px 0; padding: 10px 12px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); }
+/* A floated legend is laid out as ordinary content inside the box (HTML rendering rules), so no border line can cross it. */
+/* Nested groups (object members) indent with a left rule only, so deep mappings keep their control width. */
+.mappings fieldset fieldset { margin: 6px 0 0; padding: 6px 0 0 8px; border-width: 0 0 0 1px; border-radius: 0; }
+.mappings legend { float: left; width: 100%; padding: 0; color: var(--fg-secondary); font: 600 var(--font-xs) var(--font-mono); }
+.mappings label { display: flex; flex-direction: column; gap: 4px; }
+.runSummary { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 8px 0; font-size: var(--font-sm); }
+.runSummary dt { color: var(--fg-muted); }
+.runSummary dd { margin: 0; overflow-wrap: anywhere; font-family: var(--font-mono); }
+.startRun { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+
+button[data-control-layout="row"].runRow {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 4px;
+	width: 100%;
+	padding: 8px 12px;
+	border: 1px solid var(--bg-highlight);
+	border-radius: var(--radius-sm);
+	background: var(--bg-secondary);
+	color: var(--fg-primary);
+	text-align: left;
+	cursor: pointer;
+}
+button[data-control-layout="row"].runRow[aria-pressed="true"] { border-color: var(--accent); }
+.runRow small, .runRow span { color: var(--fg-secondary); }
+.runGraph { overflow: auto; }
+.runGraph svg { width: 100%; min-width: 480px; max-height: 480px; }
+.runEdge { color: var(--fg-muted); font-size: 12px; }
+.runNode rect { fill: var(--bg-secondary); stroke: var(--fg-muted); stroke-width: 1; }
+.runNode text { fill: var(--fg-primary); font-size: 13px; }
+.runNode[data-state="current"] rect { stroke: var(--accent); stroke-width: 3; }
+.runNode[data-state="waiting"] rect { stroke: var(--warning); stroke-width: 3; stroke-dasharray: 6 3; }
+.runNode[data-state="completed"] rect { stroke: var(--success); stroke-width: 2; }
+.runNode[data-state="failed"] rect { stroke: var(--error); stroke-width: 3; }
+
+.approvalInbox { position: fixed; right: 16px; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); z-index: 900; }
+
+.runNode[data-state="resource_wait"] rect { stroke: var(--warning); stroke-width: 3; stroke-dasharray: 3 3; }
+
+.runNode[data-state="timer_wait"] rect { stroke: var(--fg-muted); stroke-dasharray: 2 3; }
+
+.runEdge text { fill: currentColor; }

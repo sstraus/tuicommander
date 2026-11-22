@@ -1,5 +1,16 @@
 # Remote Access
 
+## Local HTTP authentication
+
+Loopback HTTP connections (`127.0.0.1` and `::1`) need no credentials by default.
+Set `services.auth.require_local_auth` to `true` to require the existing token,
+session cookie or Basic Auth on local protected routes. The default is `false`,
+including when the field is absent from an existing configuration. The flag is
+read for each request after the updated backend has been loaded. Explicit
+credentials still use normal verification and retain their caller provenance.
+Non-loopback clients still require authentication. Host and Origin checks and
+endpoint-specific access rules are unchanged.
+
 ## Headless GitHub monitoring
 
 `tuic-remote` supports the same GitHub poller controls and repository status, PR and issue reads as the desktop server. Use `/repo/github-poller/start` and `/repo/github-poller/stop` over its Unix socket or authenticated HTTP API. Poller events reach `/events` without a WebView. GitHub account setup and mutation routes are not exposed by the headless router. A repository without a GitHub remote needs no GitHub credentials for a lifecycle check.
@@ -101,7 +112,7 @@ Separate from remote access, TUICommander runs an **HTTP API server** for AI too
 
 - The server always listens on an IPC listener: Unix domain socket at `<config_dir>/mcp.sock` on macOS/Linux, or named pipe `\\.\pipe\tuicommander-mcp` on Windows
 - AI agents connect via the `tuic-bridge` sidecar binary, which translates MCP stdio transport to the IPC listener
-- Bridge configs are auto-installed on first launch for supported agents (Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Gemini, Codex, Grok, opencode, Droid, goose, pi) — and only for the ones present on the machine, so TUICommander never creates a config directory for a tool you do not have. On every subsequent launch, the bridge path is verified and updated if stale (from reinstalls, updates, or moves)
+- Bridge configs are auto-installed on first launch for supported agents (Claude Code, Cursor, Windsurf, VS Code, Zed, Amp, Antigravity, Codex, Grok, opencode, Droid, goose, pi) — and only for the ones present on the machine, so TUICommander never creates a config directory for a tool you do not have. On every subsequent launch, the bridge path is verified and updated if stale (from reinstalls, updates, or moves)
 - The `mcp_server_enabled` config key controls whether MCP protocol tools are exposed, not the server itself
 - **Settings** → **MCP** → **HTTP API Server** shows server status and active session count
 - Local MCP callers submit one managed-agent command with `session action=submit`; the same response reports child terminal movement or a precise timeout, so callers must not split text/Enter or poll afterward. Raw `session action=input` remains write-only. Mutating session actions, including `submit`, agent spawn, launch and mail, are available to a remote MCP client that signs in with the URL token, session cookie or Basic Auth; a client without credentials gets none of them

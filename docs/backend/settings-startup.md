@@ -220,7 +220,7 @@ of the human authentication or external-response steps above.
 The tip catalogue includes contextual entries for disabled opt-ins. After one
 minute of active agent work, a terminal shows idle-sleep guidance when sleep
 prevention is off. This is conservative guidance, not a battery or OS policy
-probe. Expanded setup for Gemini, Grok and OpenCode offers the global hook tip
+probe. Expanded setup for Antigravity, Grok and OpenCode offers the global hook tip
 when global instrumentation is off; Claude and Codex use their separate
 launch-scoped status controls. A recoverable server API error offers retry
 guidance only when retry is disabled for that agent. Auth and tool errors do

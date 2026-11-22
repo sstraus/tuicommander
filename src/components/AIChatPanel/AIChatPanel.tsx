@@ -322,6 +322,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 				}}
 				observeToolDuration={false}
 				entries={chat.entries}
+				reasoning={chat.reasoning}
 				messageActions={chat.messageActions}
 				busy={chat.busy}
 				working={chat.working}

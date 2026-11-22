@@ -224,7 +224,6 @@ export interface StoriesDialogProps {
 
 export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 	const mode = () => props.mode ?? "inline";
-	if (mode() === "inline") registerModal(props.onClose);
 	const [plans, setPlans] = createSignal<Plan[]>([]);
 	const [planSources, setPlanSources] = createSignal<PlanSource[]>([]);
 	const [stories, setStories] = createSignal<Story[]>([]);
@@ -251,7 +250,7 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 		visibleIds()
 			?.map((id) => storiesById().get(id))
 			.filter((story): story is Story => !!story) ?? stories();
-	const [planId, setPlanId] = createSignal<string | null>(null);
+	const [planId, setPlanId] = createSignal<string | null>(ALL_PLANS);
 	const [storyId, setStoryId] = createSignal<string | null>(null);
 	const [editingPlan, setEditingPlan] = createSignal<Plan | null>(null);
 	const [planEditError, setPlanEditError] = createSignal("");
@@ -386,6 +385,18 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 		++request;
 	});
 	const [backendStatus, setBackendStatus] = createSignal<BackendStatus | null>(null);
+	const [backendDetails, setBackendDetails] = createSignal(false);
+	const backendDetailsId = createUniqueId();
+	let backendButton: HTMLButtonElement | undefined;
+	const closeBackendDetails = (): void => {
+		setBackendDetails(false);
+		backendButton?.focus();
+	};
+	if (mode() === "inline")
+		registerModal(() => {
+			if (backendDetails()) closeBackendDetails();
+			else props.onClose();
+		});
 	const [capabilitiesReady, setCapabilitiesReady] = createSignal(false);
 	// What the project's story backend supports; an external adapter declares fewer operations.
 	const [operations, setOperations] = createSignal<Record<string, boolean | StoryEdits>>({});
@@ -516,14 +527,14 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 			const nextPlan =
 				preferredPlan === ALL_PLANS
 					? ALL_PLANS
-					: (list.value.find((plan) => plan.id === preferredPlan)?.id ?? list.value[0]?.id ?? null);
+					: (list.value.find((plan) => plan.id === preferredPlan)?.id ?? ALL_PLANS);
 			let nextStories: Story[] = [];
 			let nextState = "draft";
 			let nextWontFixCount = 0;
 			let nextAllCancelled = false;
 			let nextVisibleIds: string[] | undefined;
 			let nextColumns: StoryColumn[] = [];
-			if (nextPlan === ALL_PLANS) {
+			if (nextPlan === ALL_PLANS && list.value.length > 0) {
 				const view = await call({
 					action: "project_story_view",
 					archived_plans: archivedPlans(),
@@ -534,7 +545,7 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 				nextStories = view.value.stories;
 				nextVisibleIds = view.value.visibleStoryIds;
 				nextColumns = view.value.columns;
-			} else if (nextPlan) {
+			} else if (nextPlan && nextPlan !== ALL_PLANS) {
 				const selectedFilter = untrack(filter);
 				const filtering =
 					selectedFilter.visibility !== "all" ||
@@ -978,63 +989,97 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 				<header class={s.header}>
 					<div>
 						<h2>{t("stories.title", "Plans and Stories")}</h2>
-						<Show
-							when={backendStatus()}
-							fallback={<span>{t("stories.backend.checking", "Checking story backend…")}</span>}
-						>
-							{(status) => (
-								<div aria-label={t("stories.backend.label", "Story backend")}>
-									<span>
-										{status().label} · {status().provenance} · {status().availability}
-									</span>
-									<details>
-										<summary>{status().reason}</summary>
-										<p>
-											{status().backend} {status().version}
-										</p>
-										<p>{status().installation}</p>
-										<p>{status().generation}</p>
-										<Show when={status().error}>
-											<p>{status().error}</p>
-										</Show>
-										<Button
-											size="compact"
-											type="button"
-											disabled={busy()}
-											onClick={() => void mutate({ action: "set_backend", backend: "native" }, null, null)}
-										>
-											{t("stories.backend.native", "Use TUIC native")}
-										</Button>
-										<Button
-											size="compact"
-											type="button"
-											disabled={busy()}
-											onClick={() => void mutate({ action: "set_backend", backend: "automatic" }, null, null)}
-										>
-											{t("stories.backend.automatic", "Use automatic selection")}
-										</Button>
-									</details>
-									<Show when={status().availability === "approval_required" && status().installation}>
-										<p>
-											{t(
-												"stories.backend.approvalHint",
-												"Approve this entry/version for applicable Wiz projects. Dependencies are not fingerprinted; a changed entry/version needs new approval.",
-											)}
-										</p>
-										<p>{status().installation}</p>
-										<p>{status().generation}</p>
-										<Button size="compact" type="button" disabled={busy()} onClick={() => void approveConnector()}>
-											{t("stories.backend.approve", "Approve installed Wiz connector")}
-										</Button>
-									</Show>
-								</div>
-							)}
-						</Show>
 						<span class={s.project} title={props.project}>
 							{props.project}
 						</span>
 					</div>
-					<div class={s.headerActions}>
+					<div class={s.headerTools}>
+						<Show
+							when={backendStatus()}
+							fallback={
+								<span class={s.backendChecking}>{t("stories.backend.checking", "Checking story backend…")}</span>
+							}
+						>
+							{(status) => (
+								<div
+									class={s.backendControl}
+									aria-label={t("stories.backend.label", "Story backend")}
+									onKeyDown={(event) => {
+										if (event.key === "Escape" && backendDetails()) {
+											event.preventDefault();
+											event.stopPropagation();
+											closeBackendDetails();
+										}
+									}}
+								>
+									<Button
+										ref={(button) => {
+											backendButton = button;
+										}}
+										size="compact"
+										type="button"
+										aria-label={t("stories.backend.details", "Story backend details")}
+										aria-expanded={backendDetails()}
+										aria-controls={backendDetailsId}
+										title={`${status().label} · ${status().provenance} · ${status().availability}`}
+										onClick={() => setBackendDetails(!backendDetails())}
+									>
+										{status().label} · {status().availability}
+									</Button>
+									<Show when={backendDetails()}>
+										<section
+											id={backendDetailsId}
+											class={s.backendDetails}
+											aria-label={t("stories.backend.details", "Story backend details")}
+										>
+											<div class={s.backendContent}>
+												<p>
+													{status().label} · {status().provenance} · {status().availability}
+												</p>
+												<p>{status().reason}</p>
+												<p>
+													{status().backend} {status().version}
+												</p>
+												<p>{status().installation}</p>
+												<p>{status().generation}</p>
+												<Show when={status().error}>
+													<p>{status().error}</p>
+												</Show>
+												<Button
+													size="compact"
+													type="button"
+													disabled={busy()}
+													onClick={() => void mutate({ action: "set_backend", backend: "native" }, null, null)}
+												>
+													{t("stories.backend.native", "Use TUIC native")}
+												</Button>
+												<Button
+													size="compact"
+													type="button"
+													disabled={busy()}
+													onClick={() => void mutate({ action: "set_backend", backend: "automatic" }, null, null)}
+												>
+													{t("stories.backend.automatic", "Use automatic selection")}
+												</Button>
+											</div>
+											<Show when={status().availability === "approval_required" && status().installation}>
+												<p>
+													{t(
+														"stories.backend.approvalHint",
+														"Approve this entry/version for applicable Wiz projects. Dependencies are not fingerprinted; a changed entry/version needs new approval.",
+													)}
+												</p>
+												<p>{status().installation}</p>
+												<p>{status().generation}</p>
+												<Button size="compact" type="button" disabled={busy()} onClick={() => void approveConnector()}>
+													{t("stories.backend.approve", "Approve installed Wiz connector")}
+												</Button>
+											</Show>
+										</section>
+									</Show>
+								</div>
+							)}
+						</Show>
 						{/* Definitions and the Designer live in the Workflows space (Boss Q6=A); it opens on top, so this selection stays. */}
 						<Button size="compact" type="button" onClick={() => workflowsUi.open(props.project)}>
 							Workflows
@@ -1401,13 +1446,24 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 						<section class={s.storyColumn} aria-label={t("stories.stories", "Stories")}>
 							<div class={s.columnHeader}>
 								<h3>{t("stories.stories", "Stories")}</h3>
-								<Button
-									type="button"
-									disabled={!selectedPlan() || selectedPlan()?.archived || !can("create_story")}
-									onClick={() => setNewStory(!newStory())}
-								>
-									{t("stories.newStory", "New story")}
-								</Button>
+								<div class={s.storyHeaderActions}>
+									<SegmentedControl
+										aria-label={t("stories.view.label", "Story view")}
+										value={storiesUi.view()}
+										onChange={storiesUi.setView}
+										options={[
+											{ id: "list", label: t("stories.view.list", "List") },
+											{ id: "kanban", label: t("stories.view.kanban", "Kanban") },
+										]}
+									/>
+									<Button
+										type="button"
+										disabled={!selectedPlan() || selectedPlan()?.archived || !can("create_story")}
+										onClick={() => setNewStory(!newStory())}
+									>
+										{t("stories.newStory", "New story")}
+									</Button>
+								</div>
 							</div>
 							<div class={s.filters}>
 								<label class={s.archiveToggle}>
@@ -1451,16 +1507,6 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 										<For each={STORY_TYPES}>{(kind) => <option value={kind}>{storyTypeLabel(kind)}</option>}</For>
 									</Select>
 								</label>
-								<SegmentedControl
-									class={s.viewSwitch}
-									aria-label={t("stories.view.label", "Story view")}
-									value={storiesUi.view()}
-									onChange={storiesUi.setView}
-									options={[
-										{ id: "list", label: t("stories.view.list", "List") },
-										{ id: "kanban", label: t("stories.view.kanban", "Kanban") },
-									]}
-								/>
 							</div>
 
 							<Show when={!loading() && planId() && listedStories().length === 0}>

@@ -135,8 +135,7 @@ async fn native_connector_mutation_requires_exact_ledger_approval() {
     let mut f = Fixture::new();
     f.state.agent_capabilities.insert(
         "trusted".into(),
-        crate::agent_capabilities::CapabilitySet::from_spawn_arg(&json!(["push", "operator"]))
-            .unwrap(),
+        crate::agent_capabilities::CapabilitySet::from_spawn_arg(&json!(["operator"])).unwrap(),
     );
     f.context = super::NativeContext::capture(
         &f.state,

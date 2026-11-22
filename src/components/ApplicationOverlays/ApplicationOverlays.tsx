@@ -30,6 +30,7 @@ import type { SettingsContext } from "../SettingsPanel";
 import { TaskQueuePanel } from "../TaskQueuePanel";
 import { UpdateProgressDialog } from "../UpdateProgressDialog";
 import { WhatsNewDialog } from "../WhatsNewDialog/WhatsNewDialog";
+import { WorkflowApprovalHost } from "../WorkflowDesigner/WorkflowApprovalHost";
 
 const SettingsPanel = lazy(() => import("../SettingsPanel").then((module) => ({ default: module.SettingsPanel })));
 const HelpPanel = lazy(() => import("../HelpPanel").then((module) => ({ default: module.HelpPanel })));
@@ -279,6 +280,7 @@ export function ApplicationOverlays(props: ApplicationOverlaysProps) {
 			/>
 			<GitDialogOverlays contract={props.git} />
 			<McpConfirmHost />
+			<WorkflowApprovalHost />
 			<PromptDialog
 				visible={props.prompts.terminalRenameVisible()}
 				title="Terminal Title"

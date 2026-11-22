@@ -33,7 +33,16 @@ pub(crate) static SCREEN_POLICIES: &[(&str, &str, Option<&str>)] = &[
     ("codex", "--no-alt-screen", Some("exec")),
     ("grok", "--no-alt-screen", None),
     ("opencode", "--mini", Some("run")),
+    // agy has no flag: `altScreenMode` is a settings key, and `--settings` takes
+    // it for this session only. Values `never`/`always` recorded on 1.5.10: the
+    // default and `always` enter the alternate screen (`?1049h`), `never` does not.
+    ("agy", r#"--settings={"altScreenMode":"never"}"#, None),
 ];
+
+/// The option a screen flag sets (`--settings` for `--settings={...}`).
+pub(crate) fn screen_flag_option(flag: &str) -> &str {
+    flag.split_once('=').map_or(flag, |(option, _)| option)
+}
 
 pub(crate) fn screen_policy(agent_type: &str) -> Option<(&'static str, Option<&'static str>)> {
     SCREEN_POLICIES
@@ -328,7 +337,7 @@ pub(crate) fn launch_args_for(
     };
     let flag = match agent_type {
         "claude" => Some("--add-dir"),
-        "gemini" => Some("--include-directories"),
+        "agy" => Some("--add-dir"),
         "ego" => Some("--read-only-dir"),
         _ => None,
     };
@@ -502,7 +511,14 @@ fn screen_flag_candidate(agent_type: &str, args: &[String]) -> Option<&'static s
     }
     let (flag, excluded_first_arg) = screen_policy(agent_type)?;
     if excluded_first_arg.is_some_and(|excluded| args.first().is_some_and(|arg| arg == excluded))
-        || args.iter().any(|arg| arg == flag)
+        || args.iter().any(|arg| {
+            let option = screen_flag_option(flag);
+            arg == flag
+                || arg == option
+                || arg
+                    .strip_prefix(option)
+                    .is_some_and(|rest| rest.starts_with('='))
+        })
     {
         return None;
     }
@@ -1179,8 +1195,8 @@ mod tests {
     fn terminal_launch_args_share_the_structured_spawn_screen_policy() {
         let script = crate::test_support::fake_ssh_script(
             "screen-terminal-launch-args",
-            "printf '%s\\n' '--no-alt-screen --mini'",
-            "echo --no-alt-screen --mini",
+            "printf '%s\\n' '--no-alt-screen --mini --settings'",
+            "echo --no-alt-screen --mini --settings",
         );
         let binary = script.to_string_lossy();
         assert_eq!(
@@ -1203,10 +1219,17 @@ mod tests {
             build_agent_launch_args("grok", &binary, &["--fullscreen".into()]),
             ["--no-alt-screen", "--fullscreen"]
         );
+        // Catches: agy entering the alternate screen, or TUIC's settings overriding the user's own.
         assert_eq!(
-            build_agent_launch_args("gemini", &binary, &[]),
-            Vec::<String>::new()
+            build_agent_launch_args("agy", &binary, &[]),
+            [r#"--settings={"altScreenMode":"never"}"#]
         );
+        for own in [
+            vec!["--settings".to_string(), "{}".to_string()],
+            vec![r#"--settings={"altScreenMode":"always"}"#.to_string()],
+        ] {
+            assert_eq!(build_agent_launch_args("agy", &binary, &own), own);
+        }
 
         let older = crate::test_support::fake_ssh_script(
             "screen-terminal-older-codex",
@@ -1541,13 +1564,13 @@ mod attachment_grant_tests {
         }
     }
 
-    // Catches: Claude/Gemini launch without the directory grant, or codex/grok get an unknown flag.
+    // Catches: Claude/agy launch without the directory grant, or codex/grok get an unknown flag.
     #[test]
     fn attachment_launch_grants_only_harnesses_that_need_them() {
         let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
         for (agent, flag) in [
             ("claude", Some("--add-dir")),
-            ("gemini", Some("--include-directories")),
+            ("agy", Some("--add-dir")),
             ("codex", None),
             ("grok", None),
             ("ego", Some("--read-only-dir")),
@@ -1569,9 +1592,11 @@ mod attachment_grant_tests {
                     "missing grant for {agent}"
                 );
             } else {
-                assert!(!args.iter().any(|arg| arg.starts_with("--add-dir")
-                    || arg.starts_with("--include-directories")
-                    || arg.starts_with("--set=roots=")));
+                assert!(
+                    !args
+                        .iter()
+                        .any(|arg| arg.starts_with("--add-dir") || arg.starts_with("--set=roots="))
+                );
             }
         }
     }

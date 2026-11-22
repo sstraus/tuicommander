@@ -50,7 +50,10 @@ vi.mock("../../components/WorkflowDesigner/WorkflowDesigner", () => ({
 	WorkflowDesigner: () => <div>Designer content</div>,
 }));
 
-beforeEach(() => storiesUi.setVisibility("all"));
+beforeEach(() => {
+	storiesUi.reveal({ project: "/phase-colour-fixture", planId: "Alpha", storyId: null });
+	storiesUi.setVisibility("all");
+});
 afterEach(cleanup);
 
 it("tints each phase selector by its story status", async () => {

@@ -56,8 +56,13 @@ export function SchemaFields(props: {
 								/>
 							</Show>
 						</label>
-						<Button type="button" onClick={() => unset(name)} disabled={!Object.hasOwn(props.values, name)}>
-							Use default / unset {name}
+						<Button
+							type="button"
+							aria-label={`Use default / unset ${name}`}
+							onClick={() => unset(name)}
+							disabled={!Object.hasOwn(props.values, name)}
+						>
+							Use default
 						</Button>
 					</div>
 				);

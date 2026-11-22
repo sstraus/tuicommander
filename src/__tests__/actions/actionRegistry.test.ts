@@ -57,6 +57,7 @@ function createMockHandlers(): ShortcutHandlers {
 		toggleFileBrowserPanel: vi.fn(),
 		requestFileBrowserContentSearch: vi.fn(),
 		toggleOutlinePanel: vi.fn(),
+		askSideQuestion: vi.fn(),
 		findInTerminal: vi.fn(),
 		toggleCommandPalette: vi.fn(),
 		toggleActivityDashboard: vi.fn(),

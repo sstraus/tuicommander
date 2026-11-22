@@ -205,6 +205,26 @@ describe("MarkdownTab agent review actions", () => {
 		expect(select).toHaveValue("pty-a");
 	});
 
+	// Catches: a Markdown file outside every registered repository (empty repoPath) offers no agent to Send to.
+	it("offers every live agent for a file outside every repository", async () => {
+		addAgent("Repo agent", "pty-a", "/repo");
+		addAgent("Other agent", "pty-b", "/other");
+		const shell = terminalsStore.add({
+			name: "Shell",
+			sessionId: "pty-c",
+			fontSize: 14,
+			cwd: "/repo",
+			awaitingInput: null,
+		});
+		terminalsStore.update(shell, { repoPath: "/repo" });
+		const id = mdTabsStore.addMcpFile("outside", "", "/Users/boss/notes/review.md", false, false);
+		render(() => <MarkdownTab tab={mdTabsStore.get(id) as FileTab} />);
+		const select = await screen.findByRole("combobox", { name: "Review agent" });
+		const values = [...select.querySelectorAll("option")].map((option) => option.getAttribute("value"));
+		expect(values).toEqual(["pty-a", "pty-b"]);
+		expect(select).not.toBeDisabled();
+	});
+
 	it("queues the marked-up file for the selected agent in the same repository", async () => {
 		const addToast = vi.spyOn(toastsStore, "add").mockReturnValue(1);
 		addAgent("Other repo", "session-other", "/other");

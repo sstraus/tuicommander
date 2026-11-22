@@ -38,7 +38,7 @@ import { omitAnswerMarker, ViewportProjection } from "./viewportProjection";
  * the canvas terminal instead of the agent's status glyph. Appending U+FE0E
  * (VS15, the text variation selector) forces text presentation so they match
  * the desktop look. Mirrors the mobile DOM fix in utils/logLine.ts
- * (forceTextPresentation). Covers Claude Code, Codex, Copilot, Gemini glyphs:
+ * (forceTextPresentation). Covers Claude Code, Codex, Copilot, Antigravity glyphs:
  * ● ○ ⏺ ⏵ • ◦ ∴ ✢ ⚙ ✻ ◉
  */
 const EMOJI_PRESENTATION_CPS = new Set<number>([

@@ -75,6 +75,7 @@ button[data-control-layout="row"].headerInfo {
 }
 
 .stateDot[data-state="busy"],
+.stateDot[data-state="background"] { background: var(--activity); }
 .stateDot[data-state="sub-tasks"] { background: var(--accent); }
 .stateDot[data-state="idle"] { background: #4dbc80; }
 .stateDot[data-state="question"] { background: #eabf53; }

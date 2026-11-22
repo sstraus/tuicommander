@@ -1,12 +1,12 @@
 use super::model::{
     DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, NewProgressEntry, ProgressDeleteReceipt, ProgressEntry,
-    ProgressKind, ProgressList, ProgressListInput, ProgressViewedReceipt,
+    ProgressKind, ProgressList, ProgressListInput, ProgressQuestion, ProgressRecentEntry,
+    ProgressRecentInput, ProgressReplyDelivery, ProgressReplyInput, ProgressReplyReceipt,
+    ProgressViewedReceipt,
 };
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The one journal, for every project.
 ///
@@ -14,7 +14,103 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// nothing Progress writes belongs in the user's source tree. `project` is a
 /// column, so closing a session, deleting a temporary workspace or parking a
 /// project cannot take a journal with it.
-const STORE_FILE: &str = "progress.sqlite3";
+const STORE_FILE: &str = crate::db::PROGRESS_DB;
+
+// AUTOINCREMENT, not a bare rowid. A plain `INTEGER PRIMARY KEY` hands out
+// `max(rowid) + 1`, so deleting the newest entry and writing the next one
+// reuses its id — and a dialog still holding the old id would then delete an
+// entry it never showed.
+pub(crate) const SCHEMA: crate::db::Schema = crate::db::Schema {
+    name: "progress",
+    migrations: &[
+        &["CREATE TABLE entries (
+           id            INTEGER PRIMARY KEY AUTOINCREMENT,
+           project       TEXT NOT NULL,
+           created_at_ms INTEGER NOT NULL,
+           kind          TEXT NOT NULL CHECK (kind IN ('done','blocked','intent','delegated','message')),
+           text          TEXT NOT NULL,
+           step          TEXT,
+           agent_name    TEXT,
+           pty_id        TEXT,
+           target_pty_id TEXT,
+           target_name   TEXT
+         );
+         CREATE INDEX entries_by_project ON entries (project, id DESC);
+         CREATE INDEX entries_by_pty ON entries (project, pty_id, id DESC);
+         CREATE TABLE project_views (
+           project        TEXT PRIMARY KEY,
+           last_viewed_ms INTEGER NOT NULL
+         );
+         CREATE TABLE pty_views (
+           project        TEXT NOT NULL,
+           pty_id         TEXT NOT NULL,
+           last_viewed_ms INTEGER NOT NULL,
+           PRIMARY KEY (project, pty_id)
+         );
+         CREATE TABLE reply_context (
+            entry_id INTEGER PRIMARY KEY, author TEXT, binary_question INTEGER NOT NULL,
+            answered INTEGER NOT NULL DEFAULT 0
+         );
+         CREATE TABLE progress_replies (
+            project TEXT NOT NULL, request_id TEXT NOT NULL, entry_id INTEGER NOT NULL,
+            payload TEXT NOT NULL, delivery TEXT NOT NULL,
+            PRIMARY KEY (project, request_id)
+         );"],
+        // Discussion joins the journal (plan discussion.md): two more kinds,
+        // which SQLite can only widen by rebuilding the table, and the full
+        // texts of each question and answer beside their entries.
+        &["CREATE TABLE entries_v2 (
+           id            INTEGER PRIMARY KEY AUTOINCREMENT,
+           project       TEXT NOT NULL,
+           created_at_ms INTEGER NOT NULL,
+           kind          TEXT NOT NULL CHECK (kind IN
+                           ('done','blocked','intent','delegated','message','question','answer')),
+           text          TEXT NOT NULL,
+           step          TEXT,
+           agent_name    TEXT,
+           pty_id        TEXT,
+           target_pty_id TEXT,
+           target_name   TEXT
+         );
+         INSERT INTO entries_v2 SELECT id, project, created_at_ms, kind, text, step, agent_name,
+                                       pty_id, target_pty_id, target_name FROM entries;
+         -- Keep the id counter: a deleted newest entry must not see its id reused.
+         UPDATE sqlite_sequence
+            SET seq = (SELECT seq FROM sqlite_sequence WHERE name = 'entries')
+          WHERE name = 'entries_v2'
+            AND seq < (SELECT seq FROM sqlite_sequence WHERE name = 'entries');
+         INSERT INTO sqlite_sequence (name, seq)
+           SELECT 'entries_v2', seq FROM sqlite_sequence WHERE name = 'entries'
+            AND NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'entries_v2');
+         DROP TABLE entries;
+         ALTER TABLE entries_v2 RENAME TO entries;
+         CREATE INDEX entries_by_project ON entries (project, id DESC);
+         CREATE INDEX entries_by_pty ON entries (project, pty_id, id DESC);
+         CREATE TABLE discussion_turns (
+           id                INTEGER PRIMARY KEY AUTOINCREMENT,
+           question_entry_id INTEGER NOT NULL REFERENCES entries (id) ON DELETE CASCADE,
+           thread_id         INTEGER NOT NULL,
+           answer_entry_id   INTEGER,
+           source            TEXT NOT NULL,
+           question          TEXT NOT NULL,
+           answer            TEXT,
+           category          TEXT,
+           title             TEXT,
+           fork_session_id   TEXT,
+           source_message_id TEXT,
+           input_tokens      INTEGER,
+           output_tokens     INTEGER,
+           cache_read_tokens INTEGER,
+           cache_creation_tokens INTEGER,
+           cost_usd          REAL,
+           error             TEXT,
+           finished_ms       INTEGER
+         );
+         CREATE INDEX discussion_turns_thread ON discussion_turns (thread_id, id);
+         CREATE UNIQUE INDEX discussion_turns_source_message
+           ON discussion_turns (source_message_id) WHERE source_message_id IS NOT NULL;"],
+    ],
+};
 
 /// How many terminals the list names for the filter: the most recently active.
 /// Unbounded, the page grew with the journal (1704 ids was 67 KB beside 8 entries).
@@ -24,6 +120,9 @@ const PTY_IDS_LIMIT: i64 = 32;
 pub struct ProgressStore {
     db_path: PathBuf,
 }
+
+/// Quoted text, terminal, author, binary question, answered.
+type ReplyContextRow = (String, Option<String>, Option<String>, bool, bool);
 
 impl ProgressStore {
     /// Open (and create on first use) the shared journal.
@@ -52,180 +151,14 @@ impl ProgressStore {
         &self.db_path
     }
 
+    /// The journal connection, for the Discussion side table (`discussion::store`).
+    pub(crate) fn connection(&self) -> Result<Connection, String> {
+        self.connect()
+    }
+
     fn connect(&self) -> Result<Connection, String> {
-        let mut conn = Connection::open(&self.db_path).map_err(|error| {
-            format!(
-                "progress_store_unavailable: cannot open '{}': {error}",
-                self.db_path.display()
-            )
-        })?;
-        conn.busy_timeout(BUSY_TIMEOUT)
-            .map_err(db_error("set progress busy timeout"))?;
-        if crate::sqlite_once::is_prepared(&self.db_path) {
-            return Ok(conn);
-        }
-        // WAL survives the timeout: several TUIC processes do write this file,
-        // and a reader must not block the writer that is recording an entry.
-        conn.pragma_update(None, "journal_mode", "WAL")
-            .map_err(db_error("enable WAL on the progress store"))?;
-        crate::sqlite_once::hold_open(&self.db_path);
-        conn.execute_batch(
-            // AUTOINCREMENT, not a bare rowid. A plain `INTEGER PRIMARY KEY`
-            // hands out `max(rowid) + 1`, so deleting the newest entry and
-            // writing the next one reuses its id — and a dialog still holding
-            // the old id would then delete an entry it never showed.
-            "CREATE TABLE IF NOT EXISTS entries (
-               id            INTEGER PRIMARY KEY AUTOINCREMENT,
-               project       TEXT NOT NULL,
-               created_at_ms INTEGER NOT NULL,
-               kind          TEXT NOT NULL CHECK (kind IN ('done','blocked','intent','delegated','message')),
-               text          TEXT NOT NULL,
-               step          TEXT,
-               agent_name    TEXT,
-               pty_id        TEXT,
-               target_pty_id TEXT,
-               target_name   TEXT
-             );
-             CREATE INDEX IF NOT EXISTS entries_by_project ON entries (project, id DESC);
-             CREATE TABLE IF NOT EXISTS project_views (
-               project        TEXT PRIMARY KEY,
-               last_viewed_ms INTEGER NOT NULL
-             );
-             CREATE TABLE IF NOT EXISTS pty_views (
-               project        TEXT NOT NULL,
-               pty_id         TEXT NOT NULL,
-               last_viewed_ms INTEGER NOT NULL,
-               PRIMARY KEY (project, pty_id)
-             );",
-        )
-        .map_err(db_error("prepare the progress schema"))?;
-        if !Self::has_pty_column(&conn)? {
-            // Serialize upgrades across processes, then inspect again: another
-            // instance may have added the column while we waited for the lock.
-            let tx = conn
-                .transaction_with_behavior(TransactionBehavior::Immediate)
-                .map_err(db_error("begin the progress schema migration"))?;
-            if !Self::has_pty_column(&tx)? {
-                tx.execute("ALTER TABLE entries ADD COLUMN pty_id TEXT", [])
-                    .map_err(db_error("add terminal identity to the progress schema"))?;
-            }
-            tx.commit()
-                .map_err(db_error("commit the progress schema migration"))?;
-        }
-        if !Self::has_hand_off_schema(&conn)? {
-            let tx = conn
-                .transaction_with_behavior(TransactionBehavior::Immediate)
-                .map_err(db_error("begin the hand-off schema migration"))?;
-            if !Self::has_hand_off_schema(&tx)? {
-                Self::rebuild_for_hand_offs(&tx)?;
-            }
-            tx.commit()
-                .map_err(db_error("commit the hand-off schema migration"))?;
-        }
-        // After the migrations: a rebuilt table has lost its indexes.
-        conn.execute_batch(
-            "CREATE INDEX IF NOT EXISTS entries_by_project ON entries (project, id DESC);
-             CREATE INDEX IF NOT EXISTS entries_by_pty ON entries (project, pty_id, id DESC);",
-        )
-        .map_err(db_error("index terminal progress"))?;
-        crate::sqlite_once::mark_prepared(&self.db_path);
-        Ok(conn)
-    }
-
-    /// Whether `entries` accepts the hand-off kinds and carries their target.
-    /// The CHECK constraint is part of the table's SQL, so the SQL is the only
-    /// place to read it from.
-    fn has_hand_off_schema(conn: &Connection) -> Result<bool, String> {
-        let sql: String = conn
-            .query_row(
-                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'entries'",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(db_error("inspect the progress schema"))?;
-        Ok(sql.contains("'delegated'") && sql.contains("target_pty_id"))
-    }
-
-    /// SQLite cannot alter a CHECK constraint, so a journal from before the
-    /// hand-off kinds is copied into a new table. Ids are copied verbatim and
-    /// the AUTOINCREMENT high-water mark is carried over: a dialog may still
-    /// hold the id of a deleted newest entry, and reissuing it would let that
-    /// dialog delete an entry it never showed.
-    ///
-    /// The earliest journals used a bare `INTEGER PRIMARY KEY`, and such a file
-    /// has no `sqlite_sequence` table at all. The mark is therefore the larger
-    /// of the recorded sequence, when there is one, and the highest id present.
-    fn rebuild_for_hand_offs(tx: &rusqlite::Transaction<'_>) -> Result<(), String> {
-        let has_sequence: bool = tx
-            .query_row(
-                "SELECT EXISTS (SELECT 1 FROM sqlite_master
-                                 WHERE type = 'table' AND name = 'sqlite_sequence')",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(db_error("read the progress id high-water mark"))?;
-        let sequence: Option<i64> = if has_sequence {
-            tx.query_row(
-                "SELECT seq FROM sqlite_sequence WHERE name = 'entries'",
-                [],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(db_error("read the progress id high-water mark"))?
-        } else {
-            None
-        };
-        let max_id: Option<i64> = tx
-            .query_row("SELECT MAX(id) FROM entries", [], |row| row.get(0))
-            .map_err(db_error("read the progress id high-water mark"))?;
-        let high_water = sequence.max(max_id);
-        tx.execute_batch(
-            "CREATE TABLE entries_hand_offs (
-               id            INTEGER PRIMARY KEY AUTOINCREMENT,
-               project       TEXT NOT NULL,
-               created_at_ms INTEGER NOT NULL,
-               kind          TEXT NOT NULL CHECK (kind IN ('done','blocked','intent','delegated','message')),
-               text          TEXT NOT NULL,
-               step          TEXT,
-               agent_name    TEXT,
-               pty_id        TEXT,
-               target_pty_id TEXT,
-               target_name   TEXT
-             );
-             INSERT INTO entries_hand_offs (id, project, created_at_ms, kind, text, step, agent_name, pty_id)
-               SELECT id, project, created_at_ms, kind, text, step, agent_name, pty_id FROM entries;
-             DROP TABLE entries;
-             ALTER TABLE entries_hand_offs RENAME TO entries;",
-        )
-        .map_err(db_error("rebuild the progress table for hand-offs"))?;
-        if let Some(seq) = high_water {
-            let updated = tx
-                .execute(
-                    "UPDATE sqlite_sequence SET seq = MAX(seq, ?1) WHERE name = 'entries'",
-                    params![seq],
-                )
-                .map_err(db_error("carry the progress id high-water mark"))?;
-            if updated == 0 {
-                tx.execute(
-                    "INSERT INTO sqlite_sequence (name, seq) VALUES ('entries', ?1)",
-                    params![seq],
-                )
-                .map_err(db_error("carry the progress id high-water mark"))?;
-            }
-        }
-        Ok(())
-    }
-
-    fn has_pty_column(conn: &Connection) -> Result<bool, String> {
-        Ok(conn
-            .prepare("PRAGMA table_info(entries)")
-            .map_err(db_error("inspect the progress schema"))?
-            .query_map([], |row| row.get::<_, String>(1))
-            .map_err(db_error("inspect the progress schema"))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(db_error("inspect the progress schema"))?
-            .iter()
-            .any(|column| column == "pty_id"))
+        crate::db::open_with(&self.db_path, &SCHEMA)
+            .map_err(|error| format!("progress_store_unavailable: {error}"))
     }
 
     /// Append one entry. There is nothing to reconcile: the table is
@@ -259,6 +192,40 @@ impl ProgressStore {
         target_pty_id: Option<&str>,
         target_name: Option<&str>,
     ) -> Result<ProgressEntry, String> {
+        self.record_with_context(
+            project,
+            entry,
+            pty_id,
+            (target_pty_id, target_name),
+            None,
+            None,
+        )
+    }
+
+    pub(crate) fn record_report(
+        &self,
+        project: &str,
+        entry: &NewProgressEntry,
+        pty_id: Option<&str>,
+        author: Option<&str>,
+        question: Option<ProgressQuestion>,
+    ) -> Result<ProgressEntry, String> {
+        self.record_with_context(project, entry, pty_id, (None, None), author, question)
+    }
+
+    /// `target` is the hand-off terminal and its name at the time.
+    fn record_with_context(
+        &self,
+        project: &str,
+        entry: &NewProgressEntry,
+        pty_id: Option<&str>,
+        (target_pty_id, target_name): (Option<&str>, Option<&str>),
+        author: Option<&str>,
+        question: Option<ProgressQuestion>,
+    ) -> Result<ProgressEntry, String> {
+        if question.is_some() && entry.kind != ProgressKind::Blocked {
+            return Err(super::model::question_requires_blocked(entry.kind));
+        }
         let mut entry = entry.clone();
         entry.text = crate::redaction::redact_secrets(&entry.text);
         if let Some(step) = entry.step.as_mut() {
@@ -306,8 +273,16 @@ impl ProgressStore {
         )
         .map_err(db_error("insert progress entry"))?;
         let id = tx.last_insert_rowid();
+        tx.execute(
+            "INSERT INTO reply_context (entry_id, author, binary_question) VALUES (?1, ?2, ?3)",
+            params![id, author, question.is_some()],
+        )
+        .map_err(db_error("record progress author"))?;
         tx.commit().map_err(db_error("commit progress entry"))?;
         Ok(ProgressEntry {
+            question,
+            reply_target_available: Some(author.is_some()),
+            answered: question.map(|_| false),
             id,
             project: project.to_string(),
             pty_id: pty_id.map(str::to_string),
@@ -319,6 +294,68 @@ impl ProgressStore {
             target_pty_id: target_pty_id.map(str::to_string),
             target_name,
         })
+    }
+
+    /// Append a `question` or `answer` and run `then` in the same
+    /// transaction, so an entry never lands without its Discussion turn.
+    pub(crate) fn record_exchange<T>(
+        &self,
+        project: &str,
+        entry: &NewProgressEntry,
+        pty_id: Option<&str>,
+        then: impl FnOnce(&rusqlite::Transaction<'_>, &ProgressEntry) -> Result<T, String>,
+    ) -> Result<(ProgressEntry, T), String> {
+        if !matches!(entry.kind, ProgressKind::Question | ProgressKind::Answer) {
+            return Err(format!(
+                "record_exchange takes question or answer, not {}",
+                entry.kind.as_str()
+            ));
+        }
+        let mut entry = entry.clone();
+        entry.text = crate::redaction::redact_secrets(&entry.text);
+        entry.validate()?;
+        let mut conn = self.connect()?;
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(db_error("begin progress transaction"))?;
+        let created_at_ms = now_ms();
+        let (text, step, agent_name) = (
+            entry.trimmed_text(),
+            entry.trimmed_step(),
+            entry.trimmed_agent_name(),
+        );
+        tx.execute(
+            "INSERT INTO entries (project, created_at_ms, kind, text, step, agent_name, pty_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                project,
+                i64_from_u64(created_at_ms),
+                entry.kind.as_str(),
+                &text,
+                &step,
+                &agent_name,
+                pty_id
+            ],
+        )
+        .map_err(db_error("insert progress entry"))?;
+        let recorded = ProgressEntry {
+            question: None,
+            reply_target_available: Some(false),
+            answered: None,
+            id: tx.last_insert_rowid(),
+            project: project.to_string(),
+            pty_id: pty_id.map(str::to_string),
+            created_at_ms,
+            kind: entry.kind,
+            text,
+            step,
+            agent_name,
+            target_pty_id: None,
+            target_name: None,
+        };
+        let value = then(&tx, &recorded)?;
+        tx.commit().map_err(db_error("commit progress entry"))?;
+        Ok((recorded, value))
     }
 
     /// The project's newest entry, read inside the caller's transaction so the
@@ -356,6 +393,9 @@ impl ProgressStore {
             .map_err(db_error("read the newest progress entry"))?;
         row.map(|(id, created_at_ms, kind, text, step, agent_name)| {
             Ok(ProgressEntry {
+                question: None,
+                reply_target_available: Some(false),
+                answered: None,
                 id,
                 project: project.to_string(),
                 pty_id: pty_id.map(str::to_string),
@@ -383,6 +423,80 @@ impl ProgressStore {
     }
 
     /// Projects with journal entries, ordered by their most recent entry.
+    /// The newest entries of every project, default kinds only (or one kind),
+    /// each marked unread against its project's last view.
+    pub fn recent(&self, input: &ProgressRecentInput) -> Result<Vec<ProgressRecentEntry>, String> {
+        let kinds: Vec<ProgressKind> = match input.kind {
+            Some(kind) => vec![kind],
+            None => ProgressKind::ALL
+                .into_iter()
+                .filter(|kind| !ProgressKind::ACTIVITY.contains(kind))
+                .collect(),
+        };
+        let kinds = kinds
+            .iter()
+            .map(|kind| format!("'{}'", kind.as_str()))
+            .collect::<Vec<_>>()
+            .join(",");
+        let limit = input
+            .limit
+            .unwrap_or(MAX_PAGE_LIMIT)
+            .clamp(1, MAX_PAGE_LIMIT) as i64;
+        let conn = self.connect()?;
+        let mut statement = conn
+            .prepare(&format!(
+                "SELECT e.id, e.project, e.created_at_ms, e.kind, e.text, e.step, e.agent_name, e.pty_id,
+                        e.created_at_ms > COALESCE(v.last_viewed_ms, 0)
+                   FROM entries e LEFT JOIN project_views v ON v.project = e.project
+                  WHERE e.kind IN ({kinds})
+                    AND (?1 = 0 OR e.created_at_ms > COALESCE(v.last_viewed_ms, 0))
+                  ORDER BY e.id DESC
+                  LIMIT ?2"
+            ))
+            .map_err(db_error("prepare the recent list"))?;
+        let rows = statement
+            .query_map(
+                params![i64::from(input.unread_only.unwrap_or(false)), limit],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                        row.get::<_, Option<String>>(7)?,
+                        row.get::<_, bool>(8)?,
+                    ))
+                },
+            )
+            .map_err(db_error("read the recent list"))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(db_error("read a recent entry"))?;
+        let mut recent = Vec::with_capacity(rows.len());
+        for (id, project, created_at_ms, kind, text, step, agent_name, pty_id, unread) in rows {
+            let mut entry = ProgressEntry {
+                question: None,
+                reply_target_available: Some(false),
+                answered: None,
+                id,
+                project,
+                pty_id,
+                created_at_ms: u64_from_i64(created_at_ms),
+                kind: ProgressKind::parse(&kind)?,
+                text,
+                step,
+                agent_name,
+                target_pty_id: None,
+                target_name: None,
+            };
+            Self::enrich_reply_context(&conn, &mut entry)?;
+            recent.push(ProgressRecentEntry { entry, unread });
+        }
+        Ok(recent)
+    }
+
     pub fn recent_projects(&self) -> Result<Vec<String>, String> {
         let conn = self.connect()?;
         let mut statement = conn
@@ -406,14 +520,19 @@ impl ProgressStore {
     ) -> Result<ProgressList, String> {
         let conn = self.connect()?;
         let blocked_only = input.blocked_only.unwrap_or(false);
-        let kinds = if input.progress_only.unwrap_or(false) {
-            &[
+        let kinds: Vec<ProgressKind> = if input.progress_only.unwrap_or(false) {
+            vec![
                 ProgressKind::Done,
                 ProgressKind::Blocked,
                 ProgressKind::Intent,
-            ][..]
+            ]
+        } else if input.include_activity == Some(false) {
+            ProgressKind::ALL
+                .into_iter()
+                .filter(|kind| !ProgressKind::ACTIVITY.contains(kind))
+                .collect()
         } else {
-            &ProgressKind::ALL[..]
+            ProgressKind::ALL.to_vec()
         };
         let known_kinds = kinds
             .iter()
@@ -492,6 +611,9 @@ impl ProgressStore {
                     let kind =
                         ProgressKind::parse(&kind).expect("SQL selected a known progress kind");
                     ProgressEntry {
+                        question: None,
+                        reply_target_available: Some(false),
+                        answered: None,
                         id,
                         project: project.to_string(),
                         pty_id,
@@ -506,6 +628,9 @@ impl ProgressStore {
                 },
             )
             .collect::<Vec<_>>();
+        for entry in &mut entries {
+            Self::enrich_reply_context(&conn, entry)?;
+        }
         let has_more = entries.len() > limit;
         entries.truncate(limit);
         let next_cursor = has_more.then(|| entries.last().expect("nonempty page").id);
@@ -524,6 +649,122 @@ impl ProgressStore {
             next_cursor,
             pty_ids,
             last_viewed_ms: self.last_viewed_ms(&conn, project, input.pty_id.as_deref())?,
+        })
+    }
+
+    fn enrich_reply_context(conn: &Connection, entry: &mut ProgressEntry) -> Result<(), String> {
+        let context: Option<(Option<String>, bool, bool)> = conn
+            .query_row(
+                "SELECT author, binary_question, answered FROM reply_context WHERE entry_id = ?1",
+                [entry.id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()
+            .map_err(db_error("read progress reply context"))?;
+        if let Some((author, binary, answered)) = context {
+            entry.question = binary.then_some(ProgressQuestion::YesNo);
+            entry.answered = binary.then_some(answered);
+            entry.reply_target_available = Some(author.is_some());
+        }
+        Ok(())
+    }
+
+    /// SQLite serializes request retries and binary answers across app processes.
+    /// The delivery id is stable even if delivery succeeds but committing its receipt fails.
+    pub(crate) fn reply(
+        &self,
+        project: &str,
+        input: &ProgressReplyInput,
+        deliver: impl FnOnce(
+            Option<&str>,
+            Option<&str>,
+            &str,
+            &str,
+        ) -> Result<ProgressReplyDelivery, String>,
+    ) -> Result<ProgressReplyReceipt, String> {
+        super::model::validate_text("requestId", &input.request_id, 128)?;
+        if input.text.is_some() == input.answer.is_some() {
+            return Err("provide exactly one of text or answer".into());
+        }
+        if let Some(text) = &input.text {
+            super::model::validate_text("text", text, 16_000)?;
+        }
+        let payload = serde_json::to_string(input).map_err(|e| e.to_string())?;
+        let mut conn = self.connect()?;
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(db_error("begin progress reply"))?;
+        let saved: Option<(i64, String, String)> = tx.query_row(
+            "SELECT entry_id, payload, delivery FROM progress_replies WHERE project = ?1 AND request_id = ?2",
+            params![project, input.request_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).optional().map_err(db_error("read progress reply receipt"))?;
+        if let Some((entry_id, previous, delivery)) = saved {
+            if entry_id != input.entry_id || previous != payload {
+                return Err("requestId was already used for a different reply".into());
+            }
+            return Ok(ProgressReplyReceipt {
+                entry_id,
+                request_id: input.request_id.clone(),
+                delivery: if delivery == "delivered" {
+                    ProgressReplyDelivery::Delivered
+                } else {
+                    ProgressReplyDelivery::Queued
+                },
+            });
+        }
+        let context: Option<ReplyContextRow> = tx.query_row(
+            "SELECT e.text, e.pty_id, c.author, COALESCE(c.binary_question, 0), COALESCE(c.answered, 0)
+             FROM entries e LEFT JOIN reply_context c ON c.entry_id = e.id
+             WHERE e.project = ?1 AND e.id = ?2",
+            params![project, input.entry_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+        ).optional().map_err(db_error("read progress reply author"))?;
+        let (quote, pty, author, binary, answered) =
+            context.ok_or("progress entry not found in this project")?;
+        if input.answer.is_some() && !binary {
+            return Err("answer requires an explicit yes_no question".into());
+        }
+        if input.answer.is_some() && answered {
+            return Err("this question has already been answered".into());
+        }
+        if author.is_none() {
+            return Err("progress reply author is unavailable".into());
+        }
+        let response = input
+            .answer
+            .map(|yes| if yes { "Yes" } else { "No" })
+            .unwrap_or_else(|| input.text.as_deref().unwrap_or_default().trim());
+        let message = format!(
+            "User reply to Progress #{} in {}:\n> {}\n\n{}: {}",
+            input.entry_id,
+            project,
+            quote.replace('\n', "\n> "),
+            if input.answer.is_some() {
+                "Answer"
+            } else {
+                "Comment"
+            },
+            response
+        );
+        let message_id = format!("progress-reply:{}:{}", input.entry_id, input.request_id);
+        // DEFERRED (2026-11-18) — a process crash after mail acceptance but before this
+        // receipt commits is not an atomic outbox. Existing message-id dedup protects
+        // identical retries, not a different binary answer after such a crash.
+        let delivery = deliver(author.as_deref(), pty.as_deref(), &message, &message_id)?;
+        tx.execute("INSERT INTO progress_replies (project, request_id, entry_id, payload, delivery) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![project, input.request_id, input.entry_id, payload, if delivery == ProgressReplyDelivery::Delivered { "delivered" } else { "queued" }])
+            .map_err(db_error("record progress reply receipt"))?;
+        if input.answer.is_some() {
+            tx.execute(
+                "UPDATE reply_context SET answered = 1 WHERE entry_id = ?1",
+                [input.entry_id],
+            )
+            .map_err(db_error("record progress answer"))?;
+        }
+        tx.commit().map_err(db_error("commit progress reply"))?;
+        Ok(ProgressReplyReceipt {
+            entry_id: input.entry_id,
+            request_id: input.request_id.clone(),
+            delivery,
         })
     }
 
@@ -649,99 +890,6 @@ mod tests {
         let store = ProgressStore::open().unwrap();
         (guard, store, dir)
     }
-
-    #[test]
-    fn the_database_lives_in_the_config_directory_and_nowhere_else() {
-        let (_guard, store, dir) = isolated_store();
-        assert_eq!(store.database_path(), dir.path().join("progress.sqlite3"));
-    }
-
-    #[test]
-    fn opening_an_existing_journal_adds_nullable_pty_identity_without_losing_history() {
-        let dir = tempfile::tempdir().unwrap();
-        let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
-        let conn = Connection::open(dir.path().join("progress.sqlite3")).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE entries (
-               id INTEGER PRIMARY KEY AUTOINCREMENT, project TEXT NOT NULL,
-               created_at_ms INTEGER NOT NULL, kind TEXT NOT NULL,
-               text TEXT NOT NULL, step TEXT, agent_name TEXT
-             );
-             INSERT INTO entries (project, created_at_ms, kind, text)
-             VALUES ('/repo', 1, 'done', 'Older work');",
-        )
-        .unwrap();
-        drop(conn);
-
-        let store = ProgressStore::open().unwrap();
-        let legacy = store.list("/repo", &ProgressListInput::default()).unwrap();
-        assert_eq!(legacy.entries[0].text, "Older work");
-        let conn = Connection::open(store.database_path()).unwrap();
-        let pty_id: Option<String> = conn
-            .query_row("SELECT pty_id FROM entries WHERE id = 1", [], |row| {
-                row.get(0)
-            })
-            .unwrap();
-        assert_eq!(pty_id, None);
-    }
-
-    /// A journal written before the hand-off kinds has a CHECK constraint that
-    /// refuses them, and SQLite cannot alter a CHECK. Opening it must rebuild
-    /// the table without losing a row, an id, or the id high-water mark — a
-    /// deleted newest id must still never be handed out again.
-    #[test]
-    fn opening_a_pre_hand_off_journal_rebuilds_it_and_keeps_every_id() {
-        let dir = tempfile::tempdir().unwrap();
-        let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
-        let conn = Connection::open(dir.path().join("progress.sqlite3")).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE entries (
-               id INTEGER PRIMARY KEY AUTOINCREMENT, project TEXT NOT NULL,
-               created_at_ms INTEGER NOT NULL,
-               kind TEXT NOT NULL CHECK (kind IN ('done','blocked','intent')),
-               text TEXT NOT NULL, step TEXT, agent_name TEXT, pty_id TEXT
-             );
-             INSERT INTO entries (project, created_at_ms, kind, text, pty_id)
-             VALUES ('/repo', 1, 'done', 'kept', 'pty-a'),
-                    ('/repo', 2, 'intent', 'deleted newest', 'pty-a');
-             DELETE FROM entries WHERE id = 2;",
-        )
-        .unwrap();
-        drop(conn);
-
-        let store = ProgressStore::open().unwrap();
-        let kept = store.list("/repo", &ProgressListInput::default()).unwrap();
-        assert_eq!(kept.entries.len(), 1);
-        assert_eq!(kept.entries[0].id, 1);
-        assert_eq!(kept.entries[0].pty_id.as_deref(), Some("pty-a"));
-
-        let hand_off = store
-            .record_hand_off(
-                "/repo",
-                &entry(ProgressKind::Delegated, "Review the parser"),
-                Some("pty-a"),
-                Some("pty-b"),
-                Some("reviewer"),
-            )
-            .unwrap();
-        assert_eq!(hand_off.id, 3, "id 2 was deleted and must not come back");
-        let listed = store.list("/repo", &ProgressListInput::default()).unwrap();
-        assert_eq!(listed.entries[0].kind, ProgressKind::Delegated);
-        assert_eq!(listed.entries[0].target_pty_id.as_deref(), Some("pty-b"));
-        assert_eq!(listed.entries[0].target_name.as_deref(), Some("reviewer"));
-
-        // Opening again finds the new schema and leaves it alone.
-        let again = ProgressStore::open().unwrap();
-        assert_eq!(
-            again
-                .list("/repo", &ProgressListInput::default())
-                .unwrap()
-                .entries
-                .len(),
-            2
-        );
-    }
-
     #[test]
     fn entries_come_back_newest_first_with_their_fields_intact() {
         let (_guard, store, _dir) = isolated_store();
@@ -1272,7 +1420,7 @@ mod tests {
                 .last_viewed_ms,
             Some(first)
         );
-        std::thread::sleep(Duration::from_millis(2));
+        std::thread::sleep(std::time::Duration::from_millis(2));
         let second = store
             .mark_viewed_for_pty("/p", None)
             .unwrap()
@@ -1454,64 +1602,5 @@ mod tests {
             vec!["known 3", "known 2", "known 1", "known 0"]
         );
         assert_eq!(older.next_cursor, None);
-    }
-
-    /// The first journals were created with a bare `INTEGER PRIMARY KEY` (the
-    /// schema parked in b3f470df), so the file has no `sqlite_sequence` table
-    /// at all. The hand-off rebuild read that table unconditionally and failed
-    /// with `no such table: sqlite_sequence`, which made every progress read
-    /// and write fail. The rebuild must open such a journal, keep every row
-    /// and id, and continue numbering after the highest id.
-    #[test]
-    fn opening_a_journal_without_autoincrement_rebuilds_it_and_keeps_every_id() {
-        let dir = tempfile::tempdir().unwrap();
-        let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
-        let conn = Connection::open(dir.path().join("progress.sqlite3")).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE entries (
-               id            INTEGER PRIMARY KEY,
-               project       TEXT NOT NULL,
-               created_at_ms INTEGER NOT NULL,
-               kind          TEXT NOT NULL CHECK (kind IN ('done','blocked','intent')),
-               text          TEXT NOT NULL,
-               step          TEXT,
-               agent_name    TEXT
-             );
-             CREATE INDEX entries_by_project ON entries (project, id DESC);
-             CREATE TABLE project_views (
-               project        TEXT PRIMARY KEY,
-               last_viewed_ms INTEGER NOT NULL DEFAULT 0
-             );
-             ALTER TABLE entries ADD COLUMN pty_id TEXT;
-             INSERT INTO entries (id, project, created_at_ms, kind, text, pty_id)
-             VALUES (1, '/repo', 1, 'done', 'first', 'pty-a'),
-                    (7, '/repo', 2, 'intent', 'seventh', 'pty-a');",
-        )
-        .unwrap();
-        let has_sequence: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE name = 'sqlite_sequence'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(has_sequence, 0, "the legacy journal has no sqlite_sequence");
-        drop(conn);
-
-        let store = ProgressStore::open().unwrap();
-        let kept = store.list("/repo", &ProgressListInput::default()).unwrap();
-        let ids: Vec<i64> = kept.entries.iter().map(|e| e.id).collect();
-        assert_eq!(ids, vec![7, 1]);
-
-        let next = store
-            .record_hand_off(
-                "/repo",
-                &entry(ProgressKind::Delegated, "Review the parser"),
-                Some("pty-a"),
-                Some("pty-b"),
-                None,
-            )
-            .unwrap();
-        assert_eq!(next.id, 8, "numbering continues after the highest id");
     }
 }

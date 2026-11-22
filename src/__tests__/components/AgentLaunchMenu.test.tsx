@@ -22,7 +22,7 @@ describe("AgentLaunchMenu", () => {
 						isDefault: true,
 						action,
 					},
-					{ label: "Codex CLI", agentName: "Codex CLI", agentType: "codex", isDefault: false, action: () => {} },
+					{ label: "Codex CLI", agentName: "Codex CLI", agentType: "codex", isDefault: true, action: () => {} },
 					{ label: "Terminal", action: () => {} },
 				]}
 			/>
@@ -30,7 +30,7 @@ describe("AgentLaunchMenu", () => {
 		const agent = view.getByRole("button", { name: "Claude Code Fast" });
 		expect(agent.querySelector("svg")).not.toBeNull();
 		expect(agent.querySelector(".configName")?.textContent).toBe("Fast");
-		expect(agent.querySelector('[title="Default configuration"]')).not.toBeNull();
+		expect(agent.querySelector('[title="Default configuration"]')?.textContent).toBe("default");
 		expect(view.getByRole("button", { name: "Codex CLI" }).querySelector(".defaultMark")).toBeNull();
 		expect(view.getByRole("button", { name: "Terminal" }).querySelector("svg")).not.toBeNull();
 		expect(view.container.querySelector(".menu.large")).not.toBeNull();

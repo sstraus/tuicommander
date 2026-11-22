@@ -12,6 +12,7 @@ vi.mock("../../stores/modalStack", () => ({ registerModal: vi.fn() }));
 vi.mock("../../stores/appLogger", () => ({ appLogger: { warn: vi.fn(), error: vi.fn() } }));
 
 beforeEach(() => {
+	storiesUi.reveal({ project: recorded.plan.value.project, planId: recorded.plan.value.id, storyId: null });
 	storiesUi.setVisibility("all");
 	vi.mocked(invoke).mockReset();
 	vi.mocked(invoke).mockImplementation(async (command, args) => {

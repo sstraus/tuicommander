@@ -694,6 +694,13 @@ export function generateTweakCommentId(): string {
 // ---- GFM Task-List Checkbox Toggle ----
 
 /**
+ * A GFM task-list item, also inside blockquotes (`> - [ ]`): group 1 is the
+ * prefix up to the `[`, group 2 the mark. Shared by the renderer's checkbox
+ * index and the toggle, which must agree on which lines are tasks.
+ */
+export const TASK_ITEM_PATTERN = /^((?:\s*>)*\s*[-*+]\s+)\[([ xX~])\]/;
+
+/**
  * Set the checkbox on the given source line to the specified mark.
  * `sourceLine` is the 0-based line number in the raw markdown source,
  * injected as `data-source-line` by the ContentRenderer preprocessor.
@@ -715,7 +722,7 @@ export function toggleCheckbox(source: string, sourceLine: number, mark: " " | "
 		lines[sourceLine] = `${line.slice(0, sourceCol)}[${mark}]${line.slice(sourceCol + 3)}`;
 		return lines.join("\n");
 	}
-	const m = /^(\s*[-*+]\s+)\[([ xX~])\]/.exec(line);
+	const m = TASK_ITEM_PATTERN.exec(line);
 	if (!m) return source;
 	lines[sourceLine] = `${m[1]}[${mark}]${line.slice(m[0].length)}`;
 	return lines.join("\n");

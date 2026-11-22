@@ -237,4 +237,7 @@ impl NeutralHost for Host {
         let observation = self.adapter.cancel(&effect);
         Box::pin(async move { Ok(observation) })
     }
+    fn original_stopped(&self, effect: &NeutralEffect) -> Result<(), String> {
+        self.adapter.original_stopped(effect)
+    }
 }

@@ -275,7 +275,7 @@ impl NeutralExecution {
             });
         }
         if self.status != NeutralStatus::Running {
-            return Err("neutral run is terminal".into());
+            return Err(crate::workflows::neutral_api::refusal::RUN_TERMINAL.into());
         }
         if matches!(command, NeutralExecutionCommand::Cancel) {
             return Ok(Some(NeutralDecision::Cancel));
@@ -283,7 +283,7 @@ impl NeutralExecution {
         if at_ms >= self.deadline_ms {
             return match command {
                 NeutralExecutionCommand::Step => Ok(Some(NeutralDecision::Expire)),
-                _ => Err("neutral run deadline elapsed".into()),
+                _ => Err(crate::workflows::neutral_api::refusal::RUN_DEADLINE_ELAPSED.into()),
             };
         }
         if let NeutralExecutionCommand::Complete { fence, .. }
@@ -1004,9 +1004,11 @@ impl RuntimeOwner {
         at_ms: i64,
     ) -> Result<NeutralExecution, String> {
         if command_id.trim().is_empty() {
-            return Err("neutral command requires an identity".into());
+            return Err(crate::workflows::neutral_api::refusal::COMMAND_NEEDS_IDENTITY.into());
         }
-        let hash = content_digest(&command)?;
+        let mut command = command;
+        let mut hash = content_digest(&command)?;
+        let mut event_command_id = command_id.to_owned();
         let mut conn = self.store.connect()?;
         let tx = conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -1014,17 +1016,42 @@ impl RuntimeOwner {
         let (mut snapshot, events) = replay(&tx, run_id)?;
         if let Some(event) = events.iter().find(|event| event.command_id == command_id) {
             if event.command_hash != hash {
-                return Err("neutral command identity reused with different arguments".into());
+                return Err(crate::workflows::neutral_api::refusal::COMMAND_IDENTITY_REUSED.into());
             }
             // Return the original receipt projection, not today's cursor.
             return replay_until(&tx, run_id, Some(event.sequence)).map(|(snapshot, _)| snapshot);
         }
         if snapshot.sequence != expected_sequence {
-            return Err("neutral execution sequence changed; retry from current snapshot".into());
+            return Err(crate::workflows::neutral_api::refusal::SEQUENCE_CHANGED.into());
         }
-        let Some(decision) = snapshot.decide(&command, at_ms)? else {
+        let Some(mut decision) = snapshot.decide(&command, at_ms)? else {
             return Ok(snapshot);
         };
+        if let NeutralDecision::Effect {
+            decision: effect_decision,
+        } = &mut decision
+            && let super::neutral_effects::EffectDecision::Dispatch { key } =
+                effect_decision.as_ref()
+            && let Some(wait) = super::neutral_effects::resource_conflict(&tx, &snapshot, key)?
+        {
+            if snapshot.effect(key)?.resource_wait.as_ref() == Some(&wait) {
+                return Ok(snapshot);
+            }
+            let wait_command = super::neutral_effects::EffectCommand::ResourceWait {
+                key: key.clone(),
+                wait,
+            };
+            **effect_decision = snapshot
+                .decide_effect(&wait_command, at_ms)?
+                .ok_or("resource wait decision absent")?;
+            command = NeutralExecutionCommand::Effect {
+                command: wait_command,
+            };
+            hash = content_digest(&command)?;
+            // A wait is its own event, not a successful dispatch receipt. Keep
+            // the dispatch identity available for the later resource release.
+            event_command_id = format!("{command_id}:resource-wait:{}", snapshot.sequence);
+        }
         if super::correction_generation::fence(&tx, run_id, &decision)? {
             drop(tx);
             drop(conn);
@@ -1045,10 +1072,11 @@ impl RuntimeOwner {
             .sequence
             .checked_add(1)
             .ok_or("neutral event sequence overflow")?;
+        let effect_changed = matches!(&decision, NeutralDecision::Effect { .. });
         let event = NeutralEvent {
             contract_version: CONTRACT_VERSION,
             sequence,
-            command_id: command_id.into(),
+            command_id: event_command_id.clone(),
             command_hash: hash,
             at_ms,
             kind: NeutralEventKind::Execution {
@@ -1059,12 +1087,25 @@ impl RuntimeOwner {
         let document =
             serde_json::to_string(&event).map_err(|e| format!("encode neutral decision: {e}"))?;
         tx.execute("INSERT INTO neutral_workflow_events(run_id,sequence,command_id,event_json,sha256) VALUES (?1,?2,?3,?4,?5)",
-            params![run_id, sequence, command_id, document, content_digest(&event)?])
+            params![run_id, sequence, event_command_id, document, content_digest(&event)?])
             .map_err(|e| format!("save neutral decision: {e}"))?;
+        snapshot.sequence = sequence;
+        super::neutral_summaries::record(&tx, &snapshot, at_ms)?;
         tx.commit()
             .map_err(|e| format!("commit neutral decision: {e}"))?;
-        snapshot.sequence = sequence;
         self.publish_neutral_cursor(&snapshot.run.request.publication.project, run_id, sequence);
+        if let Some(question) = super::neutral_views::new_question(&event) {
+            self.publish_neutral_question(
+                &snapshot.run.request.publication.project,
+                run_id,
+                question,
+            );
+        }
+        // Notify only after a new durable event. Exact receipts and unchanged
+        // waits do not wake themselves into a retry loop.
+        if effect_changed {
+            self.wake_neutral_actors();
+        }
         Ok(snapshot)
     }
 }
@@ -1091,7 +1132,7 @@ impl RunStore {
         limit: usize,
     ) -> Result<(NeutralExecution, Vec<NeutralEvent>), String> {
         if after_sequence < 0 || limit == 0 || limit > 500 {
-            return Err("invalid neutral event cursor or limit".into());
+            return Err(crate::workflows::neutral_api::refusal::INVALID_CURSOR.into());
         }
         let mut conn = self.connect()?;
         let tx = conn.transaction().map_err(|e| e.to_string())?;
@@ -1112,7 +1153,7 @@ impl RunStore {
         limit: usize,
     ) -> Result<Vec<NeutralEvent>, String> {
         if after_sequence < 0 || limit == 0 || limit > 500 {
-            return Err("invalid neutral event cursor or limit".into());
+            return Err(crate::workflows::neutral_api::refusal::INVALID_CURSOR.into());
         }
         let (_, events) = replay(&self.connect()?, run_id)?;
         Ok(events
@@ -1142,7 +1183,7 @@ fn replay_until(
     replay_observed(conn, run_id, through, |_, _| Ok(()))
 }
 
-fn replay_observed(
+pub(super) fn replay_observed(
     conn: &Connection,
     run_id: &str,
     through: Option<i64>,

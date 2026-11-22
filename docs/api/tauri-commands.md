@@ -13,7 +13,7 @@ Native plans have a stored `revision`. `update_plan` takes `plan_id`, `expected_
 ## Native stories
 
 `story_action_command` accepts `backend_status` and the explicit human `approve_connector {installation,expected_identity}` action. The status descriptor includes backend identity, automatic/explicit provenance, reason, availability, installation, version and error even if initialization fails. HTTP and headless use the same service; see the story backend protocol.
-`set_backend {backend:"native"|"automatic"|"wiz-stories"}` is also an authenticated-human-only shared action. Native continuity precedes discovery; active run snapshot provenance prevents backend changes after restart. Approval compares the displayed `generation` (entry/version), not a full installation-tree digest.
+`set_backend {backend:"native"|"automatic"|"wiz-stories"}` is also an authenticated-human-only shared action. Project markers select the connector even when unfinished native plans remain; explicit native selection exposes the retained records. Do not change backends during a workflow run: the neutral engine does not pin story backend identity. Approval compares the displayed `generation` (entry/version), not a full installation-tree digest.
 
 Native stories expose `qa` for work that waits on manual checks. A criterion starts with `[MANUAL]`, or is marked through `set_criterion_manual {index,manual}`. Active work automatically enters QA when all unchecked criteria are manual; `submit_qa` explicitly requests that state. `reject_qa` returns QA to In progress; `approve` requires every criterion checked. QA keeps plans Active and dependencies blocked. All transitions retain expected-revision checks. See the [native stories guide](../user-guide/native-stories.md#manual-qa).
 
@@ -45,10 +45,11 @@ Both archive and restore refuse claimed stories and plans that contain a claimed
 | Command | Parameters | Result | Description |
 |---|---|---|---|
 | `report_progress_event` | `project, report` | `{id}` | Appends one `done` or `blocked` entry through the same core as MCP and HTTP. |
+| `progress_reply` | `project, input.entryId, input.requestId, input.text? or input.answer?` | `{entryId, requestId, delivery}` | Replies to the stored report author through normal peer mail. Exactly one text or boolean answer; binary answers require explicit question metadata. Delivery is `queued` or `delivered`, not a read receipt. |
 | `progress_list` | `project, input.progressOnly?, input.blockedOnly?, input.ptyId?, input.limit?, input.cursor?` | `ProgressList` | A newest-first page (default 8, maximum 100), matching total, next cursor, available PTY IDs, and stored last-visit mark. |
 | `progress_projects` | none | `string[]` | Journal projects ordered by their most recent entry, for clients without an active desktop repository. |
 | `progress_delete` | `project, input.ids` | `{deleted}` | Deletes entries by id, scoped to the project — one project cannot delete another's. |
-| `progress_flow` | `project, input.ptyId?` | `ProgressFlow` | The journal as a delegation sequence: participants and ordered hand-off events (see `docs/api/http-api.md` → Project Progress). |
+| `progress_flow` | `project, input.ptyId?` | `ProgressFlow` | The journal as a delegation sequence: participants (including interrupted subagents) and ordered hand-off events (see `docs/api/http-api.md` → Project Progress). |
 | `progress_flow_detail` | `input.ptyId, input.agentId, input.part` | `{text}` | Full redacted prompt or report of one subagent arrow, fetched on demand. |
 | `progress_mark_viewed` | `project, ptyId?` | `{lastViewedMs}` | Moves the selected PTY's or repository aggregate's last-visit mark to now. Deliberately not an MCP action: it is the reader's, not the agent's. |
 
@@ -105,6 +106,11 @@ grid-cell coordinates. Both match the stored sequence without normalization.
 | `ack_terminal_frame` | `session_id, epoch: u64, received: u64, visible?: bool` | `()` | Report the total number of frames this client has received and optionally update epoch-scoped desktop visibility. Hidden subscriptions receive no frames. The gate opens when the echo catches up with what was sent, which is what tells a fresh ack from a late one for an abandoned frame. An ack whose epoch is not the live subscription's is dropped. A receipt never marks the grid dirty or generates a frame; actual pending damage and recovery debt are retained by the ticker. Browser parity: none — the WS path uses sequence numbers instead |
 | `unsubscribe_terminal_grid` | `session_id, epoch: u64` | `()` | Tear down the grid channel and its gate. The pending scroll target is NOT torn down — it belongs to the session, so an attached browser keeps scrolling after the desktop terminal closes. A non-matching epoch is ignored: a remount subscribes before the outgoing instance unsubscribes, and honouring the stale call would blank a mounted terminal. Browser parity: closing the WS |
 | `chat_view_snapshot` | `session_id, epoch: Option<u64>, from_seq: Option<u64>, pending_texts: Option<Vec<String>>` | `ChatViewSnapshot` | Chat view of a Claude or Grok terminal: transcript entries from the bound session file as ACP updates, with a bounded log, epoch and `reset` flag. Errors `not_bound: <reason>` for a terminal with no bound Claude or Grok agent. Browser parity: `POST /sessions/:id/chat-view`. Optional pending texts return in request order after the same Rust redaction and character cap used for user receipts |
+| `discussion_ask` | `session_id, question` | `ProgressEntry` | Ask a side question about the agent in a terminal; returns its `question` journal entry at once, the `answer` entry follows. Errors without an exact Claude or Codex binding, outside a registered repository, or with 2 questions already running. HTTP: `POST /sessions/:id/discussion` |
+| `discussion_follow_up` | `entry_id, question` | `ProgressEntry` | Continue the thread that entry belongs to: Claude and ego resume their fork; Codex forks the main session again and replays the thread's earlier exchanges in the prompt. HTTP: `POST /discussion/:entry_id/follow-up` |
+| `discussion_get` | `entry_id` | `ThreadDetail` | The thread of a question or answer entry, with every turn's full text. HTTP: `GET /discussion/:entry_id` |
+| `discussion_cancel` | `entry_id` | `()` | Kill the thread's running fork; it answers `cancelled`. HTTP: `POST /discussion/:entry_id/cancel` |
+| `progress_recent` | `input: ProgressRecentInput { kind?, unreadOnly?, limit? }` | `Vec<ProgressRecentEntry>` | Newest default-kind entries of every project, each with `unread` against its project's last view. HTTP: `POST /progress/recent` |
 | `chat_view_full_text` | `session_id, message_id` | `{ text }` | Whole prompt or reply of one message the Chat stream capped at 20 000 characters, read back from the bound Claude transcript through the same adapter (redaction kept, no cut). Errors `not_bound: …`, `not_supported` (other agents), `message not found in the transcript`. Browser parity: `GET /sessions/:id/chat-view/messages/:message_id/full-text` |
 | `terminal_styled_rows` | `session_id, start, count` | `Result<Response, String>` (packed bytes) | A range of styled rows by absolute index, filling the client-side scroll cache. Raw bytes for the same reason as grid frames. Browser parity: `GET /sessions/:id/terminal/styled-rows` (`application/octet-stream`) |
 
@@ -304,6 +310,7 @@ reached is an error carrying ego's own sentence, never an empty result.
 | `save_note_image` | `note_id, data_base64, extension` | `String` (absolute path) | Decode base64 image, validate ≤10 MB, write to `config_dir()/note-images/<note_id>/<timestamp>.<ext>` |
 | `delete_note_assets` | `note_id` | `()` | Remove `note-images/<note_id>/` directory recursively (no-op if missing) |
 | `get_note_images_dir` | -- | `String` | Return `config_dir()/note-images/` absolute path |
+| `get_scratchpad_path` | -- | `String` | Return `config_dir()/scratchpad.md` absolute path; creates the file empty when missing, never truncates it |
 | `load_keybindings` | -- | `JSON` | Load keybinding overrides |
 | `save_keybindings` | `base, config` | `()` | Save typed action/key overrides; reject invalid records before persistence |
 | `load_agents_config` | -- | `AgentsConfig` | Load per-agent run configs, including optional model defaults, and `prevent_alt_screen` overrides |
@@ -1169,6 +1176,16 @@ returns the complete installation error chain, checks macOS extraction space,
 and leaves relaunch policy to the existing frontend. It has no HTTP mapping:
 remote clients do not own native updater resources or permission to replace the host.
 
+The neutral `resolve_mutation` action reconciles a stopped uncertain mutation in an
+ended run. Supply `run_id`, `command_id`, `expected_sequence`, exact effect `key`
+and bounded reconciliation `evidence`. It uses the existing effect
+answer authority, preserves the original uncertainty and procedure, records the
+operator disposition with its backend stop proof, releases that effect's resources
+and wakes waiting runs. A stopped observation or the installed script host's
+original-process proof is required; operator evidence alone cannot release a claim.
+Inspect conflicts through the retained `resource_wait` event and snapshot field
+(`resource`, `owner_run`, `owner_effect`). See [the effect ledger](../backend/workflows.md#neutral-asynchronous-effects-and-approvals-005).
+
 ### Scheduled neutral bindings
 
 The existing neutral action accepts trigger source `scheduled` with `kind: "schedule"`,
@@ -1191,6 +1208,8 @@ See [trigger admission](../backend/workflow-trigger-admission.md#scheduled-neutr
 | `get_session_quota_binding` | `sessionId` | `SubscriptionKey \| null` | Return the key bound to the session. |
 | `refresh_provider_quota` | `key` | `Result<QuotaView, string>` | Request a refresh, limited to once per minute per key and subject to registry backoff and authentication policy. |
 
+Quota views include `retry_warning` (boolean), a display-only signal set from the third consecutive transient quota-read failure, even if a retained snapshot is still fresh. Skipped reads and client events do not count. Success or a newer passive quota resets it. Authentication and contract errors remain immediate; cooldowns are unchanged.
+
 `provider-quota-changed` delivers the changed `QuotaView` on both Tauri and `/events`. A `SubscriptionKey` can include an optional `profile`. An unsupported named profile is unavailable; it does not use the default profile.
 
 Claude and Codex usage endpoints read the same registry owner as session quota
@@ -1199,3 +1218,14 @@ has a separate timestamp, so passive Codex window updates retain credits,
 allowed/reached flags and model availability from the last active read. Claude
 retains extra usage and local plan metadata. Codex statistics use only the
 separate App Server `account/usage/read` method, not another quota request.
+
+`open_story_count` uses the existing story action envelope and returns
+`{type:"open_story_count",value:{project,backend,generation,openCount}}`. It counts
+open, non-archived stories across all non-archived plans through the selected
+backend project projection. It returns no story content; unavailable or changed
+backends fail without native or filesystem fallback.
+
+`workflow_neutral_action` accepts `list_runs {}` for project run discovery and
+returns `runs`; `inspect` also returns a `progress` projection with the retained
+graph, node states and pending approvals. The HTTP equivalent remains
+`POST /workflows/neutral/action?path=<project>` with the unchanged action body.

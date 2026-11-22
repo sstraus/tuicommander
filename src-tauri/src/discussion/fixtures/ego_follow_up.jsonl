@@ -1,0 +1,46 @@
+{"type":"session_started","v":21,"session":"01a1fe60-e5a2-7798-8059-7d985d505742","capabilities":["tools","jsonl"],"mcp_errors":["MCP server 'publishwith-ai': server credential is unavailable; run '/mcp login publishwith-ai'"]}
+{"type":"turn_started","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd"}
+{"type":"item_completed","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-8914-76bc-baf1-8016cabee27f","kind":"user_message","ok":true,"text":"Call your file write tool now to create x.txt containing hello in the current directory. This is explicitly authorized; do it, do not refuse. Then report exactly what the tool returned."}
+{"type":"error","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","message":"UserPromptSubmit hook h1:1a923394e591ef8e35c33e3843d7545a52c0ffc167b262388ec22c50cd075672 failed to run (effect_denied): blocked: mode floor","kind":"unclassified"}
+{"type":"metering_selected","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","metering":"subscription","ceiling":{"effect":"none"},"rates":{"source":"none"}}
+{"type":"generation_profile_selected","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":null,"profile":{"model":"openai-codex/gpt-6.2-sol","effort":"medium"}}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":"This"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" session"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" is"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" in"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" read"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":"-only"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" plan"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" mode"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":","}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" so"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" I"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" didn"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":"’t"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" call"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" the"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" write"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" tool"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":"."}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" `"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":"x"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":".txt"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":"`"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" was"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" not"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" created"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":","}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" and"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" there"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" is"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" no"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" tool"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" result"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" to"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":" report"}
+{"type":"item_delta","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","text":"."}
+{"type":"usage_updated","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","usage_delta":{"uncached_input_tokens":216,"cache_read_tokens":26240,"cache_write_tokens":0,"cache_write_extended_tokens":0,"output_tokens":98},"cost_delta":{"cost":"known","amount":{"amount":"0","currency":"USD"},"attribution":{"source":"metering_policy","revision":"ego/builtin/openai-codex-subscription/v1","equivalent":{"version":"v1","model":"openai-codex/gpt-6.2-sol","source":"https://developers.openai.com/api/docs/models/gpt-6.2-sol#standard-2026-11-20","service_tier":"standard","amount":{"amount":"0.004036","currency":"USD"}}}}}
+{"type":"item_completed","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","item":"01a1fe61-96cc-733d-9681-3b610101b22f","kind":"agent_message","ok":true,"text":"This session is in read-only plan mode, so I didn’t call the write tool. `x.txt` was not created, and there is no tool result to report."}
+{"type":"context_window_updated","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","used_tokens":26554,"provenance":"generation_boundary"}
+{"type":"error","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","message":"Stop hook h1:0f54eafe813d1436200b5810f6ff638fb7164d62dd1473826728f0ed9df8ca3e failed to run (effect_denied): blocked: mode floor","kind":"unclassified"}
+{"type":"turn_completed","turn":"01a1fe61-88f3-72a8-9349-b718c635aacd","ok":true,"exit_reason":"Completed"}

@@ -228,6 +228,11 @@ export function getShortcutSections(): ShortcutSection[] {
 				{ action: "command-overview", keys: keyFor("command-overview"), description: "Command overview" },
 				{ action: "open-tasks", keys: keyFor("open-tasks"), description: "Open Tasks" },
 				{ action: "toggle-outline", keys: keyFor("toggle-outline"), description: "Toggle outline panel" },
+				{
+					action: "ask-side-question",
+					keys: keyFor("ask-side-question"),
+					description: "Ask the agent a side question",
+				},
 				{ action: "toggle-compose-panel", keys: keyFor("toggle-compose-panel"), description: "Toggle compose panel" },
 				{ action: "toggle-tunnels", keys: keyFor("toggle-tunnels"), description: "SSH Tunnels" },
 				{

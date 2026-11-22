@@ -596,7 +596,7 @@ describe("terminalsStore", () => {
 		it("can be cleared back to null", () => {
 			testInScope(() => {
 				const id = store.add(makeTerminal());
-				store.update(id, { agentType: "gemini" });
+				store.update(id, { agentType: "agy" });
 				store.update(id, { agentType: null });
 				expect(store.get(id)!.agentType).toBeNull();
 			});

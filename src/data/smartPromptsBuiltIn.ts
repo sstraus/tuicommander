@@ -25,7 +25,7 @@ export const VARIABLE_DESCRIPTIONS: Record<string, string> = {
 	review_decision: "Review status: APPROVED, CHANGES_REQUESTED, or REVIEW_REQUIRED",
 	pr_open_threads: "Open, current review threads of the PR as a fenced untrusted list (max 30)",
 	// Agent/terminal context
-	agent_type: "Active agent type (claude, gemini, codex, etc.)",
+	agent_type: "Active agent type (claude, agy, codex, etc.)",
 	cwd: "Active terminal working directory",
 	// Issue context (resolved from expanded issue in the sidebar)
 	issue_number: "GitHub issue number",

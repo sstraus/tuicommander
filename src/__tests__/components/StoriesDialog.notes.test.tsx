@@ -40,6 +40,8 @@ let notes: (typeof historical)[];
 let append: (action: Record<string, unknown>) => Promise<unknown>;
 
 beforeEach(() => {
+	// This subject exercises an explicitly selected plan, not the project-wide landing view.
+	storiesUi.reveal({ project: "/notes", planId: "plan", storyId: null });
 	storiesUi.setVisibility("all");
 	storiesUi.setStoryType("all");
 	storiesUi.setView("list");

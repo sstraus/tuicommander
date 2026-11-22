@@ -106,6 +106,7 @@ interface UIStoreState {
 
 	// Requested active tab for the git panel (set by external actions like toggle-branches-tab)
 	gitPanelRequestedTab: GitPanelTab | null;
+	gitPanelRequestId: number;
 
 	// Resizable panel widths (persisted). The right-side panels are resized by
 	// PanelResizeHandle, which writes panel.style.width inline and keeps no
@@ -171,6 +172,7 @@ function createUIStore() {
 		detachedPanels: {} as Record<string, string>,
 		githubSectionCollapsed: {} as Record<string, boolean>,
 		gitPanelRequestedTab: null,
+		gitPanelRequestId: 0,
 		settingsNavWidth: SETTINGS_NAV_DEFAULT_WIDTH,
 		settingsExpertMode: false,
 		diffViewMode: "split" as DiffViewMode,
@@ -453,8 +455,11 @@ function createUIStore() {
 
 		/** Open the git panel on the given tab; never closes it. */
 		openGitPanelOnTab(tab: GitPanelTab): void {
-			setState("gitPanelRequestedTab", tab);
-			setExclusivePanel("gitPanelVisible", true);
+			batch(() => {
+				setState("gitPanelRequestedTab", tab);
+				setState("gitPanelRequestId", (id) => id + 1);
+				setExclusivePanel("gitPanelVisible", true);
+			});
 		},
 
 		/**
@@ -466,8 +471,7 @@ function createUIStore() {
 			if (alreadyOpenOnTab) {
 				setExclusivePanel("gitPanelVisible", false);
 			} else {
-				setState("gitPanelRequestedTab", tab);
-				setExclusivePanel("gitPanelVisible", true);
+				actions.openGitPanelOnTab(tab);
 			}
 		},
 

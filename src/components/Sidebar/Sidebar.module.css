@@ -120,9 +120,54 @@
   row-gap: 1px;
 }
 
-.branchTabItem.branchTabNested {
-  margin-left: 14px;
-  width: calc(100% - 14px);
+.branchTabNode,
+.branchTabHead,
+.branchTabChildren {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: relative;
+}
+
+.branchTabChildren {
+  margin-inline-start: 14px;
+}
+
+.branchTabChildren:empty {
+  display: none;
+}
+
+/* Start below the parent dot, pass through each sibling, and stop at the last elbow. */
+.branchTabNode:has(> .branchTabChildren > .branchTabNode) > .branchTabHead::after,
+.branchTabChildren > .branchTabNode::before,
+.branchTabChildren > .branchTabNode::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  background: var(--branch-tab-guide);
+}
+
+.branchTabNode:has(> .branchTabChildren > .branchTabNode) > .branchTabHead::after {
+  inset-block: 18px 0;
+  inset-inline-start: 10px;
+  width: 1px;
+}
+
+.branchTabChildren > .branchTabNode::before {
+  inset-block: -2px 0;
+  inset-inline-start: -4px;
+  width: 1px;
+}
+
+.branchTabChildren > .branchTabNode:last-child::before {
+  height: 16px;
+}
+
+.branchTabChildren > .branchTabNode::after {
+  inset-block-start: 13px;
+  inset-inline-start: -4px;
+  width: 9px;
+  height: 1px;
 }
 
 .subagentList {
@@ -774,6 +819,10 @@
   animation: pulse-opacity 1.5s ease-in-out infinite;
 }
 
+.branchIconBackground {
+  color: var(--activity);
+}
+
 .branchIconQuestion {
   color: var(--attention);
   animation: pulse-opacity 1s ease-in-out infinite;
@@ -898,6 +947,7 @@
 
 /* Branch tab list — collapsible terminal tab list under branch row */
 .branchTabList {
+  --branch-tab-guide: color-mix(in srgb, var(--fg-muted) 75%, transparent);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -957,6 +1007,11 @@ button[data-control-layout="row"].branchTabItem {
   background: var(--activity);
   opacity: 1;
   animation: pulse-opacity 1.5s ease-in-out infinite;
+}
+
+.branchTabDotBackground {
+  background: var(--activity);
+  opacity: 1;
 }
 
 .branchTabDotIdle {
@@ -2525,4 +2580,58 @@ button.crossRepoChildren {
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+
+/* "Needs you": waiting sessions whose rows are out of sight. */
+button[data-control-layout="card"].needsYouBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 8px 2px;
+  padding: 6px 9px;
+  border: 1px solid var(--attention);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--attention) 14%, var(--bg-secondary));
+  color: var(--attention);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  flex: none;
+  min-width: 0;
+}
+
+button[data-control-layout="card"].needsYouBanner:hover {
+  background: color-mix(in srgb, var(--attention) 24%, var(--bg-secondary));
+}
+
+.needsYouBannerDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--attention);
+  flex: none;
+}
+
+.needsYouBannerNames {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-secondary);
+  font-weight: 400;
+}
+
+.needsYouBannerArrow {
+  margin-left: auto;
+  flex: none;
+}
+
+.needsYouChip {
+  color: var(--attention);
+  font-weight: 600;
+}
+
+.repoInitialsNeedsYou {
+  box-shadow: 0 0 0 2px var(--attention);
 }

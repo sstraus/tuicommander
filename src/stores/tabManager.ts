@@ -1,4 +1,5 @@
 import { createStore, produce, type SetStoreFunction } from "solid-js/store";
+import { readTabOrderForReload, readTabsForReload, trackTabOrderForReload, trackTabsForReload } from "./tabReload";
 
 /**
  * Base constraint for tab data — every tab must have an id.
@@ -65,7 +66,8 @@ export function orderedThenRemainder(
  * Lives in tabManager because every tab store already imports it and it imports none.
  */
 function createTabOrderingStore() {
-	const [state, setState] = createStore<{ order: string[] }>({ order: [] });
+	const [state, setState] = createStore<{ order: string[] }>({ order: readTabOrderForReload() });
+	trackTabOrderForReload(() => state.order);
 
 	return {
 		state,
@@ -194,11 +196,17 @@ export function activatePaneExclusively(storeName: string): void {
 }
 
 export function createTabManager<T extends BaseTab>(storeName: string = "unknown") {
+	const restored = readTabsForReload<T>(storeName);
 	const [state, setState] = createStore<TabStoreState<T>>({
-		tabs: {} as Record<string, T>,
+		tabs: restored?.tabs ?? ({} as Record<string, T>),
 		activeId: null,
-		counter: 0,
-		_order: [],
+		counter: restored?.counter ?? 0,
+		_order: restored?._order ?? [],
+	});
+	if (restored) tabOrderingStore.insertMany(restored._order);
+	trackTabsForReload(storeName, state, restored?.activeId ?? null, (id) => {
+		setState("activeId", id);
+		activatePaneExclusively(storeName);
 	});
 
 	registerPaneDeactivator(storeName, () => setState("activeId", null));

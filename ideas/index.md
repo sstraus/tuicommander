@@ -84,6 +84,7 @@ Feature concepts under evaluation for TUICommander. Each idea lives in its own f
 
 | Status | Idea | File |
 |--------|------|------|
+| `moved` | Discussion: side questions answered in a cached headless fork of the agent session, per-terminal panel with classified answers | [discussion.md](discussion.md) |
 | `moved` | Remote Settings Context (context-aware settings panel) | [remote-settings-context.md](remote-settings-context.md) |
 | `moved` | Remote Daemon (tuicommander-remote + SSH tunnels + connection manager) | [remote-daemon.md](remote-daemon.md) |
 | `moved` | CI Heal Auto-Loop | [ci-heal-auto-loop.md](ci-heal-auto-loop.md) |

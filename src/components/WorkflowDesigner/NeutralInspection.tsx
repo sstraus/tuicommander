@@ -1,11 +1,20 @@
 import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { subscribeEvents } from "../../transport";
 import { Button } from "../ui/Button";
-import { Input } from "../ui/Input";
 import { Textarea } from "../ui/Textarea";
 import { RetainedCorrections } from "./CorrectionRegion";
-import type { Inspection, Preview } from "./neutralInspectionTypes";
+import type { JsonValue } from "./catalogTypes";
+import { activityTitle } from "./neutralGraph";
+import type { Inspection, Preview, RunView } from "./neutralInspectionTypes";
+import { RunGraph } from "./RunGraph";
+import { RunList } from "./RunList";
+import { RunSummary } from "./RunSummary";
+import { StartRun } from "./StartRun";
 import type { useNeutralDraft } from "./useNeutralDraft";
+import s from "./WorkflowDesigner.module.css";
+
+const record = (value: JsonValue | undefined): Record<string, JsonValue> =>
+	value && typeof value === "object" && !Array.isArray(value) ? value : {};
 
 export function NeutralInspection(props: { state: ReturnType<typeof useNeutralDraft>; project: string }) {
 	const [sample, setSample] = createSignal("{}");
@@ -13,6 +22,28 @@ export function NeutralInspection(props: { state: ReturnType<typeof useNeutralDr
 	const [preview, setPreview] = createSignal<Preview>();
 	const [inspection, setInspection] = createSignal<Inspection>();
 	const [run, setRun] = createSignal("");
+	const [runs, setRuns] = createSignal<RunView[]>([]);
+	let listGeneration = 0;
+	let listTimer: ReturnType<typeof setTimeout> | undefined;
+	function scheduleRuns() {
+		if (listTimer !== undefined) return;
+		listTimer = setTimeout(() => {
+			listTimer = undefined;
+			void refreshRuns().catch((cause) => props.state.setError(String(cause)));
+		}, 100);
+	}
+	async function refreshRuns() {
+		const generation = ++listGeneration;
+		const result = await props.state.call({ action: "list_runs" }, "runs");
+		if (!disposed && generation === listGeneration) setRuns(result);
+	}
+	createEffect(() => {
+		props.project;
+		readGeneration++;
+		setRun("");
+		setInspection(undefined);
+		void refreshRuns().catch((cause) => props.state.setError(String(cause)));
+	});
 	createEffect(
 		on(
 			() => props.state.definition(),
@@ -32,6 +63,7 @@ export function NeutralInspection(props: { state: ReturnType<typeof useNeutralDr
 		{
 			"workflow-run-changed": (payload) => {
 				const event = payload as { repo_path?: unknown; payload?: { runId?: unknown } } | null;
+				if (event?.repo_path === props.project) scheduleRuns();
 				if (event?.repo_path === props.project && event.payload?.runId === run())
 					void inspect().catch((cause) => {
 						if (!disposed) props.state.setError(String(cause));
@@ -40,6 +72,7 @@ export function NeutralInspection(props: { state: ReturnType<typeof useNeutralDr
 		},
 		{
 			onResync: () => {
+				void refreshRuns().catch((cause) => props.state.setError(String(cause)));
 				if (run())
 					void inspect().catch((cause) => {
 						if (!disposed) props.state.setError(String(cause));
@@ -54,6 +87,7 @@ export function NeutralInspection(props: { state: ReturnType<typeof useNeutralDr
 		.catch((cause) => props.state.setError(String(cause)));
 	onCleanup(() => {
 		disposed = true;
+		clearTimeout(listTimer);
 		unlisten?.();
 	});
 	return (
@@ -111,9 +145,25 @@ export function NeutralInspection(props: { state: ReturnType<typeof useNeutralDr
 						<For each={result().activities}>
 							{(activity) => (
 								<details open>
-									<summary>Activity {activity.activity} · sample input and effect intent</summary>
-									<pre>{JSON.stringify(activity.inputs, null, 2)}</pre>
-									<p>{activity.unavailable_reason}</p>
+									<summary>
+										{activityTitle(props.state.definition(), props.state.editor().labels, activity.activity)} · sample
+										input and effect intent
+									</summary>
+									<dl class={s.runSummary}>
+										<For each={Object.entries(activity.inputs)}>
+											{([name, datum]) => (
+												<>
+													<dt>{name}</dt>
+													<dd>
+														{datum.state.state === "present" ? JSON.stringify(datum.state.value) : datum.state.state}
+													</dd>
+												</>
+											)}
+										</For>
+									</dl>
+									<Show when={activity.unavailable_reason}>
+										<p>{activity.unavailable_reason}</p>
+									</Show>
 									<h5>Effect preparation</h5>
 									<pre>{JSON.stringify(activity.effect_intent, null, 2)}</pre>
 									<h5>Output schema · {activity.outcomes.join(", ")}</h5>
@@ -124,61 +174,77 @@ export function NeutralInspection(props: { state: ReturnType<typeof useNeutralDr
 					</section>
 				)}
 			</Show>
-			<h4>Run inspection</h4>
-			<label>
-				Run ID
-				<Input
-					value={run()}
-					onInput={(event) => {
-						setRun(event.currentTarget.value);
-						setInspection(undefined);
-					}}
-				/>
-			</label>
-			<Button disabled={!run()} onClick={() => void props.state.perform(() => inspect())}>
-				Inspect retained run
-			</Button>
+			<StartRun
+				state={props.state}
+				project={props.project}
+				onStarted={(result) => {
+					const id = record(result.snapshot.run).id;
+					if (typeof id !== "string") return;
+					readGeneration++;
+					setRun(id);
+					setInspection(result);
+				}}
+			/>
+			<RunList
+				runs={runs()}
+				selected={run()}
+				onSelect={(id) => {
+					readGeneration++;
+					setRun(id);
+					setInspection(undefined);
+					void props.state.perform(() => inspect());
+				}}
+			/>
 			<Show when={inspection()}>
 				{(result) => (
 					<section aria-label="Retained run">
-						<h5>Current node and execution status</h5>
-						<pre>
-							{JSON.stringify(
-								{
-									node: result().snapshot.node,
-									execution: result().snapshot.execution,
-									status: result().snapshot.status,
-								},
-								null,
-								2,
-							)}
-						</pre>
-						<h5>Output and activity results</h5>
-						<pre>
-							{JSON.stringify(
-								{ outputs: result().snapshot.outputs, activity_outputs: result().snapshot.activity_outputs },
-								null,
-								2,
-							)}
-						</pre>
-						<h5>Wait and subflow boundary</h5>
-						<pre>
-							{JSON.stringify(
-								{
-									wait_due_ms: result().snapshot.wait_due_ms,
-									active_scope: result().snapshot.active_scope,
-									parent: result().snapshot.parent,
-									parent_fence: result().snapshot.parent_fence,
-								},
-								null,
-								2,
-							)}
-						</pre>
-						<RetainedCorrections scope={result().snapshot.active_scope} />
-						<h5>Effects, failures and uncertainty</h5>
-						<pre>{JSON.stringify(result().snapshot.effects, null, 2)}</pre>
-						<h5>Recorded path events</h5>
-						<pre>{JSON.stringify(result().events, null, 2)}</pre>
+						<Show when={result().progress}>{(progress) => <RunGraph progress={progress()} />}</Show>
+						<RunSummary
+							inspection={result()}
+							definition={result().progress?.publication.definition ?? props.state.definition()}
+							labels={result().progress?.publication.editor.labels ?? props.state.editor().labels}
+						/>
+						<details>
+							<summary>Raw snapshot and events</summary>
+							<h5>Current node and execution status</h5>
+							<pre>
+								{JSON.stringify(
+									{
+										node: result().snapshot.node,
+										execution: result().snapshot.execution,
+										status: result().snapshot.status,
+									},
+									null,
+									2,
+								)}
+							</pre>
+							<h5>Output and activity results</h5>
+							<pre>
+								{JSON.stringify(
+									{ outputs: result().snapshot.outputs, activity_outputs: result().snapshot.activity_outputs },
+									null,
+									2,
+								)}
+							</pre>
+							<h5>Wait and subflow boundary</h5>
+							<pre>
+								{JSON.stringify(
+									{
+										wait_due_ms: result().snapshot.wait_due_ms,
+										active_scope: result().snapshot.active_scope,
+										parent: result().snapshot.parent,
+										parent_fence: result().snapshot.parent_fence,
+									},
+									null,
+									2,
+								)}
+							</pre>
+							<RetainedCorrections scope={result().snapshot.active_scope} />
+							<h5>Effects, failures and uncertainty</h5>
+							<pre>{JSON.stringify(result().snapshot.effects, null, 2)}</pre>
+							<h5>Recorded path events</h5>
+							<pre>{JSON.stringify(result().events, null, 2)}</pre>
+						</details>
 						<Button
 							disabled={result().events.length < 500}
 							onClick={() => void props.state.perform(() => inspect(result().events.at(-1)?.sequence ?? 0))}

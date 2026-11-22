@@ -189,6 +189,137 @@ async fn rate_limit_keeps_last_value_and_honours_retry_after() {
     assert_eq!(owner.reads(), 3);
 }
 
+/// Catches: alarming on the first two failed quota reads or counting skipped reads.
+#[tokio::test]
+async fn retry_warning_starts_on_third_actual_transient_read() {
+    let (clock, owner, registry) = setup(|_| {});
+    let k = key("retry-display");
+    registry.ensure(&k).await;
+    clock.advance(CADENCE_MS);
+    for (index, error) in [
+        QuotaError::Network("offline".into()),
+        QuotaError::RateLimited {
+            retry_after_secs: Some(120),
+        },
+        QuotaError::Network("offline again".into()),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        owner.answer(Err(error));
+        let view = registry.ensure(&k).await;
+        assert_eq!(view.retry_warning, index == 2, "failure {}", index + 1);
+        assert!(view.snapshot.is_some(), "keep the last credits reading");
+        assert_eq!(
+            serde_json::to_value(&view).unwrap()["retry_warning"],
+            index == 2
+        );
+        for _ in 0..4 {
+            assert_eq!(registry.ensure(&k).await.retry_warning, index == 2);
+        }
+        assert_eq!(owner.reads(), index + 2, "backoff reads must be skipped");
+        clock.advance(600_000);
+    }
+    registry.ensure(&k).await;
+    assert!(
+        !registry.get(&k).retry_warning,
+        "successful read resets the series"
+    );
+    clock.advance(CADENCE_MS);
+    owner.answer(Err(QuotaError::Network("new series".into())));
+    assert!(!registry.ensure(&k).await.retry_warning);
+}
+
+/// Catches: freshness hiding the third failed manual read even though no read recovered.
+#[tokio::test]
+async fn forced_read_warning_does_not_wait_for_cached_quota_to_expire() {
+    let (clock, owner, registry) = setup(|_| {});
+    let k = key("forced-retry-display");
+    registry.ensure(&k).await;
+    // Respect the refresh dedup interval after the initial successful read.
+    for (index, elapsed) in [60_000, 60_000, 120_000].into_iter().enumerate() {
+        clock.advance(elapsed);
+        owner.answer(Err(QuotaError::Network("offline".into())));
+        let view = registry.refresh(&k).await.unwrap();
+        assert_eq!(view.state, QuotaState::Fresh);
+        assert_eq!(view.retry_warning, index == 2);
+    }
+    assert_eq!(owner.reads(), 4);
+}
+
+/// Catches: passive recovery retaining a prior warning, or an old observation
+/// falsely clearing a genuine run of failed quota reads.
+#[tokio::test]
+async fn newer_passive_quota_resets_retry_display_without_shortening_backoff() {
+    let (clock, owner, registry) = setup(|_| {});
+    let k = key("passive-retry-display");
+    registry.ensure(&k).await;
+    clock.advance(CADENCE_MS);
+    for _ in 0..3 {
+        owner.answer(Err(QuotaError::Network("offline".into())));
+        registry.ensure(&k).await;
+        clock.advance(600_000);
+    }
+    owner.answer(Err(QuotaError::Network("still offline".into())));
+    assert!(registry.ensure(&k).await.retry_warning);
+    assert!(!registry.observe(&k, snapshot(T0 - 1, 1.0, QuotaSource::Passive)));
+    assert!(registry.get(&k).retry_warning);
+    // Newer than the stored value, but still stale: freshness cannot hide an early read.
+    assert!(registry.observe(
+        &k,
+        snapshot(clock.now_ms() - CADENCE_MS - 1, 12.0, QuotaSource::Passive)
+    ));
+    let recovered = registry.get(&k);
+    assert!(!recovered.retry_warning);
+    assert!(matches!(recovered.state, QuotaState::Backoff { .. }));
+    let reads = owner.reads();
+    registry.ensure(&k).await;
+    assert_eq!(
+        owner.reads(),
+        reads,
+        "passive recovery must not force another read"
+    );
+}
+
+/// Catches: delayed login/schema errors accidentally hidden by transient tolerance.
+#[tokio::test]
+async fn auth_and_contract_failures_remain_immediate_without_retry_warning() {
+    for error in [
+        QuotaError::Auth("401".into()),
+        QuotaError::Contract("changed".into()),
+    ] {
+        let (clock, owner, registry) = setup(|_| {});
+        let k = key("immediate");
+        registry.ensure(&k).await;
+        for _ in 0..2 {
+            clock.advance(600_000);
+            owner.answer(Err(QuotaError::Network("offline".into())));
+            registry.ensure(&k).await;
+        }
+        clock.advance(600_000);
+        owner.answer(Err(error));
+        let view = registry.ensure(&k).await;
+        assert!(matches!(
+            view.state,
+            QuotaState::AuthInvalid | QuotaState::ContractError { .. }
+        ));
+        assert!(!view.retry_warning);
+        clock.advance(600_000);
+        *owner.fingerprint.lock() = Some("login-2".into());
+        owner.answer(Err(QuotaError::Network("new series".into())));
+        let new_series = registry.ensure(&k).await;
+        assert_eq!(
+            owner.reads(),
+            5,
+            "the new transient read must actually happen"
+        );
+        assert!(
+            !new_series.retry_warning,
+            "non-transient failure breaks the series"
+        );
+    }
+}
+
 /// Catches: background reads for keys whose tabs are closed.
 #[tokio::test]
 async fn unbound_key_is_not_scheduled() {
@@ -230,7 +361,8 @@ async fn contract_error_hides_the_stale_value() {
     assert!(matches!(view.state, QuotaState::ContractError { .. }));
 }
 
-/// Catches: a weekly window shown as five-hour because a provider calls it "primary".
+/// Catches: a weekly window shown as five-hour because a provider calls it "primary",
+/// or a durationless percentage mislabeled as a credit quantity.
 /// Codex reported its 10080-minute window as `primary` on 2026-11-12.
 #[test]
 fn windows_are_classified_by_duration_not_field_name() {
@@ -249,10 +381,10 @@ fn windows_are_classified_by_duration_not_field_name() {
     ] {
         assert_eq!(classify(Some(seconds)), kind, "{seconds} s");
     }
-    let credits = QuotaWindow::from_duration(26.0, None, None, None).unwrap();
+    let usage = QuotaWindow::from_duration(26.0, None, None, None).unwrap();
     assert_eq!(
-        (credits.kind, credits.label.as_str()),
-        (WindowKind::Other, "credits")
+        (usage.kind, usage.label.as_str()),
+        (WindowKind::Other, "usage")
     );
     assert!(QuotaWindow::from_duration(f64::NAN, Some(18_000), None, None).is_none());
 }

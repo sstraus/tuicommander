@@ -307,9 +307,10 @@ Located inside `#toolbar`, center section. Background matches toolbar (`--bg-pri
 ```
 
 Tab anatomy: `[agent badge?] [name, truncated] [close × on hover]`
-- Agent badge: small colored prefix (e.g. `C claude`, `G gemini`)
+- Agent badge: small colored prefix (e.g. `C claude`, `G agy`)
 - Close button: invisible by default, `opacity: 1` on tab hover
 - New-tab and scroll actions use shared stretch `Button` geometry with square edges (22px toolbar density, 44px at touch widths). The tab-bar container grows with these controls. Close and global-workspace actions use shared compact Buttons; inline rename uses a shared compact Input.
+- Scroll arrows overlay the tab list. Their opaque `--bg-secondary` surface must take precedence over the shared ghost-button background so tab labels cannot show through the arrows. Hover uses `--bg-highlight`.
 
 ### Status Bar
 

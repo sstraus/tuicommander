@@ -1,5 +1,21 @@
 # Workflow definitions
 
+## Graph-first neutral Designer
+
+The production Designer renders `NeutralDefinition.control` as a layered 2D graph.
+Catalog descriptors supply activity names, configuration schemas and outcome ports;
+neutral controls retain their declared ports. Click-to-connect or the named route
+selector updates only one source/port mapping. Selection, fit and zoom are local
+presentation state and never alter the definition or editor metadata. Layout is
+derived, not persisted and not read by the execution owner.
+
+Typed root input/return forms and mappings operate on the same draft as graph
+editing. Preview/retained inspection and advanced definition/trigger authoring are
+separate workspaces. All requests still use `workflow_neutral_action`; no IPC,
+HTTP or MCP action/schema changes accompany this presentation change. Preview
+continues to use backend intent preparation, never a client-side simulator.
+See [Designer behavior and boundaries](../frontend/workflow-designer.md).
+
 The internal neutral runtime has a typed HTTP adapter with pinned installed
 connector contracts, separate network/write grants and bounded cursor results for
 collections. See [HTTP connector contracts](workflow-http-connectors.md). Native
@@ -26,6 +42,15 @@ Verification check names come only from published constant `request` bindings on
 host. Dynamic check requests and names supplied only in start inputs are refused.
 After restart, volatile native bindings require trusted backend rebind; no caller
 metadata or grant registry is migrated into the run database.
+A scheduled or GitHub source rebinds its own running runs from the retained
+closure once per admission, before its first (non-superseding) pass. A run that
+cannot be rebound is logged (`source=workflows`, run id) and stays unbound; it
+does not block other runs or any admission of the project. The next admission
+retries it. The same holds when a
+pending intent waits behind an active run that cannot be read or cancelled: the
+intent is logged and skipped, and the other intents of the project still start.
+An unavailable host, or a failed read of the trigger store list (active runs or
+pending intents), still fails the pass.
 
 Authenticated Owner may answer any bound native run. Agent may answer only its
 own run with both captured and current Operator authority. The ledger still
@@ -47,7 +72,7 @@ or authenticated caller. Request fields never grant service authority.
 Actions: `catalog`, `templates`, `create_draft`, `list_drafts`, `get_draft`, `update_draft`,
 `validate`, `preview`, `publish`, `get_publication`, `clone_publication`,
 `save_operation`, `save_preset`, `get_preset`, `start`, `inspect`, `events`,
-`cancel`, `answer`, `start_delivery`, `delivery_runs`. The MCP input schema derives from the same `NeutralAction`
+`cancel`, `answer`, `operator_answer`, `resolve_mutation`, `start_delivery`, `delivery_runs`. The MCP input schema derives from the same `NeutralAction`
 used by HTTP and desktop. Internal effect observation/completion commands are
 not public variants. Neutral triggers remain a 010 handoff; legacy bindings keep
 their existing transports.
@@ -158,7 +183,7 @@ reconciliation responsibility.
 
 Slice F exposes `start_graph {target:{type:story|plan,id},expected_revision?,definition_id,definition_revision,request_id,limits?,secrets?}` through the existing owning-daemon service. `secrets` is a map of environment names to values for the agent children of this run only (PTY spawn environment and ACP connection environment). The values stay in daemon memory: run state, events, receipts, prompts, the launch journal and logs hold the sorted names only (`secret_names` on the run snapshot). `TUIC_SESSION` and `TUIC_PARENT` are refused. Completion, cancellation and a daemon restart drop the binding; a later agent launch of a run whose binding is gone fails before spawn and pauses the run. Story starts require the current native revision and pin the selected publication; the request ID is bound to its payload. Omitted limits use Rust defaults. Public plan starts use the same graph-root entry point and slice E dispatch. The Plans and Stories dialog has no plan start control; its selector handles stories only. The `workflow action=run` MCP entry uses an inline schema generated from `RunAction` and the public `RunCommand` variants; it returns the same scoped snapshots and cursor-ordered events as IPC/HTTP. Run history shows pinned activations, decisions/evidence, repair counters, pause targets and complete event payloads across pages. Graph recovery uses `resume_graph {execution_id,activation_id,resolution}` after answering pending input; pause and cancel use the existing sequence-fenced commands. Legacy runs offer inspection and cancellation in the UI. No new persistence or client scheduler is added.
 
-Workflow definitions are owned by a canonical project path and stored in `workflows.sqlite3` under the TUICommander configuration directory. A definition has a mutable draft revision and immutable published revisions. Editing a draft uses an expected revision; publishing validates the graph, resolves pinned story-template revisions, and inserts a new published row in one SQLite transaction. A run must pin a published revision; this definition layer does not execute nodes.
+Workflow definitions are owned by a canonical project path and stored in `tuic.sqlite3` under the TUICommander configuration directory. A definition has a mutable draft revision and immutable published revisions. Editing a draft uses an expected revision; publishing validates the graph, resolves pinned story-template revisions, and inserts a new published row in one SQLite transaction. A run must pin a published revision; this definition layer does not execute nodes.
 
 Each definition has a `closure` policy. Existing records migrate to `human`, and new drafts default to `human`; this legacy policy name means an explicit approval transition, which may be performed by any trusted caller. `update_closure` edits a draft with an expected revision. `automatic` publishes only for a story delivery graph that has a Gate node whose `pass` edge leads to the Judge and a pinned `evidencePolicy`. No person moves an automatic story to Review: when the implementer reports completed and the story is still in progress at the reported revision, the run checks exactly the non-manual criteria that report proved and submits the story, as the managed actor `workflow:<implementer attempt id>` in the story transition history. It does this before the reviewer starts, so the review binds the submitted revision. A retried turn resumes a submission that a lost response interrupted only when every later story transition is that actor's own criterion check. The run never checks a `[MANUAL]` criterion; such a story moves to QA, and the run pauses with `Story <id> awaits manual QA` before any reviewer starts. The Judge then closes the story only when the gate passes and the reviewer's typed evidence validates (GREEN checks, REALITY); a story with a `RED:` criterion also needs RED proof. Under automatic closure the daemon, not the reviewer, runs the RED test: the reviewer's RED command must extend a pinned `requiredChecks` command, and the daemon runs it in a detached checkout of the pre-fix commit. It records a durable `RedReceiptRecorded` receipt (argv, commit, tree, exit code, count of output lines naming the test, log digest). The Judge replaces the reviewer's reported exit code, match count and log digest with the receipt; a missing receipt, a zero exit or no matching line leaves the story in Review. A failed gate or missing proof leaves the story in Review with the reason on the run. Published revisions retain their pinned closure policy.
 
@@ -210,7 +235,10 @@ existing rows are not migrated. Focused runtime validation passed, including
 corrupt-history isolation, contract-read error recovery, nested collection/subflow
 execution and refused SQLite-write retry. This internal integration does **not**
 enable a public neutral start or operational cutover. Preparation is not admission or a dispatch permit. A persisted dispatch
-claim is never automatically invoked again after restart. Full effect correlation,
+claim is never automatically invoked again after restart. The only exception is an
+operator answer: a read-only script whose output was lost asks "run again or
+abandon" and, when approved, dispatches the same effect key once more (see
+`workflow-script-interface.md`). Full effect correlation,
 approval, uncertainty resolution and native stop/resource observation belong to
 005; real native service adapters and freshness evidence remain required by 008.
 
@@ -240,6 +268,10 @@ retained bodies are never permits. No new IPC/HTTP/MCP start surface is exposed
 by this internal integration.
 
 ## Legacy engine removed (3034-365e)
+
+Superseded on 2026-11-21 by [Persistence](persistence.md): the stores below were
+replaced without migration and their `.legacy-workflows.bak` copies are deleted
+at startup. The table records what the 3034-365e build removed.
 
 The role/kind graph engine, its definitions, runs, bindings, host routing policy,
 migration converter and run history are deleted. Only the neutral engine and the
@@ -607,11 +639,42 @@ Run-store schema22 adds only a transactionally maintained resource projection
 of this ledger. Trusted preparation supplies mutation classification and resolved
 resource keys. Native adapters retain their own permission and ownership checks;
 the projection is not a replacement sandbox or another queue. Mutation claims
-commit with dispatch and release only after a validated known result AND proven
-stop. Cancellation and run expiry can request stop but cannot prove rollback or
-release. Late stop/result observations remain inspectable on an ended run and
+commit with dispatch. A conflict commits a `resource_wait` effect event and snapshot
+field with `resource`, `owner_run` and `owner_effect`; inspection and run cursor
+notifications expose the wait. An unchanged conflict does not append more events.
+Claims release after a validated known result AND proven stop, or explicit terminal
+mutation reconciliation. Cancellation and run expiry can request stop but cannot
+prove rollback or release. Late stop/result observations remain inspectable on an ended run and
 cannot reopen its graph. Existing domain-shaped questions and the Git-specific
 command journal are not called as generic neutral services.
+
+To reconcile an uncertain mutation after its run is cancelled, expired, failed or
+otherwise ended, inspect its retained invocation and reconciliation procedure first.
+Stop the original operation and complete that procedure, then submit
+`resolve_mutation` with `run_id`, a fresh `command_id`, `expected_sequence`, the exact
+`key` and nonblank `evidence` (at most 4096 bytes) explaining the
+reconciliation. The existing effect-answer authority check applies unchanged.
+That check needs the in-memory run binding that only start or trigger creates.
+After a restart, the refusal (404) tells the operator to send the run's original
+start request again to rebind it, then retry.
+The backend requires either a retained `observation.stopped` or, for a pinned
+script, successful `original_stopped` proof from its installed host. The latter
+also recovers an ended in-flight effect whose completion callback was lost.
+Operator evidence alone cannot release a claim. Missing proof returns a diagnostic
+that names the effect and asks the operator to stop the original operation and
+complete its retained reconciliation procedure. Remote adapters without recorded
+stop evidence or a service-specific proof remain blocked.
+The command records `mutation_resolution: {evidence, stop_proof}`, where
+`stop_proof` is `recorded_observation` or `original_process_gone`, and releases only that
+effect's claims; the original uncertain observation, procedure and terminal graph
+remain unchanged. Late callbacks cannot replace the disposition. Active runs
+and empty evidence are refused. No script or external write is
+repeated. Every committed effect change wakes waiting actors; a released resource
+needs no repeated start request. Exact receipt retries do not trigger another wake.
+
+On non-Unix platforms, resolution requires a recorded stopped observation: the
+host process probe cannot establish durable stop proof after restart. Resolution
+may terminate and reap a surviving original process owned by this application.
 
 ### Neutral model ownership (006, implementation in progress)
 
@@ -1014,6 +1077,8 @@ The installed configured catalog adds `agent.role@1` (`host.agent.role@1`). It u
 
 The host returns `report: {effect, publication, role, source, observed_artifact, identity, report}`. The effect contains run/execution/activation/attempt; identity comes from the observed ACP connection/session/generation. The payload is checked against the pinned report schema. `native.agent.report.read@1` accepts `{report: EffectKey, source}` and resolves the stopped original effect in the same run, refusing foreign/stale sources, changed artifacts and incomplete/uncertain results. Current native authority remains mandatory for every tool. Model output cannot choose an ownership envelope or turn a report into publication consent.
 
+`save_subflow` accepts `expected_version`, an operation `id` and a `publication: PublicationRef` of the same project. The backend loads that exact publication and builds the reusable operation itself: handler `host.subflow@1`, a `PublicationPin` whose `sha256` is the backend `content_digest` of the stored publication, and the child's inputs, subject, outputs and outcomes. Callers never supply a digest; a foreign project is refused with the publication-project refusal, and the save goes through the same immutable-version and interface checks as `save_operation`. The Designer's **Published workflows** palette uses it for **Add as subflow** and reuses an operation already pinned to the same revision.
+
 `save_child_dispatch` accepts `expected_version`, an operation `id`, an exact `publication: PublicationPin`, and `cohort: {plan, plan_revision, source, stories: [{id, revision}]}`. It creates an immutable reusable operation through the existing save/catalog path, using the registered `host.story.subflow@1` handler. The child interface must require the cohort and workspace and return `receipt` from `native.story.cohort.observe@1`, routing its `completed`/`blocked` outcomes directly. Admission checks the selected project's real story backend, exact plan/source and each existing story revision. The input cohort must equal the saved snapshot; cross-project references cannot widen inherited scope.
 
 Children run as pinned frames in the same run owner, retaining their transitive publications and typed mappings. They do not launch terminals or a second scheduler. The native observation retains its effect identity, ordered cohort and observed stories. It reports completed only when every selected story is Done; otherwise it reports blocked. Lost replies, cancellation, uncertain effects and resource retention use the existing effect ledger and frame joins. No new write is inferred from missing evidence. Ordered cohorts retain order as data; `integration_barrier: not_attested` and individually blocked `integration_obligations` (combined artifact, independent batch review and FIX re-entry) explicitly block any claim of combined-artifact critic, independent batch approval or FIX re-entry parity. Those obligations require their own configured graph and evidence.
@@ -1192,3 +1257,30 @@ The proposed seeded-plan composition configures a limit of eight, a sequential c
 one pinned combined-artifact reviewer and an eight-round `LoopContract`; these
 limits are not global engine rules. The verdict receipt includes `repeat` for
 ordinary typed loop-carried data.
+
+### Live neutral run presentation
+
+`list_runs {}` on the shared neutral action returns `{type:"runs",value:[...]}`
+for the resolved project, newest first. Entries include `id`, `publication`
+(`project,id,revision`), display `name`, execution `status`, `current_node`,
+`waiting_on_approval`, `started_ms` and `updated_ms`. The display name is the
+current draft name (or publication ID when no draft remains); execution uses
+only the retained publication. This is a read-only action without a required
+installed execution host. IPC `workflow_neutral_action`, HTTP
+`POST /workflows/neutral/action?path=...` and MCP `workflow neutral` share it.
+
+`inspect` additionally returns `progress`: the retained active publication and
+editor metadata, node states from full verified replay, timestamps and current
+unanswered approval keys/questions. Its raw event page remains cursor-limited.
+An approval is presented only while the run and question deadlines are live,
+the run is running, and the effect is neither answered, cancelling nor observed.
+Progress presentation grants no authority. Dialog answers use the existing
+`answer` or typed `operator_answer` with exact effect key, sequence and revision.
+Question creation/revision events send the existing mobile push; ordinary run
+cursor events do not repeat that push.
+
+`neutral_run_summaries` is a disposable presentation cache, updated in the same transaction as run creation and execution decisions. Listing reads all projected active runs and at most 50 recent terminal/unreadable runs instead of replaying each history. Startup recovery projects older valid runs; lazy backfill handles at most 50 uncached histories per request and labels unreadable histories individually. Explicit inspection still verifies the complete ledger. Summary writes are intentionally atomic with the ledger; a SQL failure aborts both rather than publishing an inconsistent cursor. Sequence-guarded updates prevent slow recovery readers from replacing newer committed summaries, and recent ordering uses run creation order rather than cache insertion order. Transient lock errors remain retryable. This additive table grants no execution authority and older owners can ignore it.
+
+Inspection includes `server_now_ms`; clients schedule expiry using the remaining server lifetime with a one-second retry floor, so clock skew cannot cause zero-delay request loops. Timer waits have their own `timer_wait` node state.
+
+Run progress also projects optional resource-owner waits as `resource_waits` with resource, owning run and effect; the UI distinguishes these waits from approval and execution.

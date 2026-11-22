@@ -1,20 +1,20 @@
 //! The `agent` surface per caller role, in the catalogue and at dispatch (story 2805).
 //!
-//! The role comes only from identity TUIC wrote at spawn: the session parent
-//! link and the fixed capability set. No argument, message or client name is read.
+//! The role comes only from identity TUIC wrote: the session parent link and the
+//! orchestrator registration. No argument, message or client name is read.
 //!
-//! Three roles. A managed child keeps mail only. An agent adds `spawn`. The
-//! orchestrator keeps every action. The orchestrator is a registered peer in
-//! `orchestrator_peers` (Boss, 2026-11-07: the coordinator registers with
-//! `orchestrator=true`). A caller with no registered identity keeps the full
-//! surface: there is no identity to narrow it by. A managed child that registers
-//! `orchestrator=true` stays a managed child: the parent link is checked first.
+//! Two roles. An agent has mail and `spawn`. The orchestrator keeps every action.
+//! The orchestrator is a registered peer in `orchestrator_peers` (Boss,
+//! 2026-11-07: the coordinator registers with `orchestrator=true`). A caller with
+//! no registered identity keeps the full surface: there is no identity to narrow
+//! it by. A spawned child that registers `orchestrator=true` stays an agent: the
+//! parent link is checked first. The mail-only managed-child role was removed
+//! with the `children` capability (Boss, 2026-11-20).
 
 use std::sync::{Arc, LazyLock};
 
 use serde_json::{Value, json};
 
-use crate::agent_capabilities::Capability;
 use crate::state::AppState;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -22,10 +22,8 @@ pub(super) enum CallerRole {
     /// Every action: a registered orchestrator, or a caller with no registered identity.
     #[default]
     Orchestrator,
-    /// May `spawn`: a root session or a child granted `children`, not registered as orchestrator.
+    /// May `spawn`: any bound session not registered as orchestrator.
     Agent,
-    /// A managed child without the `children` capability.
-    ManagedChild,
 }
 
 impl CallerRole {
@@ -33,15 +31,12 @@ impl CallerRole {
         match self {
             Self::Orchestrator => "orchestrator",
             Self::Agent => "agent",
-            Self::ManagedChild => "managed_child",
         }
     }
 }
 
-/// `agent` actions a managed child keeps. `register` stays: it is the binding repair path.
-const CHILD_AGENT_ACTIONS: &[&str] = &["register", "list_peers", "send", "inbox", "wait", "help"];
-
-/// `agent` actions an agent keeps: the child set plus `spawn` and the task actions of its spawn.
+/// `agent` actions an agent keeps: mail, `register` (the binding repair path),
+/// `spawn` and the task actions of its spawn.
 const AGENT_ROLE_ACTIONS: &[&str] = &[
     "register",
     "list_peers",
@@ -59,15 +54,11 @@ fn role_actions(role: CallerRole) -> Option<&'static [&'static str]> {
     match role {
         CallerRole::Orchestrator => None,
         CallerRole::Agent => Some(AGENT_ROLE_ACTIONS),
-        CallerRole::ManagedChild => Some(CHILD_AGENT_ACTIONS),
     }
 }
 
 /// The one line the instructions keep for an agent.
 pub(super) const AGENT_MISSING_LINE: &str = "- Agent: `agent` has no launch or subscribe/ack/unsubscribe; they belong to the orchestrator. When your task needs one, report BLOCKED to your parent or orchestrator with `agent action=send`.\n";
-
-/// The one line the instructions keep for a managed child.
-pub(super) const CHILD_MISSING_LINE: &str = "- Managed child: `agent` has no spawn, launch, task_get/task_cancel or subscribe/ack/unsubscribe. When your task needs one, report BLOCKED to your parent with `agent action=send`.\n";
 
 pub(super) fn resolve(state: &Arc<AppState>, mcp_session_id: Option<&str>) -> CallerRole {
     let Some(caller) =
@@ -75,22 +66,26 @@ pub(super) fn resolve(state: &Arc<AppState>, mcp_session_id: Option<&str>) -> Ca
     else {
         return CallerRole::Orchestrator;
     };
+    // A spawned child stays an agent even if it registers `orchestrator=true`:
+    // the parent link is checked first.
     if state.session_maps.session_parent.contains_key(&caller) {
-        let may_spawn = state
-            .agent_capabilities
-            .get(&caller)
-            .is_some_and(|set| set.contains(Capability::Children));
-        return if may_spawn {
-            CallerRole::Agent
-        } else {
-            CallerRole::ManagedChild
-        };
+        return CallerRole::Agent;
     }
     if state.orchestrator_peers.contains(&caller) {
         CallerRole::Orchestrator
     } else {
         CallerRole::Agent
     }
+}
+
+/// The role the usage rollup records. A caller with no registered identity keeps
+/// the full surface (`resolve` says orchestrator), but counting it as one would
+/// mix scripted and unbound calls into the orchestrator's usage.
+pub(super) fn rollup_role(state: &Arc<AppState>, mcp_session_id: Option<&str>) -> &'static str {
+    if super::mcp_transport_ancillary::resolve_mcp_origin_session(state, mcp_session_id).is_none() {
+        return "unbound";
+    }
+    resolve(state, mcp_session_id).as_str()
 }
 
 /// The action the role gate checks: a subscription read belongs to `subscribe`.
@@ -193,7 +188,7 @@ pub(super) const AGENT_ACTION_FIELDS: &[(&str, &[&str])] = &[
 ];
 
 /// The compact `agent` description, one segment per action ("" = preamble).
-const AGENT_GUIDE: &[(&str, &str)] = &[
+pub(super) const AGENT_GUIDE: &[(&str, &str)] = &[
     (
         "",
         "Managed peers and mail. send to=orchestrator message=<text> reaches your registered coordinator; no list_peers needed. help: full guide. Managed PTYs auto-bind from TUIC_SESSION; a headerless external caller calls register without tuic_session. There is no separate swarm action. Every worker must report task output or blockers with send. Lifecycle notifications carry state only. Read session output only for missing results. Wait: do NOT poll in a loop; waits cap at 300s.",
@@ -224,7 +219,7 @@ const AGENT_GUIDE: &[(&str, &str)] = &[
     ),
     (
         "send",
-        "send: optional report={state:ready|waiting|blocked|failed|dropped|progress,wait_for?:boss|review|dependency,question?:{id,text,options?:[{id,label}],recommended_option_id?}}. waiting requires wait_for; question only waiting/boss. ready means waiting_on_review; progress alone has no stage override. Session rows expose stage, stage_reason, report, report_at, report_message_id. to/message required; orchestrator (parent chain, else unique role in your path; missing/ambiguous errors), UUID, PTY, alias/name or connection/peer_id. Normal is the default; urgent when the recipient must change course before its next step. Normal mail keeps the payload in the inbox and may submit a payload-free idle wake. urgency=urgent and urgency=interrupt share forced steering: send Esc to a safe working Claude/Codex/ego, waits up to 5 s for idle, then submits the full message as one input; an idle recipient skips Esc. Dialogs/approvals and drafts block it; unsupported agents or timeout stay inbox-only without a queued fallback. Inspect urgent_delivered, urgent_fallback_reason, interrupt_delivered, interrupt_fallback_reason and delivery_path; interrupt_payload_and_inbox proves input written, not model action. Interrupted tools may leave partial work or running children. Active waiters own delivery.",
+        "send: optional report={state:ready|waiting|blocked|failed|dropped|progress,wait_for?:boss|review|dependency,question?:{id,text,options?:[{id,label}],recommended_option_id?}}. waiting requires wait_for; question only waiting/boss. ready means waiting_on_review; progress alone has no stage override. Session rows expose stage, stage_reason, report, report_at, report_message_id. to/message required; orchestrator (parent chain, else unique role in your path; missing/ambiguous errors), UUID, PTY, alias/name or connection/peer_id. Unsure of the exact name? Send anyway: an unknown recipient is refused with `candidates` to retry, so no list_peers is needed first. Normal is the default; urgent when the recipient must change course before its next step. Normal mail keeps the payload in the inbox and may submit a payload-free idle wake. urgency=urgent and urgency=interrupt share forced steering: send Esc to a safe working Claude/Codex/ego, waits up to 5 s for idle, then submits the full message as one input; an idle recipient skips Esc. Dialogs/approvals and drafts block it; unsupported agents or timeout stay inbox-only without a queued fallback. Inspect urgent_delivered, urgent_fallback_reason, interrupt_delivered, interrupt_fallback_reason and delivery_path; interrupt_payload_and_inbox proves input written, not model action. Interrupted tools may leave partial work or running children. Active waiters own delivery.",
     ),
     (
         "inbox",

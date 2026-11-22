@@ -4,6 +4,7 @@ import { beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { StoriesDialog } from "../../components/StoriesDialog/StoriesDialog";
 import { invoke } from "../../invoke";
 import { activityStore } from "../../stores/activityStore";
+import { registerModal } from "../../stores/modalStack";
 
 vi.mock("../../invoke", () => ({ invoke: vi.fn() }));
 vi.mock("../../stores/modalStack", () => ({ registerModal: vi.fn() }));
@@ -36,7 +37,10 @@ const wiz = {
 	generation: "6.0.0:displayed-entry-sha256",
 	error: null,
 };
-beforeEach(() => vi.mocked(invoke).mockReset());
+beforeEach(() => {
+	vi.mocked(invoke).mockReset();
+	vi.mocked(registerModal).mockClear();
+});
 
 it("keeps Wiz provenance visible and refuses native reads when the connector is unavailable", async () => {
 	vi.mocked(invoke).mockImplementation(async (_command, args) => {
@@ -48,7 +52,10 @@ it("keeps Wiz provenance visible and refuses native reads when the connector is 
 	render(() => <StoriesDialog project="/repo" onClose={() => {}} />);
 	await screen.findByRole("alert");
 	expect(screen.getByLabelText("Story backend").textContent).toContain("Wiz");
-	expect(screen.getByLabelText("Story backend").textContent).toContain("automatic");
+	expect(screen.getByRole("button", { name: "Story backend details" })).toHaveAttribute(
+		"title",
+		"Wiz · automatic · unavailable",
+	);
 	expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "story_action_command")).toHaveLength(1);
 });
 
@@ -61,6 +68,7 @@ it("approves the displayed global installation only after an explicit click", as
 		throw new Error("Unapproved connector cannot be read");
 	});
 	render(() => <StoriesDialog project="/repo" onClose={() => {}} />);
+	fireEvent.click(await screen.findByRole("button", { name: "Story backend details" }));
 	const approve = await screen.findByRole("button", { name: "Approve installed Wiz connector" });
 	expect(
 		vi
@@ -180,7 +188,8 @@ it("offers a native override through the shared story action", async () => {
 		return null;
 	});
 	render(() => <StoriesDialog project="/repo" onClose={() => {}} />);
-	fireEvent.click(await screen.findByRole("button", { name: "Use TUIC native" }));
+	fireEvent.click(await screen.findByRole("button", { name: "Story backend details" }));
+	fireEvent.click(screen.getByRole("button", { name: "Use TUIC native" }));
 	await waitFor(() =>
 		expect(invoke).toHaveBeenCalledWith("story_action_command", {
 			project: "/repo",
@@ -188,4 +197,52 @@ it("offers a native override through the shared story action", async () => {
 		}),
 	);
 	await waitFor(() => expect(screen.getByLabelText("Story backend").textContent).toContain("TUIC native"));
+});
+
+// Catches: connection details expanding the header or losing keyboard access to backend controls.
+it("keeps backend details collapsed beside Workflows and restores focus on Escape", async () => {
+	vi.mocked(invoke).mockImplementation(async (_command, args) => {
+		if ((args as { action?: { action: string } } | undefined)?.action?.action === "backend_status")
+			return { type: "backend_status", value: { ...wiz, availability: "unavailable", error: "Connector unavailable" } };
+		return null;
+	});
+	render(() => <StoriesDialog project="/repo" onClose={() => {}} />);
+	const toggle = await screen.findByRole("button", { name: "Story backend details" });
+	expect(toggle).toHaveAttribute("aria-expanded", "false");
+	expect(toggle.parentElement?.parentElement).toContainElement(screen.getByRole("button", { name: "Workflows" }));
+	expect(screen.queryByText(wiz.installation)).toBeNull();
+	expect(screen.queryByRole("button", { name: "Use automatic selection" })).toBeNull();
+	fireEvent.click(toggle);
+	const details = screen.getByRole("region", { name: "Story backend details" });
+	expect(details.id).toBe(toggle.getAttribute("aria-controls"));
+	expect(toggle).toHaveAttribute("aria-expanded", "true");
+	expect(details).toHaveTextContent(wiz.installation);
+	expect(details).toHaveTextContent(wiz.generation);
+	expect(details).toHaveTextContent("Connector unavailable");
+	const automatic = screen.getByRole("button", { name: "Use automatic selection" });
+	automatic.focus();
+	fireEvent.keyDown(automatic, { key: "Escape" });
+	expect(screen.queryByRole("region", { name: "Story backend details" })).toBeNull();
+	expect(toggle).toHaveAttribute("aria-expanded", "false");
+	expect(toggle).toHaveFocus();
+});
+
+// Catches: the central modal Escape handler closing the dialog instead of just its disclosure.
+it("routes modal Escape through the open disclosure before closing Stories", async () => {
+	vi.mocked(invoke).mockImplementation(async (_command, args) => {
+		if ((args as { action?: { action: string } } | undefined)?.action?.action === "backend_status")
+			return { type: "backend_status", value: wiz };
+		return null;
+	});
+	const close = vi.fn();
+	render(() => <StoriesDialog project="/repo" onClose={close} />);
+	const toggle = await screen.findByRole("button", { name: "Story backend details" });
+	fireEvent.click(toggle);
+	const modalEscape = vi.mocked(registerModal).mock.calls[0][0];
+	modalEscape();
+	expect(toggle).toHaveAttribute("aria-expanded", "false");
+	expect(toggle).toHaveFocus();
+	expect(close).not.toHaveBeenCalled();
+	modalEscape();
+	expect(close).toHaveBeenCalledOnce();
 });

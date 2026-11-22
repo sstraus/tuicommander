@@ -1,4 +1,10 @@
 //! Scheduled agent automation definitions and persistence.
+//!
+//! Boundary with workflows: an automation is one scheduled agent prompt with
+//! its own definitions and `automation_runs` history. A workflow with a
+//! `schedule` trigger is a composed run in `workflow_runs`. Both share one
+//! timer (this module's runtime tick, which calls
+//! `workflows::scheduled_trigger::tick`) and one cron parser (`schedule`).
 
 pub mod definitions;
 pub mod model;

@@ -115,49 +115,6 @@ fn unfinished_dependency_demotes_and_is_named_in_claim_refusal() {
     );
 }
 
-/// Catches: a story DB written before story_transitions/workflow_story_proposals existed
-/// failing to open, failing history reads, or losing its rows.
-#[test]
-fn a_story_database_from_before_this_change_opens_and_keeps_working() {
-    let dir = tempfile::tempdir().expect("dir");
-    let (p, a, b) = {
-        let store = open(dir.path());
-        let p = plan(&store, "legacy");
-        let a = story(&store, &p.id, "A");
-        let b = story(&store, &p.id, "B");
-        to_done(&store, &a.id);
-        (p, a, b)
-    };
-    rusqlite::Connection::open(dir.path().join("stories.sqlite3"))
-        .expect("raw")
-        .execute_batch("DROP TABLE story_transitions; DROP TABLE workflow_story_proposals;")
-        .expect("drop new tables");
-
-    let store = open(dir.path());
-    assert_eq!(
-        store
-            .transition_history(&a.id)
-            .expect("history of old story"),
-        [] as [crate::stories::model::StoryTransition; 0]
-    );
-    assert_eq!(store.get_story(&a.id).expect("a").status, StoryStatus::Done);
-    let b = store
-        .add_dependency(&b.id, &a.id, b.revision)
-        .expect("dependency");
-    assert_eq!(
-        b.status,
-        StoryStatus::Ready,
-        "old Done row satisfies a plan with no run"
-    );
-    to_done(&store, &b.id);
-    let history = store.transition_history(&b.id).expect("history");
-    assert_eq!(
-        history.last().expect("approval").command,
-        StoryCommand::Approve
-    );
-    assert_eq!(store.list_stories(&p.id).expect("list").len(), 2);
-}
-
 /// Catches: actor metadata refusing administrative transitions or dropping managed provenance.
 #[test]
 fn managed_administrative_transitions_record_each_actor() {

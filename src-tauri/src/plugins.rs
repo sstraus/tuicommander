@@ -228,7 +228,7 @@ pub struct PluginManifest {
     /// URL patterns allowed for net:http requests (e.g. "https://api.example.com/*")
     #[serde(default, rename = "allowedUrls")]
     pub allowed_urls: Vec<String>,
-    /// Agent types this plugin is specific to (e.g. ["claude", "gemini"]).
+    /// Agent types this plugin is specific to (e.g. ["claude", "agy"]).
     /// Empty means the plugin is universal and active for all terminals.
     #[serde(default, rename = "agentTypes")]
     pub agent_types: Vec<String>,
@@ -308,6 +308,7 @@ const KNOWN_CAPABILITIES: &[&str] = &[
     "ui:ticker",
     "exec:cli",
     "git:read",
+    "stories:read",
     "ui:context-menu",
     "ui:sidebar",
     "ui:file-icons",
@@ -331,6 +332,9 @@ fn validate_manifest(manifest: &PluginManifest, dir_name: &str) -> Result<(), St
     if manifest.version.is_empty() {
         return Err("version is empty".into());
     }
+    // DEFERRED (2026-11-18) — minAppVersion is metadata, not a host-version gate.
+    // Coordinate new PluginHost APIs with app rollout; adding a compatibility
+    // gate is outside the selected-backend story count correction.
     if manifest.min_app_version.is_empty() {
         return Err("minAppVersion is empty".into());
     }

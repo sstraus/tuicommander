@@ -816,3 +816,29 @@ it("keeps accepted deletion successful when its following snapshot fails", async
 		failure.mockRestore();
 	}
 });
+
+// Catches: an ended/disconnected stream retains reasoning or its late callback revives a dead turn.
+it.each(["end", "gap", "disconnect"])("clears reasoning on %s and ignores the abandoned stream", async (terminal) => {
+	await client.connect(ROOT);
+	const stream = streams.last;
+	const sent = { ...frame(2), turnId: "turn", event: { kind: "promptSent" as const, text: "accepted" } };
+	stream.onFrame(sent);
+	stream.onFrame({
+		...frame(3),
+		turnId: "turn",
+		event: {
+			kind: "sessionUpdate",
+			update: {
+				sessionUpdate: "agent_thought_chunk",
+				content: { type: "text", text: "preserved" },
+			},
+		},
+	});
+	expect(acpTranscript.reasoning(SESSION, CONNECTION)).toBe("preserved");
+	if (terminal === "disconnect") await client.disconnect(CONNECTION);
+	else stream.onFrame(terminal === "gap" ? GAP : { kind: "end" });
+	expect(acpTranscript.reasoning(SESSION, CONNECTION)).toBeNull();
+	stream.onFrame({ ...sent, sequence: 4, turnId: "late-turn" });
+	expect(acpTranscript.reasoning(SESSION, CONNECTION)).toBeNull();
+	expect(acpTranscript.entries(SESSION).find((entry) => entry.kind === "thought")?.text).toBe("preserved");
+});

@@ -1,7 +1,6 @@
 use super::check::git_output;
 use super::native_test_support::Fixture;
 use super::neutral_execution::NeutralStatus;
-use crate::agent_capabilities::CapabilitySet;
 use serde_json::json;
 
 // Catches committing before exact approval, accepting a changed index, or broadening a push.
@@ -53,7 +52,7 @@ async fn native_commit_and_local_push_require_separate_exact_approvals() {
         git_output(&bare, &["rev-parse", "refs/heads/approved"]).unwrap(),
         commit
     );
-    // A later dispatch loses actual native push authority, despite its retained approval.
+    // A later dispatch loses its native binding (the session ended), despite its retained approval.
     let next = f.start(
         "publication.push",
         json!({"commit":commit,"tree":tree,
@@ -61,9 +60,7 @@ async fn native_commit_and_local_push_require_separate_exact_approvals() {
     );
     let waiting = f.dispatch(&next).await;
     let approved = f.approve(&waiting);
-    f.state
-        .agent_capabilities
-        .insert("trusted".into(), CapabilitySet::default());
+    f.state.agent_capabilities.remove("trusted");
     let refused = f.dispatch(&approved).await;
     assert!(!refused.effects.values().next().unwrap().dispatched);
     assert!(git_output(&bare, &["rev-parse", "refs/heads/revoked"]).is_err());

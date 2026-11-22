@@ -48,10 +48,9 @@ impl Fixture {
         )
         .unwrap();
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
-        state.agent_capabilities.insert(
-            "trusted".into(),
-            CapabilitySet::from_spawn_arg(&json!(["push"])).unwrap(),
-        );
+        state
+            .agent_capabilities
+            .insert("trusted".into(), CapabilitySet::default());
         let host = NativeHost::install(&state).unwrap();
         host.install_project_checks(
             &repo,

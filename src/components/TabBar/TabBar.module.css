@@ -45,8 +45,8 @@
   display: none; /* Chrome/Safari/WebKit */
 }
 
-/* Scroll arrow buttons */
-.scrollArrow {
+/* Keep the overlay opaque even when shared ghost-button styles load last. */
+.scrollRegion .scrollArrow {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -301,6 +301,12 @@
   font-size: var(--font-3xs);
 }
 
+.tab.shellBackground .tabIcon {
+  color: var(--activity);
+  opacity: 1;
+  font-size: var(--font-3xs);
+}
+
 .tab.shellIdle .tabIcon {
   color: var(--success);
   opacity: 1;
@@ -484,9 +490,9 @@
   align-items: center;
 }
 
-/* Remote/PTY tabs — subtle cyan tint */
+/* Remote/PTY tabs — underline only the focused terminal. */
 .tab.remoteTab {
-  border-bottom: 2px solid rgba(var(--tab-remote-rgb), 0.3);
+  border-bottom: 2px solid transparent;
 }
 
 .tab.remoteTab.active {
@@ -497,7 +503,7 @@
   display: none;
 }
 
-.tab.remoteTab:not(.awaitingInput):not(.shellBusy):not(.shellIdle):not(.shellUnseen):not(.shellExited) .tabIcon {
+.tab.remoteTab:not(.awaitingInput):not(.shellBusy):not(.shellBackground):not(.shellIdle):not(.shellUnseen):not(.shellExited) .tabIcon {
   color: rgb(var(--tab-remote-rgb));
   opacity: 0.8;
 }

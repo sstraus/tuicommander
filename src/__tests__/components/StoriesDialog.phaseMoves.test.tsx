@@ -40,6 +40,8 @@ let reject = "";
 const transition = vi.fn();
 const states = ["backlog", "ready", "in_progress", "review", "qa", "blocked", "wont_fix", "done"];
 beforeEach(() => {
+	// This subject exercises an explicitly selected plan, not the project-wide landing view.
+	storiesUi.reveal({ project: "/phase-moves", planId: "p1", storyId: null });
 	story = { ...initial };
 	reject = "";
 	transition.mockReset();

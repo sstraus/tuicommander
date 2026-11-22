@@ -5,15 +5,13 @@ use super::trigger::*;
 use rusqlite::{Connection, TransactionBehavior, params};
 use std::collections::{BTreeMap, BTreeSet};
 
-const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS neutral_trigger_bindings (
+pub(crate) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS neutral_trigger_bindings (
  project TEXT NOT NULL, id TEXT NOT NULL, revision INTEGER NOT NULL,
  document TEXT NOT NULL, PRIMARY KEY(project,id));";
 
 impl WorkflowStore {
     fn trigger_connection(&self) -> Result<Connection, String> {
-        let conn = self.connect()?;
-        conn.execute_batch(SCHEMA).map_err(|e| e.to_string())?;
-        Ok(conn)
+        self.connect()
     }
     pub(crate) fn all_neutral_trigger_bindings(
         &self,

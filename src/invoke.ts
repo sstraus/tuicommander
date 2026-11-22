@@ -93,7 +93,13 @@ function invokeLocal<T>(cmd: string, args?: Record<string, unknown>): Promise<T>
 	});
 }
 
-export function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+export function invoke<T>(cmd: string, args?: Record<string, unknown>, connectionId?: string | null): Promise<T> {
+	// A recorded event owns its backend even if repository ownership changes later.
+	// null pins the local backend; undefined keeps ordinary argument-based routing.
+	if (connectionId !== undefined) {
+		if (connectionId === null && isTauri()) return invokeLocal<T>(cmd, args);
+		return rpc<T>(cmd, args ?? {}, connectionId);
+	}
 	if (isTauri()) {
 		// A repository held by another machine is not reachable over this process's
 		// IPC. The desktop path skips rpc() entirely, so it has to ask the same

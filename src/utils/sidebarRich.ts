@@ -169,8 +169,9 @@ export interface SubagentRow {
 	id: string;
 	title: string;
 	running: boolean;
+	interrupted: boolean;
 	toolCalls: number;
-	/** Compact age: since spawn while running, since the return once done. */
+	/** Compact age: since spawn until returned, since the return once done. */
 	age: string;
 }
 
@@ -190,8 +191,9 @@ export function subagentRows(flow: ProgressFlow | undefined, sessionId: string |
 				id: p.id,
 				title: p.title,
 				running,
+				interrupted: p.state === "interrupted",
 				toolCalls: p.toolCalls,
-				age: compactAge(at.get(`${p.id}:${running ? "spawn" : "return"}`), nowMs),
+				age: compactAge(at.get(`${p.id}:${p.state === "done" ? "return" : "spawn"}`), nowMs),
 			};
 		});
 	return [...rows.filter((r) => r.running), ...rows.filter((r) => !r.running)];

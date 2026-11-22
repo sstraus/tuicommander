@@ -106,3 +106,5 @@
 - [ ] Git lock files carry no state (#2919-7176): with an agent status line running `git status` in a linked worktree every ~10 s, `GET /logs?source=repo_watcher` (debug) shows no `Skip repo-changed (git-state unchanged)` lines for that repo, and a real `git add` in the worktree still refreshes its sidebar diff badge.
 
 - [ ] After a `make dev` restart, a merged worktree whose submodule is an embedded clone (`plugins/.git` is a directory, e.g. fix-3021-cold-start-git-spawns) is auto-archived, with no "Cannot repair submodule" warning in `debug action=logs source=git` (#3023-d40c)
+
+- [ ] After a `make dev` restart, create a worktree from the default tip with autoArchiveMerged on: it stays (in sync, not merged); no automatic archive or orphan cleanup removes it for five minutes; explicit Remove works (01a1e69b).

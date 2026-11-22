@@ -58,16 +58,16 @@ describe("mobile Progress", () => {
 		await waitFor(() => expect(screen.getByText("Later work is blocked.")).toBeTruthy());
 		expect(invoke).toHaveBeenLastCalledWith("progress_list", {
 			project: "/newer",
-			input: { progressOnly: true, blockedOnly: false, limit: 100 },
+			input: { includeActivity: false, blockedOnly: false, limit: 100 },
 		});
 		expect(screen.queryByLabelText("Progress terminal")).toBeNull();
 		fireEvent.click(screen.getByRole("button", { name: "Filters" }));
 		expect(screen.getByLabelText("Progress terminal")).toBeTruthy();
-		fireEvent.click(screen.getByRole("switch", { name: "Messages and delegations" }));
+		fireEvent.click(screen.getByRole("switch", { name: "Activity" }));
 		await waitFor(() =>
 			expect(invoke).toHaveBeenLastCalledWith("progress_list", {
 				project: "/newer",
-				input: { blockedOnly: false, limit: 100 },
+				input: { includeActivity: true, blockedOnly: false, limit: 100 },
 			}),
 		);
 		fireEvent.click(screen.getByRole("button", { name: "Entry actions" }));

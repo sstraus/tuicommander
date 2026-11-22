@@ -580,7 +580,7 @@ describe("useAgentPolling", () => {
 		it("re-discovers non-claude agents on subsequent polls too", async () => {
 			let discoverCount = 0;
 			mockInvoke.mockImplementation((cmd: string) => {
-				if (cmd === "get_session_foreground_process") return Promise.resolve("gemini");
+				if (cmd === "get_session_foreground_process") return Promise.resolve("agy");
 				if (cmd === "get_session_leaf_pid") return Promise.resolve(1234);
 				if (cmd === "discover_agent_session") {
 					discoverCount++;
@@ -635,7 +635,7 @@ describe("useAgentPolling", () => {
 
 		it("discovers non-claude agents even when tuicSession is set", async () => {
 			mockInvoke.mockImplementation((cmd: string) => {
-				if (cmd === "get_session_foreground_process") return Promise.resolve("gemini");
+				if (cmd === "get_session_foreground_process") return Promise.resolve("agy");
 				if (cmd === "get_session_leaf_pid") return Promise.resolve(1234);
 				if (cmd === "discover_agent_session") return Promise.resolve(discovered("discovered-uuid"));
 				return Promise.resolve(null);
@@ -649,7 +649,7 @@ describe("useAgentPolling", () => {
 				useAgentPolling();
 
 				await tick(30_000);
-				expect(store.get(id)?.agentType).toBe("gemini");
+				expect(store.get(id)?.agentType).toBe("agy");
 
 				const discoveryCalls = mockInvoke.mock.calls.filter(([cmd]) => cmd === "discover_agent_session");
 				expect(discoveryCalls).toHaveLength(1);

@@ -4,9 +4,9 @@ import { createAgentConfigsStore } from "../stores/agentConfigs";
 
 describe("agent hook instrumentation toggle", () => {
 	it("HOOK_SUPPORT gates the hook-instrumented agents (A1)", () => {
-		// Adapters landed incrementally: Claude/Gemini (#048), then Grok (#051),
+		// Adapters landed incrementally: Claude/Antigravity (#048), then Grok (#051),
 		// Codex (#050), OpenCode (#052) flipped on. Keep this in sync with agents.ts.
-		const on: AgentType[] = ["claude", "gemini", "grok", "codex", "opencode", "pi"];
+		const on: AgentType[] = ["claude", "agy", "grok", "codex", "opencode", "pi"];
 		for (const a of on) {
 			expect(HOOK_SUPPORT[a]).toBe(true);
 		}
@@ -24,7 +24,7 @@ describe("agent hook instrumentation toggle", () => {
 		// Seed via sync (load is async and not awaited here) then read back.
 		store.syncHookInstrumentation("claude", true);
 		expect(store.getHookInstrumentation("claude")).toBe(true);
-		expect(store.getHookInstrumentation("gemini")).toBeUndefined();
+		expect(store.getHookInstrumentation("agy")).toBeUndefined();
 	});
 
 	it("syncHookInstrumentation mirrors the flag in memory without saving to disk", () => {
@@ -67,9 +67,9 @@ describe("agent hook instrumentation toggle", () => {
 
 	it("keeps a non-default flag as an explicit override", () => {
 		const store = createAgentConfigsStore({ load: async () => ({ agents: {} }), save: vi.fn() });
-		store.syncHookInstrumentation("gemini", true);
+		store.syncHookInstrumentation("agy", true);
 		store.syncNativeStatusSignals("claude", false);
-		expect(store.state.agents.gemini.hook_instrumentation).toBe(true);
+		expect(store.state.agents.agy.hook_instrumentation).toBe(true);
 		expect(store.state.agents.claude.native_status_signals).toBe(false);
 	});
 

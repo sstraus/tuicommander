@@ -53,6 +53,7 @@ import s from "./Terminal.module.css";
 import { ChatViewFallbackBanner, TerminalChatView, ViewModeToggle } from "./TerminalChatView";
 import { TerminalSearch } from "./TerminalSearch";
 import {
+	isTerminalVisible,
 	REATTACH_PHASE_INITIAL,
 	type ReattachPhase,
 	retryUntilSized,
@@ -114,6 +115,8 @@ export interface TerminalProps {
 	metaHotkeys?: boolean;
 	/** When true, terminal initializes immediately without requiring activeId match */
 	alwaysVisible?: boolean;
+	/** Mounted inside a split pane rather than in the flat terminal list. */
+	paneHosted?: boolean;
 	/** Called when the shell reports a working directory change via OSC 7 */
 	onCwdChange?: (id: string, cwd: string) => void;
 }
@@ -959,9 +962,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
 		return paneLayoutStore.state.groups[groupId]?.activeTabId === props.id;
 	};
 	const isVisible = () =>
-		props.alwaysVisible ||
-		(terminalsStore.state.activeId === props.id && !terminalsStore.isDetached(props.id)) ||
-		isActiveInPaneGroup();
+		isTerminalVisible({
+			alwaysVisible: !!props.alwaysVisible,
+			paneHosted: !!props.paneHosted,
+			active: terminalsStore.state.activeId === props.id,
+			detached: terminalsStore.isDetached(props.id),
+			inPaneGroup: paneLayoutStore.isSplit() && !!paneLayoutStore.getGroupForTab(props.id),
+			activeInPaneGroup: isActiveInPaneGroup(),
+		});
 
 	// When this terminal becomes visible: init PTY session and auto-focus.
 	// CanvasTerminal handles its own rendering lifecycle.
@@ -1232,8 +1240,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
 	// so the user saw paint → wipe → paint.
 	createEffect((prev: ReattachPhase) => {
 		const { phase, resubscribe } = stepReattachPhase(prev, isVisible(), terminalsStore.isDetached(props.id));
-		if (resubscribe) {
-			terminalsStore.update(props.id, { ref: refMethods });
+		const shown = phase.visible && !prev.visible;
+		// Another instance of this session (a split pane that has since closed, or
+		// the copy in the flat list) took the single grid channel: this one gets no
+		// frames until it resubscribes, while keystrokes still reach the PTY.
+		const reclaim = shown && untrack(() => canvasTerminalRef()?.lostGrid() ?? false);
+		// The store ref drives focus and paste. On show it must point at the copy
+		// on screen, not at an unmounted pane instance.
+		if (shown) terminalsStore.update(props.id, { ref: refMethods });
+		if (resubscribe || reclaim) {
 			requestAnimationFrame(() => {
 				requestAnimationFrame(() => {
 					const ref = canvasTerminalRef();

@@ -1,0 +1,57 @@
+/* One row under the header, aligned with the entries: the field grows, the
+   button keeps its size and sits on the field's last line. */
+.ask {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ask > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.ask > button {
+  flex: none;
+}
+
+.hint {
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+}
+
+.error {
+  color: var(--error);
+  font-size: var(--font-sm);
+}
+
+.thread {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--border);
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+}
+
+.turn + .turn {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.question {
+  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+  white-space: pre-wrap;
+  margin-bottom: 6px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}

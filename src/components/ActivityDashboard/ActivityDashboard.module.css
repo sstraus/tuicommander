@@ -167,6 +167,10 @@
   font-weight: 600;
 }
 
+.statusBackground {
+  color: var(--activity);
+}
+
 .statusWaiting {
   background: rgba(220, 220, 170, 0.2);
   color: var(--warning);

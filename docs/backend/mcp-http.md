@@ -1,5 +1,16 @@
 # MCP & HTTP Server
 
+## Local HTTP authentication
+
+Loopback HTTP connections (`127.0.0.1` and `::1`) need no credentials by default.
+Set `services.auth.require_local_auth` to `true` to require the existing token,
+session cookie or Basic Auth on local protected routes. The default is `false`,
+including when the field is absent from an existing configuration. The flag is
+read for each request after the updated backend has been loaded. Explicit
+credentials still use normal verification and retain their caller provenance.
+Non-loopback clients still require authentication. Host and Origin checks and
+endpoint-specific access rules are unchanged.
+
 ## Headless GitHub monitoring
 
 Both routers mount one shared GitHub monitoring surface: poller start/stop, visibility, immediate poll, path updates, issue filter and API-debug controls; repository status (`/repo/github`), PR snapshots (`/repo/prs`, `/repo/prs/batch`) and issues (`/repo/issues`). The poller does not require an AppHandle. It publishes through the event bus and `/events` SSE without a window. TCP keeps the existing authentication and request-boundary middleware; the trusted Unix socket uses the local router. GitHub account/auth, mutation and AI routes stay outside this shared surface. A credential-free no-remote smoke proves transport and lifecycle, not authenticated GitHub fetching.
@@ -114,9 +125,14 @@ For `workflow action=report`, a `needs_input` outcome requires `inputRequest {qu
 The compact `progress` native tool is available directly in classic and
 every collapsed discovery (Grok, ego), and through the meta-tool index, unless disabled by
 `mcp_capabilities.denied` or by the global `progress_tracking` flag. It takes
-`{ type, text, step? }` with `type` restricted to `done` or `blocked`, derives
-the project and the reporting agent from the caller, appends to the shared
-journal, and then dual-emits `progress-recorded`. A per-agent
+`{ type, text, step?, question? }`, derives the project and reporting agent
+from the caller, appends to the shared journal, returns `{ id }`, and dual-emits
+`progress-recorded` after the write commits. `done` records a finished outcome,
+not an update on work still in flight. Use `blocked` only when stopping for a
+user answer, and put the question and what is needed next in `text`. Also reply
+in chat; the journal is not a substitute. Each successful call appends a new
+entry: after an ambiguous timeout, check `repo action=progress_list` before retrying.
+A per-agent
 `progress_tracking: false` answers `progress_tracking_disabled` instead of
 hiding the tool — the tool index is global and has no session context.
 
@@ -132,6 +148,20 @@ mail API.
 The journal's third kind, `intent`, is written by TUIC from the agent's
 `intent:` marker in `pty.rs`. An agent that reports one is refused: the point of
 the kind is that it is observed rather than claimed.
+
+Attributed Progress reports retain their originating peer separately from PTY
+presentation. `question: {kind:"yes_no"}` is valid only with `type=blocked`;
+it enables binary controls when the report has a reply target. Omit it for a
+free-text blocker; wording alone does not turn on Yes/No. A conflicting
+`done` report is rejected with correction guidance before project resolution. Contextual replies use
+IPC `progress_reply` or `POST /progress/reply?path=<project>` with the same input
+and receipt (see the HTTP API reference). The backend forwards the original
+report context through normal peer mail, deduplicates request IDs, and records
+a binary answer once. No PTY command injection or selected-repository fallback
+is used. Unknown legacy PTY-only authors cannot be answered: a later terminal
+occupant is not proof of authorship. Mirrored notices retain their original
+connection; drafts and toast deduplication also include that backend scope. Drafts and pending state are shared between the toast and journal;
+controls share the existing action row and the editor occupies space only when opened.
 
 The `repo` tool exposes exactly one progress action, `progress_list`. Reading
 back is occasionally useful to an agent; pausing, clearing, correcting and
@@ -785,9 +815,17 @@ native tools are unchanged, including the directly loaded `progress` primitive.
 Settings summaries and tooltip copy do not change. Reconnect cached MCP clients
 after loading this backend build to obtain the updated catalogue.
 
+### Batched calls (`batch`)
+
+`batch` runs an ordered list of tool calls in one request: `calls=[{tool, arguments}, …]`, at most 32. The calls can mix any tools — native tools, `<tool>_<action>` slice names and upstream `{upstream}__{tool}` tools — but not `search_tools`, `get_tool_schema`, `call_tool` or `batch` itself. It is listed in both the direct and the collapsed catalogue. Like `call_tool` it is a meta-tool: it has no Settings switch, because it grants nothing that its elements do not already pass.
+
+Each element is dispatched exactly as `call_tool(tool_name=tool, arguments)`, so it passes every gate a separate call passes: capability configuration, caller role, caller address, the private-form inspection guard and the per-repo upstream allowlist. A batch grants no authority of its own. The reply is `{results, errors}`: `results` holds, in call order, the value each tool returns alone, and `errors` counts the failed elements. A failure does not stop the batch unless `stop_on_error=true`; then the batch ends at the first failure and reports its index in `stopped_at`. Elements run one after another and cannot read an earlier element's result.
+
+The MCP call audit records one `batch` operation per request, not one row per element. Code: `src-tauri/src/mcp_http/mcp_batch.rs`.
+
 ### Lazy Tool Discovery (`collapse_tools`)
 
-When `collapse_tools: true` in `config.json` (or via Settings > MCP > TUIC Tools > "Collapse tools"), the server replaces the full tool list in `tools/list` with three meta-tools (the Speakeasy pattern) plus the compact `progress` tool when enabled:
+When `collapse_tools: true` in `config.json` (or via Settings > MCP > TUIC Tools > "Collapse tools"), the server replaces the full tool list in `tools/list` with three meta-tools (the Speakeasy pattern) plus the compact `progress` tool when enabled and `batch` (see above):
 
 | Meta-tool | Purpose |
 |-----------|---------|
@@ -821,6 +859,55 @@ once at `initialize`. The precedence runs that way because ego reaches `/mcp`
 through `tuic-bridge`, which opened the transport session under its own name:
 preferring the session made `server/discover` advertise the collapsed surface and
 the very next `tools/list` deliver the full one, for the identical request.
+
+**Action-scoped discovery (Adaptive Speakeasy).** `agent`, `session`, `repo` and `ui`
+document many actions in one definition, so a search for one action used to inline the
+whole tool (the `agent` definition is ~15.7 KB). The index now holds one ranked document
+per action of these tools, named `<tool>_<action>` (`agent_send`, `repo_worktree_create`).
+Each action needs a name of its own: clients cache an admitted schema by tool name, and
+a strict client validated `send` against a cached `register` schema when both were
+named `agent`. The discovered schema is a plain MCP Tool object: every always-on
+directive of the tool (its preamble and any tool-wide rule), the action's own guidance,
+and only the fields that action reads, with the fields its contract requires
+unconditionally; `_meta` carries `tuic/tool` and `tuic/action`. Field alternatives stay
+with the private validator. `call_tool(tool_name="agent_send", arguments={to, message})`
+dispatches to `agent` with `action=send`; an `arguments.action` that names another action
+is refused before dispatch. `get_tool_schema` accepts `agent_send`, or `tool_name=agent`
+with `action=send`. The whole definition stays reachable through `select:<tool>` and
+`get_tool_schema` without `action`; `select:agent_send` (also `agent.send`, `agent/send`
+or `agent send`) selects one action. An action result's `summary` is the first sentence
+of that action's own guidance. A slice is built from the caller's role- and
+state-filtered definition, so an action the caller may not use is neither found nor
+described. Dispatch reaches the same handler and the same complete validator, and the
+usage rollup counts `agent_send` as `agent.send`. The tables live in
+`src-tauri/src/mcp_http/action_slices.rs` (`agent` reuses `caller_role::AGENT_GUIDE` and
+`AGENT_ACTION_FIELDS`); a test fails when an advertised field belongs to no action. The
+model-driven [discovery E2E](../workflows/testing/discovery-e2e.md) gates changes to
+this surface against real agents.
+
+**Related schemas.** Besides `top_schema`, a search may return `schemas`: complete
+definitions the next step usually needs, so a client admits them without another
+round trip — the top action's prerequisites first (`agent_register` with
+`agent_send`, `agent_inbox` and `agent_wait`), then up to two further action results.
+The array never repeats `top_schema` and is capped at 8 KiB, or at
+`schema_byte_budget` when that is smaller; `schema_byte_budget: 0` omits both.
+
+**Fused calls.** `session` `input` takes an optional `wait_ms` (1–30000, shells only;
+an agent composer is refused and keeps `submit`): after the write it waits until the
+terminal has printed nothing for 400 ms, or until `wait_ms`, then returns
+`{ok, settled, output, truncated}`, where `output` is the text printed after the
+write (rendered from the raw bytes, secret masking applied, at most 64 KiB). An
+`agent send` whose recipient resolves to no peer fails with
+`code: "unknown_recipient"` and `candidates` (up to five `{to, name}` rows whose
+name contains the requested text or is contained in it), so the repair needs no
+`list_peers` call.
+
+**Usage attribution.** The usage rollup takes the client kind from the request's
+`_meta` client identity, then from the kind the MCP session named at `initialize`
+(stored on `McpSessionMeta.client_kind`; bridged clients name themselves only
+there), then from the User-Agent. `tuic-cli` counts as `cli`. A caller with no
+registered identity counts under role `unbound`, not `orchestrator`, so scripted and
+unbound calls stay apart from model usage.
 
 **Schema admission and reuse (#2013-73f9).** Search includes the complete definition of
 its first visible match when the serialized UTF-8 JSON fits `schema_byte_budget`
@@ -1057,39 +1144,46 @@ say what was measured, not what the list costs today.
 | `settings` | describe, get, set, reset, patch, perform, refresh | Disabled; trusted UI opt-in required |
 | `debug` | agent_detection, logs, sessions, invoke_js, help | Disabled |
 
+### Ego spawn prompt fallback
+
+`agent action=spawn agent_type=ego prompt="<task>"` uses Ego's interactive
+positional prompt when no explicit `args` or named run-profile arguments apply.
+The built-in template is `["{prompt}"]`, not `["run", "{prompt}"]`: `ego run`
+is headless. The task stays one argv element, and Ego does not use deferred PTY
+prompt injection. Structured `model` adds `--model`; Claude-only `print_mode`
+and `output_format` parameters are ignored with a warning, as for other
+non-Claude agents. Choose an explicit headless invocation or a named run profile
+if needed; neither is replaced by the fallback. Unknown agents still require
+explicit prompt arguments or a configured profile.
+
 ### `agent` surface by caller role (#2805-4ee2)
 
 `tools/list`, `get_tool_schema` and the initialize instructions give each caller
-one of three `agent` tools. A **managed child** has `register`, `list_peers`,
-`send`, `inbox`, `wait` and `help`. An **agent** adds `spawn` and the `task_get`/
-`task_cancel` of its own spawns. The **orchestrator** keeps every action,
-including `launch` and `subscribe`/`ack`/`unsubscribe`.
+one of two `agent` tools. An **agent** has `register`, `list_peers`, `send`,
+`inbox`, `wait`, `help`, `spawn` and the `task_get`/`task_cancel` of its own
+spawns. The **orchestrator** keeps every action, including `launch` and
+`subscribe`/`ack`/`unsubscribe`. The mail-only managed-child role was removed
+with the `children` capability on 2026-11-20: a spawned child is an agent.
 
-- **Role source.** A caller is a managed child when its MCP origin session has a
-  `session_parent` entry and its spawn-fixed capability set lacks `children` (or
-  it has no set). A child granted `children` is an agent. Any other bound caller
-  is the orchestrator when it is in `orchestrator_peers` (it registered with
-  `orchestrator=true`), else an agent. A caller with no registered identity keeps
-  every action. The parent link is read first, so a child that registers
-  `orchestrator=true` stays a child. No argument, mail or client name is read
-  (`mcp_http/caller_role.rs`).
-- **One schema source.** The child definition is derived from the one generated
+- **Role source.** A bound caller with a `session_parent` entry is an agent. Any
+  other bound caller is the orchestrator when it is in `orchestrator_peers` (it
+  registered with `orchestrator=true`), else an agent. A caller with no
+  registered identity keeps every action. The parent link is read first, so a
+  child that registers `orchestrator=true` stays an agent. No argument, mail or
+  client name is read (`mcp_http/caller_role.rs`).
+- **One schema source.** The agent definition is derived from the one generated
   definition: action enum, fields (per-action ownership table
   `AGENT_ACTION_FIELDS`), action conditions and per-action description segments
   are filtered. `every_agent_field_has_an_owning_action` fails when a new field
   has no owning action.
-- **Dispatch.** The capability gate runs first and adds `role` to its refusal for
-  a child. Then any other hidden action (an `inbox`/`wait` with
-  `subscription_id` counts as `subscribe`) returns
-  `{code: "role_denied", role: "managed_child"|"agent", effect: "not_started", retryable: false}`
+- **Dispatch.** A hidden action (an `inbox`/`wait` with `subscription_id` counts
+  as `subscribe`) returns
+  `{code: "role_denied", role: "agent", effect: "not_started", retryable: false}`
   with an error that names the role and tells the caller to report BLOCKED to its
-  parent or orchestrator.
-- **Instructions.** A child and an agent each get one line that names the
-  missing actions and the BLOCKED report. The orchestrator gets the delegation
-  line.
-- **Size.** Measured 2026-11-04 by `mcp_instruction_surface_bytes_stay_within_budget`:
-  the full advertised `agent` definition is 16,336 bytes, the managed-child
-  definition 7,968 bytes (ceiling 8,000).
+  parent or orchestrator. The capability gate refuses only an `agent launch`
+  whose `spawn.capabilities` grants `operator` the caller lacks.
+- **Instructions.** An agent gets one line that names the missing actions and
+  the BLOCKED report. The orchestrator gets the delegation line.
 - **Not scoped.** The HTTP `/agents/*` routes are not scoped per role.
   `search_tools` filters the shared index and takes a native `top_schema` from
   the caller's own catalogue. The role is a surface boundary, not a security one:
@@ -2966,9 +3060,9 @@ The `debug action=frame_workload_dump` (local or token-authenticated callers) sc
 
 ## Persistent usage rollup (#2808-5998)
 
-Separate from the call audit and independent of `mcp_call_audit_enabled`. Gated by `mcp_usage_rollup_enabled` (default `true` in every build; Settings > MCP > Usage). `tools/call` and `tools/list` ingress add counts to an in-memory sum; it is written to `mcp_usage.sqlite3` in the app config directory (beside `progress.sqlite3`) when 30 seconds have passed since the last write, and before every read. A crash loses at most that interval.
+Separate from the call audit and independent of `mcp_call_audit_enabled`. Gated by `mcp_usage_rollup_enabled` (default `true` in every build; Settings > MCP > Usage). `tools/call` and `tools/list` ingress add counts to an in-memory sum; it is written to `tuic.sqlite3` in the app config directory when 30 seconds have passed since the last write, and before every read. A crash loses at most that interval.
 
-Table `mcp_usage_daily`, one row per UTC `day` x `client` (`claude`, `codex`, `ego`, `grok`, `other`) x `role` (`orchestrator`, `agent`, `managed_child`, from `caller_role`; rows before 2026-11-07 say `spawner`) x `tool` x `action`: `calls`, `app_errors` (application errors, not counting rejections), `invalid_arguments` (replies with `code=invalid_arguments`), `bytes_hist` (24 power-of-two buckets of text reply bytes), `bytes_max`, `catalogue_bytes` (`tools/list` replies under tool `tools/list`, plus `search_tools` and `get_tool_schema` replies). p50 and p95 are the upper bound of the bucket that holds the rank, never above `bytes_max`: an estimate within a factor of two. Tool and action come from the native catalogue or a connected upstream; an unrecognized tool name is stored as `opaque` with no digest. Arguments, reply bodies, error text, session ids and peer names are never stored. Rows older than 90 days are deleted at each write. Size (estimate, not measured on a live instance): about 150 bytes per row and at most a few hundred rows per day, so under 100 KB per day and under 10 MB at 90 days.
+Table `mcp_usage_daily`, one row per UTC `day` x `client` (`claude`, `codex`, `ego`, `grok`, `other`) x `role` (`orchestrator`, `agent`, `managed_child`, from `caller_role`; rows before 2026-11-07 say `spawner`) x `tool` x `action`: `calls`, `app_errors` (application errors, not counting rejections), `invalid_arguments` (replies with `code=invalid_arguments`), `bytes_hist` (24 power-of-two buckets of text reply bytes), `bytes_max`, `catalogue_bytes` (`tools/list` replies under tool `tools/list`, plus `search_tools` and `get_tool_schema` replies). p50 and p95 are the upper bound of the bucket that holds the rank, never above `bytes_max`: an estimate within a factor of two. Tool and action come from the native catalogue or a connected upstream; an unrecognized tool name is stored as `opaque` with no digest. Arguments, reply bodies, error text, session ids and peer names are never stored. Rows older than `retention.mcp_usage_days` (default 90) are deleted by the daily database cleanup. Size (estimate, not measured on a live instance): about 150 bytes per row and at most a few hundred rows per day, so under 100 KB per day and under 10 MB at 90 days.
 
 `GET /mcp/usage` (IPC `get_mcp_usage`) returns the last 7 days grouped per role, then per tool action (clients and days merged): `{"enabled":true,"days":7,"roles":[{"role","calls","application_errors","invalid_arguments","catalogue_bytes","actions":[{"tool","action","calls","application_errors","invalid_arguments","response_bytes_p50","response_bytes_p95","response_bytes_max","catalogue_bytes"}]}]}`. While the setting is off it returns `{"enabled":false,"days":7,"roles":[]}` and records nothing; stored rows stay until they age out.
 
@@ -3089,7 +3183,7 @@ already-delivered mail as lost. It does not acknowledge the legacy loss watermar
 only the legacy snapshot ACK settles that snapshot's loss count. Filtered gaps
 remain unobserved and cannot clear unrelated wake evidence.
 
-The SQLite journal (`<config dir>/mail-subscriptions.db`, with WAL sidecars)
+The SQLite journal (`<config dir>/mail.sqlite3`, with WAL sidecars)
 retains the newest **1000 messages per recipient** across process restart. This
 is a message-count bound, not a byte budget or an unlimited result archive.
 Every common inbox insertion is journaled before its change notification,
@@ -3303,13 +3397,23 @@ in the HTTP API reference. The existing `settings-changed` bridge invalidates sa
 ### Story backend selection status
 
 The existing story action route carries `backend_status` without first requiring a working content backend. IPC, HTTP, CLI and managed MCP reads use the same project ownership and selector. `approve_connector {installation,expected_identity}` is a human UI write; managed actors and unauthenticated HTTP callers cannot approve execution. No new transport route is required. See `story-backend-protocol.md`.
-`set_backend {backend:"native"|"automatic"|"wiz-stories"}` is also an authenticated-human-only shared action. Native continuity precedes discovery; active run snapshot provenance prevents backend changes after restart. Approval compares the displayed `generation` (entry/version), not a full installation-tree digest.
+`set_backend {backend:"native"|"automatic"|"wiz-stories"}` is also an authenticated-human-only shared action. Project markers select the connector even when unfinished native plans remain; explicit native selection exposes the retained records. Do not change backends during a workflow run: the neutral engine does not pin story backend identity. Approval compares the displayed `generation` (entry/version), not a full installation-tree digest.
 
 Heap diagnostics share the HTTP control plane on both entry points: GET/POST `/diagnostics/heap` verifies status, toggles sampling and writes dumps on a blocking worker. `/diagnostics/memory` reports allocator provenance separately from native malloc zones and physical footprint. See [Heap profiling](heap-profiling.md).
 
 ## Neutral workflow parity
 
 `workflow {action:"neutral",input:<NeutralAction>}` uses the same backend action and `{type,value}` reply as IPC and `/workflows/neutral/action`. Project selection uses the live managed PTY/ACP binding; local/authenticated transport access does not replace native service admission. With a native catalog installed, bound projects discover the workflow tool even before creating a draft. See [the neutral contract](workflows.md#neutral-workflow-transport-015).
+
+The neutral `resolve_mutation` action reconciles a stopped uncertain mutation in an
+ended run. Supply `run_id`, `command_id`, `expected_sequence`, exact effect `key`
+and bounded reconciliation `evidence`. It uses the existing effect
+answer authority, preserves the original uncertainty and procedure, records the
+operator disposition with its backend stop proof, releases that effect's resources
+and wakes waiting runs. A stopped observation or the installed script host's
+original-process proof is required; operator evidence alone cannot release a claim.
+Inspect conflicts through the retained `resource_wait` event and snapshot field
+(`resource`, `owner_run`, `owner_effect`). See [the effect ledger](workflows.md#neutral-asynchronous-effects-and-approvals-005).
 
 ### Scheduled neutral bindings
 
@@ -3320,3 +3424,9 @@ Only scheduled bindings accept that field, and it is required for them.
 The installed mapping fields are `text` (string) and `occurrence_ms` (integer).
 Starts and exact local approval answers use the existing run/Answer envelopes.
 See [trigger admission](../backend/workflow-trigger-admission.md#scheduled-neutral-starts).
+
+`open_story_count` uses the existing story action envelope and returns
+`{type:"open_story_count",value:{project,backend,generation,openCount}}`. It counts
+open, non-archived stories across all non-archived plans through the selected
+backend project projection. It returns no story content; unavailable or changed
+backends fail without native or filesystem fallback.

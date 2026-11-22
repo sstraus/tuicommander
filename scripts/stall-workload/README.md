@@ -29,7 +29,7 @@ others have `display:none`, as in the retained desktop observation. The visible
 container is 1878×1260 CSS pixels; production font measurement and resize choose
 the actual rows and columns. The report records actual paint geometry and DPR.
 
-`STALL_MAIN` defaults to the local `main` ref. `STALL_PRE_FIX` defaults to
+`STALL_MAIN` defaults to the local development `master` ref (the evidence label remains `main`). `STALL_PRE_FIX` defaults to
 `950715de69`, a pre-fix revision named in the story. That revision predates the
 **orphan IPC boundary fix**; it is not an established canvas-root-cause revision.
 The harness exports source from both refs without switching branches. It then

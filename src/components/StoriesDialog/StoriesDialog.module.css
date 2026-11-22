@@ -7,6 +7,13 @@
 .header > div:first-child { min-width: 0; }
 .header h2 { margin: 0 0 2px; font-size: var(--font-xl); }
 .headerActions { display: flex; flex-wrap: nowrap; min-width: 0; overflow-x: auto; scrollbar-width: none; justify-content: flex-start; align-items: center; gap: 8px; }
+.headerTools { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.backendControl { position: relative; }
+.backendChecking { color: var(--fg-muted); font-size: var(--font-xs); }
+.backendDetails { position: absolute; top: calc(100% + 8px); right: 0; z-index: 5; width: min(380px, calc(100vw - 64px)); max-height: min(60vh, 480px); overflow-y: auto; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-secondary); box-shadow: var(--shadow-dropdown); color: var(--fg-secondary); font-size: var(--font-sm); overflow-wrap: anywhere; }
+.backendDetails p { margin: 0 0 8px; }
+.backendContent { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.backendControl > button { white-space: nowrap; }
 .headerActions::-webkit-scrollbar { display: none; }
 .headerActions > button { flex-shrink: 0; white-space: nowrap; }
 .project { display: block; color: var(--fg-muted); font: var(--font-xs) var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -101,7 +108,8 @@ button.item[data-control-layout="row"] small { color: var(--fg-muted); font-size
   composes: toolbar from "../ui/FormControls.module.css"; display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .filters label { display: flex; flex-direction: column; flex: 1; min-width: 100px; gap: 4px; color: var(--fg-secondary); font-size: var(--font-xs); }
 .filters select { width: 100%; }
-.viewSwitch { align-self: flex-end; }
+.storyColumn > .columnHeader { flex-wrap: wrap; }
+.storyHeaderActions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .kanbanContent { grid-template-columns: minmax(170px, 18%) minmax(0, 1fr); grid-template-rows: minmax(280px, 1fr) minmax(180px, 38%); }
 .kanbanContent .detail { grid-column: 1 / -1; min-height: 240px; border-top: 1px solid var(--border); }
 .kanbanContent .storyColumn { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }

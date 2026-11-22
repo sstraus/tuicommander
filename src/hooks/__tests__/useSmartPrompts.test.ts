@@ -182,16 +182,16 @@ describe("resolveHeadlessAgent — preferred agent with template", () => {
 describe("resolveHeadlessAgent — preferred agent with no template", () => {
 	it("falls back to global when preferred has no template", () => {
 		mockedGetHeadlessTemplate.mockReturnValue(undefined);
-		mockedGetHeadlessAgent.mockReturnValue("gemini");
+		mockedGetHeadlessAgent.mockReturnValue("agy");
 		const { canExecute } = useSmartPrompts();
 		const result = canExecute(makePrompt({ preferredAgent: "claude" }));
-		// Falls back to global (gemini) which is non-null → ok=true
+		// Falls back to global (agy) which is non-null → ok=true
 		expect(result.ok).toBe(true);
 	});
 
 	it("logs a warning when falling back to global", () => {
 		mockedGetHeadlessTemplate.mockReturnValue(undefined);
-		mockedGetHeadlessAgent.mockReturnValue("gemini");
+		mockedGetHeadlessAgent.mockReturnValue("agy");
 		const { canExecute } = useSmartPrompts();
 		canExecute(makePrompt({ preferredAgent: "claude" }));
 		expect(mockedWarn).toHaveBeenCalledWith("prompts", expect.stringContaining("claude"));

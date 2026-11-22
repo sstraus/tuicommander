@@ -2,7 +2,7 @@
 
 ## Story backend
 
-The header identifies **TUIC native** or **Wiz**, automatic detection or an explicit override, availability, version and selection reason. Expand the reason for installation and failure details. A detected Wiz project does not fall back to native when its connector is missing or broken. Select **Approve installed Wiz connector** only after you inspect the displayed installation path. This one approval applies to every Wiz project on that host; installation updates require new approval. Native plans must be completed or archived before an external backend can take over. Running or paused executions prevent a bound backend change. Refresh and project changes reload both identity and supported controls.
+The compact backend disclosure beside **Workflow** identifies **TUIC native** or **Wiz**, automatic detection or an explicit override, availability, version and selection reason. Expand the reason for installation and failure details. A detected Wiz project does not fall back to native when its connector is missing or broken. Select **Approve installed Wiz connector** only after you inspect the displayed installation path. This one approval applies to every Wiz project on that host; installation updates require new approval. Unfinished native plans do not override automatic Wiz selection. Their records stay unchanged; choose the native override to read or continue them, then automatic selection to return to Wiz. Refresh and project changes reload both identity and supported controls. The dialog defaults to **All plans**; choose one plan only when needed. To compare the Stories ticker with the dialog, use **All plans**, non-archived plans and stories, **Open** status and no story-type filter. The ticker reads the same selected-backend aggregate across all plans, including native records when native is selected. Backend failure clears a stale ticker instead of guessing from filenames.
 
 Choose **All plans** in the Plans column to show stories from every non-archived plan together in List or Kanban. Each story row and card shows its plan title. Status, type and archived-story filters apply to the combined view. **Archived plans** switches the combined view to archived plans only, as it does for a single-plan view. Select a specific plan to filter back and enable plan editing or story creation. Story detail, status actions, workflow starts and run history use the selected story’s own plan; dependency choices stay inside that plan.
 
@@ -244,18 +244,17 @@ Provider usage shows known tokens and exact recorded money with its currency and
 
 ### Backend continuity and approval identity
 
-Automatic detection retains native while native plans are open or pinned native
-executions are active. The header explains **Native retained while …**; this is
-not fallback after a failed Wiz connector. Expand backend details to choose
-**Use TUIC native** or **Use automatic selection**. Explicit Wiz cannot replace
-open native work, and selection changes cannot interrupt active executions.
+Automatic detection selects Wiz for marked projects even when native plans are
+unfinished. Expand backend details to choose **Use TUIC native** for retained
+native records, or **Use automatic selection** to return to the connector.
+Do not change backends during an active or paused workflow run. The current
+neutral run engine does not pin story backend identity; use the explicit native
+override before continuing an existing native run.
 Registry scopes resolve local > project > user for the canonical owning project;
 remove duplicate winning-scope installations in the plugin manager if requested.
 Approval binds the displayed installation and entry/version identity. Dependencies
 are not fingerprinted. A changed entry/version between display and click requires
-refresh and a new approval. Active runs pin backend provenance in their existing
-snapshot. Runs started before this release keep the backend they used then: the
-legacy command binding if one exists, otherwise native. No native or external records are migrated.
+refresh and a new approval. No native or external records are migrated.
 
 ### Limited external editing
 

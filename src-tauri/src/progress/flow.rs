@@ -51,7 +51,7 @@ pub enum ParticipantKind {
     Subagent,
 }
 
-/// `busy`/`idle`/`awaiting`/`closed` for a terminal, `running`/`done` for a
+/// `busy`/`idle`/`awaiting`/`closed` for a terminal, `running`/`done`/`interrupted` for a
 /// subagent. A closed terminal keeps its column: the journal outlives it.
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -62,6 +62,7 @@ pub enum FlowState {
     Closed,
     Running,
     Done,
+    Interrupted,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -278,6 +279,8 @@ pub(crate) fn build_flow(
             ProgressKind::Blocked => (FlowEventKind::Blocked, parent_of.get(pty).cloned()),
             ProgressKind::Delegated => (FlowEventKind::Delegated, entry.target_pty_id.clone()),
             ProgressKind::Message => (FlowEventKind::Message, entry.target_pty_id.clone()),
+            // A question to an agent and its answer are not a hand-off.
+            ProgressKind::Question | ProgressKind::Answer => continue,
         };
         let (summary, more) = summarize(&entry.text);
         events.push(FlowEvent {
@@ -307,16 +310,19 @@ pub(crate) fn build_flow(
                 .filter(|p| known.contains(p) && *p != lane.agent_id)
                 .map(id_of)
                 .unwrap_or_else(|| pty.clone());
+            let state = if lane.interrupted {
+                FlowState::Interrupted
+            } else if lane.running {
+                FlowState::Running
+            } else {
+                FlowState::Done
+            };
             participants.push(FlowParticipant {
                 id: id.clone(),
                 kind: ParticipantKind::Subagent,
                 title: lane.title.clone(),
                 agent_type: lane.agent_type.clone(),
-                state: if lane.running {
-                    FlowState::Running
-                } else {
-                    FlowState::Done
-                },
+                state,
                 parent: Some(parent.clone()),
                 intent: None,
                 tool_calls: lane.tool_calls,
@@ -344,7 +350,7 @@ pub(crate) fn build_flow(
                     at_ms,
                 });
             }
-            if !lane.running
+            if state == FlowState::Done
                 && let Some(at_ms) = lane.ended_at_ms
             {
                 let (summary, more) = summarize(&lane.report);
@@ -451,6 +457,7 @@ fn native_lanes(children: &[String]) -> Vec<SubagentFlow> {
             title: label.clone(),
             agent_type: None,
             running: true,
+            interrupted: false,
             started_at_ms: None,
             ended_at_ms: None,
             tool_calls: 0,
@@ -617,6 +624,9 @@ mod tests {
         target: Option<(&str, &str)>,
     ) -> ProgressEntry {
         ProgressEntry {
+            question: None,
+            reply_target_available: Some(true),
+            answered: None,
             id,
             project: "/repo".into(),
             pty_id: Some(pty.into()),
@@ -826,6 +836,7 @@ mod tests {
             title: agent.into(),
             agent_type: Some("Explore".into()),
             running,
+            interrupted: false,
             started_at_ms: Some(1_010),
             ended_at_ms: (!running).then_some(1_020),
             tool_calls: 7,
@@ -844,6 +855,10 @@ mod tests {
             vec![
                 lane("a1", None, false, "Survey the lexer", "Two issues found"),
                 lane("a2", Some("a1"), true, "Check the first issue", ""),
+                SubagentFlow {
+                    interrupted: true,
+                    ..lane("a3", None, false, "Check the second issue", "")
+                },
             ],
         )]);
         let f = build_flow(
@@ -855,7 +870,12 @@ mod tests {
             false,
         );
         let ids: Vec<&str> = f.participants.iter().map(|p| p.id.as_str()).collect();
-        assert_eq!(ids, vec!["lead", "w1", "w2", "lead/a1", "lead/a2"]);
+        assert_eq!(
+            ids,
+            vec!["lead", "w1", "w2", "lead/a1", "lead/a2", "lead/a3"]
+        );
+        let a3 = f.participants.iter().find(|p| p.id == "lead/a3").unwrap();
+        assert_eq!(a3.state, FlowState::Interrupted);
         let a2 = f.participants.iter().find(|p| p.id == "lead/a2").unwrap();
         assert_eq!(
             a2.parent.as_deref(),
@@ -879,6 +899,7 @@ mod tests {
             vec![
                 (FlowEventKind::SubagentSpawn, "lead", Some("lead/a1")),
                 (FlowEventKind::SubagentSpawn, "lead/a1", Some("lead/a2")),
+                (FlowEventKind::SubagentSpawn, "lead", Some("lead/a3")),
                 (FlowEventKind::SubagentReturn, "lead/a1", Some("lead")),
             ]
         );
