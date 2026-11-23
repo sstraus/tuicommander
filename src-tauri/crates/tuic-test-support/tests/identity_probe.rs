@@ -48,7 +48,7 @@ fn print_mode_prints_its_words_and_exits_zero() {
         .unwrap();
     assert!(out.status.success(), "{:?}", out.status);
     assert_eq!(out.stdout, b"tuic-native-fixture two\n");
-    assert!(out.stderr.is_empty());
+    assert_eq!(out.stderr, [] as [u8; 0]);
 }
 
 #[test]
@@ -262,7 +262,7 @@ fn ps_personality_fails_for_a_gone_pid_and_rejects_unknown_options() {
     reap(child);
     let gone = ps_output(&ps, &["-p", &pid, "-o", "comm="]);
     assert_eq!(gone.status.code(), Some(1), "{gone:?}");
-    assert!(gone.stdout.is_empty());
+    assert_eq!(gone.stdout, [] as [u8; 0]);
 
     for args in [
         &["-ax"][..],
