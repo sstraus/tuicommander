@@ -43,7 +43,13 @@ def build_body(workflow, changelog):
         subprocess.run(["bash", "-e", "-o", "pipefail", "-c", script], cwd=work,
                        check=True, capture_output=True, text=True,
                        env={**os.environ, "RUNNER_TEMP": str(runner_temp)})
-        return (runner_temp / "tuic-tests/release-body.md").read_bytes()
+        body = runner_temp / "tuic-tests/release-body.md"
+        if not body.exists():
+            # Workflows from before the RUNNER_TEMP move (the optional git-ref
+            # mode) wrote under the working directory's .tmp. That directory is
+            # the throwaway one above, so the checkout is still untouched.
+            body = work / ".tmp/tuic-tests/release-body.md"
+        return body.read_bytes()
 
 
 class ReleaseBodyContracts(unittest.TestCase):
