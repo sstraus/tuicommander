@@ -43,20 +43,24 @@ const SHELL_RE = new RegExp(
 // The same constructor when `new(`, the name and `)` sit on different lines. Matched against
 // the file text with comment lines blanked, so a comment between them cannot hide it.
 const EXEC_MULTILINE_RE = new RegExp(String.raw`Command::new\(\s*"(?:[^"]*/)?(${TOOLS})"\s*,?\s*\)`, "g");
-// A comment line: `//`, `/*`, or a block-comment continuation (`* text`, `*/`, a bare `*`).
-// `*ident` is a dereference statement (`*child = Some(Command::new(\"ps\")...)`), not a comment.
-const COMMENT_RE = /^\s*(\/\/|\/\*|\*(?:\s|\/|$))/;
-// Per line: does it START inside a block comment or inside a (normal or raw) string literal?
-// A lightweight Rust lexer: line comments, block comments, "..." with escapes, r#"..."#, and
-// char literals (so '"' and lifetimes do not open a string). Without it a column-zero `}`
-// inside a raw shell-script string closes the Rust function scope early, and prose between
-// the block-comment delimiters is read as code.
+// Per line: does it START inside a block comment or inside a (normal or raw) string literal,
+// and what is the line's CODE view: the same text with every comment span removed (a `//` to
+// end of line, a `/* ... */` span even when only part of the line) but string contents kept,
+// since the shell-text rule reads them. A lightweight Rust lexer: line comments, block
+// comments, "..." with escapes, r#"..."#, and char literals (so '"' and lifetimes do not open
+// a string). Without it a column-zero `}` inside a raw shell-script string closes the Rust
+// function scope early, prose between the block-comment delimiters is read as code, and code
+// after a closing `*/` or a command-like word in a trailing `// comment` is misjudged.
 function lineStates(lines) {
 	const states = [];
 	let mode = "code";
 	let rawHashes = 0;
 	for (const line of lines) {
-		states.push({ inString: mode === "str" || mode === "raw", inBlock: mode === "block" });
+		const state = { inString: mode === "str" || mode === "raw", inBlock: mode === "block", code: "" };
+		states.push(state);
+		const keep = (from, to) => {
+			state.code += line.slice(from, to);
+		};
 		let j = 0;
 		while (j < line.length) {
 			const c = line[j];
@@ -64,35 +68,51 @@ function lineStates(lines) {
 				if (line.startsWith("*/", j)) {
 					mode = "code";
 					j += 2;
+					state.code += " ";
 				} else j++;
 			} else if (mode === "str") {
-				if (c === "\\") j += 2;
-				else {
+				if (c === "\\") {
+					keep(j, j + 2);
+					j += 2;
+				} else {
 					if (c === '"') mode = "code";
+					keep(j, j + 1);
 					j++;
 				}
 			} else if (mode === "raw") {
 				if (c === '"' && line.startsWith("#".repeat(rawHashes), j + 1)) {
 					mode = "code";
+					keep(j, j + 1 + rawHashes);
 					j += 1 + rawHashes;
-				} else j++;
+				} else {
+					keep(j, j + 1);
+					j++;
+				}
 			} else if (line.startsWith("//", j)) {
 				break;
 			} else if (line.startsWith("/*", j)) {
 				mode = "block";
 				j += 2;
+				state.code += " ";
 			} else if (c === '"') {
 				mode = "str";
+				keep(j, j + 1);
 				j++;
 			} else if (c === "r" && (j === 0 || !/[A-Za-z0-9_]/.test(line[j - 1])) && /^r#*"/.test(line.slice(j))) {
 				const hashes = /^r(#*)"/.exec(line.slice(j))[1].length;
 				mode = "raw";
 				rawHashes = hashes;
+				keep(j, j + 2 + hashes);
 				j += 2 + hashes;
 			} else if (c === "'") {
 				const literal = /^'(?:\\.[^']*|[^\\'])'/.exec(line.slice(j));
-				j += literal ? literal[0].length : 1;
-			} else j++;
+				const width = literal ? literal[0].length : 1;
+				keep(j, j + width);
+				j += width;
+			} else {
+				keep(j, j + 1);
+				j++;
+			}
 		}
 	}
 	return states;
@@ -150,9 +170,9 @@ function scan(files) {
 		const states = lineStates(lines);
 		for (let i = 0; i < lines.length; i++) {
 			const line = lines[i];
-			if (line.trim() === "") continue;
-			// Inside a block comment: prose, never code.
-			if (states[i].inBlock) continue;
+			// The line with its comment spans removed; blank when it is all comment.
+			const code = states[i].code;
+			if (code.trim() === "") continue;
 			const indent = INDENT_RE.exec(line)[1].length;
 			// A line that continues a string literal is text, not Rust: its braces and
 			// indentation say nothing about where a function ends.
@@ -160,26 +180,23 @@ function scan(files) {
 				const top = open[open.length - 1];
 				if (indent < top.indent) {
 					open.pop();
-				} else if (indent === top.indent && /^\s*}/.test(line)) {
+				} else if (indent === top.indent && /^\s*}/.test(code)) {
 					open.pop();
 					break;
 				} else {
 					break;
 				}
 			}
-			if (COMMENT_RE.test(line)) continue;
-			const fn = states[i].inString ? null : FN_RE.exec(line);
+			const fn = states[i].inString ? null : FN_RE.exec(code);
 			const enclosing = fn ? fn[1] : open.length > 0 ? open[open.length - 1].name : "<top level>";
 			enclosingByLine[i] = enclosing;
 			// A body that stays open past this line: not a `;` declaration, not
 			// a one-line `fn f() { .. }`.
-			if (fn && !/[;}]\s*$/.test(line)) open.push({ name: fn[1], indent });
-			const rule = EXEC_RE.test(line) ? "EXEC" : SHELL_RE.test(line) ? "SHELL" : null;
+			if (fn && !/[;}]\s*$/.test(code)) open.push({ name: fn[1], indent });
+			const rule = EXEC_RE.test(code) ? "EXEC" : SHELL_RE.test(code) ? "SHELL" : null;
 			if (rule) hits.push({ site: `${file}::${enclosing}`, line: i + 1, rule, text: line.trim() });
 		}
-		const uncommented = lines
-			.map((line, i) => (states[i].inBlock || COMMENT_RE.test(line) ? "" : line))
-			.join("\n");
+		const uncommented = states.map((state) => state.code).join("\n");
 		for (const match of uncommented.matchAll(EXEC_MULTILINE_RE)) {
 			const start = uncommented.slice(0, match.index).split("\n").length - 1;
 			const site = `${file}::${enclosingByLine[start] ?? "<top level>"}`;
@@ -251,6 +268,12 @@ if (selfTest) {
 			text:
 				'fn allowed_site() {\n    let s = r#"\nif x; then\n}\nps -eo pid\n"#;\n}\nfn later() {\n    Command::new("ps");\n}\n',
 		},
+		// Code after a block comment closes on the same line is still code.
+		{ path: "q.rs", text: 'fn probe() {\n    /* explanation\n    */ Command::new("ps");\n}\n' },
+		// Command-like text only in a trailing comment is not a call...
+		{ path: "r.rs", text: 'fn trailing() {\n    let n = 1; // Command::new("ps")\n}\n' },
+		// ...but a real constructor before a trailing comment is.
+		{ path: "s.rs", text: 'fn real_then_comment() {\n    Command::new("ps"); // why\n}\n' },
 		{
 			path: "m.rs",
 			text: 'fn prose() {\n    log::info!("check ps or top");\n    /*\n     * ps -eo pid is documented here\n     */\n}\n',
@@ -280,6 +303,8 @@ if (selfTest) {
 		"l.rs::deref:EXEC",
 		"n.rs::longopt:SHELL",
 		"p.rs::later:EXEC",
+		"q.rs::probe:EXEC",
+		"s.rs::real_then_comment:EXEC",
 	];
 	if (JSON.stringify(sites) !== JSON.stringify(expected)) {
 		throw new Error(`expected offenders ${JSON.stringify(expected)}, got ${JSON.stringify(sites)}`);

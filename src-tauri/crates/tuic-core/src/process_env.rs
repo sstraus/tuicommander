@@ -80,15 +80,20 @@ fn split_procargs2(buf: &[u8]) -> Option<(Vec<String>, &[u8])> {
     if !(0..=65535).contains(&n_args) {
         return None;
     }
+    // DEFERRED (2026-11-23): an EMPTY argv[0] is indistinguishable from the exec_path's
+    // alignment padding here (both are NUL runs), so `skip_leading_nulls` swallows it and the
+    // parse reads one entry too far. The buffer carries no marker for the boundary; a process
+    // launched with an empty argv[0] is not a real-world case for the agent/tool detection
+    // this feeds, so it is accepted until a layout-based check exists.
     let mut data = skip_leading_nulls(skip_cstring(&buf[int_size..]));
     let mut argv = Vec::with_capacity(n_args as usize);
     for _ in 0..n_args {
-        if data.is_empty() {
-            break;
-        }
-        let end = data.iter().position(|&b| b == 0).unwrap_or(data.len());
+        // A short or unterminated buffer (the image grew past the sized read, so the
+        // kernel returned a truncated copy) is unreadable, not a partial argv: the
+        // caller would otherwise treat a fragment as the process's real arguments.
+        let end = data.iter().position(|&b| b == 0)?;
         argv.push(String::from_utf8_lossy(&data[..end]).into_owned());
-        data = data.get(end + 1..).unwrap_or(&[]);
+        data = &data[end + 1..];
     }
     Some((argv, data))
 }
@@ -484,9 +489,15 @@ mod tests {
         let (argv, env) = split_procargs2(&buf).expect("parses");
         assert_eq!(argv, vec!["tool", "", "--version"]);
         assert_eq!(collect_cstrings(env), vec!["HOME=/h", "PATH=/p"]);
-        // A truncated buffer yields what it has instead of reading past the end.
-        let short = &buf[..buf.len() - 20];
-        assert!(split_procargs2(short).is_some());
+        // Catches: a truncated read (the image grew past the sized buffer) returning a
+        // partial argv, which callers then treat as the process's real arguments.
+        // Cut mid-way through the last argument: unterminated.
+        let unterminated = &buf[..buf.len() - 20];
+        assert!(split_procargs2(unterminated).is_none());
+        // Cut after "tool\0\0": fewer than argc entries remain.
+        let after_empty_arg =
+            std::mem::size_of::<i32>() + b"/usr/bin/tool\0\0\0".len() + b"tool\0\0".len();
+        assert!(split_procargs2(&buf[..after_empty_arg]).is_none());
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]

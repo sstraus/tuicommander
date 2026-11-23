@@ -1281,8 +1281,10 @@ mod tests {
             loop {
                 // Gone, or an unreaped zombie of this process: either way it no longer runs.
                 // Natively, not via `ps`, which sandboxed hosts cannot exec.
+                // A failed listing must not read as "no zombies": an unreaped zombie counts
+                // as alive, so the loop would spin to the deadline and blame the child.
                 let zombies = tuic_core::process_info::zombie_children(std::process::id())
-                    .unwrap_or_default();
+                    .expect("list this process's zombie children");
                 if !tuic_core::process_info::is_alive(pid) || zombies.contains(&pid) {
                     break;
                 }

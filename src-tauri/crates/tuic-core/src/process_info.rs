@@ -313,6 +313,16 @@ pub fn children_cpu(
             .into_iter()
             .filter_map(|pid| {
                 let process = source.info(pid)?;
+                // The listed child may have exited and its pid been reused by an unrelated
+                // process before this read; a row whose parent changed is not our child.
+                if process.ppid != ppid {
+                    return None;
+                }
+                // DEFERRED (2026-11-23): `usage` is read after `info` with no identity check
+                // between them, and `now` is the caller's earlier timestamp rather than the
+                // sample time, so a pid reused (or a slow read) between the calls skews this
+                // one watchdog log percentage. Binding both to a start-time-stamped sample
+                // needs a `usage` API change; the effect is a mislabeled log line, not state.
                 let cpu_percent = match (source.usage(pid), process.start_time) {
                     (Some(usage), Some(start)) => Some(lifetime_cpu_percent(&usage, start, now)),
                     _ => None,
@@ -616,6 +626,11 @@ mod platform {
 
     fn entry(pid: i32, want_argv: bool, own_uid: u32) -> Option<ProcInfo> {
         let short = short_info(pid)?;
+        // DEFERRED (2026-11-23): one `KERN_PROC_PID` sysctl per process makes a full snapshot
+        // quadratic kernel work on a stable table (XNU walks the process list under its
+        // lock for each call). Measured cost is small at realistic process counts; indexing
+        // one `KERN_PROC_ALL` read by pid (and a direct libproc start-time query for single
+        // lookups) is the fix once a snapshot shows up in a profile.
         let kinfo = kinfo(pid);
         if kinfo.as_ref().is_some_and(|kinfo| kinfo.zombie) {
             return None;
@@ -906,10 +921,20 @@ mod platform {
     }
 
     fn effective_uid_of(pid: u32) -> Option<u32> {
-        let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
-        status
-            .lines()
-            .find_map(|line| line.strip_prefix("Uid:"))?
+        // Bytes, not `read_to_string`: the `Name:` line carries the kernel's raw `comm`, so a
+        // non-UTF-8 name would fail the whole read and a live process would report no uid
+        // even though the numeric `Uid:` line is intact.
+        let status = std::fs::read(format!("/proc/{pid}/status")).ok()?;
+        parse_effective_uid(&status)
+    }
+
+    /// The effective uid (second field of `Uid:`), decoding only that numeric line.
+    fn parse_effective_uid(status: &[u8]) -> Option<u32> {
+        let line = status
+            .split(|&b| b == b'\n')
+            .find_map(|line| line.strip_prefix(b"Uid:"))?;
+        std::str::from_utf8(line)
+            .ok()?
             .split_whitespace()
             .nth(1)?
             .parse()
@@ -1020,6 +1045,19 @@ mod platform {
             let stat = parse_stat(&String::from_utf8_lossy(&bytes)).expect("parses");
             assert_eq!((stat.ppid, stat.pgid), (7, 42));
             assert!(stat.comm.contains('\u{fffd}'));
+        }
+
+        // Catches: reading `status` as UTF-8, so a non-UTF-8 `Name:` made a live process
+        // report no uid although its numeric `Uid:` line was intact.
+        #[test]
+        fn effective_uid_survives_a_non_utf8_name() {
+            let mut status = b"Name:\tweird".to_vec();
+            status.push(0xff);
+            status.extend_from_slice(
+                b"\nUmask:\t0022\nUid:\t1000\t1001\t1000\t1000\nGid:\t5\t5\t5\t5\n",
+            );
+            assert_eq!(parse_effective_uid(&status), Some(1001));
+            assert_eq!(parse_effective_uid(b"Name:\tx\n"), None);
         }
 
         #[test]
@@ -1244,6 +1282,26 @@ mod tests {
         assert_eq!(children[0].comm, "cargo");
         assert!((children[0].cpu_percent.unwrap() - 50.0).abs() < 0.01);
         assert_eq!(children[1].cpu_percent, None);
+    }
+
+    // Catches: a pid listed as our child that was reused by an unrelated process before
+    // `info` ran being reported (and its CPU attributed) as our child.
+    #[test]
+    fn children_cpu_skips_a_listed_pid_whose_parent_changed() {
+        let mut fake = FakeProcessSource::with_processes(vec![
+            started(11, 10, "cargo", &["cargo"]),
+            started(13, 1, "reused", &["reused"]),
+        ]);
+        // The fake lists zombie entries as children; pid 13 is also a live process under pid 1,
+        // which is exactly what a reused pid looks like to `children` + `info`.
+        fake.zombies.push((13, 10));
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_100);
+        let children = children_cpu(&fake, 10, now).unwrap();
+        assert_eq!(
+            children.iter().map(|c| c.pid).collect::<Vec<_>>(),
+            vec![11],
+            "the reused pid belongs to pid 1 now"
+        );
     }
 
     #[test]
