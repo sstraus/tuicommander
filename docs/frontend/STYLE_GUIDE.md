@@ -2,6 +2,8 @@
 
 Reference for all UI/CSS/layout work. Every visual change MUST follow this guide.
 
+Detail panels that show one item and its actions use the UI v3 layout: [ui-v3.md](ui-v3.md).
+
 ## Design Philosophy
 
 **VS Code Dark theme** adapted for a terminal-first, developer-focused interface. The UI is a frame for terminal content — chrome recedes, content dominates. No bright whites. Muted UI elements, vivid status colors. Everything monospace except UI labels.

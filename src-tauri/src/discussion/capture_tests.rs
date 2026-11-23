@@ -124,3 +124,30 @@ fn a_terminal_without_a_binding_files_nothing() {
         Vec::<crate::progress::ProgressRecentEntry>::new()
     );
 }
+
+// Catches: a second session's question dropped because its raw message id
+// (Grok's `grok-prompt-0`) equals one already filed by another session.
+#[test]
+fn sessions_sharing_a_raw_message_id_each_file_their_question() {
+    let dir = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
+    let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
+    let journal = ProgressStore::open().unwrap();
+    let file = |session: &str| {
+        let q = NewQuestion {
+            project: "/p",
+            pty_id: session,
+            agent_name: None,
+            question: "Why?",
+        };
+        store::record_direct(
+            &journal,
+            &q,
+            "Because.",
+            &source_id(session, "grok-prompt-0"),
+        )
+        .unwrap()
+    };
+    assert!(file("session-a").is_some());
+    assert!(file("session-b").is_some(), "second session must file");
+    assert!(file("session-a").is_none(), "same session still dedups");
+}

@@ -115,6 +115,7 @@ fn merged_pr_proof_page_two_error_is_unknown_and_never_cached() {
         .trim()
         .to_owned();
     let cache = moka::sync::Cache::builder().max_capacity(8).build();
+    let failures = moka::sync::Cache::builder().max_capacity(8).build();
     for nodes in [json!([]), json!([merged_node(&tip)])] {
         let api = Stub::new(vec![
             Ok(page(nodes, true, json!("page-2"))),
@@ -130,6 +131,7 @@ fn merged_pr_proof_page_two_error_is_unknown_and_never_cached() {
         assert_eq!(answer, None);
         assert!(!cached_pr_proof(
             &cache,
+            &failures,
             repo.path(),
             "feature",
             &tip,
@@ -193,4 +195,101 @@ async fn merged_pr_proof_closure_runs_on_spawn_blocking_without_panic() {
             .await
             .unwrap()
     );
+}
+
+fn poller_pr(branch: &str, state: &str, tip: &str) -> crate::github::BranchPrStatus {
+    crate::github::BranchPrStatus {
+        branch: branch.into(),
+        number: 42,
+        title: "Feature".into(),
+        state: state.into(),
+        url: String::new(),
+        additions: 0,
+        deletions: 0,
+        checks: crate::github::CheckSummary {
+            passed: 0,
+            failed: 0,
+            pending: 0,
+            total: 0,
+        },
+        author: "author".into(),
+        commits: 1,
+        mergeable: "UNKNOWN".into(),
+        merge_state_status: String::new(),
+        review_decision: String::new(),
+        viewer_did_approve: false,
+        labels: vec![],
+        is_draft: false,
+        base_ref_name: "main".into(),
+        head_ref_oid: tip.into(),
+        created_at: String::new(),
+        updated_at: String::new(),
+        merge_state_label: None,
+        conflict_state: crate::github::ConflictState::Clear,
+        review_state_label: None,
+        merge_commit_allowed: true,
+        squash_merge_allowed: true,
+        rebase_merge_allowed: true,
+        unresolved_threads: 0,
+        unresolved_threads_truncated: false,
+    }
+}
+
+// Catches: a GraphQL call when the poller already knows the PR is merged; also a
+// poller hit for another tip or a still-open PR inventing merged status.
+#[tokio::test]
+async fn merged_proof_hits_poller_state_without_graphql() {
+    let state = Arc::new(crate::state::tests_support::make_test_app_state());
+    crate::github_poller::ensure_polling(&state, vec![], String::new(), false);
+    let previous = Arc::clone(&state.github.poller.lock().as_ref().unwrap().previous_prs);
+    previous.write().insert(
+        "/repo".into(),
+        HashMap::from([
+            ("merged".into(), poller_pr("merged", "MERGED", "tip")),
+            ("open".into(), poller_pr("open", "OPEN", "tip")),
+        ]),
+    );
+    let repo = Path::new("/repo");
+    let network = std::cell::Cell::new(0);
+    let ask = |branch: &str, tip: &str| {
+        proof_lookup(&state, repo, branch, tip, || {
+            network.set(network.get() + 1);
+            Some(false)
+        })
+    };
+    assert_eq!(ask("merged", "tip"), Some(true));
+    assert_eq!(network.get(), 0, "the poller answered; no network call");
+    assert_eq!(ask("merged", "other-tip"), Some(false));
+    assert_eq!(ask("open", "tip"), Some(false));
+    assert_eq!(network.get(), 2, "only poller misses reach the network");
+}
+
+// Catches: a retry on every repo-changed after a failed lookup, and a failure
+// remembered past its 60 s window or as if it were a definitive answer.
+#[test]
+fn failed_lookup_is_cached_briefly() {
+    let proofs = moka::sync::Cache::builder().max_capacity(8).build();
+    let failures = moka::sync::Cache::builder()
+        .max_capacity(8)
+        .time_to_live(Duration::from_millis(50))
+        .build();
+    let repo = Path::new("/repo");
+    let calls = std::cell::Cell::new(0);
+    let ask = |answer: Option<bool>| {
+        cached_pr_proof(&proofs, &failures, repo, "branch", "tip", || {
+            calls.set(calls.get() + 1);
+            answer
+        })
+    };
+    assert!(!ask(None));
+    assert!(!ask(Some(true)), "a repo-changed storm must not retry");
+    assert_eq!(calls.get(), 1);
+    std::thread::sleep(Duration::from_millis(80));
+    assert!(
+        ask(Some(true)),
+        "the failure expired and the lookup retried"
+    );
+    assert_eq!(calls.get(), 2);
+    assert!(ask(None), "a definitive answer is still reused");
+    assert_eq!(calls.get(), 2);
 }

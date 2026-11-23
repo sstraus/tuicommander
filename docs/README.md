@@ -31,6 +31,7 @@ Start with the [documentation home](index.md) or the [Getting Started](user-guid
 - [PTY Management](backend/pty.md) - Session lifecycle, reader threads, output processing
 - [Git Operations](backend/git.md) - Repository info, diff, branches, worktrees
 - [GitHub Integration](backend/github.md) - PR status, CI checks, GraphQL batching
+- [Provider Gateway](backend/provider-gateway.md) - Quota budget, cache and metrics for every outbound provider request
 - [Configuration](backend/config.md) - Config files, platform directories, migration
 - [Dictation](backend/dictation.md) - Whisper transcription, audio capture, push-to-talk
 - [MCP & HTTP Server](backend/mcp-http.md) - REST API, WebSocket streaming, Streamable HTTP transport

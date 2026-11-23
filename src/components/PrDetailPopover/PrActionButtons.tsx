@@ -30,10 +30,14 @@ export function failedRunIds(checks: readonly CheckDetail[]): number[] {
 	return [...ids];
 }
 
+export type PrAction = "rerun" | "auto-merge" | "request-changes";
+
 export interface PrActionButtonsProps {
 	repoPath: string;
 	pr: BranchPrStatus;
 	checks: readonly CheckDetail[];
+	/** The actions this placement offers; the UI v3 next action picks them by PR state. */
+	actions: readonly PrAction[];
 }
 
 /** Rerun failed jobs, auto-merge, merge queue and request changes for an open PR. */
@@ -57,6 +61,7 @@ export const PrActionButtons: Component<PrActionButtonsProps> = (props) => {
 	const autoMergeOn = () => Boolean(actionState()?.autoMergeRequest);
 	const queueRequired = () => actionState()?.queueRequired === true;
 	const queued = () => Boolean(actionState()?.mergeQueueEntry);
+	const offers = (action: PrAction) => props.actions.includes(action);
 	const mergeMethod = () => effectiveMergeMethod(props.pr, preferredMergeStrategy(props.repoPath));
 
 	async function run(success: string, work: () => Promise<unknown>, after?: () => void) {
@@ -136,29 +141,31 @@ export const PrActionButtons: Component<PrActionButtonsProps> = (props) => {
 	return (
 		<Show when={open()}>
 			<div class={s.actions} data-testid="pr-action-buttons">
-				<Show when={runIds().length > 0}>
-					<Button type="button" disabled={busy()} onClick={rerun}>
+				<Show when={offers("rerun") && runIds().length > 0}>
+					<Button size="compact" type="button" disabled={busy()} onClick={rerun}>
 						{t("prDetail.rerunFailed", "Re-run failed jobs")}
 					</Button>
 				</Show>
-				<Show when={mergeable()}>
-					<Button type="button" disabled={busy() || actionState.loading} onClick={toggleAutoMerge}>
+				<Show when={offers("auto-merge") && mergeable()}>
+					<Button size="compact" type="button" disabled={busy() || actionState.loading} onClick={toggleAutoMerge}>
 						{autoMergeOn()
 							? t("prDetail.disableAutoMerge", "Disable auto-merge")
 							: t("prDetail.enableAutoMerge", "Enable auto-merge")}
 					</Button>
 					<Show when={queueRequired() || queued()}>
-						<Button type="button" disabled={busy()} onClick={toggleQueue}>
+						<Button size="compact" type="button" disabled={busy()} onClick={toggleQueue}>
 							{queued()
 								? t("prDetail.leaveQueue", "Remove from merge queue")
 								: t("prDetail.joinQueue", "Add to merge queue")}
 						</Button>
 					</Show>
 				</Show>
-				<Button type="button" disabled={busy()} onClick={() => setRequesting((value) => !value)}>
-					{t("prDetail.requestChanges", "Request changes")}
-				</Button>
-				<Show when={requesting()}>
+				<Show when={offers("request-changes")}>
+					<Button size="compact" type="button" disabled={busy()} onClick={() => setRequesting((value) => !value)}>
+						{t("prDetail.requestChanges", "Request changes")}
+					</Button>
+				</Show>
+				<Show when={offers("request-changes") && requesting()}>
 					<form
 						class={s.requestForm}
 						onSubmit={(event) => {
@@ -172,7 +179,7 @@ export const PrActionButtons: Component<PrActionButtonsProps> = (props) => {
 							value={body()}
 							onInput={(event) => setBody(event.currentTarget.value)}
 						/>
-						<Button type="submit" disabled={busy() || !body().trim()}>
+						<Button size="compact" type="submit" disabled={busy() || !body().trim()}>
 							{t("prDetail.submitRequestChanges", "Submit")}
 						</Button>
 					</form>

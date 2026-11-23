@@ -1,9 +1,9 @@
 import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 import appChoiceOptions from "../../src-tauri/src/settings/app_choice_options.json";
+import { settingStoreDefaults } from "../generated/settingStoreDefaults";
 import { setLocale } from "../i18n";
 import { invoke } from "../invoke";
-import { settingNumberDefault } from "../services/settingsCatalogue";
 import { settingsRefresh } from "../services/settingsRefresh";
 import { HttpRpcError } from "../transport/http";
 import type { IssueFilterMode } from "../types";
@@ -354,9 +354,9 @@ function createSettingsStore() {
 		blockFoldingEnabled: true,
 		indexStrategy: "active_and_switch",
 		standbyTimeoutMinutes: 5,
-		indexMemoryBudgetMb: settingNumberDefault("app.index_memory_budget_mb"),
-		attachmentMaxBytes: settingNumberDefault("app.attachment_max_bytes"),
-		webviewUnloadMinutes: settingNumberDefault("app.background.webview_unload_minutes"),
+		indexMemoryBudgetMb: settingStoreDefaults["app.index_memory_budget_mb"],
+		attachmentMaxBytes: settingStoreDefaults["app.attachment_max_bytes"],
+		webviewUnloadMinutes: settingStoreDefaults["app.background.webview_unload_minutes"],
 		customLaunchers: [],
 		inlineBlameEnabled: true,
 		egoExecutable: "",
@@ -435,10 +435,10 @@ function createSettingsStore() {
 		values.blockFoldingEnabled = config.block_folding_enabled ?? true;
 		values.indexStrategy = (config.index_strategy as SettingsStoreState["indexStrategy"]) ?? "active_and_switch";
 		values.standbyTimeoutMinutes = config.standby_timeout_minutes ?? 5;
-		values.indexMemoryBudgetMb = config.index_memory_budget_mb ?? settingNumberDefault("app.index_memory_budget_mb");
-		values.attachmentMaxBytes = config.attachment_max_bytes ?? settingNumberDefault("app.attachment_max_bytes");
+		values.indexMemoryBudgetMb = config.index_memory_budget_mb ?? settingStoreDefaults["app.index_memory_budget_mb"];
+		values.attachmentMaxBytes = config.attachment_max_bytes ?? settingStoreDefaults["app.attachment_max_bytes"];
 		values.webviewUnloadMinutes =
-			config.background?.webview_unload_minutes ?? settingNumberDefault("app.background.webview_unload_minutes");
+			config.background?.webview_unload_minutes ?? settingStoreDefaults["app.background.webview_unload_minutes"];
 		values.customLaunchers = config.custom_launchers ?? [];
 		values.inlineBlameEnabled = config.inline_blame_enabled ?? true;
 		values.egoExecutable = config.ego_executable ?? "";

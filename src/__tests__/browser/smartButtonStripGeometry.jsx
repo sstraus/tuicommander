@@ -12,7 +12,7 @@ render(() => <section id="geometry" style="padding:16px;width:360px;height:320px
   <SmartButtonStrip placement="file-context" repoPath="/geometry" extraFilter={p => p.tags?.includes('geometry-fixture')} />
   <SmartButtonStrip placement="terminal-context" repoPath="/geometry" extraFilter={p => p.tags?.includes('geometry-fixture')} />
 </section>, document.getElementById('root'));
-document.querySelector('[title="More actions"]').click();
+document.querySelector('[title="More agent actions"]').click();
 document.querySelectorAll('[role="group"]').forEach(group => { group.dataset.joinedCase = 'compact'; if(group.children.length > 1) group.dataset.row = 'compact'; });
 document.querySelector(`.${s.menu}`).dataset.row = 'default';
 window.controlGeometryReady = true;

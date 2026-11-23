@@ -71,6 +71,24 @@ pub enum PrTransition {
     },
 }
 
+impl PrTransition {
+    /// The repository the transition was detected in.
+    #[must_use]
+    pub fn repo_path(&self) -> &str {
+        match self {
+            Self::Merged { repo_path, .. }
+            | Self::Closed { repo_path, .. }
+            | Self::Blocked { repo_path, .. }
+            | Self::CiFailed { repo_path, .. }
+            | Self::CiRecovered { repo_path, .. }
+            | Self::ChangesRequested { repo_path, .. }
+            | Self::Ready { repo_path, .. }
+            | Self::Pushed { repo_path, .. }
+            | Self::Opened { repo_path, .. } => repo_path,
+        }
+    }
+}
+
 /// The "ready" verdict of the shared readiness function (`src/utils/prReadiness.ts`): the OS
 /// notice must never say "ready to merge" while the badge says Comments or CI Running. Keep the
 /// two in step.

@@ -213,8 +213,9 @@ it("network_failure_keeps_saved_sort_and_error_visible", async () => {
 	filters();
 	expect(screen.getByLabelText("Sort tasks")).toHaveValue("title");
 	expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
-	// Observe the debounced app persistence boundary before the final test tears down.
-	await waitFor(() => expect(disk.prefs).toHaveProperty("sidebar_visible"));
+	// Preferences are saved only on change (3121), so the failure must leave the saved sort on disk.
+	const saved = (disk.prefs.tasks_view_preferences as Record<string, string>)['["/repo-a","demo","a"]'];
+	expect(JSON.parse(saved).query.sort).toEqual({ fieldId: "title", descending: false });
 });
 
 // Catches: ui-prefs.json merge patches delete null leaves, so a restored query reaches the provider with

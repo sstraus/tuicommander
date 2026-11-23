@@ -1,4 +1,5 @@
 use super::*;
+use crate::github::Origin;
 use crate::github_account::{GitHubAccount, GitHubHost};
 use mockito::{Matcher, Server};
 
@@ -32,6 +33,7 @@ async fn ghe_log_redirect_strips_authorization_and_retains_only_the_utf8_tail() 
         token: "named-ghe-token".into(),
         owner: "team".into(),
         repo: "project".into(),
+        origin: crate::github::Origin::interactive("test"),
     };
     let mut request = api.text_request("actions/jobs/7/logs").build().unwrap();
     assert_eq!(
@@ -44,9 +46,15 @@ async fn ghe_log_redirect_strips_authorization_and_retains_only_the_utf8_tail() 
         .parse()
         .unwrap();
     let request = reqwest::RequestBuilder::from_parts(state.http_client.clone(), request);
-    let tail = download_text_tail(&state, &api.account, request, 14)
-        .await
-        .unwrap();
+    let tail = download_text_tail(
+        &state,
+        &api.account,
+        Origin::interactive("test"),
+        request,
+        14,
+    )
+    .await
+    .unwrap();
     assert_eq!(tail, "\nlast failure\n");
     redirect.assert_async().await;
     storage.assert_async().await;
@@ -65,7 +73,7 @@ async fn text_download_error_keeps_status_and_sanitized_bounded_tail() {
     let state = crate::state::tests_support::make_test_app_state();
     let account = GitHubAccount::ghe_pat(GitHubHost::new("ghe.acme.com").unwrap(), None);
     let request = state.http_client.get(format!("{}/logs", server.url()));
-    let error = download_text_tail(&state, &account, request, 32)
+    let error = download_text_tail(&state, &account, Origin::interactive("test"), request, 32)
         .await
         .unwrap_err();
     assert!(error.starts_with("GitHub API error (404 Not Found): "));
@@ -85,7 +93,9 @@ async fn rest_json_error(status: usize, headers: &[(&str, &str)], body: &str) ->
     let state = crate::state::tests_support::make_test_app_state();
     let account = GitHubAccount::ghe_pat(GitHubHost::new("ghe.acme.com").unwrap(), None);
     let request = state.http_client.get(format!("{}/x", server.url()));
-    let error = rest_json(&state, &account, request).await.unwrap_err();
+    let error = rest_json(&state, &account, Origin::interactive("test"), request)
+        .await
+        .unwrap_err();
     mock.assert_async().await;
     error
 }

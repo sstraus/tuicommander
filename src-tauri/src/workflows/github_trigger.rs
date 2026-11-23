@@ -18,6 +18,8 @@ pub(crate) enum GithubAction {
     Reopened,
     Updated,
     Labeled,
+    /// A user started the run by hand; never a polled source event.
+    Manual,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

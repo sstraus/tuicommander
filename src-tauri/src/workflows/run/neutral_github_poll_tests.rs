@@ -1,7 +1,9 @@
 use super::RunStore;
 use crate::github_pr_api::PrApi;
 use crate::workflows::{
-    github_event::{from_rest, open_snapshots, poll_snapshots},
+    github_event::{
+        from_poller_issues, from_poller_prs, from_rest, open_snapshots, poll_snapshots,
+    },
     github_trigger::GithubResource,
 };
 use serde_json::{Value, json};
@@ -71,6 +73,7 @@ async fn github_poll_cycle_uses_list_snapshots_without_per_open_resource_gets() 
         "octo-org/example",
         GithubResource::Issue,
         &(1..=100).collect::<Vec<_>>(),
+        None,
     )
     .await
     .unwrap();
@@ -79,6 +82,7 @@ async fn github_poll_cycle_uses_list_snapshots_without_per_open_resource_gets() 
         "octo-org/example",
         GithubResource::PullRequest,
         &(101..=130).collect::<Vec<_>>(),
+        None,
     )
     .await
     .unwrap();
@@ -136,6 +140,7 @@ async fn github_poll_cycle_retires_failed_missing_number_and_continues() {
         &store
             .known_github_numbers("octo-org/example", GithubResource::Issue)
             .unwrap(),
+        None,
     )
     .await
     .unwrap();
@@ -234,6 +239,7 @@ async fn transient_get_failure_keeps_known_number_for_later_closure_and_reopen()
             &store
                 .known_github_numbers("octo-org/example", GithubResource::Issue)
                 .unwrap(),
+            None,
         )
         .await
         .unwrap();
@@ -254,6 +260,7 @@ async fn transient_get_failure_keeps_known_number_for_later_closure_and_reopen()
             &store
                 .known_github_numbers("octo-org/example", GithubResource::Issue)
                 .unwrap(),
+            None,
         )
         .await
         .unwrap();
@@ -270,7 +277,7 @@ async fn transient_get_failure_keeps_known_number_for_later_closure_and_reopen()
                 .unwrap(),
             [] as [i64; 0]
         );
-        let poll = poll_snapshots(&api, "octo-org/example", GithubResource::Issue, &[])
+        let poll = poll_snapshots(&api, "octo-org/example", GithubResource::Issue, &[], None)
             .await
             .unwrap();
         let events = store
@@ -279,4 +286,131 @@ async fn transient_get_failure_keeps_known_number_for_later_closure_and_reopen()
         assert_eq!(events[0].event, "reopened", "reopen lost after {error}");
         assert_eq!(api.calls.lock().unwrap().len(), 5);
     }
+}
+
+fn poller_issue(number: i32) -> tuic_git::github::GitHubIssue {
+    let rest = raw(GithubResource::Issue, i64::from(number));
+    let title = rest["title"].as_str().unwrap().to_string();
+    tuic_git::github::GitHubIssue {
+        number,
+        requirements_digest: tuic_git::github::requirements_digest(
+            &title,
+            rest["body"].as_str().unwrap(),
+        ),
+        title,
+        state: "OPEN".into(),
+        url: String::new(),
+        author: String::new(),
+        author_association: String::new(),
+        labels: rest["labels"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| tuic_git::github::PrLabel {
+                name: l["name"].as_str().unwrap().into(),
+                color: String::new(),
+                text_color: String::new(),
+                background_color: String::new(),
+            })
+            .collect(),
+        assignees: vec![],
+        milestone: None,
+        comments_count: 0,
+        created_at: String::new(),
+        updated_at: rest["updated_at"].as_str().unwrap().into(),
+    }
+}
+
+fn poller_pr(number: i64) -> tuic_git::github::IntakePullRequest {
+    let rest = raw(GithubResource::PullRequest, number);
+    let title = rest["title"].as_str().unwrap().to_string();
+    tuic_git::github::IntakePullRequest {
+        number,
+        requirements_digest: tuic_git::github::requirements_digest(
+            &title,
+            rest["body"].as_str().unwrap(),
+        ),
+        title,
+        labels: vec!["bug".into()],
+        head_sha: rest["head"]["sha"].as_str().unwrap().into(),
+        base_sha: rest["base"]["sha"].as_str().unwrap().into(),
+        updated_at: rest["updated_at"].as_str().unwrap().into(),
+    }
+}
+
+// Catches: the double download per tick. A complete poller list costs no list page;
+// only a known-open number the list lacks costs one GET.
+#[tokio::test]
+async fn observe_uses_complete_poller_snapshot_without_rest_pages() {
+    let issues = from_poller_issues("octo-org/example", &[poller_issue(1), poller_issue(2)])
+        .unwrap()
+        .expect("a list with digests is complete");
+    let api = Api::new(vec![Ok({
+        let mut r = raw(GithubResource::Issue, 3);
+        r["state"] = json!("closed");
+        r
+    })]);
+    let polled = poll_snapshots(
+        &api,
+        "octo-org/example",
+        GithubResource::Issue,
+        &[1, 2, 3],
+        Some(issues),
+    )
+    .await
+    .unwrap();
+    assert_eq!(polled.snapshots.len(), 3);
+    assert_eq!(*api.calls.lock().unwrap(), vec!["issues/3"]);
+}
+
+// Catches: a poller list that proves nothing (no body digest) replacing the REST
+// pages, which would admit from unverified data.
+#[tokio::test]
+async fn observe_falls_back_to_rest_only_when_graphql_list_is_incomplete() {
+    let mut bodiless = poller_issue(2);
+    bodiless.requirements_digest.clear();
+    assert!(
+        from_poller_issues("octo-org/example", &[poller_issue(1), bodiless])
+            .unwrap()
+            .is_none()
+    );
+    let api = Api::new(vec![Ok(json!([raw(GithubResource::Issue, 1)]))]);
+    let polled = poll_snapshots(&api, "octo-org/example", GithubResource::Issue, &[], None)
+        .await
+        .unwrap();
+    assert_eq!(polled.snapshots.len(), 1);
+    assert_eq!(
+        *api.calls.lock().unwrap(),
+        vec!["issues?state=open&per_page=100&page=1"]
+    );
+}
+
+// Catches: the GraphQL-derived snapshot differing from the REST one for the same
+// resource, which would re-admit every open resource as changed on the first tick.
+#[test]
+fn poller_snapshots_equal_the_rest_snapshots() {
+    assert_eq!(
+        from_poller_issues("octo-org/example", &[poller_issue(7)])
+            .unwrap()
+            .unwrap(),
+        vec![
+            from_rest(
+                "octo-org/example",
+                GithubResource::Issue,
+                &raw(GithubResource::Issue, 7)
+            )
+            .unwrap()
+        ]
+    );
+    assert_eq!(
+        from_poller_prs("octo-org/example", &[poller_pr(8)]).unwrap(),
+        vec![
+            from_rest(
+                "octo-org/example",
+                GithubResource::PullRequest,
+                &raw(GithubResource::PullRequest, 8)
+            )
+            .unwrap()
+        ]
+    );
 }

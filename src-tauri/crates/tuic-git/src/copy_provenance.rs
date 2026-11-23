@@ -1,10 +1,11 @@
 //! Copy-time proof for non-ignored payloads introduced by worktree warming.
-//! Ignored build artifacts keep Git's normal ignored-file semantics.
+//! Ignored build artifacts keep Git's normal ignored-file semantics, also when
+//! the ignore rule arrives after the copy: inspection skips such entries.
 
 use crate::git_cli::git_cmd;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 
 const MARKER: &str = "tuic-copy-provenance.json";
@@ -174,6 +175,35 @@ pub(crate) fn record(
     Ok(())
 }
 
+/// Receipt paths that Git now ignores. A branch can add an ignore rule after
+/// warming (a `__pycache__/` line committed a minute later); from then on the
+/// copy is an ignored build artifact and follows Git's ignored-file semantics,
+/// like a copy that was ignored from the start. A tracked path is never
+/// reported here: Git's own status owns it.
+fn now_ignored(checkout: &Path, receipt: &Receipt) -> Result<HashSet<PathBuf>, String> {
+    if receipt.files.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let mut input = Vec::new();
+    for relative in receipt.files.keys() {
+        input.extend_from_slice(relative.as_os_str().as_encoded_bytes());
+        input.push(0);
+    }
+    match git_cmd(checkout)
+        .args(["check-ignore", "-z", "--stdin"])
+        .run_bytes_with_input(&input)
+    {
+        Ok(stdout) => Ok(stdout
+            .split(|byte| *byte == 0)
+            .filter(|path| !path.is_empty())
+            .map(|path| PathBuf::from(String::from_utf8_lossy(path).into_owned()))
+            .collect()),
+        // Exit 1: none of the paths is ignored.
+        Err(crate::git_cli::GitError::NonZeroExit { code: Some(1), .. }) => Ok(HashSet::new()),
+        Err(e) => Err(format!("Cannot inspect copied path ignore rules: {e}")),
+    }
+}
+
 fn read(checkout: &Path) -> Result<Option<Receipt>, String> {
     let path = marker(checkout)?;
     let bytes = match std::fs::read(&path) {
@@ -204,9 +234,16 @@ pub(crate) fn inspect(
     status: &str,
 ) -> Result<(usize, Vec<CopyInventoryEntry>), String> {
     let receipt = read(checkout)?;
+    let ignored = match &receipt {
+        Some(receipt) => now_ignored(checkout, receipt)?,
+        None => HashSet::new(),
+    };
     let mut inventory = BTreeMap::new();
     if let Some(receipt) = &receipt {
         for (relative, expected) in &receipt.files {
+            if ignored.contains(relative) {
+                continue;
+            }
             let classification = match regular_hash(checkout, relative) {
                 Ok(hash) if &hash != expected => "modified",
                 Ok(_) if regular_hash(&receipt.source, relative).as_ref() != Ok(expected) => {

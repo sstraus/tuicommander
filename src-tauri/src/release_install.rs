@@ -8,6 +8,14 @@
 
 use std::path::{Path, PathBuf};
 
+use tuic_gateway::model::Provider;
+
+use crate::github::gateway::Origin;
+use crate::provider_gateway::direct::{self, Direct};
+
+/// The budget a release download spends: it belongs to no account.
+const RELEASE_ACCOUNT: &str = "release";
+
 /// The `latest/download` URL prefix of a GitHub repository (`owner/name`).
 pub(crate) fn latest_download_base(repo: &str) -> String {
     format!("https://github.com/{repo}/releases/latest/download")
@@ -75,17 +83,17 @@ pub(crate) async fn download_and_install(
 ) -> Result<(), String> {
     let url = format!("{base_url}/{asset}");
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .build()
-        .map_err(|e| format!("HTTP client error: {e}"))?;
-
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("Download failed: {e}"))?;
+    // A binary is large: streamed, never cached, counted by the gateway.
+    let resp = Direct::new(
+        Origin::interactive("release_install.download_and_install"),
+        Provider::Generic,
+        RELEASE_ACCOUNT,
+    )
+    .limited_redirects()
+    .timeout(std::time::Duration::from_secs(120))
+    .stream(direct::builder(reqwest::Method::GET, &url))
+    .await
+    .map_err(|e| format!("Download failed: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!("Download failed: HTTP {}", resp.status()));

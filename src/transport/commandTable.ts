@@ -775,6 +775,12 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 
 	get_session_usage: { map: (_args, p) => ({ method: "GET", path: `/sessions/${p("sessionId")}/usage` }) },
 
+	provider_gateway_stats: {
+		map: (args) => ({
+			method: "GET",
+			path: `/diagnostics/provider-gateway${args.reset === true ? "?reset=true" : ""}`,
+		}),
+	},
 	get_provider_quotas: { map: () => ({ method: "GET", path: "/provider-quotas" }) },
 	get_session_quota_binding: {
 		map: (_args, p) => ({ method: "GET", path: `/sessions/${p("sessionId")}/quota-binding` }),
@@ -1290,6 +1296,13 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 			method: "POST",
 			path: "/repo/pr-thread-resolved",
 			body: { repoPath: args.repoPath, threadId: args.threadId, resolved: args.resolved },
+		}),
+	},
+	visit_work_item: {
+		map: (args) => ({
+			method: "POST",
+			path: "/github/work-item-visit",
+			body: { itemUrl: args.itemUrl, commentCount: args.commentCount },
 		}),
 	},
 	reply_pr_thread: {
@@ -2525,6 +2538,8 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 				body: args.body,
 				account: args.account,
 				requestId: args.requestId,
+				timeoutMs: args.timeoutMs,
+				maxResponseBytes: args.maxResponseBytes,
 			},
 		}),
 	},

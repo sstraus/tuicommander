@@ -2,6 +2,7 @@ import { fireEvent, render } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../mocks/tauri";
 import type { BranchPrStatus, GitHubIssue } from "../../types";
+import { selectMenuItem } from "../helpers/panelToolbarMenu";
 
 const ISSUES: GitHubIssue[] = [
 	{ number: 11, title: "First issue", state: "OPEN", author: "a", url: "", labels: [], comments_count: 0 },
@@ -30,7 +31,11 @@ vi.mock("../../stores/settings", () => ({
 }));
 
 vi.mock("../../stores/repositories", () => ({
-	repositoriesStore: { get: () => undefined, state: { repositories: {}, repoOrder: [] } },
+	repositoriesStore: {
+		get: () => undefined,
+		workspaceIdOnBranch: () => null,
+		state: { repositories: {}, repoOrder: [] },
+	},
 }));
 
 vi.mock("../../stores/repoSettings", () => ({
@@ -90,6 +95,19 @@ describe("GitHubPanel keyboard navigation", () => {
 
 		fireEvent.keyDown(panel(), { key: "ArrowDown" });
 		expect(rowText(activeRow())).toContain("Second PR");
+	});
+
+	it("hides an issue through its row menu and brings it back with Show", () => {
+		// Catches: Hide from list missing on issues, hiding another row, or no way back.
+		render(() => <GitHubPanel {...baseProps} />);
+		const second = rows().find((row) => rowText(row).includes("Second issue")) as HTMLElement;
+		fireEvent.click(second);
+		selectMenuItem(document.body, "Hide from list");
+		expect(rows().some((row) => rowText(row).includes("Second issue"))).toBe(false);
+		expect(rows().some((row) => rowText(row).includes("First issue"))).toBe(true);
+		const show = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Show 1");
+		fireEvent.click(show as HTMLElement);
+		expect(rows().some((row) => rowText(row).includes("Second issue"))).toBe(true);
 	});
 
 	it("walks from the last PR into the issues section", () => {

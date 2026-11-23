@@ -84,63 +84,50 @@
   color: var(--fg-muted);
 }
 
-/* PR labels */
-.labels {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 4px 12px;
-}
-
 .label {
   display: inline-flex;
   align-items: center;
-  padding: 1px 8px;
+  padding: 0 6px;
   border-radius: var(--radius-pill);
-  font-size: var(--font-xs);
-  font-weight: 600;
+  font-size: var(--font-2xs);
+  line-height: 15px;
   border: 1px solid;
   white-space: nowrap;
 }
 
 /* Merge direction */
 .mergeDirection {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  font-size: var(--font-sm);
-  color: var(--fg-muted);
+  gap: 4px;
+  min-width: 0;
 }
 
 .branchName {
-  font-family: var(--font-ui);
-  background: rgba(255, 255, 255, 0.06);
-  padding: 1px 6px;
-  border-radius: var(--radius-md);
-  font-size: var(--font-xs);
+  min-width: 0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .arrow {
   color: var(--fg-muted);
 }
 
-/* Timestamps */
-.timestamps {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 12px;
-  font-size: var(--font-xs);
-  color: var(--fg-muted);
-}
-
-/* Status row (merge + review badges) */
+/* Status row: one row of small pills (ui-v3 visual rules) */
 .statusRow {
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 5px;
   padding: 6px 12px;
   flex-wrap: wrap;
+}
+
+.statusRow > span:not(.label) {
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: var(--font-xs);
 }
 
 /* Merge state badge */
@@ -254,12 +241,12 @@
 
 .meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  font-size: var(--font-sm);
+  gap: 4px 6px;
+  padding: 8px 12px 0;
+  font-size: var(--font-xs);
   color: var(--fg-muted);
-  border-bottom: 1px solid var(--border);
 }
 
 .author {
@@ -489,32 +476,6 @@
   color: var(--error);
 }
 
-/* Auto-heal CI toggle — styled like .checkItem */
-.autoHealRow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-md);
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.autoHealRow:hover {
-  background: var(--bg-highlight);
-}
-
-.autoHealLabel {
-  flex: 1;
-  color: var(--fg-primary);
-}
-
-.autoHealStatus {
-  color: var(--attention);
-  font-size: var(--font-xs);
-}
-
 /* Empty state */
 .empty {
   padding: 20px;
@@ -548,17 +509,7 @@
 }
 
 :global([data-compact]) .meta {
-  padding: 6px 12px;
-  font-size: var(--font-xs);
-  border-bottom: none;
-}
-
-:global([data-compact]) .timestamps {
-  padding: 2px 12px;
-}
-
-:global([data-compact]) .mergeDirection {
-  padding: 4px 12px;
+  padding: 6px 12px 0;
 }
 
 :global([data-compact]) .statusRow {
@@ -580,4 +531,22 @@
 .close,
 .mergeBtn {
   flex-shrink: 0;
+}
+
+/* Inside the next-action row the review buttons join the row itself. */
+[data-testid="pr-next-action"] [data-testid="pr-action-buttons"] {
+  display: contents;
+}
+
+button[data-control-layout="row"].showPassed {
+  background: none;
+  border: none;
+  padding: 4px 6px;
+  color: var(--fg-muted);
+  font-size: var(--font-xs);
+  cursor: pointer;
+}
+
+button[data-control-layout="row"].showPassed:hover {
+  color: var(--fg-primary);
 }

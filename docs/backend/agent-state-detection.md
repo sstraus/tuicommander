@@ -213,6 +213,8 @@ Codex native question parsing targets installed 0.162.1: `⌃]` / `⇧→` foote
 
 Grok native radio forms require a strict framed Ask or enforced-approval shape. Ask ends with z and a waiting header; enforced approvals carry title, command and scope controls. Numeric keys answer immediately. Selecting z retires choice buttons before publishing a text-only wait.
 
+agy pickers (1.5.10: workspace trust, command approval, native question) require their exact navigation footer at column 2 within the last two content rows, a single `> ` cursor row and, for approval and question, sequential numbers. The composer stays visible during a turn; only the `esc to cancel` hint below it separates Working from Ready. Enter settles a picker; number keys are not recorded (`agy-1.5.10-*.tcap`).
+
 **Every signal that sets awaiting needs a path that clears it.** The badge is
 `SessionState.awaiting_input`, not an event, and it is sticky by construction —
 whatever sets it owns nothing until something retracts it. These paths clear it:

@@ -48,26 +48,92 @@
 .sidebar[data-text-step="2"] { --text-step: 2px; }
 .sidebar[data-text-step="3"] { --text-step: 3px; }
 
-/* Rich adds facts without enlarging the compact navigation chrome. */
+/* Rich row: the name line keeps the whole name. When name and facts do not fit
+   on one line, the facts wrap to a second right-aligned line; the name itself
+   wraps only when it is longer than the row. */
 .sidebar[data-density="rich"] .branchItem {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  row-gap: 2px;
+}
+
+/* Compact: the identity wrapper adds no box, so the row lays out as before. */
+.branchIdentity {
+  display: contents;
+}
+
+.sidebar[data-density="rich"] .branchIdentity {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--row-gap);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The toggle is the bare branch icon in every density, so it keeps the icon column. */
+.branchIdentity > .branchIconToggle {
+  padding: 0;
+  height: calc(var(--font-sm) * 1.35);
+}
+
+.sidebar[data-density="rich"] .branchIdentity > .branchIcon {
+  min-height: calc(var(--font-sm) * 1.35);
+}
+
+.sidebar[data-density="rich"] .branchName {
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+/* The merged summary stays on one line: the path prefix gives way first. */
+.sidebar[data-density="rich"] .branchItem:has(.branchIdentityMerged) {
   flex-wrap: nowrap;
 }
 
-/* Forces the wrap between the name line and the detail line; only touch uses it. */
-.branchBreak {
-  display: none;
+.sidebar[data-density="rich"] .branchIdentityMerged .branchName {
+  display: flex;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
-/* Detail lines of a rich branch row: a full-width block under the name line,
-   indented to start under the name. */
-.branchRichDetail {
-  flex: 0 0 100%;
+.branchIdentityMerged .branchPrefix {
+  flex: 0 100 auto;
   min-width: 0;
-  padding-left: calc(var(--row-icon) + var(--row-gap));
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.branchIdentityMerged .branchLeaf {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.branchPrefix {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
+.branchAge {
+  flex-shrink: 0;
+  font-size: var(--font-2xs);
+  color: var(--fg-muted);
+  line-height: calc(var(--font-sm) * 1.35);
+}
+
+.sidebar[data-density="rich"] .branchUnmergedMarker {
+  align-self: flex-start;
+  height: calc(var(--font-sm) * 1.35);
 }
 
 .branchRichLine {
   display: block;
+  flex: 0 0 100%;
+  min-width: 0;
+  padding-left: calc(var(--row-icon) + var(--row-gap));
   font-size: var(--font-xs);
   color: var(--fg-secondary);
   white-space: nowrap;
@@ -89,6 +155,130 @@
   padding: 0 10px 4px calc(var(--row-pad-x) + 4px);
 }
 
+.sidebar[data-density="rich"] .branchRichMeta {
+  flex: none;
+  flex-wrap: nowrap;
+  margin-left: auto;
+  min-height: calc(var(--font-sm) * 1.35);
+  white-space: nowrap;
+}
+
+/* No facts: drop the box so the row gap does not push the age off the right edge. */
+.sidebar[data-density="rich"] .branchRichMeta:not(:has(*)) {
+  display: none;
+}
+
+/* Uncommitted files: a yellow badge with a dot and the count. */
+.dirtyBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--warning) 28%, var(--bg-secondary));
+  color: var(--warning);
+  font-size: var(--font-2xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  min-height: 1.5em;
+}
+
+/* Trim the count to its digits so the centred dot meets their middle, not the line box. */
+.dirtyCount {
+  text-box: trim-both cap alphabetic;
+}
+
+.dirtyDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.richPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-2xs);
+  line-height: 1.5;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.richPillMerged {
+  background: color-mix(in srgb, var(--merged) 20%, transparent);
+  color: var(--merged);
+}
+
+/* Stale, Unknown, Unrelated history: a neutral pill. */
+.richPillState {
+  background: var(--bg-tertiary);
+  color: var(--fg-secondary);
+}
+
+.richPillClean {
+  background: color-mix(in srgb, var(--error) 20%, transparent);
+  color: var(--error);
+}
+
+/* Agent state in words: Working, Needs input, Error. */
+/* State pill beside the title; its text shares the title's first baseline. */
+.agentStatePill {
+  flex-shrink: 0;
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-2xs);
+  line-height: 1.45;
+  white-space: nowrap;
+}
+
+.branchTabItemRich > .branchAgentActivity,
+.branchTabItemRich > .agentStatePill,
+.branchTabItemRich > .branchSubAgentTag,
+.branchTabItemRich > .branchAgentTime {
+  align-self: baseline;
+}
+
+.agentStatePill_working {
+  background: color-mix(in srgb, var(--activity) 20%, transparent);
+  color: var(--activity);
+}
+
+.agentStatePill_input {
+  background: color-mix(in srgb, var(--attention) 20%, transparent);
+  color: var(--attention);
+}
+
+.agentStatePill_error {
+  background: color-mix(in srgb, var(--error) 20%, transparent);
+  color: var(--error);
+}
+
+/* Section headers (Idle repositories, Quiet branches) draw the group separator:
+   label, rule, count. */
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 10px 2px;
+}
+
+.sectionChevron {
+  display: inline-flex;
+}
+
+.sectionChevron svg {
+  width: 10px;
+  height: 10px;
+  transition: transform 150ms ease;
+}
+
+.sectionChevron.expanded svg {
+  transform: rotate(90deg);
+}
+
 .richChip {
   min-width: 0;
   max-width: 100%;
@@ -97,13 +287,18 @@
   white-space: nowrap;
 }
 
-.richChipWarn {
-  color: var(--warning, var(--fg-secondary));
+/* Repository header counts are small chips, sized like the GitHub badge beside them. */
+.repoChip {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--fg-secondary);
+  font-size: var(--font-2xs);
+  line-height: 1.6;
 }
 
-.richChipRisk {
-  color: var(--error, var(--fg-secondary));
-}
+
 
 .branchRichPrState {
   color: var(--fg-muted);
@@ -111,13 +306,22 @@
   text-transform: uppercase;
 }
 
-.richChipMerged {
-  color: var(--success, var(--fg-secondary));
+
+/* Rich agent rows: the title wraps, the intent takes its own line. */
+.sidebar[data-density="rich"] button[data-control-layout="row"].branchTabItemRich {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  row-gap: 1px;
+  white-space: normal;
 }
 
-.branchTabItemRich {
-  flex-wrap: wrap;
-  row-gap: 1px;
+.branchTabItemRich > .branchTabDot {
+  margin-top: 5px;
+}
+
+.branchTabItemRich .branchAgentActivity {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .branchTabNode,
@@ -137,67 +341,153 @@
   display: none;
 }
 
-/* Start below the parent dot, pass through each sibling, and stop at the last elbow. */
-.branchTabNode:has(> .branchTabChildren > .branchTabNode) > .branchTabHead::after,
-.branchTabChildren > .branchTabNode::before,
-.branchTabChildren > .branchTabNode::after {
+/* One guide: start below the parent dot, pass through every kid (cross-repo links,
+   subagents, folds and nested sessions), and stop at the last elbow. */
+.branchTabChildren > * {
+  position: relative;
+  --guide-elbow: 8px;
+}
+
+.branchTabChildren > .branchTabNode {
+  --guide-elbow: 13px;
+}
+
+.branchTabNode:has(> .branchTabChildren > *) > .branchTabHead::after,
+.branchTabChildren > *::before,
+.branchTabChildren > *::after {
   content: "";
   position: absolute;
   pointer-events: none;
   background: var(--branch-tab-guide);
 }
 
-.branchTabNode:has(> .branchTabChildren > .branchTabNode) > .branchTabHead::after {
+.branchTabNode:has(> .branchTabChildren > *) > .branchTabHead::after {
   inset-block: 18px 0;
   inset-inline-start: 10px;
   width: 1px;
 }
 
-.branchTabChildren > .branchTabNode::before {
+.branchTabChildren > *::before {
   inset-block: -2px 0;
   inset-inline-start: -4px;
   width: 1px;
 }
 
-.branchTabChildren > .branchTabNode:last-child::before {
-  height: 16px;
+.branchTabChildren > *:last-child::before {
+  inset-block-end: auto;
+  height: calc(var(--guide-elbow) + 3px);
 }
 
-.branchTabChildren > .branchTabNode::after {
-  inset-block-start: 13px;
+.branchTabChildren > *::after {
+  inset-block-start: var(--guide-elbow);
   inset-inline-start: -4px;
   width: 9px;
   height: 1px;
 }
 
-.subagentList {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 0 7px 2px 26px;
-  font-size: var(--font-2xs);
-  color: var(--fg-muted);
-}
-
 .subagentRow {
   display: flex;
+  align-items: flex-start;
   gap: 6px;
+  flex: 1;
   min-width: 0;
+  padding: 0 7px 0 4px;
+  font-size: var(--font-xs);
+  line-height: 1.4;
+  color: var(--fg-secondary);
+}
+
+.guideKid {
+  display: flex;
+  min-width: 0;
+  padding-left: 6px;
+  font-size: var(--font-2xs);
+}
+
+/* A ring, not a filled dot: a subagent lives inside its parent's session. */
+.subagentDot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  margin-top: 0.45em;
+  border-radius: 50%;
+  border: 1px solid var(--activity);
+}
+
+.subagentDot_returned {
+  border-color: var(--success);
+}
+
+.subagentDot_interrupted {
+  border-color: var(--attention);
+}
+
+.subagentTitle {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .subagentMeta {
+  color: var(--fg-muted);
+}
+
+.subagentInterrupted {
   flex-shrink: 0;
-  margin-left: auto;
+  color: var(--attention);
+}
+
+.subagentAge {
+  flex-shrink: 0;
+  color: var(--fg-muted);
+}
+
+.mergedLock {
+  width: 0.85em;
+  height: 0.85em;
+  margin-right: 3px;
+  vertical-align: -0.05em;
+}
+
+/* Quiet branches fold like idle sessions: a quiet line, aligned to the branch icons. */
+.quietFold {
+  display: flex;
+  padding: 2px 10px 4px 0;
+  margin-left: -7px;
+}
+
+/* Idle sessions fold out of the agent column, level with the repository name. */
+.idleFold {
+  margin-left: -11px;
 }
 
 .subagentFold {
   align-self: flex-start;
-
-
+  gap: 4px;
+  height: auto;
+  padding: 0 4px;
   background: none;
-  font: inherit;
+  font-size: var(--font-xs);
+  line-height: 1.4;
   color: var(--fg-muted);
   cursor: pointer;
+}
+
+/* The finished subagents hang under their fold: one elbow, rows aligned to the label. */
+.returnedGroup {
+  flex-direction: column;
+}
+
+.returnedRows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 14px;
+}
+
+.returnedRow {
+  display: flex;
+  min-width: 0;
 }
 
 .branchTabDetail {
@@ -225,13 +515,6 @@
   color: var(--activity);
 }
 
-.branchTabState_input {
-  color: var(--warning, var(--fg-secondary));
-}
-
-.branchTabState_error {
-  color: var(--error, var(--fg-secondary));
-}
 
 .resizeHandle {
   position: absolute;
@@ -748,7 +1031,7 @@
   justify-content: center;
 }
 
-/* A separate disclosure control keeps status and agent visibility independent. */
+/* The branch icon is the disclosure for its agents; the icon keeps its status colour. */
 .branchIconToggle {
   display: inline-flex;
   align-items: center;
@@ -762,22 +1045,6 @@
   background: transparent;
   color: var(--fg-secondary);
 
-}
-
-.branchIconChevron {
-  /* A decorative chevron must not intercept clicks on the branch below it. */
-  pointer-events: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.branchIconChevron svg {
-  transition: transform 150ms ease;
-}
-
-.branchIconToggle.expanded .branchIconChevron svg {
-  transform: rotate(90deg);
 }
 
 .branchIconToggle:hover {
@@ -831,6 +1098,10 @@
 
 .branchIconIdle {
   color: var(--fg-muted);
+}
+
+.branchIconMerged {
+  color: var(--merged);
 }
 
 .branchIconUnseen {
@@ -1701,35 +1972,6 @@ button[data-control-layout="row"].branchTabItem {
   border-top: 1px solid var(--border);
 }
 
-/* The global [data-tooltip] rule sets position: relative at equal specificity; keep these anchored to the corner. */
-.remoteOnlyDetailDismiss[data-tooltip],
-.ghItemDismiss[data-tooltip] {
-	position: absolute;
-}
-
-.remoteOnlyDetailDismiss {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-
-
-  color: var(--fg-muted);
-  cursor: pointer;
-  font-size: var(--font-md);
-  z-index: 1;
-}
-
-.remoteOnlyDetailDismiss:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
 .remoteOnlyDetailActions {
   display: flex;
   flex-wrap: wrap;
@@ -2075,6 +2317,13 @@ button[data-control-layout="row"].branchTabItem {
   min-width: 0;
 }
 
+/* An expanded PR shows its full title instead of the truncated one. */
+.ghItemExpanded .ghItemTitle,
+.remoteOnlyItemExpanded .remoteOnlyTitle {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* ── Issue state badges ── */
 .ghIssueBadge {
   padding: 1px 6px;
@@ -2101,29 +2350,6 @@ button[data-control-layout="row"].branchTabItem {
   padding: 0 0 8px;
   background: var(--bg-tertiary);
   border-top: 1px solid var(--border);
-}
-
-.ghItemDismiss {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-
-
-  color: var(--fg-muted);
-  cursor: pointer;
-  font-size: var(--font-md);
-  z-index: 1;
-}
-
-.ghItemDismiss:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
 }
 
 /* ── Action buttons ── */
@@ -2243,8 +2469,8 @@ button[data-control-layout="row"].branchTabItem {
 }
 
 .ghBadgeBtn svg {
-  width: 9px;
-  height: 9px;
+  width: 12px;
+  height: 12px;
   flex-shrink: 0;
 }
 
@@ -2484,7 +2710,7 @@ button[data-control-layout="row"].branchTabItem {
   .branchSwipeRow > .branchItem { transition: none; }
 }
 
-/* Reserve two intent lines while the agent is working. */
+/* A working agent's intent: at most two lines, no reserved blank space. */
 .branchTabLine.branchTabIntent {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -2492,31 +2718,56 @@ button[data-control-layout="row"].branchTabItem {
   white-space: normal;
   overflow-wrap: anywhere;
   line-height: 1.4;
-  height: 2.8em;
   flex: 1;
 }
 
-/* Inline rich facts yield space to branch identity; complete facts remain in the tooltip. */
-.sidebar[data-density="rich"] .branchRichDetail {
-  flex: 0 1 auto;
-  max-width: 55%;
-  padding-left: 0;
-  overflow: hidden;
-}
-.sidebar[data-density="rich"] .branchRichLine { display: none; }
-.sidebar[data-density="rich"] .branchRichMeta {
-  flex-wrap: nowrap;
-  gap: 3px;
-  white-space: nowrap;
-}
 .sidebar[data-density="rich"] .branchContent { min-width: 30px; }
 
-.idleReposHeading {
-  padding: 4px var(--row-pad-x);
-  color: var(--fg-muted);
-  font-size: var(--font-2xs);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+/* Rich rows wrap, so the hover actions and the shortcut hint sit on the name line.
+   The buttons take the text height, as the mock draws them, and a short fade
+   covers the facts underneath. */
+.sidebar[data-density="rich"] .branchActions {
+  top: 4px;
+  transform: none;
+  gap: 3px;
+}
+
+/* The actions sit on the name line over the row's own background; the age and the
+   unmerged mark step aside so nothing shows half covered. The facts stay usable. */
+@media (hover: hover) {
+  .sidebar[data-density="rich"] .branchItem:is(:hover, :focus-within):has(> .branchActions) :is(.branchAge, .branchUnmergedMarker) {
+    visibility: hidden;
+  }
+}
+
+.sidebar[data-density="rich"] .branchActions > .branchRemoveBtn {
+  background: color-mix(in srgb, var(--error) 30%, transparent);
+  color: color-mix(in srgb, var(--error) 40%, var(--fg-primary));
+}
+
+.sidebar[data-density="rich"] .branchActions > .branchRemoveBtn:hover {
+  background: var(--error);
+  color: var(--text-on-error);
+}
+
+.sidebar[data-density="rich"] .branchActions > button {
+  height: calc(var(--font-sm) * 1.4);
+  min-height: 0;
+  padding: 0 5px;
+  font-size: var(--font-sm);
+  line-height: 1;
+}
+.sidebar[data-density="rich"] .branchShortcut {
+  position: absolute;
+  top: 3px;
+  right: var(--row-pad-x);
+}
+
+/* While the quick switcher shows its hint, the hint replaces the facts under it
+   instead of fading them out. */
+.sidebar[data-density="rich"] .branchShortcut[data-hint]:not([style*="none"]) ~ :is(.branchRichMeta, .mergedSummary),
+.sidebar[data-density="rich"] .branchItem:has(> .branchShortcut[data-hint]:not([style*="none"])) :is(.branchAge, .branchUnmergedMarker) {
+  visibility: hidden;
 }
 
 
@@ -2546,8 +2797,7 @@ button[data-control-layout="row"].branchTabItem {
 	display: flex;
 	align-items: center;
 	gap: 3px;
-	width: calc(100% - 24px);
-	margin-left: 24px;
+	width: 100%;
 
 
 	background: transparent;
@@ -2630,6 +2880,10 @@ button[data-control-layout="card"].needsYouBanner:hover {
 .needsYouChip {
   color: var(--attention);
   font-weight: 600;
+}
+
+.repoChip.needsYouChip {
+  background: color-mix(in srgb, var(--attention) 18%, var(--bg-secondary));
 }
 
 .repoInitialsNeedsYou {

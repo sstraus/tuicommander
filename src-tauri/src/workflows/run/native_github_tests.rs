@@ -5,6 +5,7 @@ use super::native_github_git::{Transfer, absent, transfer};
 use super::native_test_support::Fixture;
 use super::neutral_effects::{EffectObservation, EffectOutcome};
 use super::neutral_execution::NeutralResult;
+use crate::github::Origin;
 use crate::github_pr_api::{PrApi, RepoApi};
 use futures_util::FutureExt;
 use serde_json::Value;
@@ -118,9 +119,13 @@ async fn native_github_live_sandbox_publication() {
     let path = f.context.workspace_path();
     let remote = "https://github.com/sstraus/tuic-e2e-sandbox.git";
     git_output(path, &["remote", "add", "origin", remote]).unwrap();
-    let api = RepoApi::resolve(&f.state, &path.to_string_lossy())
-        .await
-        .unwrap();
+    let api = RepoApi::resolve(
+        &f.state,
+        &path.to_string_lossy(),
+        Origin::interactive("test.native_github_live_sandbox_publication"),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         format!("{}/{}", api.owner, api.repo),
         "sstraus/tuic-e2e-sandbox"
@@ -135,9 +140,14 @@ async fn native_github_live_sandbox_publication() {
         &api.token,
         crate::github::GITHUB_JSON,
     );
-    let response = crate::github::send_rest_with_breaker(&f.state, &api.account, request)
-        .await
-        .unwrap();
+    let response = crate::github::send_rest_with_breaker(
+        &f.state,
+        &api.account,
+        crate::github::Origin::interactive("test"),
+        request,
+    )
+    .await
+    .unwrap();
     assert!(
         response.status().is_success(),
         "sandbox repository preflight refused"

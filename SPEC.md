@@ -168,6 +168,23 @@ build that keys it by model, developer item and tools, which is later than
 ego 0.4.18. The ask box accepts Claude, Codex and ego terminals. The Grok
 adapter (#3113-b0c5) follows.
 
+## Provider gateway — Implemented (#3124-934e to #3150-e016, docs #3152-25c2)
+
+Every outbound request to GitHub, GitLab, Jira and to a plugin destination goes
+through one gateway (`src-tauri/crates/tuic-gateway`, adapters in
+`src-tauri/src/provider_gateway`). It replaces the GitHub circuit breaker.
+
+- One quota budget per account and rate-limit bucket, read from provider headers.
+- Five pressure levels (`Free`, `Watch`, `Tight`, `Critical`, `Exhausted`) and three caller channels (`Interactive`, `Visible`, `Background`). Background traffic is shed first; a user action is sent until the bucket is empty.
+- A two-tier response cache (memory, then `provider_cache.sqlite3`) with conditional revalidation, stale-if-error up to 24 h and coalescing of identical concurrent reads.
+- Invalidation by write, by poller and watcher events, and by logout.
+- A typed refusal (`rate_limited` or `shed`, bucket, retry time), identical over IPC and HTTP. Tasks and the PR popover show the reset time and a `cached hh:mm` marker for stale rows. Refresh forces a fresh read.
+- Per-caller metrics over IPC, HTTP and MCP (`provider_gateway_stats`, `GET /diagnostics/provider-gateway`, `debug action=gateway`).
+- A source-scan guard fails on a send to a GitHub host outside the gateway.
+- Not wired: GraphQL responses are not cached, and workflow connector reads are always forced fresh.
+
+Details: [`docs/backend/provider-gateway.md`](docs/backend/provider-gateway.md).
+
 ## Shared form controls — Implemented (#1815-01c9)
 
 Native Select, Input and Textarea wrappers and a keyboard-accessible segmented
@@ -953,7 +970,7 @@ Some frontend-only stores persist to localStorage:
 - [x] Planner `add_idea`, `list_ideas`, and `update_idea` share the locked notes writer across IPC, HTTP, CLI and MCP. Source/project provenance persists; desktop/SSE notices reload panels and keyed UI deltas preserve concurrent agent additions.
 - [x] Terminal session persistence across app restarts
 - [x] GitHub GraphQL API (replaces gh CLI for PR/CI data)
-- [x] Multi-account GitHub: multiple github.com logins + GitHub Enterprise Server (PAT), per-repo account bindings with ambiguity chooser, isolated per-account polling/rate-limits/circuit-breaker (see FEATURES.md 8.14)
+- [x] Multi-account GitHub: multiple github.com logins + GitHub Enterprise Server (PAT), per-repo account bindings with ambiguity chooser, isolated per-account polling and provider-gateway rate-limit budgets (see FEATURES.md 8.14)
 - [x] Auto-update via tauri-plugin-updater with progress badge
 - [x] Backend-owned sleep prevention for active turns, background agent work and live managed `keep_open` holds; independent of WebView lifecycle (keepawake)
 - [x] Usage limit detection for Claude Code (weekly/session) with status bar badge
@@ -1797,7 +1814,7 @@ A native question payload becomes one `question_card` in the session snapshot: C
 
 ### Tool-name readout (2636-5551)
 
-`SessionState.current_tool` is the newest live native tool name of an agent PTY. Sources: Claude, Codex (bound turn) and Grok hook receipts, ego `tool_start`/`tool_end` frames, and the managed Pi extension (`tool_execution_start`/`_end`) and OpenCode plugin (`session.tool.input.started`, `session.tool.success`/`failed`) through the `agent-tool` OSC 7770 verb. Only frames of the terminal's own TUIC session and native session count; subagent receipts do not. A tool end removes only its own native id, and an ended id never starts again. Turn end, cancellation, interrupt, session end, coarse idle/prompt, shell return and PTY exit clear all live tools; an idle shell shows none. Labels are cut to 64 characters without control characters, and arguments are never read. The readout is metadata: it never changes coarse state or an open modal. Mobile (session card, details sheet) renders the snapshot; the desktop status bar agent badge shows no tool name (#3068-c03b). Gemini has no readout and gets no AfterTool hook. ego AI Chat (ACP) is unchanged; Step 16 owns it. Pi and OpenCode support rests on their API and schema sources (Pi 0.84.2 `types.d.ts`, OpenCode 2.2.3 session-event schema); no live tool event of theirs was recorded.
+`SessionState.current_tool` is the newest live native tool name of an agent PTY. Sources: Claude, Codex (bound turn) and Grok hook receipts, ego `tool_start`/`tool_end` frames, and the managed Pi extension (`tool_execution_start`/`_end`) and OpenCode plugin (`session.tool.input.started`, `session.tool.success`/`failed`) through the `agent-tool` OSC 7770 verb. Only frames of the terminal's own TUIC session and native session count; subagent receipts do not. A tool end removes only its own native id, and an ended id never starts again. Turn end, cancellation, interrupt, session end, coarse idle/prompt, shell return and PTY exit clear all live tools; an idle shell shows none. Labels are cut to 64 characters without control characters, and arguments are never read. The readout is metadata: it never changes coarse state or an open modal. Mobile (session card, details sheet) renders the snapshot; the desktop status bar agent badge shows no tool name (#3068-c03b). agy has no readout and gets no tool hook. ego AI Chat (ACP) is unchanged; Step 16 owns it. Pi and OpenCode support rests on their API and schema sources (Pi 0.84.2 `types.d.ts`, OpenCode 2.2.3 session-event schema); no live tool event of theirs was recorded.
 
 ### Claude native permission attention (2627-110e)
 

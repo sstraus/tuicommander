@@ -13,14 +13,22 @@ use tauri::State;
 
 pub(crate) use tuic_git::worktree::*;
 
+use crate::github::Origin;
+
 /// Call only on a blocking thread; the domain callback stays synchronous.
 pub(crate) fn pr_proof(
     state: Arc<AppState>,
     rt: tokio::runtime::Handle,
 ) -> impl Fn(&Path, &str, &str) -> bool {
     move |repo, branch, tip| {
-        rt.block_on(query_merged_github_pr(&state, repo, branch, tip))
-            .unwrap_or(false)
+        rt.block_on(query_merged_github_pr(
+            &state,
+            repo,
+            branch,
+            tip,
+            Origin::interactive("worktree.removal_preflight"),
+        ))
+        .unwrap_or(false)
     }
 }
 
@@ -32,7 +40,20 @@ fn merged_github_pr_proves_tip(state: &Arc<AppState>) -> impl Fn(&Path, &str, &s
     move |repo, branch, tip| proof.as_ref().is_some_and(|proof| proof(repo, branch, tip))
 }
 
+/// How long a failed lookup is not retried.
+const FAILED_PR_LOOKUP_TTL: Duration = Duration::from_secs(60);
+
+static FAILED_PR_LOOKUPS: std::sync::LazyLock<moka::sync::Cache<(PathBuf, String, String), ()>> =
+    std::sync::LazyLock::new(|| {
+        moka::sync::Cache::builder()
+            .max_capacity(1024)
+            .time_to_live(FAILED_PR_LOOKUP_TTL)
+            .build()
+    });
+
 /// How long the sidebar refresh trusts a GitHub answer for one branch tip.
+/// Domain cache, not a gateway entry: the key is a branch tip and the value a
+/// derived verdict ("a merged PR proves this tip"), which no HTTP response or write tag maps to.
 const PR_PROOF_TTL: Duration = Duration::from_secs(300);
 
 static PR_PROOFS: std::sync::LazyLock<moka::sync::Cache<(PathBuf, String, String), bool>> =
@@ -54,21 +75,49 @@ pub(crate) fn merged_github_pr_proves_tip_cached(repo: &Path, branch: &str, tip:
 /// Sidebar monitoring variant: every repository refresh asked GitHub about every
 /// unmerged branch (one paginated GraphQL lookup each), many times a minute under agent
 /// writes. A definitive answer is reused for `PR_PROOF_TTL`; a failed lookup is
-/// not remembered. Removal preflights keep the uncached function above.
+/// not retried for `FAILED_PR_LOOKUP_TTL`. Removal preflights keep the uncached function above.
 pub(crate) fn merged_github_pr_proves_tip_monitoring(
     state: &Arc<AppState>,
     repo: &Path,
     branch: &str,
     tip: &str,
 ) -> bool {
-    cached_pr_proof(&PR_PROOFS, repo, branch, tip, || {
-        let rt = tokio::runtime::Handle::try_current().ok()?;
-        rt.block_on(query_merged_github_pr(state, repo, branch, tip))
+    cached_pr_proof(&PR_PROOFS, &FAILED_PR_LOOKUPS, repo, branch, tip, || {
+        proof_lookup(state, repo, branch, tip, || {
+            let rt = tokio::runtime::Handle::try_current().ok()?;
+            rt.block_on(query_merged_github_pr(
+                state,
+                repo,
+                branch,
+                tip,
+                Origin::background("worktree.monitoring"),
+            ))
+        })
     })
+}
+
+/// The poller already holds every PR it polled; ask GitHub only on a miss.
+fn proof_lookup(
+    state: &AppState,
+    repo: &Path,
+    branch: &str,
+    tip: &str,
+    network: impl FnOnce() -> Option<bool>,
+) -> Option<bool> {
+    let known_merged = repo.to_str().is_some_and(|repo| {
+        state
+            .github
+            .poller
+            .lock()
+            .as_ref()
+            .is_some_and(|poller| poller.merged_pr_proves_tip(repo, branch, tip))
+    });
+    if known_merged { Some(true) } else { network() }
 }
 
 fn cached_pr_proof(
     cache: &moka::sync::Cache<(PathBuf, String, String), bool>,
+    failures: &moka::sync::Cache<(PathBuf, String, String), ()>,
     repo: &Path,
     branch: &str,
     tip: &str,
@@ -78,12 +127,18 @@ fn cached_pr_proof(
     if let Some(answer) = cache.get(&key) {
         return answer;
     }
+    if failures.contains_key(&key) {
+        return false;
+    }
     match lookup() {
         Some(answer) => {
             cache.insert(key, answer);
             answer
         }
-        None => false,
+        None => {
+            failures.insert(key, ());
+            false
+        }
     }
 }
 
@@ -93,8 +148,9 @@ async fn query_merged_github_pr(
     repo: &Path,
     branch: &str,
     tip: &str,
+    origin: Origin,
 ) -> Option<bool> {
-    let api = crate::github_pr_api::RepoApi::resolve(state, repo.to_str()?)
+    let api = crate::github_pr_api::RepoApi::resolve(state, repo.to_str()?, origin)
         .await
         .ok()?;
     let variables = serde_json::json!({"owner":api.owner, "name":api.repo, "branch":branch});
@@ -2114,29 +2170,24 @@ mod tests {
     }
 
     // Catches: every sidebar refresh re-running `gh api graphql` per unmerged branch
-    // (answered definitively before), while a failed lookup must stay retryable.
+    // once answered definitively; the 60 s failure window is `failed_lookup_is_cached_briefly`.
     #[test]
-    fn pr_proof_monitoring_reuses_definitive_answers_and_retries_failures_1491() {
+    fn pr_proof_monitoring_reuses_definitive_answers_1491() {
         let cache = moka::sync::Cache::builder().max_capacity(8).build();
+        let failures = moka::sync::Cache::builder().max_capacity(8).build();
         let repo = Path::new("/repo");
         let calls = std::cell::Cell::new(0);
-        let ask = |answer: Option<bool>| {
-            cached_pr_proof(&cache, repo, "branch", "tip", || {
+        let ask = |tip: &str, answer: Option<bool>| {
+            cached_pr_proof(&cache, &failures, repo, "branch", tip, || {
                 calls.set(calls.get() + 1);
                 answer
             })
         };
-        assert!(!ask(None));
-        assert!(ask(Some(true)));
-        assert!(ask(None));
-        assert_eq!(calls.get(), 2, "the failure was retried, the answer reused");
-        assert!(!cached_pr_proof(
-            &cache,
-            repo,
-            "branch",
-            "newer-tip",
-            || Some(false)
-        ));
+        assert!(ask("tip", Some(true)));
+        assert!(ask("tip", None));
+        assert_eq!(calls.get(), 1, "the answer was reused");
+        assert!(!ask("newer-tip", Some(false)));
+        assert_eq!(calls.get(), 2);
     }
 
     // Catches accepting an empty or unregistered orphan list after weakening

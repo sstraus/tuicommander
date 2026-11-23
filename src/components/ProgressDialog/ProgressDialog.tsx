@@ -339,7 +339,13 @@ export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
 			</Show>
 
 			<Show when={allProjects()}>
-				<ProgressRecent revision={progressStore.liveRevision()} />
+				<ProgressRecent
+					revision={progressStore.liveRevision()}
+					onOpen={() => {
+						setAllProjects(false);
+						setOpenThread(null);
+					}}
+				/>
 			</Show>
 
 			<Show when={!allProjects() && !isFlow() && progressStore.selectedPtyId()}>

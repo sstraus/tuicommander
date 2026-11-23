@@ -6,6 +6,7 @@ const mockGithubStore = vi.hoisted(() => ({
 	getCheckSummary: vi.fn(() => null),
 	getCheckDetails: vi.fn(() => []),
 	loadCheckDetails: vi.fn(() => Promise.resolve()),
+	state: { viewerLogin: null as string | null },
 }));
 const mockRpc = vi.hoisted(() => vi.fn(() => Promise.resolve({ bot: 0, human: 0 })));
 

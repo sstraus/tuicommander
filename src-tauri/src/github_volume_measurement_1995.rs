@@ -1,134 +1,196 @@
-//! Explicit, bounded production-client experiment. No live GitHub or credentials.
+//! Provider gateway benchmark (R6, story 3151): every scenario sends through
+//! the app's gateway to a loopback TLS receiver. No live GitHub, no credentials.
 //!
 //! The API replies are controlled protocol fixtures, not captured account data.
-//! The request trace is recorded from real reqwest sends received by loopback TLS.
-//! PR-open calls replay the two sends observed by the production frontend fixture.
+//! The wire trace is recorded from real reqwest sends received by the receiver.
+//! The poller scenarios run the production poller on the wall clock; the other
+//! scenarios replay recorded request sequences on a clock the benchmark moves.
+//! `fixtures/github_volume/before_master.json` holds the same workloads measured
+//! on the tree before the gateway (`scripts/provider-gateway-bench-before.sh`).
 
 use super::*;
-use axum::{Json, Router, body::to_bytes, extract::Request, http::StatusCode, routing::any};
-use std::sync::atomic::{AtomicU16, Ordering};
+use serde_json::{Map, Value, json};
+use std::sync::atomic::Ordering;
+use std::time::SystemTime;
+use tuic_gateway::{ports::Clock, testing::FakeClock};
 
-#[derive(Clone)]
-struct Receiver {
-    started: Instant,
-    trace: Arc<parking_lot::Mutex<Vec<serde_json::Value>>>,
-    next_status: Arc<AtomicU16>,
+#[path = "github_volume_bench/etag_probe.rs"]
+mod etag_probe;
+#[path = "github_volume_bench/limits.rs"]
+mod limits;
+#[path = "github_volume_bench/receiver.rs"]
+mod receiver;
+#[path = "github_volume_bench/replay.rs"]
+mod replay;
+
+const TOKEN: &str = "fixture-not-a-real-token";
+const BEFORE: &str = include_str!("fixtures/github_volume/before_master.json");
+
+/// Reports are kept after the run, so they sit outside the per-run test root.
+fn report_dir() -> std::path::PathBuf {
+    let dir =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.tmp/provider-gateway-bench");
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
 }
 
-impl Receiver {
-    fn counts(&self) -> serde_json::Value {
-        let trace = self.trace.lock();
-        serde_json::json!({
-            "rest": trace.iter().filter(|row| row["kind"] == "REST").count(),
-            "graphql": trace.iter().filter(|row| row["kind"] == "GraphQL").count(),
+/// One app state whose `api.github.com` is the receiver.
+struct Bench {
+    state: Arc<AppState>,
+    receiver: receiver::Receiver,
+    /// `None` runs on the wall clock: the poller's timers are real.
+    clock: Option<FakeClock>,
+    repo_path: String,
+}
+
+impl Bench {
+    fn new(server: &receiver::Server, repo_path: &str, clock: Option<FakeClock>) -> Self {
+        let client = server.client();
+        let mut state = crate::state::tests_support::make_test_app_state();
+        state.http_client = client.clone();
+        state.gateway = match &clock {
+            Some(clock) => crate::provider_gateway::ProviderGateway::l1_only_with_clock(
+                client,
+                Arc::new(clock.clone()),
+            ),
+            None => crate::provider_gateway::ProviderGateway::l1_only(client),
+        };
+        *state.github.token.write() = Some(TOKEN.into());
+        state.github.disconnected.store(false, Ordering::Relaxed);
+        // Controlled workload: one active repository, visible app, one account.
+        state.hot_repo_paths.write().insert(repo_path.to_string());
+        Self {
+            state: Arc::new(state),
+            receiver: server.receiver.clone(),
+            clock,
+            repo_path: repo_path.to_string(),
+        }
+    }
+
+    fn advance(&self, by: Duration) {
+        self.clock
+            .as_ref()
+            .expect("a replayed scenario")
+            .advance(by);
+    }
+
+    /// The receiver's `x-ratelimit-reset`, on the clock the gateway reads.
+    fn reset_in(&self, seconds: u64) {
+        let wall = self
+            .clock
+            .as_ref()
+            .map_or_else(SystemTime::now, |c| c.wall());
+        let epoch = wall
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        self.receiver.set(|mode| mode.reset_epoch = epoch + seconds);
+    }
+
+    fn open_window(&self) {
+        self.reset_in(900);
+        self.receiver.take();
+        self.state.gateway.gateway.metrics().reset();
+    }
+
+    /// The wire trace and the gateway counters of the window. Catches: a request
+    /// that reached the wire without a gateway record, or without a caller id.
+    fn close_window(&self) -> Value {
+        let wire = self.receiver.take();
+        let stats = crate::provider_gateway::stats::report(&self.state.gateway.gateway, true);
+        let counters = stats["counters"].as_array().unwrap();
+        let sum = |field: &str| {
+            counters
+                .iter()
+                .filter_map(|c| c[field].as_u64())
+                .sum::<u64>()
+        };
+        let count = |keep: &dyn Fn(&Value) -> bool| wire.iter().filter(|row| keep(row)).count();
+        let limit_answers = count(&|row| row["status"].as_u64() >= Some(400));
+        for counter in counters {
+            let caller = counter["caller"].as_str().unwrap_or_default();
+            assert!(
+                !caller.is_empty(),
+                "a request without a caller id: {counter}"
+            );
+        }
+        assert_eq!(
+            sum("sent") + limit_answers as u64,
+            wire.len() as u64,
+            "every request on the wire is one the gateway counted for a caller"
+        );
+        let calls = sum("calls").max(1) as f64;
+        json!({
+            "wire": {
+                "sends": wire.len(),
+                "rest": count(&|row| row["kind"] == "REST"),
+                "graphql": count(&|row| row["kind"] == "GraphQL"),
+                "conditional": count(&|row| row["conditional"] == true),
+                "not_modified": count(&|row| row["status"] == 304),
+                "limit_answers": limit_answers,
+            },
+            "gateway": {
+                "calls": sum("calls"), "sent": sum("sent"), "network2xx": sum("network2xx"),
+                "revalidated": sum("revalidated"), "cacheHits": sum("cacheHits"),
+                "staleServed": sum("staleServed"), "shed": sum("shed"),
+                "rateLimited": sum("rateLimited"), "units": sum("units"),
+                "cache_ratio": (sum("cacheHits") + sum("staleServed")) as f64 / calls,
+                "revalidated_ratio": sum("revalidated") as f64 / calls,
+            },
+            "per_caller": stats["counters"],
+            "buckets": stats["buckets"],
+            "trace": wire,
         })
     }
-
-    async fn receive(
-        self,
-        request: Request,
-    ) -> (StatusCode, [(String, String); 2], Json<serde_json::Value>) {
-        let method = request.method().to_string();
-        let path = request.uri().path().to_string();
-        let bytes = to_bytes(request.into_body(), 1024 * 1024).await.unwrap();
-        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
-        let query = body["query"].as_str().unwrap_or_default();
-        let status = self.next_status.swap(200, Ordering::Relaxed);
-        self.trace.lock().push(serde_json::json!({
-            "elapsed_seconds": self.started.elapsed().as_secs_f64(),
-            "method": method,
-            "path": path,
-            "kind": if path == "/graphql" { "GraphQL" } else { "REST" },
-            "query": query,
-            "status": status,
-        }));
-        let response = if status != 200 {
-            serde_json::json!({"message": "Controlled rate-limit response"})
-        } else if query.contains("viewer { login }") {
-            serde_json::json!({"data": {"viewer": {"login": "fixture"}}})
-        } else if query.contains("query PRChecks") {
-            serde_json::json!({"data": {"repository": {"pullRequest": {"commits": {"nodes": [
-                {"commit": {"statusCheckRollup": {"contexts": {"nodes": [
-                    {"__typename": "CheckRun", "name": "fixture-check", "status": "COMPLETED", "conclusion": "SUCCESS", "detailsUrl": ""}
-                ]}}}}
-            ]}}}}})
-        } else {
-            serde_json::json!({"data": {
-                "r0": {
-                    "mergeCommitAllowed": true, "squashMergeAllowed": true, "rebaseMergeAllowed": true,
-                    "pullRequests": {"nodes": [{
-                        "number": 42, "title": "Controlled fixture", "state": "OPEN",
-                        "url": "https://github.com/fixture/repository/pull/42",
-                        "headRefName": "feature", "headRefOid": "a".repeat(40), "baseRefName": "main",
-                        "isDraft": false, "author": {"login": "fixture"}, "labels": {"nodes": []},
-                        "additions": 1, "deletions": 0, "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
-                        "createdAt": "2026-10-18T00:00:00Z", "updatedAt": "2026-10-18T00:00:00Z",
-                        "commits": {"totalCount": 1, "nodes": []},
-                        "reviewThreads": {"nodes": [], "pageInfo": {"hasNextPage": false}}
-                    }]},
-                    "issues": {"nodes": []}
-                },
-                "rateLimit": {"cost": 1, "remaining": 4990, "resetAt": "2099-01-01T00:00:00Z"}
-            }})
-        };
-        (
-            StatusCode::from_u16(status).unwrap(),
-            [
-                (
-                    "x-ratelimit-remaining".into(),
-                    if status == 200 { "4990" } else { "0" }.into(),
-                ),
-                ("retry-after".into(), "1".into()),
-            ],
-            Json(response),
-        )
-    }
 }
 
-// Catches: an open breaker still sends HTTP requests, or never permits sends after reset.
-// Explicitly ignored because two real poll intervals are a measurement, not a routine gate.
-#[tokio::test]
-#[ignore = "1995 bounded production-client volume experiment; requires two real poll intervals"]
-async fn measure_github_client_fixture_1995() {
-    rustls::crypto::ring::default_provider()
-        .install_default()
-        .unwrap_or_else(|_| assert!(rustls::crypto::CryptoProvider::get_default().is_some()));
-    // Recorded by openssl req -x509 with a test-only api.github.com SAN.
-    let cert = include_bytes!("fixtures/github_volume/cert.pem");
-    let key = include_bytes!("fixtures/github_volume/key.pem");
-    let tls = axum_server::tls_rustls::RustlsConfig::from_pem(cert.to_vec(), key.to_vec())
-        .await
-        .unwrap();
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.set_nonblocking(true).unwrap();
-    let address = listener.local_addr().unwrap();
-    let receiver = Receiver {
-        started: Instant::now(),
-        trace: Arc::default(),
-        next_status: Arc::new(AtomicU16::new(200)),
-    };
-    let endpoint = receiver.clone();
-    let router = Router::new().fallback(any(move |request| endpoint.clone().receive(request)));
-    let server_handle = axum_server::Handle::new();
-    let server = tokio::spawn(
-        axum_server::from_tcp_rustls(listener, tls)
-            .unwrap()
-            .handle(server_handle.clone())
-            .serve(router.into_make_service()),
-    );
-    let scratch = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-    let _config = crate::config::set_config_dir_override(scratch.path().join("config"));
-    let repo_dir = scratch.path().join("repo");
+/// The production poller on one repository: its first poll, one idle interval,
+/// then a PR popover opened and reopened.
+async fn poller_scenarios(b: &Bench, out: &mut Map<String, Value>) {
+    let mut events = b.state.event_bus.subscribe();
+    b.open_window();
+    ensure_polling(&b.state, vec![b.repo_path.clone()], "all".into(), false);
+    // No setup-speed assertion: the outer experiment bound catches a hang.
+    loop {
+        if let AppEvent::GitHubPrUpdate { statuses, .. } = events.recv().await.unwrap() {
+            assert_eq!(
+                statuses.len(),
+                1,
+                "fixture PR must reach the poller consumer"
+            );
+            break;
+        }
+    }
+    out.insert("cold_start".into(), b.close_window());
+    b.open_window();
+    let idle = Instant::now();
+    tokio::time::sleep(BASE_INTERVAL + Duration::from_millis(200)).await;
+    let mut report = b.close_window();
+    report["workload"] = json!({"seconds": idle.elapsed().as_secs_f64(), "repositories": 1});
+    out.insert("idle".into(), report);
+    b.open_window();
+    // The real frontend trace has one get_ci_checks on open, none for ten
+    // identical snapshots or a stable mounted panel, then one on reopen.
+    for _open in 0..2 {
+        let checks = crate::github::get_ci_checks_impl(&b.repo_path, 42, &b.state).await;
+        assert_eq!(checks.len(), 1, "fixture check must reach the PR consumer");
+    }
+    let mut report = b.close_window();
+    report["workload"] = json!({"popover_opens": 2});
+    out.insert("pr_popover".into(), report);
+    stop_poller(&b.state).await.unwrap();
+}
+
+fn fixture_repository(scratch: &std::path::Path) -> String {
+    let repo_dir = scratch.join("repo");
     std::fs::create_dir(&repo_dir).unwrap();
-    for args in [
-        vec!["init", "--quiet"],
-        vec![
-            "remote",
-            "add",
-            "origin",
-            "https://github.com/fixture/repository.git",
-        ],
-    ] {
+    let remote = [
+        "remote",
+        "add",
+        "origin",
+        "https://github.com/fixture/repository.git",
+    ];
+    for args in [&["init", "--quiet"][..], &remote[..]] {
         let output = std::process::Command::new("git")
             .args(args)
             .current_dir(&repo_dir)
@@ -140,113 +202,68 @@ async fn measure_github_client_fixture_1995() {
             String::from_utf8_lossy(&output.stderr)
         );
     }
-    let repo_path = repo_dir.to_string_lossy().into_owned();
-    let mut state = crate::state::tests_support::make_test_app_state();
-    state.http_client = reqwest::Client::builder()
-        .no_proxy()
-        .tls_certs_only([reqwest::Certificate::from_pem(cert).unwrap()])
-        // Only the socket target changes. Production URLs, methods, auth headers,
-        // query generation, parsing, caching and breaker paths remain unchanged.
-        .resolve("api.github.com", address)
-        .timeout(Duration::from_secs(30))
-        .build()
-        .unwrap();
-    *state.github.token.write() = Some("fixture-not-a-real-token".into());
-    state.github.disconnected.store(false, Ordering::Relaxed);
-    // Controlled workload: one active repository, visible app, one account.
-    // This is not a claim about any live session's active-repository membership.
-    state.hot_repo_paths.write().insert(repo_path.clone());
-    let state = Arc::new(state);
-    let mut events = state.event_bus.subscribe();
+    repo_dir.to_string_lossy().into_owned()
+}
+
+/// Before and after for the scenarios measured on both trees, without traces.
+fn comparison(scenarios: &Map<String, Value>) -> Value {
+    let before: Value = serde_json::from_str(BEFORE).unwrap();
+    let pairs = [
+        ("idle", "idle"),
+        ("pr_popover", "pr_popover"),
+        ("tasks_list_160", "tasks_list_160"),
+        ("trigger_binding", "trigger_binding"),
+        ("trigger_binding", "trigger_binding_rest_fallback"),
+    ];
+    let rows: Map<String, Value> = pairs
+        .into_iter()
+        .map(|(measured_before, after)| {
+            let row = json!({
+                "before": before["scenarios"][measured_before]["wire"],
+                "before_workload": before["scenarios"][measured_before]["workload"],
+                "after": scenarios[after]["wire"],
+                "after_workload": scenarios[after]["workload"],
+            });
+            (after.to_string(), row)
+        })
+        .collect();
+    json!({"before_tree": before["tree"], "scenarios": rows})
+}
+
+// Catches: the gateway sending into an exhausted bucket, Background traffic
+// sent at Critical, a Tasks list collecting more than once in a TTL window,
+// and any request on the wire that no named caller accounts for.
+// Explicitly ignored because one real poll interval is a measurement, not a routine gate.
+#[tokio::test]
+#[ignore = "3151 provider gateway benchmark; requires one real poll interval"]
+async fn measure_provider_gateway() {
+    let server = receiver::Server::start().await;
+    let scratch = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let _config = crate::config::set_config_dir_override(scratch.path().join("config"));
+    let repo_path = fixture_repository(scratch.path());
+    let live = Bench::new(&server, &repo_path, None);
+    let replayed = Bench::new(&server, &repo_path, Some(FakeClock::new()));
     let experiment = async {
-        ensure_polling(&state, vec![repo_path.clone()], "all".into(), false);
-        // No setup-speed assertion: the outer experiment bound catches a hang.
-        loop {
-            if let AppEvent::GitHubPrUpdate { statuses, .. } = events.recv().await.unwrap() {
-                assert_eq!(
-                    statuses.len(),
-                    1,
-                    "fixture PR must reach the poller consumer"
-                );
-                break;
-            }
-        }
-        let cold = receiver.counts();
-        let idle_start = receiver.counts();
-        let idle_clock = Instant::now();
-        tokio::time::sleep(BASE_INTERVAL + Duration::from_millis(200)).await;
-        let idle_end = receiver.counts();
-        let idle_seconds = idle_clock.elapsed().as_secs_f64();
-        let open_start = receiver.counts();
-        let open_clock = Instant::now();
-        // The real frontend trace has one get_ci_checks on open, none for ten
-        // identical snapshots or a stable mounted panel, then one on reopen.
-        let checks = crate::github::get_ci_checks_impl(&repo_path, 42, &state).await;
-        assert_eq!(checks.len(), 1, "fixture check must reach the PR consumer");
-        tokio::time::sleep(BASE_INTERVAL + Duration::from_millis(200)).await;
-        let open_end = receiver.counts();
-        let open_seconds = open_clock.elapsed().as_secs_f64();
-        let reopen_start = receiver.counts();
-        crate::github::get_ci_checks_impl(&repo_path, 42, &state).await;
-        let reopen_end = receiver.counts();
-        stop_poller(&state).await.unwrap();
-        let account = crate::github::github_com_account(&state);
-        let mut backoff = Vec::new();
-        for status in [403, 429] {
-            for graphql in [false, true] {
-                receiver.next_status.store(status, Ordering::Relaxed);
-                let call = || async {
-                    if graphql {
-                        crate::github::graphql_with_retry(
-                            &state,
-                            &account,
-                            "query { viewer { login } }",
-                            serde_json::Value::Null,
-                            None,
-                        )
-                        .await
-                        .map(|_| ())
-                    } else {
-                        crate::github::send_rest_with_breaker(
-                            &state,
-                            &account,
-                            state.http_client.get("https://api.github.com/fixture/rest"),
-                        )
-                        .await
-                        .map(|_| ())
-                    }
-                };
-                assert!(call().await.unwrap_err().starts_with("rate-limit:"));
-                let before = receiver.trace.lock().len();
-                assert!(call().await.unwrap_err().starts_with("rate-limit:"));
-                assert_eq!(
-                    receiver.trace.lock().len(),
-                    before,
-                    "backoff must stop the send"
-                );
-                tokio::time::sleep(Duration::from_millis(1100)).await;
-                call()
-                    .await
-                    .expect("send resumes after the fixture retry-after expires");
-                assert_eq!(receiver.trace.lock().len(), before + 1);
-                backoff.push(serde_json::json!({"status":status,"kind":if graphql {"GraphQL"}else{"REST"},"blocked_sends":0,"post_reset_sends":1}));
-            }
-        }
-        println!(
-            "GITHUB_VOLUME_1995 {}",
-            serde_json::json!({
-                "cold_start":cold,
-                "idle":{"seconds":idle_seconds,"before":idle_start,"after":idle_end},
-                "one_pr_open":{"seconds":open_seconds,"before":open_start,"after":open_end},
-                "reopen":{"before":reopen_start,"after":reopen_end},
-                "backoff":backoff,
-                "trace":receiver.trace.lock().clone(),
-                "scope":"production Rust poller and client, controlled loopback TLS API; frontend open/reopen workload replayed from recorded client trace"
-            })
-        );
+        let mut scenarios = Map::new();
+        poller_scenarios(&live, &mut scenarios).await;
+        replay::run(&replayed, &mut scenarios).await;
+        limits::run(&replayed, &mut scenarios).await;
+        scenarios
     };
     let result = tokio::time::timeout(Duration::from_secs(300), experiment).await;
-    server_handle.shutdown();
-    server.await.unwrap().unwrap();
-    result.expect("outer experiment hang bound exceeded");
+    server.stop().await;
+    let scenarios = result.expect("outer experiment hang bound exceeded");
+    let comparison = comparison(&scenarios);
+    let report = json!({
+        "comparison": comparison,
+        "scenarios": scenarios,
+        "scope": "production Rust poller, GitHub client and gateway against a controlled loopback TLS API; \
+                  Tasks, board and PR popover workloads replayed from recorded client request sequences; \
+                  plugin admission and the plugin egress client are not exercised; \
+                  replayed scenarios run on a moved clock, so their latencies are not measurements",
+    });
+    let path = report_dir().join("report.json");
+    std::fs::write(&path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+    println!("PROVIDER_GATEWAY_BENCH report {}", path.display());
+    println!("PROVIDER_GATEWAY_BENCH comparison {comparison}");
 }

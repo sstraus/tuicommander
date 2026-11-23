@@ -35,8 +35,9 @@ fn save_ui_prefs_inner(
     base: config::UIPrefsConfig,
     config: config::UIPrefsConfig,
 ) -> Result<(), String> {
-    config::save_ui_prefs(base, config)?;
-    super::api::publish_change(state, "preferences", true);
+    if config::save_ui_prefs(base, config)? {
+        super::api::publish_change(state, "preferences", true);
+    }
     Ok(())
 }
 
@@ -207,5 +208,34 @@ mod refresh_review_tests {
         desired.enabled = !base.enabled;
         assert!(save_notification_config_inner(&state, base, desired).is_err());
         assert!(events.try_recv().is_err());
+    }
+}
+
+#[cfg(test)]
+mod ui_prefs_save_tests {
+    use super::*;
+
+    fn publishes(change: impl FnOnce(&mut config::UIPrefsConfig)) -> usize {
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _guard = config::set_config_dir_override(dir.path().to_path_buf());
+        let state = crate::state::tests_support::make_test_app_state();
+        let base = config::load_ui_prefs();
+        let mut desired = base.clone();
+        change(&mut desired);
+        let mut events = state.event_bus.subscribe();
+        save_ui_prefs_inner(&state, base, desired).unwrap();
+        std::iter::from_fn(|| events.try_recv().ok()).count()
+    }
+
+    // Catches: echo loop where an identical save bumps the settings generation.
+    #[test]
+    fn unchanged_ui_prefs_save_publishes_no_change() {
+        assert_eq!(publishes(|_| {}), 0);
+    }
+
+    // Catches: over-correction that hides real changes from other windows.
+    #[test]
+    fn changed_ui_prefs_save_publishes_once() {
+        assert_eq!(publishes(|p| p.sidebar_visible = !p.sidebar_visible), 1);
     }
 }

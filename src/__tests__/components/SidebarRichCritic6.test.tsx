@@ -102,6 +102,7 @@ vi.mock("../../stores/repoSettings", () => ({
 }));
 
 vi.mock("../../stores/terminals", () => ({
+	registerBlockFoldingGate: vi.fn(),
 	terminalsStore: {
 		getIds: vi.fn(() => []),
 		get: mockTerminalsGet,

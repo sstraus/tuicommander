@@ -1,5 +1,6 @@
 //! Account-scoped plugin adapter for the existing B6/B7 services.
 use crate::{
+    github::Origin,
     github_pr_actions::{self as actions, PrAction},
     github_pr_api::RepoApi,
     github_review_threads as reviews,
@@ -90,6 +91,7 @@ pub(crate) async fn execute(
         token,
         owner,
         repo,
+        origin: Origin::visible("plugin_github.dispatch"),
     };
     dispatch(&api, api.variables(number), number, request).await
 }

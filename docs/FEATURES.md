@@ -150,6 +150,8 @@ does not become the shell composer draft (#2178-24da).
 
 PR popovers, unresolved-thread counts and notifications open the exact account-scoped PR in Tasks at Comments, including its first review-thread page. Without a loaded provider they open the GitHub conversation. Tasks PR details return to a matching live sidebar branch/worktree through the normal branch-selection path (#2559-dc9e).
 
+The PR popover and the Tasks PR detail offer **Review with workflow**: it starts the project's published PR review workflow, selected through its GitHub `pull_request` trigger binding, on the head and base GitHub reports at the click. A repeated request for the same head returns the existing run; several bindings require a choice; **Open run** opens the run in the Designer.
+
 ## Desktop close and quit
 
 PTY close and kill stop polling when child status is unavailable. A persistent OS status error does not keep the desktop quit cleanup waiting forever.
@@ -513,7 +515,7 @@ A multi-line editor docked under the terminal for writing a prompt without fight
 
 Idle, unfocused terminals can be paused to reduce CPU and battery use. A background checker (every 30s) sends `SIGSTOP` only when the PTY child owns the foreground process group. An agent running as a separate foreground job inside an interactive shell is not stopped: shell job control would reclaim the terminal and leave that job suspended. Processes in the eligible child's group are paused together.
 
-- **Entry conditions (all required)** — timeout enabled (`> 0`), tab not focused, shell state idle, no tracked agent background work, idle for at least the timeout, session startup settled, and not already in standby. Claude/Codex/Gemini/Grok/pi/OpenCode additionally require confirmed idle (explicit lifecycle marker or stable ready screen); silence-only idle cannot suspend them. Grok distinguishes its active Braille-spinner status row from the persistent `❯` composer.
+- **Entry conditions (all required)** — timeout enabled (`> 0`), tab not focused, shell state idle, no tracked agent background work, idle for at least the timeout, session startup settled, and not already in standby. Claude/Codex/agy/Grok/pi/OpenCode additionally require confirmed idle (explicit lifecycle marker or stable ready screen); silence-only idle cannot suspend them. Grok distinguishes its active Braille-spinner status row from the persistent `❯` composer.
 - **Remote activity** — remote input, HTTP output reads, and remote observer disconnects start a full timeout window before standby can resume; connected terminal WebSockets and SSE observers prevent standby. Recent local input also prevents standby. Desktop raw input wakes an already parked shell through the same visibility-serialized activity path.
 - **Wake** — `SIGCONT` targets the exact recorded stopped group when the tab is focused, remote input/output arrives, or a message arrives for the agent; the process resumes where it stopped (no session loss, no restart)
 - **Safety** — the process-group id is validated before signalling; an unsafe pgid is refused rather than risking a stop sent to the wrong group
@@ -571,13 +573,13 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - `+` button: click opens a terminal in that branch; long press (500 ms) lists the enabled agents and opens a tab running the chosen one (a shell row has no agents, so there a long press acts as it did before: a click, or the row menu on touch); right-click opens the row menu
 - CI ring: proportional arc segments (green=passed, red=failed, yellow=pending)
 - PR badge: always shows `#number` plus its highest-priority state when applicable (Draft, Conflicts, CI, review, merged/closed), with state color — click for detail popover
-- Diff stats: `+N / -N` additions/deletions. Clicking the stats chip or the `N dirty` chip selects that workspace and opens the Git panel on the Changes tab (it stays open if already there)
+- Diff stats: `+N / -N` additions/deletions. Clicking the stats chip or the dirty badge selects that workspace and opens the Git panel on the Changes tab (it stays open if already there)
 - Merged badge: branches merged into main show a "Merged" badge
-- Unmerged mark: a small neutral outlined square shows commits outside the default branch even when the diff and dirty counts are zero
+- Unmerged mark: a small neutral `↑` shows commits outside the default branch even when the diff and dirty counts are zero
 - Question indicator: `?` icon (orange, pulsing) when agent asks a question
 - Idle indicator: branch icons turn grey when the repo has no active terminals
 - Quick switcher badge: numbered index shown when `Cmd+Ctrl` held
-- Remote-only branches with open PRs: shown in sidebar with PR badge and inline accordion actions (Checkout, Create Worktree). Additional actions when PR popover is open: Merge, View Diff, Approve, Dismiss
+- Remote-only branches with open PRs: shown in sidebar with PR badge and inline accordion actions (Checkout, Create Worktree). Additional actions when PR popover is open: Merge, View Diff, Approve; the row `⋯` menu holds Hide from list
 - Dismiss/Show Dismissed: remote-only PRs can be dismissed from the sidebar; a "Show Dismissed" toggle reveals them again
 - Branch sorting: main/master/develop always first, then alphabetical; merged PR branches sorted last
 
@@ -588,9 +590,9 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Agent rows show the agent icon, terminal name, current intent/task (falling back to the last substantial prompt), compact age since the backend's last semantic session activity, and the same busy/idle signal used by the terminal tab and branch icon. Terminal redraws do not reset this age. Plain shells remain visible as terminal rows.
 - A sub-agent row shows a muted robot tag with its parent agent in the tooltip; the repo GitHub badge retains the accent color to distinguish its action from session metadata.
 - Clicking a row switches to that session.
-- Every branch shows its agents by default; collapsing is remembered per workspace. A separate, always-visible chevron toggles the list by click or Enter/Space. The status icon and row select the branch without changing agent visibility.
+- Every branch shows its agents by default; collapsing is remembered per workspace. The branch icon toggles the list by click or Enter/Space; the rest of the row selects the branch without changing agent visibility.
 - Single-session branches can expand too.
-- A collapsed list shows its session count beside the chevron; an expanded list hides the count.
+- A collapsed list shows its session count beside the branch icon; an expanded list hides the count.
 
 ### 2.4 Git Quick Actions
 - Bottom of sidebar when a repo is active
@@ -617,8 +619,10 @@ Right-click the main worktree row → **Switch Branch** submenu to checkout a di
 - Rich repository metadata hides zero PR and worktree counts; positive counts update live
 - Toolbar button (left of the filter icon) cycles rich, compact and harness-only and prints the mode (R, C, H); H keeps rich rows and only branches with live harness sessions; the mode is saved in UI prefs (`sidebar_density`)
 - Compact: one-line rows. Rich: compact-sized navigation with inline branch facts and expanded intent only for working agents. H: only branches with live harness sessions, using rich rows
-- Rich branch row: PR state word and title; last-commit age, ahead/behind the upstream, diff stats, dirty-file count (opens Changes), merged, stale (no commit for 30 days), unknown (removal blocked), unmerged; never stale, merged, dirty or unknown on a main checkout. Compact carries the age, ahead/behind and stale rule on the branch name tooltip
-- Rich agent row: state (working, idle, needs input, error) and the agent's intent, task or last prompt; in-session subagents (state, title, tool calls, age; more than 3 fold into a count); TUIC child sessions nested under the parent with a connecting guide. Compact carries state and line on the row tooltip
+- Rich branch row: full branch name with a muted path prefix (wraps, never truncates), unmerged `↑` mark and last-commit age beside it; facts right-aligned on the name line or on a second line when they do not fit: ahead/behind the upstream, diff stats, yellow `● N` dirty badge (opens Changes), stale (no commit for 30 days), unknown (removal blocked), PR badge; PR title on its own line; never stale, merged, dirty or unknown on a main checkout. Compact carries the age, ahead/behind and stale rule on the branch name tooltip, and also mutes the path prefix
+- Quiet section (R and C): branches with no session, diff, dirty files, PR, lifecycle chip or Keep mark fold under a **Quiet · N branches · oldest X** fold line; the main checkout and the selected branch never fold; H has none
+- Merged summary row: the Merged pill turns into Clean on hover or focus and starts the removal workflow
+- Rich agent row: Working, Needs input or Error pill beside the title (subagent rows keep the robot icon), and the agent's intent, task or last prompt; in-session subagents (state, title, tool calls, age; more than 3 fold into a count); TUIC child sessions nested under the parent with a connecting guide. Compact carries state and line on the row tooltip
 - Rich repo header: current branch, open PR count, worktree count, age of the last remote poll
 
 ### 2.8 Active-Only Filter
@@ -1458,7 +1462,9 @@ What went with the embedded engine (#784-0aec) and did not come back here:
 ### 8.3 PR Detail Popover
 - Title, number, link to GitHub
 - Author, timestamps, state, merge readiness, review decision
-- CI check details, labels, line changes, commit count
+- CI check details, labels, line changes; Description shows its size ("N lines") while collapsed
+- Review threads: each open thread has Reply and Resolve (`reply_pr_thread`, `set_pr_thread_resolved`)
+- Split button (`✦ Review ▾`): Start actions, the project's published workflows (started with the PR as subject; a required input without default opens the Workflows space), agent prompts, Manage workflows…
 - View Diff button: opens PR diff as a dedicated panel tab with collapsible file sections, dual line numbers, and color-coded additions/deletions
 - AI Review: one unattended ego turn over the PR diff (#795-320b). Findings are listed with severity, path and line; each one with a concrete line can be
   selected and posted to GitHub as an inline review comment. Findings below the confidence threshold (default `0.7`, `TUIC_REVIEW_CONFIDENCE_THRESHOLD`
@@ -1502,7 +1508,7 @@ What went with the embedded engine (#784-0aec) and did not come back here:
 - Configurable merge strategy per repo: merge commit, squash, or rebase (Settings > Repository > Worktree tab)
 - Merge method auto-detected from repo's allowed methods via GitHub API (`get_repo_merge_methods`); auto-fallback to squash on HTTP 405 rejection. Squash is preferred first when several methods are allowed (`src/utils/prMerge.ts`)
 - Merge stays available while CI is still running: `canMergePr` requires the PR to be open, non-draft, approved, and free of *definitively failed* checks — pending checks do not hide the action
-- Triggered from: PR detail popover (local branches), remote-only PR popover, Merge & Archive workflow (sidebar context menu)
+- Triggered from: PR detail popover (local branches), remote-only PR popover, Merge & Archive workflow (sidebar context menu). In the sidebar PR panel, Merge is the next action only when the readiness verdict is "ready" (UI v3, `src/utils/prNextAction.ts`)
 - Post-merge cleanup dialog: sequential steps executed via Rust backend (not PTY — terminal may be occupied by AI agent)
   - Switch to base branch (auto-stash if dirty — inline warning shown with "Unstash after switch" checkbox)
   - Pull base branch (ff-only)
@@ -1526,10 +1532,12 @@ What went with the embedded engine (#784-0aec) and did not come back here:
 - Issues displayed in a collapsible section within the GitHub panel alongside PRs
 - Filter modes: Assigned (default), Created, Mentioned, All, Disabled
 - Filter persisted in app config (`issue_filter` field) and configurable in Settings > Git & GitHub > Issues
-- Each issue shows: number, title, state (OPEN/CLOSED), author, labels, assignees, milestone, comment count, timestamps
+- Each issue shows: number, title, state (OPEN/CLOSED), author, labels, assignees, milestone, comment count, last update
 - Labels rendered with GitHub-matching colors (background opacity 0.7, contrast-aware text color)
-- Issue actions: Open in GitHub, Close/Reopen, Copy issue number
-- Expand accordion to see full details (milestone, assignees, labels, timestamps)
+- The expanded issue follows the UI v3 layout (`docs/frontend/ui-v3.md`):
+  - Next action by state: **Reopen** (closed); **Create draft PR** · Open worktree (the `autofix/issue-N` branch has a worktree and no PR); **Work on it ▾** (open): the main part runs Auto-fix in worktree or the last pick; `▾` lists Start, Workflow (published workflows, started with the issue as subject) and Agent prompt groups, then Manage workflows…; **Assign me** adds the viewer to the current assignees; Comments has a reply composer. Comments added since the last visit of the panel show as "N new" in the pill and the why line, make **Reply** the next action, open Comments by itself and carry a "New" mark (`visit_work_item`, `work_item_visits` in `tuic.sqlite3`, `retention.work_item_visit_days` 90). The issue `⋯` menu holds Hide from list; **Show N** in the Issues header brings hidden issues back
+  - Fixed toolbar: GitHub, Copy `#N`, Tasks; the `⋯` menu holds Create draft PR from the auto-fix branch and Close issue
+  - Description and Comments sections render inside the panel through the Tasks work-item provider; the comments pill opens the conversation in Tasks
 - Skeleton loading rows shown during first fetch
 - Empty state message when no issues match the filter
 - MCP HTTP endpoint: `GET /repo/issues?path=...` returns issues JSON
@@ -2041,7 +2049,7 @@ Buffer eviction is reported; it does not create another output store.
 - Exposes terminal sessions, git operations, agent spawning
 - WebSocket streaming, Streamable HTTP transport
 - Used by Claude Code, Cursor, and other tools via MCP protocol
-- `tuic-bridge` ships as a Tauri sidecar; auto-installs MCP configs on first launch for Claude Code, Cursor, Windsurf, VS Code, Codex, Grok, opencode, Droid, goose and pi — but only for the ones actually installed on the machine. Zed, Amp and Gemini keep MCP inside their general `settings.json` and wait for an explicit install. JSON configs are edited member-by-member, never reserialized, so comments, key order and indentation survive (see [MCP auto-install](backend/config.md#mcp-bridge-auto-install))
+- `tuic-bridge` ships as a Tauri sidecar; auto-installs MCP configs on first launch for Claude Code, Cursor, Windsurf, VS Code, agy, Codex, Grok, opencode, Droid, goose and pi — but only for the ones actually installed on the machine. Zed and Amp keep MCP inside their general `settings.json` and wait for an explicit install. JSON configs are edited member-by-member, never reserialized, so comments, key order and indentation survive (see [MCP auto-install](backend/config.md#mcp-bridge-auto-install))
 - Local connections use Unix domain socket (`<config_dir>/mcp.sock`) on macOS/Linux or named pipe (`\\.\pipe\tuicommander-mcp`) on Windows; TCP port reserved for remote access only
 - Unix socket lifecycle is crash-safe: RAII guard removes the socket file on `Drop`; bind retries 3× (×100 ms) removing any stale file before each attempt; liveness check uses a real `connect()` probe so a dead socket from a crashed run never blocks MCP tool loading
 
@@ -3251,15 +3259,15 @@ Terminal stream reconnect notices identify the session and show the transport’
 
 In rich mode, sessions idle for more than two hours fold into an expandable count. Backend activity timestamps determine age; busy sessions, awaiting input, unread output, selected rows and parents of visible children stay visible. Expanding preserves row order. Compact mode does not fold idle sessions.
 
-Rich working agent rows reserve two clamped intent lines. Idle, awaiting-input and error rows stay on one line with status dots; their full intent, task or prompt remains in the tooltip. Compact rows keep their one-line layout.
+Rich working agent rows show their intent on at most two lines, with no reserved blank space when there is none. Idle, awaiting-input and error rows stay on one line with a state pill; their full intent, task or prompt remains in the tooltip. Compact rows keep their one-line layout.
 
-Rich navigation keeps compact typography and padding. Branch identity and facts share one line, with names truncated and full PR/lifecycle facts in tooltips. Repository metadata disappears when PR and worktree counts are both zero. Header controls use compact sizing to protect repo names. Returned subagents fold into an expandable count. Interrupted subagents are labeled **Interrupted** and do not count as returned.
+Rich navigation keeps compact typography and padding. Branch names show in full and wrap; facts share the name line when they fit and move to a right-aligned second line otherwise. Repository metadata disappears when PR and worktree counts are both zero. Header controls use compact sizing to protect repo names. Returned subagents fold into an expandable count. Interrupted subagents are labeled **Interrupted** and do not count as returned.
 
 In rich mode, ungrouped repositories with open terminals appear first, followed by an Idle section. Manual order is preserved inside each section. Idle headers start on one line; disclosure reveals their branches without changing activity or saved order. Headers count agents in the backend working state, independently of open-terminal membership.
 
 Rich active/idle sections also apply independently inside each existing repository group. Group membership and group ordering remain intact; active-only filtering hides idle-only groups and empty Idle headings.
 
-Rich merged linked worktrees with no sessions and verified lifecycle facts use a one-line summary: Merged, N uncommitted, Clean up. Live, unmerged, or unknown worktrees retain full rows. Clean up enters the existing lifecycle preflight and confirmation workflow; cancellation preserves the worktree.
+Rich merged linked worktrees with no sessions and verified lifecycle facts use a one-line summary: name, dirty badge and a Merged pill that turns into Clean on hover or focus. Live, unmerged, or unknown worktrees retain full rows. Clean enters the existing lifecycle preflight and confirmation workflow; cancellation preserves the worktree. Branches show **⎇**; merged branches show a purple **⌥**; the main checkout shows **✳**. A lock in the Merged pill marks a worktree that cleanup must keep (dirty files, unsafe removal or a sweep refusal); the tooltip gives the reason. Done subagents fold into **› N done** and long-idle sessions into **› N idle**. Repository header counts (working, needs you) are small chips.
 
 Rich parent terminal rows show N agents in each other repository containing live children. Clicking reveals the child group, repository and workspace, then selects a child through existing terminal navigation. Session placement and same-branch nesting stay intact; closed children disappear from summaries.
 

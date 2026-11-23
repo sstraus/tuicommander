@@ -1,5 +1,5 @@
 //! Account-aware API boundary shared by review threads and PR actions.
-use crate::{github_account::GitHubAccount, state::AppState};
+use crate::{github::Origin, github_account::GitHubAccount, state::AppState};
 use serde_json::Value;
 
 pub(crate) trait PrApi: Sync {
@@ -74,10 +74,11 @@ pub(crate) struct RepoApi<'a> {
     pub token: String,
     pub owner: String,
     pub repo: String,
+    pub origin: Origin,
 }
 
 impl<'a> RepoApi<'a> {
-    pub async fn resolve(state: &'a AppState, path: &str) -> Result<Self, String> {
+    pub async fn resolve(state: &'a AppState, path: &str, origin: Origin) -> Result<Self, String> {
         let (account, token, owner, repo) =
             crate::github::resolve_repo_for_rest(state, path).await?;
         Ok(Self {
@@ -86,6 +87,7 @@ impl<'a> RepoApi<'a> {
             token,
             owner,
             repo,
+            origin,
         })
     }
     fn text_request(&self, endpoint: &str) -> reqwest::RequestBuilder {
@@ -111,6 +113,7 @@ impl PrApi for RepoApi<'_> {
         download_text_tail(
             self.state,
             &self.account,
+            self.origin,
             self.text_request(endpoint),
             max_bytes,
         )
@@ -121,6 +124,7 @@ impl PrApi for RepoApi<'_> {
         crate::github::graphql_with_retry(
             self.state,
             &self.account,
+            self.origin,
             query,
             variables,
             Some(&self.token),
@@ -143,7 +147,7 @@ impl PrApi for RepoApi<'_> {
         } else {
             request.json(&body)
         };
-        rest_json(self.state, &self.account, request).await
+        rest_json(self.state, &self.account, self.origin, request).await
     }
 }
 
@@ -153,9 +157,10 @@ impl PrApi for RepoApi<'_> {
 async fn rest_json(
     state: &AppState,
     account: &GitHubAccount,
+    origin: Origin,
     request: reqwest::RequestBuilder,
 ) -> Result<Value, String> {
-    let response = crate::github::send_rest_with_breaker(state, account, request).await?;
+    let response = crate::github::send_rest_with_breaker(state, account, origin, request).await?;
     let status = response.status();
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
     if !status.is_success() {
@@ -172,10 +177,12 @@ async fn rest_json(
 async fn download_text_tail(
     state: &AppState,
     account: &GitHubAccount,
+    origin: Origin,
     request: reqwest::RequestBuilder,
     max_bytes: usize,
 ) -> Result<String, String> {
-    let mut response = crate::github::send_rest_with_breaker(state, account, request).await?;
+    let mut response =
+        crate::github::send_rest_with_breaker(state, account, origin, request).await?;
     let status = response.status();
     let mut tail = std::collections::VecDeque::with_capacity(max_bytes);
     while let Some(chunk) = response.chunk().await.map_err(|error| error.to_string())? {

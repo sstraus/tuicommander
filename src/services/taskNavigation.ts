@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import { urlResolverRegistry } from "../components/CommandPalette/urlPaste";
+import type { WorkItemProvider } from "../plugins/workItemProvider";
 import { workItemProviderRegistry } from "../plugins/workItemProviderRegistry";
 import { mdTabsStore } from "../stores/mdTabs";
 import type { WorkItemRef } from "../types/work-items.gen";
@@ -12,23 +13,34 @@ export interface TaskNavigationTarget {
 const [target, setTarget] = createSignal<TaskNavigationTarget | null>(null);
 let pending: AbortController | undefined;
 
+/** The registered provider and reference for a work-item URL, or null when no provider owns it. */
+export async function resolveWorkItem(
+	url: string,
+	signal: AbortSignal,
+): Promise<{ reference: WorkItemRef; provider: WorkItemProvider } | null> {
+	if (workItemProviderRegistry.list().length === 0) return null;
+	const reference = (await urlResolverRegistry.resolve(url, signal))?.link.reference;
+	const provider = reference && workItemProviderRegistry.get(reference.providerId, reference.accountId);
+	return reference && provider ? { reference, provider } : null;
+}
+
 /** Shared by PR details and native notices; URL resolvers retain provider/account ownership. */
 export async function openTaskConversation(url: string): Promise<void> {
 	pending?.abort();
 	const controller = new AbortController();
 	pending = controller;
+	// No provider: open the browser synchronously, inside the click's user gesture.
 	if (workItemProviderRegistry.list().length === 0) {
 		handleOpenUrl(url);
 		return;
 	}
-	const resolved = await urlResolverRegistry.resolve(url, controller.signal);
+	const resolved = await resolveWorkItem(url, controller.signal);
 	if (controller.signal.aborted) return;
-	const reference = resolved?.link.reference;
-	if (!reference || !workItemProviderRegistry.get(reference.providerId, reference.accountId)) {
+	if (!resolved) {
 		handleOpenUrl(url);
 		return;
 	}
-	setTarget({ reference, comments: true });
+	setTarget({ reference: resolved.reference, comments: true });
 	mdTabsStore.addTasks();
 }
 

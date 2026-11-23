@@ -4,9 +4,9 @@ use super::plugin_http_fetch_impl;
 use crate::accounts::{AuthKind, NewAccount};
 use std::sync::{Arc, Mutex};
 
-pub(super) type Seen = Arc<Mutex<Vec<(String, Option<String>)>>>;
+pub(crate) type Seen = Arc<Mutex<Vec<(String, Option<String>)>>>;
 
-pub(super) fn isolated_config() -> (tempfile::TempDir, impl Drop) {
+pub(crate) fn isolated_config() -> (tempfile::TempDir, impl Drop) {
     let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
     let guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
     (dir, guard)
@@ -15,7 +15,7 @@ pub(super) fn isolated_config() -> (tempfile::TempDir, impl Drop) {
 /// Records every request with its Authorization header. `/identity` answers the
 /// account verification, `/echo` reflects the header back in the body and in a
 /// response header, `/redirect` answers 302 to `redirect_to`.
-pub(super) async fn server(prefix: &str, redirect_to: Option<String>) -> (String, Seen) {
+pub(crate) async fn server(prefix: &str, redirect_to: Option<String>) -> (String, Seen) {
     let seen: Seen = Arc::default();
     let record = seen.clone();
     let app = axum::Router::new().fallback(
@@ -53,7 +53,7 @@ pub(super) async fn server(prefix: &str, redirect_to: Option<String>) -> (String
     (base, seen)
 }
 
-pub(super) fn write_manifest(
+pub(crate) fn write_manifest(
     dir: &std::path::Path,
     id: &str,
     providers: serde_json::Value,
@@ -73,7 +73,7 @@ pub(super) fn write_manifest(
     .unwrap();
 }
 
-fn descriptor(id: &str) -> serde_json::Value {
+pub(crate) fn descriptor(id: &str) -> serde_json::Value {
     serde_json::json!([{
         "id": id, "label": "A3c protocol test provider", "kinds": ["bearer", "basic"],
         "verify": {"path": "/identity", "loginPointer": "/name"}
@@ -82,11 +82,11 @@ fn descriptor(id: &str) -> serde_json::Value {
 
 /// Load the plugin through the production registration path, which registers
 /// its declared descriptors.
-pub(super) fn load(state: &crate::AppState, id: &str) {
+pub(crate) fn load(state: &crate::AppState, id: &str) {
     crate::plugins::register_loaded_plugin_impl(state, id.into(), vec!["net:http".into()]).unwrap();
 }
 
-async fn account(provider: &str, host: &str, kind: AuthKind, token: &str) -> String {
+pub(crate) async fn account(provider: &str, host: &str, kind: AuthKind, token: &str) -> String {
     let username = (kind == AuthKind::Basic).then(|| "user@example.test".to_string());
     let input = NewAccount {
         provider: provider.into(),

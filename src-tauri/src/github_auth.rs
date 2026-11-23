@@ -10,6 +10,11 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "desktop")]
 use tauri::State;
 
+use tuic_gateway::model::Provider;
+
+use crate::github::gateway::Origin;
+use crate::provider_gateway::AppGateway;
+use crate::provider_gateway::direct::{self, Direct};
 use crate::state::AppState;
 
 use crate::credentials::Credential;
@@ -51,25 +56,34 @@ struct GithubTokenResponse {
 // Device Flow API calls
 // ---------------------------------------------------------------------------
 
+const DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
+const DEVICE_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
+
+/// The account the login endpoints spend: they belong to no account yet.
+const LOGIN_ACCOUNT: &str = "oauth-device";
+
+/// An OAuth call is a user action; it caches nothing and keeps the default
+/// redirect policy it always had.
+fn login_call() -> Direct<'static> {
+    Direct::new(
+        Origin::interactive("github_auth.device_flow"),
+        Provider::Generic,
+        LOGIN_ACCOUNT,
+    )
+}
+
 /// Construct the device-code wire request shared by every authentication entry point.
-fn device_flow_request(client: &reqwest::Client) -> reqwest::RequestBuilder {
-    client
-        .post("https://github.com/login/device/code")
+fn device_flow_request(url: &str) -> reqwest::RequestBuilder {
+    direct::builder(reqwest::Method::POST, url)
         .header("Accept", "application/json")
         .form(&[("client_id", CLIENT_ID), ("scope", OAUTH_SCOPES.trim())])
 }
 
 /// Start the Device Flow by requesting a device code from GitHub.
-pub(crate) async fn start_device_flow(
-    client: &reqwest::Client,
-) -> Result<DeviceCodeResponse, String> {
-    crate::github_debug::log_api(
-        "POST",
-        "https://github.com/login/device/code",
-        "start_device_flow",
-    );
-    let response = device_flow_request(client)
-        .send()
+pub(crate) async fn start_device_flow() -> Result<DeviceCodeResponse, String> {
+    crate::github_debug::log_api("POST", DEVICE_CODE_URL, "start_device_flow");
+    let response = login_call()
+        .send(device_flow_request(DEVICE_CODE_URL))
         .await
         .map_err(|e| format!("Failed to start Device Flow: {e}"))?;
 
@@ -89,8 +103,16 @@ pub(crate) async fn start_device_flow(
 }
 
 /// Make a single poll attempt to exchange the device code for an access token.
-pub(crate) async fn poll_device_flow(
-    client: &reqwest::Client,
+pub(crate) async fn poll_device_flow(device_code: &str) -> Result<PollResult, String> {
+    poll_device_flow_at(&direct::shared(), DEVICE_TOKEN_URL, device_code).await
+}
+
+/// One poll against `url` through `gateway`. A `slow_down` answer is a poll
+/// result for the caller to back off on; a failing host is remembered by the
+/// gateway, so the next poll is refused until the back-off ends.
+async fn poll_device_flow_at(
+    gateway: &AppGateway,
+    url: &str,
     device_code: &str,
 ) -> Result<PollResult, String> {
     let params = [
@@ -99,16 +121,14 @@ pub(crate) async fn poll_device_flow(
         ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
     ];
 
-    crate::github_debug::log_api(
-        "POST",
-        "https://github.com/login/oauth/access_token",
-        "poll_device_flow",
-    );
-    let response = client
-        .post("https://github.com/login/oauth/access_token")
-        .header("Accept", "application/json")
-        .form(&params)
-        .send()
+    crate::github_debug::log_api("POST", url, "poll_device_flow");
+    let response = login_call()
+        .send_via(
+            gateway,
+            direct::builder(reqwest::Method::POST, url)
+                .header("Accept", "application/json")
+                .form(&params),
+        )
         .await
         .map_err(|e| format!("Failed to poll Device Flow: {e}"))?;
 
@@ -156,10 +176,8 @@ fn interpret_poll_body(status: reqwest::StatusCode, body: &str) -> Result<PollRe
 /// for display in the UI.
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) async fn github_start_login(
-    state: State<'_, Arc<AppState>>,
-) -> Result<DeviceCodeResponse, String> {
-    start_device_flow(&state.http_client).await
+pub(crate) async fn github_start_login() -> Result<DeviceCodeResponse, String> {
+    start_device_flow().await
 }
 
 /// Poll GitHub for the Device Flow token. The frontend calls this repeatedly
@@ -187,7 +205,7 @@ pub(crate) async fn github_poll_login_impl_at_epoch(
     device_code: String,
     epoch: u64,
 ) -> Result<PollResult, String> {
-    let result = poll_device_flow(&state.http_client, &device_code).await?;
+    let result = poll_device_flow(&device_code).await?;
 
     let _commit = state.github.login_commit.lock().await;
     if state.github.login_epoch.load(Ordering::SeqCst) != epoch {
@@ -216,8 +234,10 @@ pub(crate) async fn github_poll_login_impl_at_epoch(
         // The token may belong to a different user than the one we cached, and the
         // cached login drives `author:@me` and the issue filters.
         crate::github::invalidate_viewer_login(state);
-        // Reset the github.com circuit breaker so we retry any previously-failed repos
-        state.github.circuit_breaker.reset();
+        // Forget the gateway's limits and cache for github.com so we retry any
+        // previously-failed repos with the new identity.
+        crate::github::gateway::reset_account(state, &crate::github::github_com_account(state))
+            .await;
         // Clear only github.com cooldowns ("owner/name", no ':'), leaving GHE
         // cooldowns ("{id}:owner/name") untouched — github.com login must not
         // disturb other accounts' state.
@@ -265,7 +285,7 @@ pub(crate) async fn github_poll_add_account_impl_at_epoch(
     device_code: String,
     epoch: u64,
 ) -> Result<PollResult, String> {
-    let result = poll_device_flow(&state.http_client, &device_code).await?;
+    let result = poll_device_flow(&device_code).await?;
 
     let _commit = state.github.login_commit.lock().await;
     if state.github.login_epoch.load(Ordering::SeqCst) != epoch {
@@ -277,10 +297,17 @@ pub(crate) async fn github_poll_add_account_impl_at_epoch(
     {
         let host = crate::github_account::GitHubHost::new("github.com")
             .expect("github.com is a valid host");
-        let login =
-            crate::github_account::fetch_account_login(&state.http_client, &host, access_token)
-                .await?
-                .ok_or_else(|| "GitHub did not return a login for this token".to_string())?;
+        let login = crate::github_account::fetch_account_login(
+            Direct::new(
+                Origin::interactive("github_auth.add_account"),
+                Provider::GitHub,
+                LOGIN_ACCOUNT,
+            ),
+            &host,
+            access_token,
+        )
+        .await?
+        .ok_or_else(|| "GitHub did not return a login for this token".to_string())?;
 
         if login == crate::github_account::GitHubAccount::GITHUB_COM_ID {
             // Defensive: a real GitHub login can never be "github.com", but never
@@ -310,6 +337,15 @@ pub(crate) async fn github_logout(state: State<'_, Arc<AppState>>) -> Result<(),
     github_logout_impl(state.inner()).await
 }
 
+/// A github.com logout or disconnect drops the cached provider data of the default account.
+fn notify_github_com_cleared() {
+    let account = crate::github_account::GitHubAccount::github_com(
+        crate::github_account::AccountKind::GithubComOauth,
+        None,
+    );
+    crate::accounts::notify_cleared(&account.id, Some(&account));
+}
+
 pub(crate) async fn github_logout_impl(state: &Arc<AppState>) -> Result<(), String> {
     let _commit = state.github.login_commit.lock().await;
     state.github.login_epoch.fetch_add(1, Ordering::SeqCst);
@@ -330,6 +366,7 @@ pub(crate) async fn github_logout_impl(state: &Arc<AppState>) -> Result<(), Stri
     }
     // The fallback token (env) is very likely a different user.
     crate::github::invalidate_viewer_login(state);
+    notify_github_com_cleared();
 
     tracing::info!(
         source = "github",
@@ -367,6 +404,7 @@ pub(crate) async fn github_disconnect_impl(state: &Arc<AppState>) -> Result<(), 
         *state.github.token_source.write() = TokenSource::None;
     }
     crate::github::invalidate_viewer_login(state);
+    notify_github_com_cleared();
     tracing::info!(
         source = "github",
         "GitHub disconnected (runtime token cleared)"
@@ -402,20 +440,9 @@ pub(crate) struct RepoAccessErrorGroup {
 /// Pure seam (no `State`/network) so the Step 0 characterization net can pin
 /// the diagnostics shape for a github.com-only setup.
 pub(crate) fn compute_diagnostics(state: &AppState) -> GitHubDiagnostics {
-    let cloud_status = state.github.circuit_breaker.check();
-    // A GHE account whose breaker is open also counts as "open" for the UI, but
-    // never changes the github.com-only output (ghe_state is empty then).
-    let ghe_open = state
-        .github
-        .ghe_state
-        .iter()
-        .any(|e| e.value().circuit_breaker.check().is_err());
-    let circuit_breaker_open = cloud_status.is_err() || ghe_open;
-    let circuit_breaker_status = match &cloud_status {
-        Ok(()) if ghe_open => "An Enterprise account is backing off".to_string(),
-        Ok(()) => "OK".to_string(),
-        Err(msg) => msg.clone(),
-    };
+    let backoff = crate::github::gateway::backoff_status(state);
+    let circuit_breaker_open = backoff.is_some();
+    let circuit_breaker_status = backoff.unwrap_or_else(|| "OK".to_string());
 
     let now = std::time::Instant::now();
     let repos_not_found: Vec<String> = state
@@ -565,15 +592,19 @@ pub(crate) async fn github_auth_status_impl(state: &Arc<AppState>) -> Result<Aut
     let host = crate::github_account::GitHubHost::new("github.com").expect("github.com is valid");
     let user_url = crate::github_account::github_rest_url(&host, "/user");
     crate::github_debug::log_api("GET", &user_url, "validate_token_impl");
-    let resp = crate::github::github_rest_request(
-        &state.http_client,
+    let resp = Direct::new(
+        Origin::interactive("github_auth.auth_status"),
+        Provider::GitHub,
+        crate::github_account::GitHubAccount::GITHUB_COM_ID,
+    )
+    .send(crate::github::github_rest_request(
+        direct::builder_client(),
         reqwest::Method::GET,
         &host,
         "/user",
         &token,
         crate::github::GITHUB_JSON,
-    )
-    .send()
+    ))
     .await;
 
     match resp {
@@ -1262,6 +1293,8 @@ mod tests {
             .proxy(reqwest::Proxy::all("http://127.0.0.1:1").unwrap())
             .build()
             .unwrap();
+        state.gateway =
+            crate::provider_gateway::ProviderGateway::l1_only(state.http_client.clone());
         let state = Arc::new(state);
         *state.github.token.write() = Some("fake-disconnect-token".into());
         *state.github.token_source.write() = TokenSource::Env;
@@ -1274,6 +1307,7 @@ mod tests {
         let result = crate::github::graphql_with_retry(
             &state,
             &account,
+            crate::github::Origin::interactive("test"),
             "query { viewer { login } }",
             serde_json::json!({}),
             None,
@@ -1356,7 +1390,7 @@ mod device_scope_tests {
     /// Catches: a newly authorized TUIC account cannot move Projects v2 cards because consent omits project.
     #[test]
     fn device_flow_requests_projects_write_scope() {
-        let request = super::device_flow_request(&reqwest::Client::new())
+        let request = super::device_flow_request(super::DEVICE_CODE_URL)
             .build()
             .expect("valid device-code request");
         assert_eq!(request.method(), reqwest::Method::POST);
@@ -1382,6 +1416,67 @@ mod device_scope_tests {
         assert!(
             scopes.contains("project"),
             "Projects v2 mutations require project consent"
+        );
+    }
+}
+
+#[cfg(test)]
+mod device_poll_tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use axum::{Router, routing::post};
+
+    use super::{PollResult, poll_device_flow_at};
+    use crate::provider_gateway::ProviderGateway;
+
+    async fn serve(hits: Arc<AtomicUsize>, body: &'static str) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new().route(
+            "/token",
+            post(move || {
+                hits.fetch_add(1, Ordering::SeqCst);
+                async move { body }
+            }),
+        );
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        format!("http://{addr}/token")
+    }
+
+    // Catches: a poll that drops GitHub's `slow_down` (the caller keeps its old
+    // interval and is throttled), and one that keeps hitting a host the gateway
+    // already saw fail three times.
+    #[tokio::test]
+    async fn device_flow_poll_honours_slow_down_and_failure_memory() {
+        let gateway = ProviderGateway::l1_only(reqwest::Client::new()).gateway;
+        let hits = Arc::new(AtomicUsize::new(0));
+        let slow = serve(hits.clone(), r#"{"error":"slow_down"}"#).await;
+
+        let result = poll_device_flow_at(&gateway, &slow, "code").await.unwrap();
+        assert!(matches!(result, PollResult::SlowDown), "{result:?}");
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+
+        let closed = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            format!("http://127.0.0.1:{}/token", l.local_addr().unwrap().port())
+        };
+        for _ in 0..tuic_gateway::failure::TRANSPORT_THRESHOLD {
+            assert!(
+                poll_device_flow_at(&gateway, &closed, "code")
+                    .await
+                    .is_err()
+            );
+        }
+
+        let refused = poll_device_flow_at(&gateway, &slow, "code")
+            .await
+            .unwrap_err();
+        assert!(refused.contains("backing off"), "{refused}");
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            1,
+            "a backed-off host is not sent to"
         );
     }
 }

@@ -2,6 +2,7 @@ import { fireEvent, render } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BranchPrStatus } from "../../types";
+import { menuItem, rowsOfferingMenuItem, selectMenuItem } from "../helpers/panelToolbarMenu";
 import { mockInvoke } from "../mocks/tauri";
 
 const { pollRepo } = vi.hoisted(() => ({ pollRepo: vi.fn() }));
@@ -13,11 +14,23 @@ vi.mock("../../stores/repoSettings", () => ({
 	repoSettingsStore: { getEffectiveField: () => undefined, getOrCreate: vi.fn(), update: vi.fn() },
 }));
 vi.mock("../../stores/repoDefaults", () => ({ repoDefaultsStore: { state: { prMergeStrategy: "merge" } } }));
-vi.mock("../../stores/repositories", () => ({ repositoriesStore: { get: () => undefined } }));
+vi.mock("../../stores/repositories", () => ({
+	repositoriesStore: { get: () => undefined, workspaceIdOnBranch: () => null, state: { repositories: {} } },
+}));
 vi.mock("../../stores/mdTabs", () => ({ mdTabsStore: { addPrDiff: vi.fn() } }));
 vi.mock("../../utils/clipboard", () => ({ writeClipboard: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("../../components/PrDetailPopover/PrDetailContent", () => ({
-	PrDetailContent: (p: { children?: unknown }) => p.children,
+	// The real panel shows Merge as the next action; this stand-in keeps the caller's wiring testable.
+	PrDetailContent: (p: { children?: unknown; onMerge?: () => void; merging?: boolean }) => (
+		<>
+			{p.onMerge && (
+				<button type="button" disabled={p.merging} onClick={() => p.onMerge?.()}>
+					{p.merging ? "Merging..." : "Merge"}
+				</button>
+			)}
+			{p.children}
+		</>
+	),
 }));
 vi.mock("../../components/SmartButtonStrip/SmartButtonStrip", () => ({ SmartButtonStrip: () => null }));
 
@@ -58,6 +71,7 @@ const renderSection = (prs: () => BranchPrStatus[], expandedKey: string) =>
 		/>
 	));
 
+const UPDATE_BRANCH = "Merge the base branch into this PR branch";
 const buttons = (container: HTMLElement, label: string) =>
 	Array.from(container.querySelectorAll("button")).filter(
 		(b) => b.textContent?.trim() === label,
@@ -76,13 +90,13 @@ describe("PrSection critic r4", () => {
 		const a = pr({ number: 12 });
 		const b = pr({ number: 13, url: "https://github.com/acme/api/pull/13" });
 		const { container } = renderSection(() => [a, b], a.branch);
-		expect(buttons(container, "Update branch")).toHaveLength(2);
-		fireEvent.click(buttons(container, "Update branch")[0]);
+		expect(rowsOfferingMenuItem(container, UPDATE_BRANCH)).toEqual([0, 1]);
+		selectMenuItem(container, UPDATE_BRANCH, 0);
 		await vi.waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("update_pr_branch", expect.anything()));
-		await vi.waitFor(() => expect(buttons(container, "Update branch")).toHaveLength(1));
+		await vi.waitFor(() => expect(rowsOfferingMenuItem(container, UPDATE_BRANCH)).toEqual([1]));
 		expect(container.textContent).toContain("#13");
-		// the remaining button must belong to PR 13
-		fireEvent.click(buttons(container, "Update branch")[0]);
+		// the remaining item must belong to PR 13
+		selectMenuItem(container, UPDATE_BRANCH, 1);
 		expect(mockInvoke).toHaveBeenLastCalledWith("update_pr_branch", expect.objectContaining({ prNumber: 13 }));
 	});
 
@@ -91,21 +105,21 @@ describe("PrSection critic r4", () => {
 		// that moved again leaves the row without its button for the rest of the interval.
 		const [prs, setPrs] = createSignal([pr()]);
 		const { container } = renderSection(prs, "feat/login");
-		fireEvent.click(buttons(container, "Update branch")[0]);
-		await vi.waitFor(() => expect(buttons(container, "Update branch")).toHaveLength(0));
+		selectMenuItem(container, UPDATE_BRANCH);
+		await vi.waitFor(() => expect(rowsOfferingMenuItem(container, UPDATE_BRANCH)).toEqual([]));
 		setPrs([pr({ head_ref_oid: "headsha2" })]);
-		await vi.waitFor(() => expect(buttons(container, "Update branch")).toHaveLength(1));
+		await vi.waitFor(() => expect(rowsOfferingMenuItem(container, UPDATE_BRANCH)).toEqual([0]));
 	});
 
 	it("a rejected update request keeps the button, enabled, and starts no hold", async () => {
 		// Catches: the hold armed before the request outcome, hiding the button after a failure.
 		mockInvoke.mockRejectedValueOnce("422 head moved");
 		const { container } = renderSection(() => [pr()], "feat/login");
-		fireEvent.click(buttons(container, "Update branch")[0]);
+		selectMenuItem(container, UPDATE_BRANCH);
 		await vi.waitFor(() => expect(container.textContent).toContain("422 head moved"));
-		const [btn] = buttons(container, "Update branch");
-		expect(btn).toBeDefined();
-		expect(btn.disabled).toBe(false);
+		const item = menuItem(container, UPDATE_BRANCH);
+		expect(item).toBeDefined();
+		expect(item?.getAttribute("aria-disabled")).toBeNull();
 		expect(pollRepo).not.toHaveBeenCalled();
 	});
 

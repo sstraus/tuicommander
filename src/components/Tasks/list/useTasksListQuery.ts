@@ -28,12 +28,18 @@ export function useTasksListQuery(
 	let lastValidSort: WorkItemQuery["sort"] = null;
 	let restoredQuery: WorkItemQuery | undefined;
 	let queryScope = "";
+	const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
+	/** Save the query only when it differs from the stored one, so a preferences reload cannot re-trigger a save. */
+	const saveQuery = (key: string, request: WorkItemQuery) => {
+		if (!props.repoPath || same(uiStore.state.tasksViewPreferences[key]?.query, request)) return;
+		uiStore.setTaskViewPreference(key, { query: request });
+	};
 	const scope = () => JSON.stringify([props.repoPath, provider()?.providerId, provider()?.accountId]);
 	createEffect(() => {
 		scope();
 		uiStore.state.tasksPreferencesRevision;
 		untrack(() => {
-			generation++;
+			const sameScope = queryScope === scope();
 			queryScope = scope();
 			restoredQuery = undefined;
 			clearTimeout(debounce);
@@ -42,8 +48,11 @@ export function useTasksListQuery(
 				? (JSON.parse(JSON.stringify({ ...initialTaskQuery(), ...saved.query, cursor: null })) as WorkItemQuery)
 				: initialTaskQuery();
 			lastValidSort = saved?.lastValidSort ? { ...saved.lastValidSort } : null;
-			setSearch(next.search);
 			setLinkedOnly(saved?.linkedOnly ?? false);
+			// A reload that restores the query already shown must not start another request.
+			if (sameScope && same(next, query())) return;
+			generation++;
+			setSearch(next.search);
 			setQuery(next);
 		});
 	});
@@ -55,7 +64,7 @@ export function useTasksListQuery(
 		untrack(() => {
 			if (request === restoredQuery) {
 				restoredQuery = undefined;
-				if (props.repoPath) uiStore.setTaskViewPreference(key, { query: request });
+				saveQuery(key, request);
 				return;
 			}
 			const token = ++generation;
@@ -63,7 +72,7 @@ export function useTasksListQuery(
 				model.clear();
 				return;
 			}
-			if (props.repoPath) uiStore.setTaskViewPreference(key, { query: request });
+			saveQuery(key, request);
 			void model.select(current, request).then(() => {
 				if (token !== generation) return;
 				const error = model.state().error;
@@ -84,7 +93,8 @@ export function useTasksListQuery(
 					}
 				} else {
 					lastValidSort = request.sort;
-					if (props.repoPath) uiStore.setTaskViewPreference(key, { lastValidSort });
+					if (props.repoPath && !same(uiStore.state.tasksViewPreferences[key]?.lastValidSort ?? null, lastValidSort))
+						uiStore.setTaskViewPreference(key, { lastValidSort });
 				}
 			});
 		});

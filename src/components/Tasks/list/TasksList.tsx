@@ -8,6 +8,7 @@ import type {
 	WorkItemRef,
 } from "../../../types/work-items.gen";
 import { Button } from "../../ui/Button";
+import { GatewayNotice } from "../../ui/GatewayNotice";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
 import { Switch } from "../../ui/Switch";
@@ -279,7 +280,8 @@ export function TasksList(props: TasksListProps) {
 				<Show when={model.state().stale}>
 					<span class={s.stale}>Stale results</span>
 				</Show>
-				<Show when={model.state().error}>
+				<GatewayNotice limit={model.state().limit} stale={model.state().stale} cachedAt={model.state().cachedAt} />
+				<Show when={model.state().error && !model.state().limit}>
 					<span class={s.error}>{model.state().error}</span>
 					<Button type="button" onClick={() => void model.refresh()}>
 						Retry

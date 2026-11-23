@@ -33,13 +33,31 @@ else
   grep -q "socket path limit" "$scratch/stderr" || { cat "$scratch/stderr" >&2; fail "refused without naming the socket path limit"; }
 fi
 
-# 2. A long temp dir and mbx installed: refused up front, naming the limit.
+# 2. A long temp dir and mbx installed: the run dir moves to the short private per-user
+#    fallback (mode 0700, owned by the caller), so the socket fits and the command runs.
 long="$scratch/$(printf 'a%.0s' $(seq 1 70))"
 mkdir -p "$long"
-if run_wrapper "$stub:$without_mbx" "$long" >/dev/null; then
-  fail "the wrapper accepted a ${#long}-byte temp dir with mbx installed"
+out="$(run_wrapper "$stub:$without_mbx" "$long")" || { cat "$scratch/stderr" >&2; fail "the wrapper refused a ${#long}-byte temp dir with mbx installed"; }
+case "$out" in
+  */tuic-"$(id -u)"/tuic-run.*) ;;
+  *) fail "TMPDIR $out is not under the per-user fallback directory" ;;
+esac
+socket="$out$mbx_suffix"
+(( ${#socket} <= limit )) || fail "fallback: mbx socket path is ${#socket} bytes: $socket"
+
+# 2b. Even the fallback too long (parent override): refused up front, naming the limit.
+if TUIC_TEST_FALLBACK_PARENT="$long" run_wrapper "$stub:$without_mbx" "$long" >/dev/null; then
+  fail "the wrapper accepted a temp dir and a fallback that both exceed the budget"
 fi
 grep -q "socket path limit" "$scratch/stderr" || { cat "$scratch/stderr" >&2; fail "the refusal does not name the socket path limit"; }
+
+# 2c. A fallback directory owned by someone else, or a symlink, is refused, never used.
+fb_parent="$scratch/fb"
+mkdir -p "$fb_parent"
+ln -s "$scratch" "$fb_parent/tuic-$(id -u)"
+if TUIC_TEST_FALLBACK_PARENT="$fb_parent" run_wrapper "$stub:$without_mbx" "$long" >/dev/null; then
+  fail "the wrapper used a symlinked fallback directory"
+fi
 
 # 3. The same long temp dir with no mbx anywhere: nothing binds that socket, so it runs.
 out="$(run_wrapper "$without_mbx" "$long")" || { cat "$scratch/stderr" >&2; fail "the wrapper refused a long temp dir although mbx is not installed"; }

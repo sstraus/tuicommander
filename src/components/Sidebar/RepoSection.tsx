@@ -17,7 +17,7 @@ import { WorktreeDiagnosticRow } from "./WorktreeDiagnosticRow";
 
 export { effectiveMergeMethod };
 
-import { keptReason } from "../../hooks/git/workspaceCleanupDecision";
+import { keptReason, recordWorkspaceCleanup } from "../../hooks/git/workspaceCleanupDecision";
 import { t } from "../../i18n";
 import { invoke } from "../../invoke";
 import { contextMenuActionsStore } from "../../stores/contextMenuActionsStore";
@@ -44,10 +44,12 @@ import {
 	compactAge as compactActivityAge,
 	countWorktrees,
 	createMinuteClock,
+	isQuietBranch,
 	repoFacts,
 	STALE_AFTER_DAYS,
 	SUBAGENT_COLLAPSE_AFTER,
 	type SubagentRow,
+	splitBranchPath,
 	subagentRows,
 } from "../../utils/sidebarRich";
 import { showsBackgroundWork, terminalVisualState } from "../../utils/terminalVisualState";
@@ -74,6 +76,7 @@ const BRANCH_ICON_CLASSES: Record<string, string> = {
 	activity: s.branchIconActivity,
 	background: s.branchIconBackground,
 	unseen: s.branchIconUnseen,
+	merged: s.branchIconMerged,
 	idle: s.branchIconIdle,
 };
 
@@ -103,10 +106,11 @@ export interface BranchIconProps {
 	hasBackground?: boolean;
 	hasUnseen?: boolean;
 	branchHasTerminals?: boolean;
+	isMerged?: boolean;
 }
 
 /** Every shape a sidebar row icon can take. The Help > UI legend must explain each. */
-export const BRANCH_ICON_SHAPES = ["error", "question", "shell", "star", "branch", "worktree"] as const;
+export const BRANCH_ICON_SHAPES = ["error", "question", "shell", "star", "merged", "branch", "worktree"] as const;
 type BranchIconShape = (typeof BRANCH_ICON_SHAPES)[number];
 
 export function branchIconShape(props: BranchIconProps): BranchIconShape {
@@ -114,6 +118,7 @@ export function branchIconShape(props: BranchIconProps): BranchIconShape {
 	if (props.hasQuestion) return "question";
 	if (props.isShell) return "shell";
 	if (props.isMainWorktree && props.isMainBranch) return "star";
+	if (props.isMerged) return "merged";
 	if (props.isMainWorktree) return "branch";
 	return "worktree";
 }
@@ -132,6 +137,7 @@ export const BranchIcon: Component<BranchIconProps> = (props) => {
 		if (props.hasBusy) return "activity";
 		if (props.hasBackground) return "background";
 		if (props.hasUnseen) return "unseen";
+		if (props.isMerged && !props.isMainBranch) return "merged";
 		if (props.branchHasTerminals === false) return "idle";
 		if (props.isMainBranch) return "main";
 		return "worktree";
@@ -160,22 +166,32 @@ export const BranchIcon: Component<BranchIconProps> = (props) => {
 								<path d="M9.2 1.2v4.4L13 3.2a1.3 1.3 0 1 1 1.3 2.3L10.5 8l3.8 2.5a1.3 1.3 0 1 1-1.3 2.3L9.2 10.4v4.4a1.2 1.2 0 0 1-2.4 0v-4.4L3 13a1.3 1.3 0 1 1-1.3-2.3L5.5 8 1.7 5.5A1.3 1.3 0 0 1 3 3.2l3.8 2.4V1.2a1.2 1.2 0 0 1 2.4 0z" />
 							</svg>
 						);
-					case "worktree":
+					case "merged":
+						/* Option-key shape: the line that left the trunk has rejoined it. */
 						return (
-							<svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+							<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
 								<path
-									d="M5 1.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm0 10a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm6-4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM5 5v2.5a2 2 0 0 0 2 2h2.5M5 10.5V8"
+									d="M1.5 4.5h3.5l5 7h4.5M9.5 4.5h5"
 									fill="none"
 									stroke="currentColor"
-									stroke-width="1.5"
+									stroke-width="1.6"
 									stroke-linecap="round"
+									stroke-linejoin="round"
 								/>
 							</svg>
 						);
 					default:
+						/* Alternative-key shape for any branch or worktree: a line forking off the trunk. */
 						return (
-							<svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-								<path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0z" />
+							<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+								<path
+									d="M1.5 11.5h3.5l5-7h4.5M9.5 11.5h5"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="1.6"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
 							</svg>
 						);
 				}
@@ -202,9 +218,32 @@ export const UnmergedMarker: Component = () => (
 		data-tooltip-align="right"
 		tabIndex={0}
 	>
+		{/* An arrow, not an outlined square: the square read as a glyph that failed to load (Boss, 2026-11-22). */}
 		<span aria-hidden="true">↑</span>
 	</span>
 );
+
+/** A branch name with the path up to its last slash muted; the break opportunity sits after the slash. */
+const BranchNameText: Component<{ name: string; wrap: boolean }> = (props) => {
+	const parts = () => splitBranchPath(props.name);
+	return (
+		<>
+			<Show when={parts()[0]}>
+				<span class={s.branchPrefix}>{parts()[0]}</span>
+				{/* Compact keeps one ellipsized line; WebKit still breaks at <wbr> under nowrap. */}
+				<Show when={props.wrap}>
+					<wbr />
+				</Show>
+			</Show>
+			<span class={s.branchLeaf}>{parts()[1]}</span>
+		</>
+	);
+};
+
+/** The main checkout: `isMain` is name-based, so the worktree path is the reliable signal. */
+function isMainCheckoutOf(branch: WorkspaceState, repoPath: string): boolean {
+	return branch.isMain || branch.worktreePath?.replace(/\/$/, "") === repoPath.replace(/\/$/, "");
+}
 
 export const StatsBadge: Component<{
 	additions: number;
@@ -315,7 +354,45 @@ function agentTooltip(term: TerminalState): string {
 	return facts.line ? `${AGENT_STATE_LABEL[facts.state]()}: ${facts.line}` : AGENT_STATE_LABEL[facts.state]();
 }
 
-/** Rich: the live subagents of one agent row; more than a few fold into a count. */
+/** Rich: the live subagents of one agent row; more than a few fold into a count.
+ *  Every row and fold renders as a direct child of the guide container. */
+/** One in-session subagent: a ring dot for its state, the title with its tool calls, and the age.
+ *  The wrapper carries the guide elbow; the row's tooltip would otherwise take its ::after. */
+const SubagentItem: Component<{ row: SubagentRow; nested?: boolean }> = (props) => {
+	const state = () => (props.row.running ? "running" : props.row.interrupted ? "interrupted" : "returned");
+	const label = () =>
+		props.row.running
+			? t("sidebar.subagentRunning", "Running")
+			: props.row.interrupted
+				? t("sidebar.subagentInterrupted", "Interrupted")
+				: t("sidebar.subagentDone", "Returned");
+	return (
+		<div class={props.nested ? s.returnedRow : s.guideKid}>
+			<div
+				class={s.subagentRow}
+				data-state={state()}
+				data-tooltip={`${label()} · ${props.row.title}`}
+				data-tooltip-pos="bottom"
+			>
+				<span class={cx(s.subagentDot, s[`subagentDot_${state()}`])} role="img" aria-label={label()} />
+				<span class={s.subagentTitle}>
+					{props.row.title}
+					<span class={s.subagentMeta}>
+						{" · "}
+						{t("sidebar.subagentCalls", "{count} calls", { count: String(props.row.toolCalls) })}
+					</span>
+				</span>
+				<Show when={props.row.interrupted}>
+					<span class={s.subagentInterrupted}>{label()}</span>
+				</Show>
+				<Show when={props.row.age}>
+					<span class={s.subagentAge}>{props.row.age}</span>
+				</Show>
+			</div>
+		</div>
+	);
+};
+
 const SubagentList: Component<{ rows: SubagentRow[] }> = (props) => {
 	const [open, setOpen] = createSignal(false);
 	const [returnedOpen, setReturnedOpen] = createSignal(false);
@@ -325,10 +402,10 @@ const SubagentList: Component<{ rows: SubagentRow[] }> = (props) => {
 	const folded = () => running().length > SUBAGENT_COLLAPSE_AFTER && !open();
 	return (
 		<Show when={props.rows.length > 0}>
-			<div class={s.subagentList}>
-				<Show
-					when={!folded()}
-					fallback={
+			<Show
+				when={!folded()}
+				fallback={
+					<div class={s.guideKid}>
 						<Button
 							size="compact"
 							variant="ghost"
@@ -338,27 +415,12 @@ const SubagentList: Component<{ rows: SubagentRow[] }> = (props) => {
 						>
 							{t("sidebar.subagentCount", "{count} subagents", { count: String(running().length) })}
 						</Button>
-					}
-				>
-					<For each={[...running(), ...interrupted(), ...(returnedOpen() ? returned() : [])]}>
-						{(row) => (
-							<div class={s.subagentRow} data-tooltip={row.title} data-tooltip-pos="bottom">
-								<span class={cx(s.branchTabState, row.running && s.branchTabState_working)}>
-									{row.running
-										? t("sidebar.subagentRunning", "Running")
-										: row.interrupted
-											? t("sidebar.subagentInterrupted", "Interrupted")
-											: t("sidebar.subagentDone", "Returned")}
-								</span>
-								<span class={s.branchTabLine}>{row.title}</span>
-								<span class={s.subagentMeta}>
-									{t("sidebar.subagentCalls", "{count} calls", { count: String(row.toolCalls) })}
-									{row.age ? ` · ${row.age}` : ""}
-								</span>
-							</div>
-						)}
-					</For>
-					<Show when={running().length > SUBAGENT_COLLAPSE_AFTER}>
+					</div>
+				}
+			>
+				<For each={[...running(), ...interrupted()]}>{(row) => <SubagentItem row={row} />}</For>
+				<Show when={running().length > SUBAGENT_COLLAPSE_AFTER}>
+					<div class={s.guideKid}>
 						<Button
 							size="compact"
 							variant="ghost"
@@ -368,9 +430,12 @@ const SubagentList: Component<{ rows: SubagentRow[] }> = (props) => {
 						>
 							{t("sidebar.subagentCollapse", "Collapse")}
 						</Button>
-					</Show>
+					</div>
 				</Show>
-				<Show when={returned().length > 0}>
+			</Show>
+			{/* The fold is the header of the finished rows: they open below it. */}
+			<Show when={returned().length > 0}>
+				<div class={cx(s.guideKid, s.returnedGroup)}>
 					<Button
 						size="compact"
 						variant="ghost"
@@ -382,11 +447,18 @@ const SubagentList: Component<{ rows: SubagentRow[] }> = (props) => {
 							setOpen(true);
 						}}
 					>
-						<ChevronIcon />
-						{t("sidebar.returnedCount", "{count} returned", { count: String(returned().length) })}
+						<span class={cx(s.sectionChevron, returnedOpen() && s.expanded)}>
+							<ChevronIcon />
+						</span>
+						{t("sidebar.returnedCount", "{count} done", { count: String(returned().length) })}
 					</Button>
-				</Show>
-			</div>
+					<Show when={returnedOpen()}>
+						<div class={s.returnedRows}>
+							<For each={returned()}>{(row) => <SubagentItem row={row} nested />}</For>
+						</div>
+					</Show>
+				</div>
+			</Show>
 		</Show>
 	);
 };
@@ -417,27 +489,29 @@ const CrossRepoChildren: Component<{ parent: TerminalState; repoPath: string }> 
 	return (
 		<For each={targets()}>
 			{(target) => (
-				<Button
-					size="compact"
-					variant="ghost"
-					class={s.crossRepoChildren}
-					data-testid="cross-repo-child-link"
-					data-tooltip={target.repo.displayName}
-					data-tooltip-pos="bottom"
-					onClick={() => reveal(target.repo, target.ids[0])}
-				>
-					<span>
-						{t(
-							target.ids.length === 1 ? "sidebar.agentInRepo" : "sidebar.agentsInRepo",
-							target.ids.length === 1 ? "{count} agent in {repo}" : "{count} agents in {repo}",
-							{
-								count: String(target.ids.length),
-								repo: target.repo.displayName,
-							},
-						)}
-					</span>
-					<ChevronIcon />
-				</Button>
+				<div class={s.guideKid}>
+					<Button
+						size="compact"
+						variant="ghost"
+						class={s.crossRepoChildren}
+						data-testid="cross-repo-child-link"
+						data-tooltip={target.repo.displayName}
+						data-tooltip-pos="bottom"
+						onClick={() => reveal(target.repo, target.ids[0])}
+					>
+						<span>
+							{t(
+								target.ids.length === 1 ? "sidebar.agentInRepo" : "sidebar.agentsInRepo",
+								target.ids.length === 1 ? "{count} agent in {repo}" : "{count} agents in {repo}",
+								{
+									count: String(target.ids.length),
+									repo: target.repo.displayName,
+								},
+							)}
+						</span>
+						<ChevronIcon />
+					</Button>
+				</div>
 			)}
 		</For>
 	);
@@ -583,11 +657,7 @@ const BranchTabList: Component<{ terminalIds: string[]; repoPath: string }> = (p
 						<div class={s.branchTabHead}>
 							<button
 								data-control-layout="row"
-								class={cx(
-									s.branchTabItem,
-									isActive() && s.active,
-									rich() && agentRow(t()).state === "working" && s.branchTabItemRich,
-								)}
+								class={cx(s.branchTabItem, isActive() && s.active, rich() && s.branchTabItemRich)}
 								onClick={() => navigateToTerminal(id)}
 								onContextMenu={(event) => {
 									event.stopPropagation();
@@ -625,6 +695,14 @@ const BranchTabList: Component<{ terminalIds: string[]; repoPath: string }> = (p
 									)}
 								</Show>
 								<Show when={activity()}>{(label) => <span class={s.branchAgentActivity}>{label()}</span>}</Show>
+								{/* Rich: working, awaiting-input and error rows say their state in a pill. */}
+								<Show when={rich() && agentRow(t()).state !== "idle" ? agentRow(t()).state : null}>
+									{(state) => (
+										<span class={cx(s.agentStatePill, s[`agentStatePill_${state()}`])}>
+											{AGENT_STATE_LABEL[state()]()}
+										</span>
+									)}
+								</Show>
 								<Show when={terminalsStore.getSubAgentTag(id)}>
 									{(parent) => (
 										<SubAgentIcon parent={parent()} class={s.branchSubAgentTag} iconClass={s.branchSubAgentIcon} />
@@ -637,31 +715,21 @@ const BranchTabList: Component<{ terminalIds: string[]; repoPath: string }> = (p
 									{compactActivityAge(t().abandonedSinceMs ?? t().lastActivityAt, clock())}
 								</span>
 								{/* Rich: what the agent is doing, in words, under the tab title. */}
-								<Show when={rich() && agentRow(t()).state === "working" ? agentRow(t()) : null}>
-									{(facts) => (
+								<Show when={rich() && agentRow(t()).state === "working" ? agentRow(t()).line : null}>
+									{(line) => (
 										<span class={s.branchTabDetail}>
-											<span class={cx(s.branchTabState, s[`branchTabState_${facts().state}`])}>
-												{AGENT_STATE_LABEL[facts().state]()}
-											</span>
-											<Show
-												when={t().agentType}
-												fallback={
-													<Show when={facts().line}>{(line) => <span class={s.branchTabLine}>{line()}</span>}</Show>
-												}
-											>
-												<span class={cx(s.branchTabLine, s.branchTabIntent)}>{facts().line}</span>
-											</Show>
+											<span class={cx(s.branchTabLine, t().agentType && s.branchTabIntent)}>{line()}</span>
 										</span>
 									)}
 								</Show>
 							</button>
-							<Show when={rich()}>
-								<CrossRepoChildren parent={t()} repoPath={props.repoPath} />
-								<SubagentList rows={subagents(t())} />
-							</Show>
 						</div>
+						{/* One guide runs from the parent dot through every child below it:
+						    cross-repo links, subagents and nested sessions are all its kids. */}
 						<Show when={rich()}>
 							<div class={s.branchTabChildren}>
+								<CrossRepoChildren parent={t()} repoPath={props.repoPath} />
+								<SubagentList rows={subagents(t())} />
 								<For each={childrenOf(id)}>{(child) => renderTab(child)}</For>
 							</div>
 						</Show>
@@ -684,18 +752,27 @@ const BranchTabList: Component<{ terminalIds: string[]; repoPath: string }> = (p
 				<Button
 					size="compact"
 					variant="ghost"
-					class={s.subagentFold}
+					class={cx(s.subagentFold, s.idleFold)}
 					data-testid="idle-session-fold"
 					aria-expanded={idleExpanded()}
 					onClick={() => setIdleExpanded((open) => !open)}
 				>
-					<ChevronIcon />
-					{t("sidebar.idleSessionCount", "{count} idle sessions", { count: String(idleIds().length) })}
+					<span class={cx(s.sectionChevron, idleExpanded() && s.expanded)}>
+						<ChevronIcon />
+					</span>
+					{t("sidebar.idleSessionCount", "{count} idle", { count: String(idleIds().length) })}
 				</Button>
 			</Show>
 		</div>
 	);
 };
+
+/** Marks a merged worktree that cleanup must keep; the tooltip gives the reason. */
+const MergedLock = () => (
+	<svg class={s.mergedLock} viewBox="0 0 16 16" fill="currentColor" role="img" aria-label="Kept">
+		<path d="M5 7V5a3 3 0 0 1 6 0v2h.5A1.5 1.5 0 0 1 13 8.5v5a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 13.5v-5A1.5 1.5 0 0 1 4.5 7H5Zm1.5 0h3V5a1.5 1.5 0 0 0-3 0v2Z" />
+	</svg>
+);
 
 /** Branch item component */
 export const BranchItem: Component<{
@@ -755,8 +832,7 @@ export const BranchItem: Component<{
 		const status = githubStore.getRemoteStatus(props.branch.worktreePath ?? props.repoPath);
 		return status?.has_remote && status.current_branch === props.branch.branchName ? status : null;
 	});
-	const isMainCheckout = () =>
-		props.branch.isMain || props.branch.worktreePath?.replace(/\/$/, "") === props.repoPath.replace(/\/$/, "");
+	const isMainCheckout = () => isMainCheckoutOf(props.branch, props.repoPath);
 	const facts = createMemo(() =>
 		branchFacts(
 			{
@@ -790,6 +866,17 @@ export const BranchItem: Component<{
 			})
 		];
 	const lifecycle = () => props.branch.lifecycleStatus;
+	/** Why a merged worktree must stay: the sweep's own safety verdict, or the reason it already refused. */
+	const mergedHold = () => {
+		const status = lifecycle();
+		if (status?.commitStatus !== "merged") return null;
+		const decision = recordWorkspaceCleanup("", status, 0).decision;
+		return decision.reason === "safety-blocked" ? decision.detail : keptReason(props.branch.cleanup);
+	};
+	const mergedTip = () =>
+		[mergedHold() && `${t("sidebar.keptReason", "Kept")}: ${mergedHold()}`, tipFor("commit")]
+			.filter(Boolean)
+			.join(" · ");
 	const mergedSummary = () =>
 		rich() &&
 		!props.branch.isMain &&
@@ -830,6 +917,62 @@ export const BranchItem: Component<{
 		props.onSelect();
 		props.onShowChanges?.();
 	};
+
+	const [pillHot, setPillHot] = createSignal(false);
+	const clean = (e: Event) => {
+		e.stopPropagation();
+		if (!props.isRemoving) props.onRemove();
+	};
+	const shortcutHint = () => (props.shortcutIndex !== undefined ? keyFor(`switch-branch-${props.shortcutIndex}`) : "");
+	const prBadge = () => (
+		<Show when={pr()}>
+			<span
+				class={(() => {
+					const st = pr()?.state?.toLowerCase();
+					return st === "closed" || st === "merged" ? s.prBadgeDimmed : undefined;
+				})()}
+				onClick={(e) => {
+					e.stopPropagation();
+					props.onShowPrDetail();
+				}}
+			>
+				<PrStateBadge
+					compact
+					prNumber={pr()!.number}
+					state={pr()!.state}
+					isDraft={pr()!.is_draft}
+					mergeable={pr()!.mergeable}
+					conflictState={pr()!.conflict_state}
+					reviewDecision={pr()!.review_decision}
+					ciPassed={checks()?.passed}
+					ciFailed={checks()?.failed}
+					ciPending={checks()?.pending}
+					unresolvedThreads={pr()!.unresolved_threads}
+					unresolvedThreadsTruncated={pr()!.unresolved_threads_truncated}
+					dirtyFiles={props.branch.lifecycleStatus?.dirtyFiles ?? undefined}
+				/>
+			</span>
+		</Show>
+	);
+	// Rich: uncommitted files as a yellow badge; it opens Changes like the diff chip.
+	const dirtyBadge = () => (
+		<Show when={facts().dirtyFiles > 0}>
+			<span
+				class={s.dirtyBadge}
+				data-testid="dirty-badge"
+				data-tooltip={tipFor("dirty")}
+				data-tooltip-pos="bottom"
+				role={props.onShowChanges ? "button" : undefined}
+				tabIndex={props.onShowChanges ? 0 : undefined}
+				onClick={props.onShowChanges ? showChanges : undefined}
+				onKeyDown={props.onShowChanges ? onClickKeyDown(showChanges) : undefined}
+				style={props.onShowChanges ? { cursor: "pointer" } : undefined}
+			>
+				<span class={s.dirtyDot} aria-hidden="true" />
+				<span class={s.dirtyCount}>{facts().dirtyFiles}</span>
+			</span>
+		</Show>
+	);
 
 	const hasError = () => props.branch.terminals.some((id) => terminalsStore.get(id)?.awaitingInput === "error");
 
@@ -994,6 +1137,7 @@ export const BranchItem: Component<{
 			hasBackground={hasBackground()}
 			hasUnseen={hasUnseen()}
 			branchHasTerminals={props.branch.terminals.length > 0}
+			isMerged={props.branch.isMerged}
 		/>
 	);
 
@@ -1170,48 +1314,71 @@ export const BranchItem: Component<{
 					onClick={() => props.onSelect()}
 					onContextMenu={ctxMenu.open}
 				>
-					{branchIcon()}
-					<Show when={getBranchTabsAvailable(props.branch)}>
-						<Button
-							size="compact"
-							variant="ghost"
-							type="button"
-							class={cx(s.branchIconToggle, !props.branch.tabsCollapsed && s.expanded)}
-							aria-expanded={!props.branch.tabsCollapsed}
-							aria-label={`${t("sidebar.toggleAgents", "Show or hide agents")} (${props.branch.terminals.length})`}
-							data-tooltip={t("sidebar.toggleAgents", "Show or hide agents")}
-							data-tooltip-pos="bottom"
-							onClick={toggleAgents}
-							onKeyDown={onClickKeyDown(toggleAgents)}
-						>
-							<span class={s.branchIconChevron}>
-								<ChevronIcon />
+					{/* Compact lays these out inline (display: contents); rich makes them the
+					    name line, which keeps the whole name and wraps it only when it is
+					    longer than the row. */}
+					<div class={cx(s.branchIdentity, mergedSummary() && s.branchIdentityMerged)}>
+						{/* With agents, the branch icon itself is the disclosure: no separate chevron. */}
+						<Show when={getBranchTabsAvailable(props.branch)} fallback={branchIcon()}>
+							<Button
+								size="compact"
+								variant="ghost"
+								type="button"
+								class={cx(s.branchIconToggle, !props.branch.tabsCollapsed && s.expanded)}
+								aria-expanded={!props.branch.tabsCollapsed}
+								aria-label={`${t("sidebar.toggleAgents", "Show or hide agents")} (${props.branch.terminals.length})`}
+								data-tooltip={t("sidebar.toggleAgents", "Show or hide agents")}
+								data-tooltip-pos="bottom"
+								onClick={toggleAgents}
+								onKeyDown={onClickKeyDown(toggleAgents)}
+							>
+								{branchIcon()}
+								<Show when={props.branch.tabsCollapsed}>
+									<span class={s.branchAgentCount} aria-hidden="true">
+										{props.branch.terminals.length}
+									</span>
+								</Show>
+							</Button>
+						</Show>
+						<div class={s.branchContent}>
+							<span
+								class={s.branchName}
+								onDblClick={handleDoubleClick}
+								data-tooltip={nameTooltip()}
+								data-tooltip-pos="bottom"
+							>
+								<Show when={branchLabel()} fallback={<BranchNameText name={props.branch.branchName} wrap={rich()} />}>
+									{branchLabel()}
+								</Show>
 							</span>
-							<Show when={props.branch.tabsCollapsed}>
-								<span class={s.branchAgentCount} aria-hidden="true">
-									{props.branch.terminals.length}
+							{/* When a custom label replaces the main line, retain the branch
+						    underneath it so Git-facing identity remains visible. */}
+							<Show when={branchLabel() && !mergedSummary()}>
+								<span class={b.subLabel} data-tooltip={rowTitle()} data-tooltip-pos="bottom">
+									<BranchNameText name={props.branch.branchName} wrap={rich()} />
 								</span>
 							</Show>
-						</Button>
-					</Show>
-					<div class={s.branchContent}>
-						<span
-							class={s.branchName}
-							onDblClick={handleDoubleClick}
-							data-tooltip={nameTooltip()}
-							data-tooltip-pos="bottom"
-						>
-							{branchLabel() ?? props.branch.branchName}
-						</span>
-						{/* When a custom label replaces the main line, retain the branch
-					    underneath it so Git-facing identity remains visible. */}
-						<Show when={branchLabel() && !mergedSummary()}>
-							<span class={b.subLabel} data-tooltip={rowTitle()} data-tooltip-pos="bottom">
-								{props.branch.branchName}
-							</span>
+						</div>
+						<Show when={rich() && !props.branch.isShell && !mergedSummary()}>
+							<Show when={!props.branch.isMain && lifecycle()?.commitStatus === "unmerged"}>
+								<UnmergedMarker />
+							</Show>
+							<Show when={facts().commitAge}>
+								{(age) => (
+									<span
+										class={cx(s.richChip, s.branchAge)}
+										data-tooltip={t("sidebar.lastCommit", "Last commit")}
+										data-tooltip-pos="bottom"
+									>
+										{age()}
+									</span>
+								)}
+							</Show>
 						</Show>
 					</div>
-					<BranchItemBadge repoPath={props.repoPath} branch={props.branch.branchName} />
+					<Show when={!rich()}>
+						<BranchItemBadge repoPath={props.repoPath} branch={props.branch.branchName} />
+					</Show>
 					{/* The badge answers one question — what would removing this workspace
 				    lose? A main checkout is never removed here, so it gets no badge at
 				    all: "Dirty" on every main row was noise about a risk that does not
@@ -1266,188 +1433,128 @@ export const BranchItem: Component<{
 							);
 						}}
 					</Show>
-					<Show
-						when={
-							(!rich() && props.branch.lifecycleStatus?.commitStatus === "unmerged") || pr() || (!rich() && hasDiff())
-						}
-					>
+					<Show when={!rich() && (props.branch.lifecycleStatus?.commitStatus === "unmerged" || pr() || hasDiff())}>
 						<div class={s.branchBadgeStack}>
 							<Show when={!rich() && props.branch.lifecycleStatus?.commitStatus === "unmerged"}>
 								<UnmergedMarker />
 							</Show>
-							<Show when={pr()}>
-								<span
-									class={(() => {
-										const st = pr()?.state?.toLowerCase();
-										return st === "closed" || st === "merged" ? s.prBadgeDimmed : undefined;
-									})()}
-									onClick={(e) => {
-										e.stopPropagation();
-										props.onShowPrDetail();
-									}}
-								>
-									<PrStateBadge
-										compact
-										prNumber={pr()!.number}
-										state={pr()!.state}
-										isDraft={pr()!.is_draft}
-										mergeable={pr()!.mergeable}
-										conflictState={pr()!.conflict_state}
-										reviewDecision={pr()!.review_decision}
-										ciPassed={checks()?.passed}
-										ciFailed={checks()?.failed}
-										ciPending={checks()?.pending}
-										unresolvedThreads={pr()!.unresolved_threads}
-										unresolvedThreadsTruncated={pr()!.unresolved_threads_truncated}
-										dirtyFiles={props.branch.lifecycleStatus?.dirtyFiles ?? undefined}
-									/>
-								</span>
-							</Show>
-							<Show when={!rich()}>
-								<StatsBadge
-									additions={props.branch.additions}
-									deletions={props.branch.deletions}
-									dirtyFiles={props.branch.lifecycleStatus?.dirtyFiles ?? undefined}
-									onClick={props.onShowChanges ? showChanges : undefined}
-								/>
-							</Show>
+							{prBadge()}
+							<StatsBadge
+								additions={props.branch.additions}
+								deletions={props.branch.deletions}
+								dirtyFiles={props.branch.lifecycleStatus?.dirtyFiles ?? undefined}
+								onClick={props.onShowChanges ? showChanges : undefined}
+							/>
 						</div>
 					</Show>
 					<Show when={!mergedSummary()}>{renderActions(false)}</Show>
-					<span class={s.branchShortcut} style={{ display: props.shortcutIndex !== undefined ? undefined : "none" }}>
-						{props.shortcutIndex !== undefined ? keyFor(`switch-branch-${props.shortcutIndex}`) : ""}
+					<span
+						class={s.branchShortcut}
+						style={{ display: props.shortcutIndex !== undefined ? undefined : "none" }}
+						data-hint={shortcutHint() ? "" : undefined}
+					>
+						{shortcutHint()}
 					</span>
-					{/* Rich: a full-width block under the name line, spending the spare room on what
-				    the compact row leaves to tooltips. */}
+					{/* Rich merged worktree: one line. The Merged pill turns into the Clean action
+					    on hover or focus and starts the usual removal preflight. */}
 					<Show when={mergedSummary()}>
 						<span class={s.mergedSummary} data-testid="merged-worktree-summary">
-							<span class={cx(s.richChip, s.richChipMerged)}>{t("sidebar.merged", "Merged")}</span>
-							<span
-								class={cx(s.richChip, facts().dirtyFiles > 0 && s.richChipWarn)}
-								data-tooltip={tipFor("dirty")}
-								data-tooltip-pos="bottom"
+							{dirtyBadge()}
+							<Show
+								when={props.canRemove}
+								fallback={
+									<span
+										class={cx(s.richPill, s.richPillMerged)}
+										data-tooltip={mergedTip()}
+										data-tooltip-pos="bottom"
+										data-tooltip-align="right"
+									>
+										<Show when={mergedHold()}>
+											<MergedLock />
+										</Show>
+										{t("sidebar.merged", "Merged")}
+									</span>
+								}
 							>
-								{t("sidebar.uncommittedCount", "{count} uncommitted", { count: String(lifecycle()?.dirtyFiles) })}
-							</span>
-							<Show when={props.canRemove}>
-								<Button
-									size="compact"
-									variant="ghost"
-									class={s.mergedCleanup}
-									disabled={props.isRemoving}
-									onClick={(e) => {
-										e.stopPropagation();
-										props.onRemove();
-									}}
+								{/* A span, not the Button primitive: its padding would pull the pill off the right edge. */}
+								<span
+									class={cx(s.richPill, s.richPillMerged, pillHot() && s.richPillClean)}
+									role="button"
+									tabIndex={0}
+									aria-disabled={props.isRemoving || undefined}
+									data-testid="merged-clean"
+									data-tooltip={mergedTip()}
+									data-tooltip-pos="bottom"
+									data-tooltip-align="right"
+									style={{ cursor: "pointer" }}
+									onMouseEnter={() => setPillHot(true)}
+									onMouseLeave={() => setPillHot(false)}
+									onFocus={() => setPillHot(true)}
+									onBlur={() => setPillHot(false)}
+									onClick={clean}
+									onKeyDown={onClickKeyDown(clean)}
 								>
-									{props.isRemoving ? t("sidebar.removingWorktree", "Removing…") : t("sidebar.cleanUp", "Clean up")}
-								</Button>
+									{props.isRemoving
+										? t("sidebar.removingWorktree", "Removing…")
+										: pillHot()
+											? t("sidebar.clean", "Clean")
+											: [mergedHold() && <MergedLock />, t("sidebar.merged", "Merged")]}
+								</span>
 							</Show>
 						</span>
 					</Show>
+					{/* Rich facts sit right of the name and drop to their own right-aligned
+					    line when both do not fit; the PR line spans the row below. */}
 					<Show when={rich() && !props.branch.isShell && !mergedSummary()}>
-						<span class={s.branchBreak} aria-hidden="true" />
-						<div class={s.branchRichDetail}>
-							<Show when={pr()}>
-								{(p) => (
-									<span class={s.branchRichLine} data-tooltip={p().title} data-tooltip-pos="bottom">
-										<Show when={prStateLabel(p())}>
-											{(label) => <span class={s.branchRichPrState}>{label()} </span>}
-										</Show>
-										{p().title}
+						<span class={s.branchRichMeta}>
+							<Show when={facts().sync}>
+								{(sync) => (
+									<span
+										class={s.richChip}
+										data-tooltip={t("sidebar.aheadBehind", "Ahead / behind upstream")}
+										data-tooltip-pos="bottom"
+									>
+										{sync()}
 									</span>
 								)}
 							</Show>
-							<span class={s.branchRichMeta}>
-								<Show when={facts().commitAge}>
-									{(age) => (
+							<StatsBadge
+								additions={props.branch.additions}
+								deletions={props.branch.deletions}
+								dirtyFiles={props.branch.lifecycleStatus?.dirtyFiles ?? undefined}
+								onClick={props.onShowChanges ? showChanges : undefined}
+							/>
+							{dirtyBadge()}
+							<Show when={facts().state}>
+								{(state) => {
+									return (
 										<span
-											class={s.richChip}
-											data-tooltip={t("sidebar.lastCommit", "Last commit")}
+											class={cx(s.richPill, state() === "merged" ? s.richPillMerged : s.richPillState)}
+											data-tooltip={state() === "stale" ? staleTooltip() : mergedTip()}
 											data-tooltip-pos="bottom"
 										>
-											{age()}
+											{state() === "unknown"
+												? unknownLifecycleLabel(lifecycle())
+												: state() === "merged"
+													? [mergedHold() && <MergedLock />, t("sidebar.merged", "Merged")]
+													: state() === "unrelated_history"
+														? t("sidebar.unrelatedHistory", "Unrelated history")
+														: t("sidebar.stale", "Stale")}
 										</span>
-									)}
-								</Show>
-								<Show when={facts().sync}>
-									{(sync) => (
-										<span
-											class={s.richChip}
-											data-tooltip={t("sidebar.aheadBehind", "Ahead / behind upstream")}
-											data-tooltip-pos="bottom"
-										>
-											{sync()}
-										</span>
-									)}
-								</Show>
-								<StatsBadge
-									additions={props.branch.additions}
-									deletions={props.branch.deletions}
-									dirtyFiles={props.branch.lifecycleStatus?.dirtyFiles ?? undefined}
-									onClick={props.onShowChanges ? showChanges : undefined}
-								/>
-								<Show when={facts().dirtyFiles > 0}>
-									<span
-										class={cx(s.richChip, s.richChipWarn)}
-										data-tooltip={tipFor("dirty")}
-										data-tooltip-pos="bottom"
-										role={props.onShowChanges ? "button" : undefined}
-										tabIndex={props.onShowChanges ? 0 : undefined}
-										onClick={props.onShowChanges ? showChanges : undefined}
-										onKeyDown={props.onShowChanges ? onClickKeyDown(showChanges) : undefined}
-										style={props.onShowChanges ? { cursor: "pointer" } : undefined}
-									>
-										{facts().dirtyFiles} {t("sidebar.dirty", "dirty")}
-									</span>
-								</Show>
-								<Show when={facts().state}>
-									{(state) => {
-										const risky = () =>
-											state() === "unknown" ||
-											state() === "unrelated_history" ||
-											(state() === "merged" && !!lifecycle() && lifecycle()?.removalSafety !== "safe") ||
-											(state() === "merged" && !!keptReason(props.branch.cleanup));
-										return (
-											<span
-												class={cx(
-													s.richChip,
-													state() === "merged" && !risky() ? s.richChipMerged : s.richChipWarn,
-													risky() && s.richChipRisk,
-												)}
-												data-tooltip={
-													state() === "stale"
-														? staleTooltip()
-														: [
-																keptReason(props.branch.cleanup) &&
-																	`${t("sidebar.keptReason", "Kept")}: ${keptReason(props.branch.cleanup)}`,
-																tipFor("commit"),
-															]
-																.filter(Boolean)
-																.join(" · ")
-												}
-												data-tooltip-pos="bottom"
-											>
-												{state() === "unknown"
-													? unknownLifecycleLabel(lifecycle())
-													: state() === "merged"
-														? keptReason(props.branch.cleanup)
-															? t("sidebar.mergedKept", "Merged · kept")
-															: t("sidebar.merged", "Merged")
-														: state() === "unrelated_history"
-															? t("sidebar.unrelatedHistory", "Unrelated history")
-															: t("sidebar.stale", "Stale")}
-											</span>
-										);
-									}}
-								</Show>
-								<Show when={!props.branch.isMain && lifecycle()?.commitStatus === "unmerged"}>
-									<span class={s.richChip} data-tooltip={UNMERGED_TOOLTIP} data-tooltip-pos="bottom">
-										{t("sidebar.unmerged", "unmerged")}
-									</span>
-								</Show>
-							</span>
-						</div>
+									);
+								}}
+							</Show>
+							<BranchItemBadge repoPath={props.repoPath} branch={props.branch.branchName} />
+							{prBadge()}
+						</span>
+						<Show when={pr()}>
+							{(p) => (
+								<span class={s.branchRichLine} data-tooltip={p().title} data-tooltip-pos="bottom">
+									<Show when={prStateLabel(p())}>{(label) => <span class={s.branchRichPrState}>{label()} </span>}</Show>
+									{p().title}
+								</span>
+							)}
+						</Show>
 					</Show>
 					<Show when={keptCheckoutsStore.isKept(props.repoPath, props.branch.branchName)}>
 						<Button
@@ -1616,8 +1723,100 @@ export const RepoSection: Component<{
 	const shownBranches = createMemo(() =>
 		harnessOnly() ? sortedBranches().filter((b) => hasLiveHarness(b.terminals)) : sortedBranches(),
 	);
+	// R and C fold the branches with nothing to say into a Quiet section, closed by
+	// default; H already shows only live branches and has none.
+	const [quietOpen, setQuietOpen] = createSignal(false);
+	// Compact keeps no minute clock running, so it reads the time once per render.
+	const quietClock = () => (density() === "rich" ? now() : Date.now());
+	const isQuiet = (branch: WorkspaceState) =>
+		isQuietBranch({
+			isMainCheckout: isMainCheckoutOf(branch, props.repo.path),
+			isSelected: props.repo.activeWorkspaceId === branch.workspaceId,
+			isShell: branch.isShell,
+			sessions: branch.terminals.length + (branch.savedTerminals?.length ?? 0),
+			additions: branch.additions,
+			deletions: branch.deletions,
+			dirtyFiles: branch.lifecycleStatus?.dirtyFiles,
+			hasPr: !!activePrStatus(props.repo.path, branch.branchName),
+			lifecycleChip: branchFacts(
+				{
+					lastCommitTs: branch.lastCommitTs,
+					additions: branch.additions,
+					deletions: branch.deletions,
+					dirtyFiles: branch.lifecycleStatus?.dirtyFiles,
+					isMerged: branch.isMerged,
+					commitStatus: branch.lifecycleStatus?.commitStatus,
+					isMain: isMainCheckoutOf(branch, props.repo.path),
+				},
+				quietClock(),
+			).state,
+			kept: keptCheckoutsStore.isKept(props.repo.path, branch.branchName),
+		});
+	const quietBranches = createMemo(() => (harnessOnly() ? [] : shownBranches().filter(isQuiet)));
+	const loudBranches = createMemo(() => {
+		const quiet = new Set(quietBranches());
+		return shownBranches().filter((branch) => !quiet.has(branch));
+	});
+	const quietSummary = () => {
+		const count = quietBranches().length;
+		const oldest = Math.min(...quietBranches().map((branch) => branch.lastCommitTs || Number.POSITIVE_INFINITY));
+		const branchesText = t(
+			count === 1 ? "sidebar.branchOne" : "sidebar.branchCount",
+			count === 1 ? "{count} branch" : "{count} branches",
+			{
+				count: String(count),
+			},
+		);
+		return Number.isFinite(oldest)
+			? `${branchesText} · ${t("sidebar.oldest", "oldest")} ${compactActivityAge(oldest, quietClock())}`
+			: branchesText;
+	};
+	// Shortcut numbers keep the sorted order, so a folded branch keeps its number.
+	const shortcutOffset = (branch: WorkspaceState) => shownBranches().indexOf(branch);
 	const shownTerminalIds = (branch: WorkspaceState) =>
 		harnessOnly() ? branch.terminals.filter(isLiveHarness) : branch.terminals;
+
+	const renderBranch = (branch: WorkspaceState) => (
+		<div class={cx(s.branchGroup, !branch.tabsCollapsed && getBranchTabsAvailable(branch) && s.branchGroupExpanded)}>
+			<BranchItem
+				branch={branch}
+				openSwipeRow={props.openSwipeRow}
+				onSwipeRowChange={props.onSwipeRowChange}
+				repoPath={props.repo.path}
+				isActive={
+					repositoriesStore.state.activeRepoPath === props.repo.path &&
+					props.repo.activeWorkspaceId === branch.workspaceId
+				}
+				canRemove={canRemoveAny()}
+				shortcutIndex={props.quickSwitcherActive ? props.branchShortcutStart + shortcutOffset(branch) : undefined}
+				// Selecting, adding a terminal to, or removing a row all address
+				// the WORKSPACE — the row is what the user clicked, and two rows
+				// may share a branch. Everything below that names a git ref
+				// (rename, create-from, switch, PR) still passes `branchName`.
+				agentMenuItems={props.buildAgentMenuItems ? () => props.buildAgentMenuItems!(branch.workspaceId) : undefined}
+				onSelect={() => props.onBranchSelect(branch.workspaceId)}
+				onAddTerminal={() => props.onAddTerminal(branch.workspaceId)}
+				isRemoving={props.removingBranches?.has(`${props.repo.path}::${branch.workspaceId}`)}
+				onRemove={() => props.onRemoveBranch(branch.workspaceId)}
+				onRename={() => props.onRenameBranch(branch.branchName)}
+				onCreateBranch={props.onCreateBranch ? () => props.onCreateBranch!(branch.branchName) : undefined}
+				onSetLabel={(current) => setLabelDialogBranch({ name: branch.branchName, current })}
+				onShowPrDetail={() => props.onShowPrDetail(branch.branchName)}
+				onShowChanges={props.onShowChanges}
+				onCreateWorktreeFromBranch={
+					props.onCreateWorktreeFromBranch ? () => props.onCreateWorktreeFromBranch!(branch.branchName) : undefined
+				}
+				onMergeAndArchive={props.onMergeAndArchive ? () => props.onMergeAndArchive!(branch.workspaceId) : undefined}
+				onSwitchBranch={branch.worktreePath === props.repo.path ? (name) => props.onSwitchBranch(name) : undefined}
+				switchBranchList={branch.worktreePath === props.repo.path ? props.switchBranchList : undefined}
+				currentBranch={branch.worktreePath === props.repo.path ? props.currentBranch : undefined}
+				githubBaseUrl={githubBaseUrl()}
+			/>
+			<Show when={!branch.tabsCollapsed && getBranchTabsAvailable(branch)}>
+				<BranchTabList terminalIds={shownTerminalIds(branch)} repoPath={props.repo.path} />
+			</Show>
+		</div>
+	);
 
 	const localBranchNames = createMemo(() => new Set(Object.keys(props.repo.workspaces)));
 	const remoteOnlyPrs = createMemo(() => githubStore.getRemoteOnlyPrs(props.repo.path, localBranchNames()));
@@ -1778,17 +1977,17 @@ export const RepoSection: Component<{
 						{props.repo.displayName}
 					</span>
 					<Show when={!expanded() && needsYouCount() > 0}>
-						<span class={cx(s.richChip, s.needsYouChip)} data-testid="repo-needs-you-count">
+						<span class={cx(s.richChip, s.repoChip, s.needsYouChip)} data-testid="repo-needs-you-count">
 							{t("needsYou.title", "{count} need you", { count: String(needsYouCount()) })}
 						</span>
 					</Show>
 					<Show when={props.repo.detachedWorktrees?.length}>
-						<span class={s.richChip} data-testid="detached-worktree-count">
+						<span class={cx(s.richChip, s.repoChip)} data-testid="detached-worktree-count">
 							{props.repo.detachedWorktrees?.length} {t("sidebar.detached", "detached")}
 						</span>
 					</Show>
 					<Show when={props.repo.worktreeDiagnostics?.length}>
-						<span class={s.richChip} data-testid="worktree-diagnostic-count">
+						<span class={cx(s.richChip, s.repoChip)} data-testid="worktree-diagnostic-count">
 							{props.repo.worktreeDiagnostics?.length} {t("sidebar.worktreeDiagnostics", "diagnostics")}
 						</span>
 					</Show>
@@ -1808,7 +2007,7 @@ export const RepoSection: Component<{
 						</span>
 					</Show>
 					<Show when={density() === "rich" && workingCount() > 0}>
-						<span class={s.richChip} data-testid="working-agent-count">
+						<span class={cx(s.richChip, s.repoChip)} data-testid="working-agent-count">
 							{t("sidebar.workingCount", "{count} working", { count: String(workingCount()) })}
 						</span>
 					</Show>
@@ -1957,62 +2156,26 @@ export const RepoSection: Component<{
 			{/* Branches */}
 			<Show when={expanded() && !props.repo.collapsed}>
 				<div class={s.repoBranches}>
-					<For each={shownBranches()}>
-						{(branch, index) => (
-							<div
-								class={cx(
-									s.branchGroup,
-									!branch.tabsCollapsed && getBranchTabsAvailable(branch) && s.branchGroupExpanded,
-								)}
+					<For each={loudBranches()}>{(branch) => renderBranch(branch)}</For>
+					<Show when={quietBranches().length > 0}>
+						<div class={s.quietFold} data-testid="quiet-branches">
+							<Button
+								size="compact"
+								variant="ghost"
+								class={s.subagentFold}
+								aria-expanded={quietOpen()}
+								onClick={() => setQuietOpen((open) => !open)}
 							>
-								<BranchItem
-									branch={branch}
-									openSwipeRow={props.openSwipeRow}
-									onSwipeRowChange={props.onSwipeRowChange}
-									repoPath={props.repo.path}
-									isActive={
-										repositoriesStore.state.activeRepoPath === props.repo.path &&
-										props.repo.activeWorkspaceId === branch.workspaceId
-									}
-									canRemove={canRemoveAny()}
-									shortcutIndex={props.quickSwitcherActive ? props.branchShortcutStart + index() : undefined}
-									// Selecting, adding a terminal to, or removing a row all address
-									// the WORKSPACE — the row is what the user clicked, and two rows
-									// may share a branch. Everything below that names a git ref
-									// (rename, create-from, switch, PR) still passes `branchName`.
-									agentMenuItems={
-										props.buildAgentMenuItems ? () => props.buildAgentMenuItems!(branch.workspaceId) : undefined
-									}
-									onSelect={() => props.onBranchSelect(branch.workspaceId)}
-									onAddTerminal={() => props.onAddTerminal(branch.workspaceId)}
-									isRemoving={props.removingBranches?.has(`${props.repo.path}::${branch.workspaceId}`)}
-									onRemove={() => props.onRemoveBranch(branch.workspaceId)}
-									onRename={() => props.onRenameBranch(branch.branchName)}
-									onCreateBranch={props.onCreateBranch ? () => props.onCreateBranch!(branch.branchName) : undefined}
-									onSetLabel={(current) => setLabelDialogBranch({ name: branch.branchName, current })}
-									onShowPrDetail={() => props.onShowPrDetail(branch.branchName)}
-									onShowChanges={props.onShowChanges}
-									onCreateWorktreeFromBranch={
-										props.onCreateWorktreeFromBranch
-											? () => props.onCreateWorktreeFromBranch!(branch.branchName)
-											: undefined
-									}
-									onMergeAndArchive={
-										props.onMergeAndArchive ? () => props.onMergeAndArchive!(branch.workspaceId) : undefined
-									}
-									onSwitchBranch={
-										branch.worktreePath === props.repo.path ? (name) => props.onSwitchBranch(name) : undefined
-									}
-									switchBranchList={branch.worktreePath === props.repo.path ? props.switchBranchList : undefined}
-									currentBranch={branch.worktreePath === props.repo.path ? props.currentBranch : undefined}
-									githubBaseUrl={githubBaseUrl()}
-								/>
-								<Show when={!branch.tabsCollapsed && getBranchTabsAvailable(branch)}>
-									<BranchTabList terminalIds={shownTerminalIds(branch)} repoPath={props.repo.path} />
-								</Show>
-							</div>
-						)}
-					</For>
+								<span class={cx(s.sectionChevron, quietOpen() && s.expanded)}>
+									<ChevronIcon />
+								</span>
+								{t("sidebar.quiet", "Quiet")} · {quietSummary()}
+							</Button>
+						</div>
+						<Show when={quietOpen()}>
+							<For each={quietBranches()}>{(branch) => renderBranch(branch)}</For>
+						</Show>
+					</Show>
 					<For each={harnessOnly() ? [] : (props.repo.detachedWorktrees ?? [])}>
 						{(checkout) => (
 							<div

@@ -35,7 +35,10 @@ pub(crate) fn windows_to_wsl_path(path: &str) -> String {
 /// Handles both forward-slash and backslash path separators so it works
 /// correctly regardless of compilation target (cross-compiled from macOS/Linux).
 pub(crate) fn is_wsl_shell(shell: &str) -> bool {
-    let exe = shell.split_whitespace().next().unwrap_or("");
+    // Same program rule as `build_shell_command`: `C:\Program Files\WSL\wsl.exe`
+    // is one program, not `C:\Program` plus an argument.
+    let parts = crate::windows_launch::split_shell_command(shell);
+    let exe = parts.first().map_or("", String::as_str);
     // Extract filename from the last path separator (either / or \)
     let filename = exe.rsplit(['/', '\\']).next().unwrap_or(exe);
     // Strip .exe extension if present

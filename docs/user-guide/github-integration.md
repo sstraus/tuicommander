@@ -119,6 +119,8 @@ Click a PR badge or CI ring to open the detail popover. Shows:
 
 If GitHub Work is not loaded, **Comments on GitHub** opens the PR conversation in your browser instead. The thread-count button uses the same fallback. In a Tasks PR detail, **Open branch _name_** returns to its existing sidebar branch/worktree. This action is absent if no matching workspace exists.
 
+**Review with workflow** (open PRs, sidebar popover and Tasks PR detail) starts the project's published PR review workflow for that PR now. The workflow is the one bound to a GitHub `pull_request` trigger for the repository in the Workflow Designer; the binding need not be enabled. TUICommander reads the current head and base from GitHub at the click, so a push since the page loaded is reviewed. Asking again for the same head shows the run that already reviews it. With several bound workflows, choose one first. Without one the button is disabled and says why. **Open run** opens that run in Workflows → Preview & runs.
+
 ## PR Notifications (Toolbar Bell)
 
 Click a PR notification to open that PR’s comments and review threads in Tasks. The notification keeps its PR URL, so a later PR on the same branch does not change the destination. Native OS PR notices use the same route. If the provider is unavailable, the PR conversation opens on GitHub.

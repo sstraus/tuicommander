@@ -51,6 +51,13 @@ const {
 	};
 });
 
+vi.mock("../../components/ProgressDialog/ProgressRecent", () => ({
+	ProgressRecent: (props: { onOpen?: () => void }) => (
+		<button type="button" onClick={() => props.onOpen?.()}>
+			recent row
+		</button>
+	),
+}));
 vi.mock("../../stores/modalStack", () => ({ registerModal: vi.fn() }));
 // The thread reads its own store; here it only has to stand where it renders.
 vi.mock("../../components/ProgressDialog/DiscussionThread", () => ({
@@ -213,6 +220,16 @@ describe("ProgressDialog", () => {
 		expect(setBlockedOnly).toHaveBeenCalledWith(true);
 		fireEvent.click(screen.getByLabelText("Activity"));
 		expect(setShowActivity).toHaveBeenCalledWith(true);
+	});
+});
+
+describe("ProgressDialog all projects", () => {
+	it("leaves the cross-project view when a row opens a project", () => {
+		render(() => <ProgressDialog />);
+		fireEvent.click(screen.getByRole("tab", { name: "All projects" }));
+		fireEvent.click(screen.getByText("recent row"));
+		expect(screen.queryByText("recent row")).toBeNull();
+		expect(screen.getByText("Cannot reach the registry.")).toBeVisible();
 	});
 });
 

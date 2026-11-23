@@ -20,8 +20,13 @@ vi.mock("../../stores/github", () => ({
 		getCheckDetails: mockGetCheckDetails,
 		loadCheckDetails: vi.fn(() => Promise.resolve()),
 		pollRepo: vi.fn(),
+		state: { viewerLogin: null },
 	},
 }));
+
+// The review workflow action has its own tests; its mount-time lookup would consume the
+// ordered invoke replies these tests queue for the merge and launch flows.
+vi.mock("../../components/PrReviewWorkflow/PrReviewWorkflowAction", () => ({ PrReviewWorkflowAction: () => null }));
 
 import { PrDetailPopover } from "../../components/PrDetailPopover/PrDetailPopover";
 
@@ -73,34 +78,29 @@ describe("PrDetailPopover", () => {
 	});
 
 	// Catches: the sidebar popover exposing only a count with no usable conversation route.
-	it.each(["Comments on GitHub", "2 unresolved threads"])(
-		"opens the exact PR conversation from %s without a provider",
-		async (label) => {
-			vi.useRealTimers();
-			mockGetBranchPrData.mockReturnValue({
-				branch: "remote/feature",
-				number: 42,
-				title: "Remote-only change",
-				state: "OPEN",
-				url: "https://github.com/acme/remote/pull/42",
-				unresolved_threads: 2,
-				labels: [],
-				checks: { passed: 0, failed: 0, pending: 0, total: 0 },
-			});
-			const onClose = vi.fn();
-			const { getByRole } = render(() => (
-				<PrDetailPopover {...defaultProps} branch="remote/feature" onClose={onClose} />
-			));
-			fireEvent.click(getByRole("button", { name: label }));
-			await waitFor(() =>
-				expect(mockInvoke).toHaveBeenCalledWith("open_default_app", {
-					target: "https://github.com/acme/remote/pull/42",
-					kind: "url",
-				}),
-			);
-			expect(onClose).toHaveBeenCalledOnce();
-		},
-	);
+	it.each(["2 unresolved"])("opens the exact PR conversation from %s without a provider", async (label) => {
+		vi.useRealTimers();
+		mockGetBranchPrData.mockReturnValue({
+			branch: "remote/feature",
+			number: 42,
+			title: "Remote-only change",
+			state: "OPEN",
+			url: "https://github.com/acme/remote/pull/42",
+			unresolved_threads: 2,
+			labels: [],
+			checks: { passed: 0, failed: 0, pending: 0, total: 0 },
+		});
+		const onClose = vi.fn();
+		const { getByRole } = render(() => <PrDetailPopover {...defaultProps} branch="remote/feature" onClose={onClose} />);
+		fireEvent.click(getByRole("button", { name: label }));
+		await waitFor(() =>
+			expect(mockInvoke).toHaveBeenCalledWith("open_default_app", {
+				target: "https://github.com/acme/remote/pull/42",
+				kind: "url",
+			}),
+		);
+		expect(onClose).toHaveBeenCalledOnce();
+	});
 
 	it("renders PR metadata correctly", () => {
 		mockGetBranchPrData.mockReturnValue({
@@ -178,11 +178,14 @@ describe("PrDetailPopover", () => {
 			{ context: "test", state: "FAILURE" },
 		]);
 
-		const { container } = render(() => <PrDetailPopover {...defaultProps} />);
+		const { container, getByText } = render(() => <PrDetailPopover {...defaultProps} />);
+		// Unfinished checks come first; passed ones wait behind one click.
+		expect(container.querySelectorAll(".checkItem")).toHaveLength(1);
+		fireEvent.click(getByText("Show 1 passed"));
 		const checkItems = container.querySelectorAll(".checkItem");
 		expect(checkItems.length).toBe(2);
-		expect(checkItems[0].textContent).toContain("build");
-		expect(checkItems[1].textContent).toContain("test");
+		expect(checkItems[0].textContent).toContain("test");
+		expect(checkItems[1].textContent).toContain("build");
 	});
 
 	it("calls onClose on Escape", () => {
@@ -273,7 +276,7 @@ describe("PrDetailPopover", () => {
 		expect(popover!.textContent).toContain("No PR data");
 	});
 
-	it("shows commit count", () => {
+	it("shows the diff size in the meta line", () => {
 		mockGetBranchPrData.mockReturnValue({
 			branch: "feature/x",
 			number: 42,
@@ -289,7 +292,8 @@ describe("PrDetailPopover", () => {
 		});
 
 		const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-		expect(container.textContent).toContain("7 commit");
+		expect(container.textContent).toContain("+10");
+		expect(container.textContent).toContain("-5");
 	});
 
 	it("shows CI summary when checks exist", () => {
@@ -309,8 +313,9 @@ describe("PrDetailPopover", () => {
 		mockGetCheckSummary.mockReturnValue({ passed: 3, failed: 1, pending: 2, total: 6 });
 
 		const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-		expect(container.textContent).toContain("1 failed");
-		expect(container.textContent).toContain("3 passed");
+		expect(container.textContent).toContain("1 ✗");
+		expect(container.textContent).toContain("2 ◌");
+		expect(container.textContent).toContain("3 ✓");
 	});
 
 	it("shows merge readiness indicator for CLEAN state", () => {
@@ -705,7 +710,7 @@ describe("PrDetailPopover", () => {
 		expect(mergeDir!.textContent).toContain("main");
 	});
 
-	it("shows relative timestamps for creation and update", () => {
+	it("shows the relative update time", () => {
 		vi.setSystemTime(new Date("2026-01-15T15:00:00Z"));
 
 		mockGetBranchPrData.mockReturnValue({
@@ -728,10 +733,7 @@ describe("PrDetailPopover", () => {
 		});
 
 		const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-		const timestamps = container.querySelector(".timestamps");
-		expect(timestamps).not.toBeNull();
-		expect(timestamps!.textContent).toContain("5h ago");
-		expect(timestamps!.textContent).toContain("3h ago");
+		expect(container.textContent).toContain("Updated 3h ago");
 	});
 
 	it("does not show merge direction when base_ref_name is empty", () => {
@@ -924,7 +926,7 @@ describe("PrDetailPopover", () => {
 				.mockResolvedValueOnce("abc123sha");
 
 			const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-			const mergeBtn = container.querySelector(".mergeBtn") as HTMLButtonElement;
+			const mergeBtn = container.querySelector("[data-testid='pr-merge']") as HTMLButtonElement;
 			fireEvent.click(mergeBtn);
 
 			await waitFor(() => {
@@ -945,7 +947,7 @@ describe("PrDetailPopover", () => {
 				.mockResolvedValueOnce("abc123sha");
 
 			const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-			const mergeBtn = container.querySelector(".mergeBtn") as HTMLButtonElement;
+			const mergeBtn = container.querySelector("[data-testid='pr-merge']") as HTMLButtonElement;
 			fireEvent.click(mergeBtn);
 
 			await waitFor(() => {
@@ -965,7 +967,7 @@ describe("PrDetailPopover", () => {
 				.mockRejectedValueOnce(new Error("GitHub merge failed (405): Rebase merging is not allowed."));
 
 			const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-			const mergeBtn = container.querySelector(".mergeBtn") as HTMLButtonElement;
+			const mergeBtn = container.querySelector("[data-testid='pr-merge']") as HTMLButtonElement;
 			fireEvent.click(mergeBtn);
 
 			await waitFor(() => {
@@ -978,7 +980,7 @@ describe("PrDetailPopover", () => {
 			mockInvoke.mockRejectedValueOnce(new Error("Network error"));
 
 			const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-			const mergeBtn = container.querySelector(".mergeBtn") as HTMLButtonElement;
+			const mergeBtn = container.querySelector("[data-testid='pr-merge']") as HTMLButtonElement;
 			fireEvent.click(mergeBtn);
 
 			await waitFor(() => {
@@ -987,6 +989,24 @@ describe("PrDetailPopover", () => {
 			// Only one merge call — no retry (other invoke calls may be from store persistence)
 			const mergeCalls = mockInvoke.mock.calls.filter((args: unknown[]) => args[0] === "merge_pr_via_github");
 			expect(mergeCalls).toHaveLength(1);
+		});
+
+		// Catches: a limited merge shows the raw typed payload instead of the reset time.
+		it("shows the reset time of a rate_limited merge instead of the raw payload", async () => {
+			const payload = {
+				kind: "rate_limited",
+				bucket: "core",
+				retry_at: new Date(2030, 0, 1, 14, 5).getTime(),
+				message: "x",
+			};
+			mockInvoke.mockResolvedValueOnce({}); // get_pr_action_state
+			mockInvoke.mockRejectedValueOnce(`rate-limit:${JSON.stringify(payload)}`);
+
+			const { container } = render(() => <PrDetailPopover {...defaultProps} />);
+			fireEvent.click(container.querySelector("[data-testid='pr-merge']") as HTMLButtonElement);
+
+			await waitFor(() => expect(container.textContent).toContain("Rate limited · resets 14:05"));
+			expect(container.textContent).not.toContain("retry_at");
 		});
 	});
 
@@ -1033,7 +1053,7 @@ describe("PrDetailPopover", () => {
 
 			const onClose = vi.fn();
 			const { container, getByText } = render(() => <PrDetailPopover {...defaultProps} onClose={onClose} />);
-			const mergeBtn = container.querySelector(".mergeBtn") as HTMLButtonElement;
+			const mergeBtn = container.querySelector("[data-testid='pr-merge']") as HTMLButtonElement;
 			fireEvent.click(mergeBtn);
 
 			await waitFor(() => {
@@ -1067,7 +1087,7 @@ describe("PrDetailPopover", () => {
 
 			const { container } = render(() => <PrDetailPopover {...defaultProps} />);
 			containerRef = container;
-			const mergeBtn = container.querySelector(".mergeBtn") as HTMLButtonElement;
+			const mergeBtn = container.querySelector("[data-testid='pr-merge']") as HTMLButtonElement;
 			fireEvent.click(mergeBtn);
 
 			await waitFor(() => {
@@ -1112,7 +1132,7 @@ describe("PrDetailPopover", () => {
 			repoSettingsStore.update("/repo", { prMergeStrategy: "merge" });
 			mockGetBranchPrData.mockReturnValue(makePr());
 			const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-			const btn = container.querySelector(".mergeBtn");
+			const btn = container.querySelector("[data-testid='pr-merge']");
 			expect(btn?.textContent).toBe("Merge");
 		});
 
@@ -1121,7 +1141,7 @@ describe("PrDetailPopover", () => {
 				makePr({ merge_commit_allowed: false, squash_merge_allowed: true, rebase_merge_allowed: false }),
 			);
 			const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-			const btn = container.querySelector(".mergeBtn");
+			const btn = container.querySelector("[data-testid='pr-merge']");
 			expect(btn?.textContent).toBe("Squash & Merge");
 		});
 
@@ -1130,7 +1150,7 @@ describe("PrDetailPopover", () => {
 				makePr({ merge_commit_allowed: false, squash_merge_allowed: false, rebase_merge_allowed: true }),
 			);
 			const { container } = render(() => <PrDetailPopover {...defaultProps} />);
-			const btn = container.querySelector(".mergeBtn");
+			const btn = container.querySelector("[data-testid='pr-merge']");
 			expect(btn?.textContent).toBe("Rebase & Merge");
 		});
 	});

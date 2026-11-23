@@ -21,6 +21,7 @@ include!("codex_binding_tests.rs");
 include!("question_parity_tests.rs");
 
 include!("grok_question_parity_tests.rs");
+include!("agy_capture_tests.rs");
 include!("grok_hook_test_support.rs");
 include!("grok_hook_tests.rs");
 include!("hook_side_channel_tests.rs");

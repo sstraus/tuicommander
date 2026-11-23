@@ -7,6 +7,7 @@ import {
 	compactAge,
 	countWorktrees,
 	createMinuteClock,
+	isQuietBranch,
 	repoFacts,
 	STALE_AFTER_DAYS,
 	subagentRows,
@@ -227,5 +228,42 @@ describe("createMinuteClock", () => {
 		disposeB();
 		expect(vi.getTimerCount()).toBe(0);
 		spy.mockRestore();
+	});
+});
+
+describe("isQuietBranch", () => {
+	const quiet = {
+		isMainCheckout: false,
+		isSelected: false,
+		sessions: 0,
+		additions: 0,
+		deletions: 0,
+		dirtyFiles: 0,
+		hasPr: false,
+		lifecycleChip: null,
+		kept: false,
+	};
+
+	it("folds a branch with nothing to say", () => {
+		expect(isQuietBranch(quiet)).toBe(true);
+	});
+
+	// Catches: the main checkout or the branch on screen vanishing into a closed section.
+	it.each([
+		["main checkout", { isMainCheckout: true }],
+		["selected branch", { isSelected: true }],
+	])("never folds the %s", (_name, over) => {
+		expect(isQuietBranch({ ...quiet, ...over })).toBe(false);
+	});
+
+	// Catches: a fact the closed section would hide — untracked-only files have no diff lines.
+	it.each([
+		["a session", { sessions: 1 }],
+		["untracked files only", { dirtyFiles: 2 }],
+		["a pull request", { hasPr: true }],
+		["a lifecycle chip", { lifecycleChip: "stale" as const }],
+		["a kept checkout", { kept: true }],
+	])("keeps a branch with %s in sight", (_name, over) => {
+		expect(isQuietBranch({ ...quiet, ...over })).toBe(false);
 	});
 });

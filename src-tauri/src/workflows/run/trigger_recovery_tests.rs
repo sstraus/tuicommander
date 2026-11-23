@@ -453,3 +453,46 @@ fn single_pending_event_without_successor_stays_pending_until_started() {
     assert!(f.admit(pr_event("2", 'b'))[0].run_id.is_some());
     assert_eq!(disposition(&f, "2", 'b'), "started");
 }
+
+// Catches: an operator-resolved write (resources released, never `settled`)
+// still holding the pending newest head for ever, because trigger admission
+// asked `settled` instead of `resources_released`.
+#[test]
+fn operator_resolved_write_releases_the_pending_newest_generation() {
+    let f = fixture();
+    pr_binding(&f);
+    let first = f.admit(pr_event("1", 'a'))[0].run_id.clone().unwrap();
+    let key = hold_write(&f, &first, false);
+    assert!(f.admit(pr_event("2", 'b'))[0].run_id.is_none());
+    f.owner
+        .neutral_effect_command(
+            &first,
+            EffectCommand::Observe {
+                key: key.clone(),
+                observation: EffectObservation {
+                    stopped: true,
+                    outcome: EffectOutcome::Uncertain {
+                        diagnostic: "response lost".into(),
+                    },
+                },
+            },
+        )
+        .unwrap();
+    assert!(
+        f.admit(pr_event("2", 'b'))[0].run_id.is_none(),
+        "an unresolved uncertain write still holds the head"
+    );
+    f.owner
+        .neutral_effect_command(
+            &first,
+            EffectCommand::ResolveMutation {
+                key,
+                evidence: "Verified the original request stopped and reconciled the pull request"
+                    .into(),
+                stop_proof: super::neutral_effects::MutationStopProof::RecordedObservation,
+            },
+        )
+        .unwrap();
+    let latest = f.admit(pr_event("2", 'b'))[0].run_id.clone();
+    assert!(latest.is_some(), "a resolved write must release the head");
+}

@@ -77,7 +77,7 @@ Each branch row can show:
 | **Diff stats** | `+N / -N` additions and deletions, always shown beside the PR marker. Hover for exact counts and uncommitted files. |
 | **Dirty badge** | The workspace contains staged, unstaged, or untracked changes. Hover or focus the badge for the removal-safety explanation. |
 | **Merged badge** | Branches merged into main show a "Merged" badge |
-| **Unmerged mark** | A small outlined square means the worktree has commits outside the default branch. A zero diff or dirty count does not mean those commits are merged. |
+| **Unmerged mark** | A small `↑` means the worktree has commits outside the default branch. A zero diff or dirty count does not mean those commits are merged. |
 | **Unknown badge** | TUICommander could not verify the workspace state, so removal is blocked. Hover or focus the badge for the inspection error. A missing default branch shows **No base branch**. Branch-name tooltips show each diagnostic once; main checkouts do not show removal warnings. |
 | **Question icon** | An agent in this branch's terminal is asking a question |
 | **Grey icon** | No active terminals in the repo — branch icons dim to grey |
@@ -95,7 +95,7 @@ When removal would delete an unmerged branch, the error card offers **Remove wor
 
 Nested agent and terminal rows are an opt-in feature and are disabled by default. Enable **Settings → Appearance → Tabs → Nested Terminal Tabs** to show them; the change applies immediately.
 
-When enabled, each branch with open terminal sessions has a separate, always-visible chevron to show or hide agents. The status icon and row select the branch. Enter or Space activates the focused chevron. The collapsed session count stays beside it. Agents are shown by default, and collapsed state is remembered. Expanded, the list shows a single activity card containing the sessions assigned to that branch:
+When enabled, the branch icon of each branch with open terminal sessions shows or hides its agents; the rest of the row selects the branch. Enter or Space activates the focused icon. The collapsed session count stays beside it. Agents are shown by default, and collapsed state is remembered. Expanded, the list shows a single activity card containing the sessions assigned to that branch:
 
 - Detected agents show their icon, terminal name, current intent or task, last-update age, and status.
 - A sub-agent row has a muted robot tag; hover or focus it to see the parent agent. The GitHub badge in the repo header keeps its accent color.
@@ -107,17 +107,16 @@ When the setting is off, the sidebar intentionally shows none of the activity ca
 
 ## Remote-Only PRs
 
-When a repository has open PRs on branches that only exist on the remote (not checked out locally), a badge appears in the branch section. Click it to open a popover listing these PRs. Each row shows the PR number, title, and state badge. Click a row to expand an inline accordion showing PR details, with action buttons:
+When a repository has open PRs on branches that only exist on the remote (not checked out locally), a badge appears in the branch section. Click it to open a popover listing these PRs. Each row shows the PR number, title, and state badge. Click a row to expand an inline accordion showing PR details in the UI v3 layout:
 
-- **Checkout** — Create a local tracking branch
-- **Create Worktree** — Create a worktree for the branch
-- **Merge** — Merge the PR via GitHub API (shown when PR is mergeable)
-- **View Diff** — Open PR diff in a panel tab
-- **Approve** — Submit an approving review
+- **Next action** — one or two buttons chosen by the PR state: **Approve** when you can review it, **Merge** when it is ready, **Resolve conflicts**, **Open in Tasks** for open threads. A line above them says why.
+- **Toolbar** — always the same: **Diff** (open the PR diff in a panel tab) and **Checkout** (create a local tracking branch). The `⋯` menu holds **Create worktree**.
+- **Sections** — Description, Checks, Threads and AI Review. Only one opens by itself: Checks when CI is red, otherwise Threads when some are open. Each open review thread has **Reply** and **Resolve**.
+- **Split button** — `✦ Review ▾` (or the state's agent action) runs the last pick. `▾` lists Start actions, the project's published **Workflows** (started with the PR as subject) and agent prompts, then **Manage workflows…**.
 
 ### Dismiss & Show Dismissed
 
-Remote-only PRs can be dismissed to reduce sidebar clutter. Right-click the remote PRs badge or use the "Dismiss" action in the accordion. A "Show Dismissed" toggle at the bottom reveals dismissed PRs again.
+Remote-only PRs can be dismissed to reduce sidebar clutter. Right-click the remote PRs badge or choose **Hide from list** in the row `⋯` menu. A "Show Dismissed" toggle at the bottom reveals dismissed PRs again.
 
 ## Park Repos
 
@@ -141,13 +140,15 @@ The **layout button** in the toolbar (left of the filter icon) cycles the sideba
 
 **Compact** is the one-line rows. **Rich** keeps the same navigation density and adds facts:
 
-- **Branch:** the PR state word and title; last-commit age; ahead/behind of the upstream (`↑2 ↓1`); diff stats; `N dirty` (click opens Changes); `Merged`, `Stale` (no commit for 30 days, not merged), `Unknown` (removal blocked, status could not be read) and `unmerged`. Each chip explains itself in a tooltip, with the same removal-safety text compact shows. A main checkout never shows stale, merged, dirty or unknown.
-- **Agent:** its state (Working, Idle, Needs input, Error) and what it is doing; its in-session subagents, one line each with state, title, tool calls and age (more than three fold into "N subagents", click to expand); a vertical guide connects nested TUIC child sessions to their parent agent on the same branch.
+- **Branch:** the full branch name, with the path prefix muted; the name wraps instead of truncating. The unmerged `↑` mark and the last-commit age follow the name. The facts sit at the right of the same line, or on a second right-aligned line when they do not fit: ahead/behind of the upstream (`↑2 ↓1`), diff stats, a yellow `● N` dirty badge (click opens Changes), `Stale` (no commit for 30 days, not merged), `Unknown` (removal blocked, status could not be read) and the PR badge. The PR title follows on its own line. Each fact explains itself in a tooltip, with the same removal-safety text compact shows. A main checkout never shows stale, merged, dirty or unknown.
+- **Agent:** a Working, Needs input or Error pill beside the title, the intent line below while it works, and the robot icon on subagent rows; its in-session subagents, one line each with state, title, tool calls and age (more than three fold into "N subagents", click to expand); a vertical guide connects nested TUIC child sessions to their parent agent on the same branch.
 - **Repository:** current branch, positive open-PR and worktree counts, and the age of the last remote poll.
 
 Compact carries the same facts in tooltips: the branch name's tooltip has the commit age, ahead/behind and the stale rule; an agent row's tooltip has its state and line. Subagents and nesting exist only in rich.
 
-**H** shows only branches with a live harness session, together with their repositories and groups. R and C clear this harness filter. The separate active-only filter stays available in every mode. Older Auto preferences open in rich mode.
+**H** shows only branches with a live harness session, together with their repositories and groups. R and C clear this harness filter.
+
+In R and C, branches with no session, no diff, no dirty files, no PR, no lifecycle chip and no Keep mark fold into a **Quiet** section at the end of the repository. A fold line, **› Quiet · N branches · oldest X**, shows the count and the oldest last-commit age; click it to show the rows. The main checkout and the selected branch never fold. Quick-switch numbers stay the same while a row is folded. H has no Quiet section. The separate active-only filter stays available in every mode. Older Auto preferences open in rich mode.
 
 If you choose a repository in the Command Palette (`Cmd+P`) and a sidebar filter hides it, the sidebar switches to the unfiltered view and shows the repository. If you choose a repository that is already visible, the sidebar keeps its filters.
 
@@ -193,15 +194,15 @@ Mouse and trackpad actions appear over the right edge of the row on hover or key
 
 In rich mode, sessions idle for more than two hours fold into an expandable count. Backend activity timestamps determine age; busy sessions, awaiting input, unread output, selected rows and parents of visible children stay visible. Expanding preserves row order. Compact mode does not fold idle sessions.
 
-Rich working agent rows reserve two clamped intent lines. Idle, awaiting-input and error rows stay on one line with status dots; their full intent, task or prompt remains in the tooltip. Compact rows keep their one-line layout.
+Rich working agent rows show their intent on at most two lines, with no reserved blank space when there is none. Idle, awaiting-input and error rows stay on one line with a state pill; their full intent, task or prompt remains in the tooltip. Compact rows keep their one-line layout.
 
-Rich navigation keeps compact typography and padding. Branch identity and facts share one line, with names truncated and full PR/lifecycle facts in tooltips. Repository metadata disappears when PR and worktree counts are both zero. Header controls use compact sizing to protect repo names. Returned subagents fold into an expandable count. Interrupted subagents are labeled **Interrupted** and do not count as returned.
+Rich navigation keeps compact typography and padding. Branch names show in full and wrap; facts share the name line when they fit and move to a right-aligned second line when they do not. Repository metadata disappears when PR and worktree counts are both zero. Header controls use compact sizing to protect repo names. Finished subagents fold into an expandable **N done** count. Interrupted subagents are labeled **Interrupted** and do not count as done.
 
-In rich mode, ungrouped repositories with open terminals appear first, followed by an Idle section. Manual order is preserved inside each section. Idle headers start on one line; disclosure reveals their branches without changing activity or saved order. Headers count agents in the backend working state, independently of open-terminal membership.
+In rich mode, ungrouped repositories with open terminals appear first, followed by an Idle section whose header counts its repositories. Manual order is preserved inside each section. Idle headers start on one line; disclosure reveals their branches without changing activity or saved order. Headers count agents in the backend working state, independently of open-terminal membership.
 
 Rich active/idle sections also apply independently inside each existing repository group. Group membership and group ordering remain intact; active-only filtering hides idle-only groups and empty Idle headings.
 
-Rich merged linked worktrees with no sessions and verified lifecycle facts use a one-line summary: Merged, N uncommitted, Clean up. Live, unmerged, or unknown worktrees retain full rows. Clean up enters the existing lifecycle preflight and confirmation workflow; cancellation preserves the worktree.
+Rich merged linked worktrees with no sessions and verified lifecycle facts use a one-line summary: the name, the dirty badge and a **Merged** pill. When the worktree can be removed, the pill turns into **Clean** on hover or keyboard focus; there is no separate Clean up button. Live, unmerged, or unknown worktrees retain full rows. Clean enters the existing lifecycle preflight and confirmation workflow; cancellation preserves the worktree. Branches show **⎇**; merged branches show a purple **⌥**; the main checkout shows **✳**. A lock in the Merged pill marks a worktree that cleanup must keep (dirty files, unsafe removal or a sweep refusal); the tooltip gives the reason. Done subagents fold into **› N done** and long-idle sessions into **› N idle**. Repository header counts (working, needs you) are small chips.
 
 Rich parent terminal rows show N agents in each other repository containing live children. Clicking reveals the child group, repository and workspace, then selects a child through existing terminal navigation. Session placement and same-branch nesting stay intact; closed children disappear from summaries.
 

@@ -5,6 +5,7 @@
 )]
 use super::neutral_effects::{EffectObservation, EffectOutcome, NeutralEffect};
 use super::neutral_execution::NeutralResult;
+use crate::provider_gateway::plugin_egress::Declared;
 use crate::workflows::gitlab::{GitLabInstall, Operation, project_response};
 use serde_json::{Value, json};
 use std::{
@@ -99,7 +100,7 @@ async fn fetch(
     method: &str,
     body: Option<String>,
 ) -> Result<crate::plugin_http::HttpResponse, String> {
-    crate::plugin_http::plugin_http_fetch_impl(
+    crate::plugin_http::plugin_http_fetch_declared_impl(
         state,
         url.into(),
         Some(method.into()),
@@ -110,6 +111,7 @@ async fn fetch(
         body,
         super::neutral_http::credential(&install.connector),
         "gitlab".into(),
+        Declared::workflow(method == "GET", "neutral_gitlab.fetch"),
     )
     .await
 }

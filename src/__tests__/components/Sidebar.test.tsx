@@ -104,6 +104,7 @@ vi.mock("../../stores/repoSettings", () => ({
 }));
 
 vi.mock("../../stores/terminals", () => ({
+	registerBlockFoldingGate: vi.fn(),
 	terminalsStore: {
 		getIds: vi.fn(() => []),
 		get: mockTerminalsGet,
@@ -217,6 +218,12 @@ function setRepos(repos: Record<string, unknown>, activeRepoPath?: string) {
 	mockGetGroupedLayout.mockReturnValue({ groups: [], ungrouped: repoValues });
 }
 
+/** Bare branches with no session, change, PR or lifecycle chip fold into Quiet; open it for row tests. */
+function expandQuiet(container: HTMLElement) {
+	const toggle = container.querySelector<HTMLButtonElement>("[data-testid='quiet-branches'] button");
+	if (toggle?.getAttribute("aria-expanded") === "false") fireEvent.click(toggle);
+}
+
 // Legacy row interaction cases exercise compact mode; rich layout cases opt into rich.
 function densityMode(mode: "rich" | "compact") {
 	while (uiStore.state.sidebarDensityMode !== mode) uiStore.cycleSidebarDensityMode();
@@ -277,7 +284,9 @@ describe("Sidebar", () => {
 					},
 				}),
 			});
-			return render(() => <Sidebar {...defaultProps(overrides)} />);
+			const view = render(() => <Sidebar {...defaultProps(overrides)} />);
+			expandQuiet(view.container);
+			return view;
 		};
 		const row = (container: HTMLElement, id: string) =>
 			Array.from(container.querySelectorAll<HTMLElement>("[data-swipe-row]")).find(
@@ -571,6 +580,7 @@ describe("Sidebar", () => {
 			});
 			const onBranchSelect = vi.fn();
 			const { container } = render(() => <Sidebar {...defaultProps({ onBranchSelect })} />);
+			expandQuiet(container);
 			const row = Array.from(container.querySelectorAll(".branchItem")).find((el) =>
 				el.textContent?.includes("feature/x"),
 			)!;
@@ -743,10 +753,10 @@ describe("Sidebar", () => {
 			const { container } = render(() => <Sidebar {...defaultProps()} />);
 			const row = container.querySelector(".branchItem") as HTMLElement;
 			expect(row.querySelector(".branchRichLine")?.textContent).toBe("Add the thing");
+			expect(row.querySelector(".branchAge")?.textContent).toBe("3h");
 			const meta = row.querySelector(".branchRichMeta")?.textContent ?? "";
-			expect(meta).toContain("3h");
 			expect(meta).toContain("+12");
-			expect(meta).toContain("4 dirty");
+			expect(row.querySelector("[data-testid='dirty-badge']")?.textContent).toBe("4");
 		});
 
 		// Catches: closed-unmerged or live worktrees offered as clean, and bypassing the removal workflow.
@@ -769,11 +779,79 @@ describe("Sidebar", () => {
 			const { container } = render(() => <Sidebar {...defaultProps({ onRemoveBranch })} />);
 			const summaries = container.querySelectorAll("[data-testid='merged-worktree-summary']");
 			expect(summaries).toHaveLength(1);
-			expect(summaries[0].textContent).toContain("35 uncommitted");
-			expect(container.querySelectorAll(".branchRichDetail")).toHaveLength(2);
-			fireEvent.click(summaries[0].querySelector("button")!);
+			expect(summaries[0].querySelector("[data-testid='dirty-badge']")?.textContent).toBe("35");
+			expect(container.querySelectorAll(".branchRichMeta")).toHaveLength(2);
+			fireEvent.click(summaries[0].querySelector("[data-testid='merged-clean']")!);
 			expect(onRemoveBranch).toHaveBeenCalledExactlyOnceWith("/repo1", "feat");
 		});
+		// Catches: a merged worktree offering a second Clean up button, or a pill that never becomes the action.
+		it("turns the Merged pill into the Clean action on hover and focus", () => {
+			const merged = richBranch({
+				terminals: [],
+				isMerged: true,
+				lifecycleStatus: { dirtyFiles: 0, commitStatus: "merged", removalSafety: "safe" },
+			});
+			const main = richBranch({ workspaceId: "main", branchName: "main", isMain: true, worktreePath: "/repo1" });
+			setRepos({ "/repo1": makeRepo({ workspaces: { main, feat: merged } }) });
+			const onRemoveBranch = vi.fn();
+			const onBranchSelect = vi.fn();
+			const { container } = render(() => <Sidebar {...defaultProps({ onRemoveBranch, onBranchSelect })} />);
+			const summary = container.querySelector("[data-testid='merged-worktree-summary']") as HTMLElement;
+			const actions = [...summary.querySelectorAll("button, [role='button']")].map((el) =>
+				el.getAttribute("data-testid"),
+			);
+			expect(actions.filter((id) => id !== "dirty-badge")).toEqual(["merged-clean"]);
+			expect(container.textContent).not.toContain("Clean up");
+			const pill = summary.querySelector("[data-testid='merged-clean']") as HTMLElement;
+			expect(pill.textContent).toBe("Merged");
+			fireEvent.mouseEnter(pill);
+			expect(pill.textContent).toBe("Clean");
+			fireEvent.mouseLeave(pill);
+			expect(pill.textContent).toBe("Merged");
+			fireEvent.focus(pill);
+			expect(pill.textContent).toBe("Clean");
+			fireEvent.click(pill);
+			expect(onRemoveBranch).toHaveBeenCalledExactlyOnceWith("/repo1", "feat");
+			expect(onBranchSelect).not.toHaveBeenCalled();
+		});
+
+		// Catches: Quiet hiding the main or selected branch, or summarising the wrong count and age.
+		it.each(["rich", "compact"] as const)("folds quiet branches in %s, never main or the selected branch", (mode) => {
+			densityMode(mode);
+			const bare = (id: string, hoursAgo: number) => ({
+				workspaceId: id,
+				branchName: id,
+				isMain: false,
+				worktreePath: `/wt/${id}`,
+				terminals: [],
+				additions: 0,
+				deletions: 0,
+				isMerged: false,
+				lastCommitTs: Date.now() - hoursAgo * 3600_000,
+				lifecycleStatus: { dirtyFiles: 0, commitStatus: "unmerged" as const, removalSafety: "destructive" as const },
+			});
+			setRepos({
+				"/repo1": makeRepo({
+					activeWorkspaceId: "feat/selected",
+					workspaces: {
+						main: { ...bare("main", 1), isMain: true, worktreePath: "/repo1", terminals: ["fixture-open"] },
+						"feat/selected": bare("feat/selected", 2),
+						"feat/old": bare("feat/old", 21),
+						"feat/new": bare("feat/new", 3),
+					},
+				}),
+			});
+			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			const rows = () =>
+				[...container.querySelectorAll("[data-sidebar-branch]")].map((r) => r.getAttribute("data-sidebar-branch"));
+			expect(rows()).toEqual(["main", "feat/selected"]);
+			const header = container.querySelector("[data-testid='quiet-branches']") as HTMLElement;
+			expect(header.textContent).toContain("Quiet");
+			expect(header.textContent).toContain("2 branches · oldest 21h");
+			fireEvent.click(header.querySelector("button")!);
+			expect(rows()).toEqual(["main", "feat/selected", "feat/new", "feat/old"]);
+		});
+
 		// Catches: a rich-only detail line leaking into the compact sidebar.
 		it("keeps the compact row free of detail lines", () => {
 			uiStore.cycleSidebarDensityMode(); // rich -> compact
@@ -859,8 +937,11 @@ describe("Sidebar", () => {
 			setTerm({ ...term(), agentIntent: "", lastPrompt: "Fallback prompt" });
 			expect(line()).toBeNull();
 			expect(container.querySelector(".branchTabItem")?.getAttribute("data-tooltip")).toBe("Agent: Fallback prompt");
+			// A working agent with nothing to say leaves no blank intent line.
 			setTerm({ ...term(), shellState: "busy", lastPrompt: null });
-			expect(line()).not.toBeNull();
+			expect(line()).toBeNull();
+			setTerm({ ...term(), agentIntent: intent });
+			expect(line()?.textContent).toBe(intent);
 			uiStore.cycleSidebarDensityMode();
 			try {
 				expect(line()).toBeNull();
@@ -919,7 +1000,7 @@ describe("Sidebar", () => {
 				}),
 			);
 			const { container } = render(() => <Sidebar {...defaultProps()} />);
-			const chip = [...container.querySelectorAll(".richChip")].find((c) => c.textContent === "Unknown") as HTMLElement;
+			const chip = [...container.querySelectorAll(".richPill")].find((c) => c.textContent === "Unknown") as HTMLElement;
 			expect(chip).toBeTruthy();
 			expect(chip.getAttribute("data-tooltip")).toContain("removal is blocked");
 			expect(chip.getAttribute("data-tooltip")).toContain("boom");
@@ -934,7 +1015,7 @@ describe("Sidebar", () => {
 				}),
 			);
 			const { container } = render(() => <Sidebar {...defaultProps()} />);
-			const chip = [...container.querySelectorAll(".richChip")].find((c) => c.textContent === "No base branch");
+			const chip = [...container.querySelectorAll(".richPill")].find((c) => c.textContent === "No base branch");
 			expect(chip).toBeTruthy();
 			expect(chip?.getAttribute("data-tooltip")).toContain(error);
 		});
@@ -943,22 +1024,20 @@ describe("Sidebar", () => {
 		it("explains the Stale and dirty chips through data-tooltip", () => {
 			withBranch(richBranch({ lastCommitTs: OLD_TS() }));
 			const { container } = render(() => <Sidebar {...defaultProps()} />);
-			const all = [...container.querySelectorAll(".branchRichMeta .richChip")];
+			const all = [...container.querySelectorAll(".branchRichMeta .richPill")];
 			const stale = all.find((c) => c.textContent === "Stale");
 			expect(stale?.getAttribute("data-tooltip")).toContain("30 days");
-			const dirty = all.find((c) => c.textContent?.includes("dirty"));
+			const dirty = container.querySelector("[data-testid='dirty-badge']");
 			expect(dirty?.getAttribute("data-tooltip")).toContain("4 uncommitted files");
 			expect(container.querySelector(".branchRichMeta [title]")).toBeNull();
 		});
 
-		// Catches: the rich dirty count being a dead span while the compact chip opens Changes.
-		it("opens the Changes tab from the dirty chip", () => {
+		// Catches: the rich dirty badge being a dead span while the compact chip opens Changes.
+		it("opens the Changes tab from the dirty badge", () => {
 			const open = vi.spyOn(uiStore, "openGitPanelOnTab").mockImplementation(() => {});
 			withBranch(richBranch());
 			const { container } = render(() => <Sidebar {...defaultProps()} />);
-			const dirty = [...container.querySelectorAll(".richChip")].find((c) =>
-				c.textContent?.includes("dirty"),
-			) as HTMLElement;
+			const dirty = container.querySelector("[data-testid='dirty-badge']") as HTMLElement;
 			fireEvent.click(dirty);
 			expect(open).toHaveBeenCalledWith("changes");
 			open.mockRestore();
@@ -972,14 +1051,16 @@ describe("Sidebar", () => {
 			expect(container.querySelector(".branchRichLine")?.textContent).toBe("Draft Add the thing");
 		});
 
-		// Catches: the unmerged marker and the ahead/behind chip sharing one up-arrow glyph in a rich row.
-		it("spells unmerged out and drops the arrow marker in rich", () => {
+		// Catches: rich keeping the unmerged text chip instead of the compact arrow marker.
+		it("marks unmerged with the compact arrow marker, not a text chip", () => {
 			withBranch(
 				richBranch({ lifecycleStatus: { dirtyFiles: 0, commitStatus: "unmerged", removalSafety: "destructive" } }),
 			);
 			const { container } = render(() => <Sidebar {...defaultProps()} />);
-			expect(chips(container)).toContain("unmerged");
-			expect(container.querySelector(".branchUnmergedMarker")).toBeNull();
+			expect(chips(container)).not.toContain("unmerged");
+			const marker = container.querySelector(".branchUnmergedMarker");
+			expect(marker?.getAttribute("data-tooltip")).toContain("not merged into the default branch");
+			expect(marker?.textContent).toBe("↑");
 		});
 
 		// Catches: compact losing what rich shows (age, stale rule) with no other way to read it on desktop.
@@ -1210,7 +1291,7 @@ describe("Sidebar", () => {
 					[...container.querySelectorAll(".branchTabItem .branchAgentActivity")].map((e) => e.textContent);
 				expect(labels()).toEqual(["exact", "question", "unread", "working", "unknown"]);
 				const fold = () => container.querySelector<HTMLButtonElement>("[data-testid='idle-session-fold']")!;
-				expect(fold().textContent).toBe("1 idle sessions");
+				expect(fold().textContent).toBe("1 idle");
 				fireEvent.click(fold());
 				expect(labels()).toEqual(Object.keys(terms()));
 				fireEvent.click(fold());
@@ -1251,7 +1332,7 @@ describe("Sidebar", () => {
 				expect(rows()).toHaveLength(1);
 				expect(rows()[0]).toContain("Sub task 1");
 				const fold = container.querySelector<HTMLButtonElement>("[data-testid='returned-subagent-fold']")!;
-				expect(fold.textContent).toBe("30 returned");
+				expect(fold.textContent).toBe("30 done");
 				fireEvent.click(fold);
 				expect(rows()).toHaveLength(31);
 				returned.forEach((row, i) => expect(rows()[i + 1]).toContain(row.title));
@@ -1264,13 +1345,13 @@ describe("Sidebar", () => {
 				const { container } = setup({ t1: term("t1") }, [sub(1), sub(2, "done")]);
 				const rows = [...container.querySelectorAll(".subagentRow")].map((r) => r.textContent ?? "");
 				expect(rows).toHaveLength(1);
-				expect(rows[0]).toContain("Running");
+				expect(container.querySelector(".subagentRow")?.getAttribute("data-state")).toBe("running");
 				expect(rows[0]).toContain("Sub task 1");
 				expect(rows[0]).toContain("3 calls");
 				expect(rows[0]).toContain("5m");
 				const returned = container.querySelector<HTMLButtonElement>("[data-testid='returned-subagent-fold']")!;
 				fireEvent.click(returned);
-				expect(container.querySelectorAll(".subagentRow")[1].textContent).toContain("Returned");
+				expect(container.querySelectorAll(".subagentRow")[1].getAttribute("data-state")).toBe("returned");
 			});
 
 			it("shows interrupted subagents without labeling or counting them as returned", () => {
@@ -1278,12 +1359,12 @@ describe("Sidebar", () => {
 				const { container } = setup({ t1: term("t1") }, [sub(1), ...interrupted, sub(5, "done")]);
 				const rows = [...container.querySelectorAll(".subagentRow")].map((row) => row.textContent);
 				expect(rows).toHaveLength(4);
-				expect(rows[0]).toContain("Running");
+				expect(container.querySelector(".subagentRow")?.getAttribute("data-state")).toBe("running");
 				interrupted.forEach((row, i) => {
 					expect(rows[i + 1]).toContain("Interrupted");
 					expect(rows[i + 1]).toContain(row.title);
 				});
-				expect(container.querySelector("[data-testid='returned-subagent-fold']")?.textContent).toBe("1 returned");
+				expect(container.querySelector("[data-testid='returned-subagent-fold']")?.textContent).toBe("1 done");
 			});
 
 			// Catches: a long subagent list pushing every other row off screen.
@@ -1489,6 +1570,7 @@ describe("Sidebar", () => {
 				}),
 			});
 			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			expandQuiet(container);
 			const names = container.querySelectorAll(".branchName");
 			expect(names.length).toBe(3);
 			expect(names[0].textContent).toBe("main");
@@ -1516,7 +1598,8 @@ describe("Sidebar", () => {
 							isMain: false,
 							worktreePath: null,
 							terminals: [],
-							additions: 0,
+							// A diff keeps the row out of Quiet, so the sort order stays visible.
+							additions: 1,
 							deletions: 0,
 						},
 						"feature/closed": {
@@ -1525,7 +1608,8 @@ describe("Sidebar", () => {
 							isMain: false,
 							worktreePath: null,
 							terminals: [],
-							additions: 0,
+							// A diff keeps the row out of Quiet, so the sort order stays visible.
+							additions: 1,
 							deletions: 0,
 						},
 					},
@@ -1539,6 +1623,7 @@ describe("Sidebar", () => {
 				return null;
 			});
 			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			expandQuiet(container);
 			const names = container.querySelectorAll(".branchName");
 			expect(names.length).toBe(4);
 			expect(names[0].textContent).toBe("main");
@@ -1730,6 +1815,7 @@ describe("Sidebar", () => {
 			});
 			const onRemoveBranch = vi.fn();
 			const { container } = render(() => <Sidebar {...defaultProps({ onRemoveBranch })} />);
+			expandQuiet(container);
 			const removeBtns = container.querySelectorAll(".branchRemoveBtn");
 			expect(removeBtns.length).toBe(1);
 			fireEvent.click(removeBtns[0]);
@@ -1789,6 +1875,7 @@ describe("Sidebar", () => {
 				}),
 			});
 			const { container } = render(() => <Sidebar {...defaultProps({ onRemoveBranch: vi.fn() })} />);
+			expandQuiet(container);
 			const removeBtns = container.querySelectorAll(".branchRemoveBtn");
 			// Only the linked worktree (feature/x) gets a × — the main checkout does not.
 			expect(removeBtns.length).toBe(1);
@@ -1823,6 +1910,7 @@ describe("Sidebar", () => {
 				}),
 			});
 			const { container } = render(() => <Sidebar {...defaultProps({ onRenameBranch })} />);
+			expandQuiet(container);
 			const branchNames = container.querySelectorAll(".branchName");
 			// feature/x is the second branch
 			const featureBranch = branchNames[1]!;
@@ -1993,6 +2081,7 @@ describe("Sidebar", () => {
 				}),
 			});
 			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			expandQuiet(container);
 
 			const branchRow = Array.from(container.querySelectorAll(".branchItem")).find((el) =>
 				el.textContent?.includes("feature/x"),
@@ -2340,7 +2429,6 @@ describe("Sidebar", () => {
 			const marker = container.querySelector('[aria-label="Unmerged commits"]');
 			expect(marker).not.toBeNull();
 			expect(marker?.getAttribute("data-tooltip")).toContain("not merged into the default branch");
-			// An outlined square read as a glyph that failed to load (Boss, 2026-09-29).
 			expect(marker?.textContent).toBe("↑");
 			expect(container.querySelector(".lifecycleBadge")).toBeNull();
 			expect(container.querySelector(".branchStats")).not.toBeNull();
@@ -3329,7 +3417,8 @@ describe("Sidebar", () => {
 			expect(mockToggleBranchTabsCollapsed).not.toHaveBeenCalled();
 		});
 
-		it("chevron click prevents unintended branch selection when toggling agents", () => {
+		// Catches: the icon toggle also opening the branch, or a click on the name no longer opening it.
+		it("the branch icon toggles agents without selecting the branch", () => {
 			setRepos(
 				{
 					"/repo1": makeRepo({
@@ -3363,15 +3452,12 @@ describe("Sidebar", () => {
 
 			const row = branchRow(container, "feature/x");
 			const icon = row.querySelector(".branchIcon")!;
-			expect(icon.closest("button")).toBeNull();
+			expect(icon.closest("button")?.classList.contains("branchIconToggle")).toBe(true);
 			fireEvent.click(icon);
-			expect(onBranchSelect).toHaveBeenCalledWith("/repo1", "feature/x");
-			expect(mockToggleBranchTabsCollapsed).not.toHaveBeenCalled();
-			onBranchSelect.mockClear();
-			fireEvent.click(row.querySelector(".branchIconToggle")!);
-
 			expect(mockToggleBranchTabsCollapsed).toHaveBeenCalledWith("/repo1", "feature/x");
 			expect(onBranchSelect).not.toHaveBeenCalled();
+			fireEvent.click(row.querySelector(".branchName")!);
+			expect(onBranchSelect).toHaveBeenCalledWith("/repo1", "feature/x");
 		});
 
 		it("chevron handles Enter and Space without selecting the branch", () => {
@@ -3758,6 +3844,7 @@ describe("Sidebar", () => {
 					}),
 				});
 				const { container } = render(() => <Sidebar {...defaultProps()} />);
+				expandQuiet(container);
 				fireEvent.contextMenu(container.querySelector(".branchItem")!, { clientX: 1, clientY: 1 });
 				const labelEls = () => Array.from(container.querySelectorAll(".menu .label"));
 				// The remote URL resolves asynchronously; the item appears once it has.
@@ -3826,6 +3913,7 @@ describe("Sidebar", () => {
 				}),
 			});
 			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			expandQuiet(container);
 			const branchItems = container.querySelectorAll(".branchItem");
 			fireEvent.contextMenu(branchItems[1], { clientX: 100, clientY: 200 });
 
@@ -3855,6 +3943,7 @@ describe("Sidebar", () => {
 				}),
 			});
 			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			expandQuiet(container);
 			const branchItems = container.querySelectorAll(".branchItem");
 			// feature/x is second (sorted after main)
 			fireEvent.contextMenu(branchItems[1], { clientX: 100, clientY: 200 });

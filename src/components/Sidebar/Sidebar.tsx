@@ -353,8 +353,10 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 		<Show when={density() === "rich"} fallback={<For each={repos()}>{(repo) => renderRepoSection(repo)}</For>}>
 			<For each={repos().filter(repoIsActive)}>{(repo) => renderRepoSection(repo)}</For>
 			<Show when={repos().some((repo) => !repoIsActive(repo))}>
-				<div class={s.idleReposHeading} data-testid="idle-repos-heading">
-					{t("sidebar.idleRepos", "Idle")}
+				<div class={s.sectionHeader} data-testid="idle-repos-heading">
+					<span class={s.groupName}>{t("sidebar.idleRepos", "Idle")}</span>
+					<span class={s.groupRule} aria-hidden="true" />
+					<span class={s.groupCount}>{repos().filter((repo) => !repoIsActive(repo)).length}</span>
 				</div>
 				<For each={repos().filter((repo) => !repoIsActive(repo))}>{(repo) => renderRepoSection(repo, true)}</For>
 			</Show>

@@ -175,9 +175,13 @@ async fn github_source_refuses_missing_installed_catalog_before_network() {
     assert_eq!(persisted.len(), 1);
     assert!(persisted[0].enabled);
     let state = crate::state::tests_support::make_test_app_state();
-    let error =
-        crate::workflows::github_poll::observe(&state, "/unregistered", GithubResource::Issue)
-            .await
-            .unwrap_err();
+    let error = crate::workflows::github_poll::observe(
+        &state,
+        "/unregistered",
+        GithubResource::Issue,
+        None,
+    )
+    .await
+    .unwrap_err();
     assert!(error.contains("catalog not installed"), "{error}");
 }

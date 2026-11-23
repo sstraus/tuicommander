@@ -76,6 +76,11 @@ export const SIDEBAR_SYMBOL_LEGEND: BranchIconEntry[] = [
 		description: "Linked git worktree",
 	},
 	{
+		icon: { isMainBranch: false, isMainWorktree: false, isMerged: true, branchHasTerminals: true },
+		label: "Merged",
+		description: "Branch merged into the default branch",
+	},
+	{
 		icon: { isMainBranch: false, isMainWorktree: false, isShell: true, branchHasTerminals: true },
 		label: "Shell",
 		description: "Folder without a git repository",

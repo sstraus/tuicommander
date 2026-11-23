@@ -271,6 +271,7 @@
 .buttonGroup > .button.compact:last-child { border-start-end-radius: var(--radius-sm); border-end-end-radius: var(--radius-sm); }
 .buttonGroup > .button:not(:last-child) { border-inline-end: 0; }
 .buttonGroup > .button:not(:first-child) { border-inline-start: 1px solid var(--border); }
+.buttonGroup > .button.primary:not(:first-child) { border-inline-start-color: color-mix(in srgb, var(--text-on-accent) 35%, var(--accent)); }
 .buttonGroup > .button:focus-visible { position: relative; z-index: 1; }
 
 .textareaCompact {

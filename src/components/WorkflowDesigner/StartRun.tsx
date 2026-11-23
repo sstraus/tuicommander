@@ -1,4 +1,5 @@
 import { createSignal, Show } from "solid-js";
+import { randomUuid } from "../../utils/randomId";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Textarea } from "../ui/Textarea";
@@ -74,7 +75,7 @@ export function StartRun(props: {
 											action: "start",
 											request: {
 												publication: { project: props.project, id: draft.id, revision: published() },
-												request_id: crypto.randomUUID(),
+												request_id: randomUuid(),
 												inputs: inputs(),
 												subject: props.state.definition().subject ? JSON.parse(subject()) : null,
 												limits: {

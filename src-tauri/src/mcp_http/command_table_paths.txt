@@ -128,6 +128,7 @@
 /design-mode/start
 /design-mode/stop
 /diagnostics/capture
+/diagnostics/provider-gateway
 /dictation/config
 /dictation/corrections
 /dictation/devices
@@ -208,6 +209,7 @@
 /github/resolve-repo
 /github/resolve-repos
 /github/viewer-login
+/github/work-item-visit
 /grok/usage
 /logs
 /mcp/audit

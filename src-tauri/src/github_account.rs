@@ -5,6 +5,7 @@
 //! resolution) sit on top of. github.com keeps behaving exactly as before;
 //! these are additive primitives, not yet wired into the hot paths.
 
+use crate::provider_gateway::direct::{self, Direct};
 use serde::{Deserialize, Serialize};
 
 pub(crate) use tuic_git::github_account::*;
@@ -375,21 +376,21 @@ pub(crate) fn unbind_repo(repo_path: &std::path::Path) -> Result<bool, String> {
 ///
 /// Used by additional github.com device-flow login.
 pub(crate) async fn fetch_account_login(
-    client: &reqwest::Client,
+    call: Direct<'_>,
     host: &GitHubHost,
     token: &str,
 ) -> Result<Option<String>, String> {
-    let resp = crate::github::github_rest_request(
-        client,
-        reqwest::Method::GET,
-        host,
-        "/user",
-        token,
-        crate::github::GITHUB_JSON,
-    )
-    .send()
-    .await
-    .map_err(|e| format!("Could not reach {}: {e}", host.as_str()))?;
+    let resp = call
+        .send(crate::github::github_rest_request(
+            direct::builder_client(),
+            reqwest::Method::GET,
+            host,
+            "/user",
+            token,
+            crate::github::GITHUB_JSON,
+        ))
+        .await
+        .map_err(|e| format!("Could not reach {}: {e}", host.as_str()))?;
     crate::accounts::read_verified_identity(resp, "/login", token)
         .await
         .map(Some)

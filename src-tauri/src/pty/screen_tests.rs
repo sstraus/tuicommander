@@ -292,17 +292,16 @@ fn test_opencode_requires_its_own_frame_and_status_bar() {
 
 #[test]
 fn test_agent_screen_adapter_baselines() {
-    // Claude and Codex have presence-based active markers because both can
-    // freeze or leave a composer visible during long tools. agy
-    // remains prompt-based and uses movement to hold BUSY.
+    // Claude, Codex and agy keep a composer visible during a turn, so each
+    // has a presence-based working marker.
     let claude_working = vec!["✻ Cogitating… (12s)".into()];
     let claude_ready = vec!["Answer complete".into(), "❯".into()];
-    let agy_working_prompt_visible = vec![
-        "⠴ Checking files… (esc to cancel, 14s)".into(),
-        "────────────────────────".into(),
-        "> Type your message".into(),
-    ];
-    let agy_ready = vec!["> Type your message".into()];
+    // Bottom rows of `agy-1.5.10-trust-turn.tcap`.
+    let agy_box = |hint: &str| -> Vec<String> {
+        vec!["─".repeat(128), ">".into(), "─".repeat(128), hint.into()]
+    };
+    let agy_working_prompt_visible = agy_box("esc to cancel      auto · GPT-OSS 120B (Medium)");
+    let agy_ready = agy_box("? for shortcuts      auto · GPT-OSS 120B (Medium)");
     let grok_working = vec![
         "❯ Ask anything".into(),
         "⠹ Responding… 12s [stop]".into(),
@@ -320,7 +319,7 @@ fn test_agent_screen_adapter_baselines() {
         (
             "agy",
             agy_working_prompt_visible,
-            AgentScreenActivity::Ready,
+            AgentScreenActivity::Working,
         ),
         ("agy", agy_ready, AgentScreenActivity::Ready),
         ("grok", grok_working, AgentScreenActivity::Working),

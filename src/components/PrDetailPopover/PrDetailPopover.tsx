@@ -8,17 +8,16 @@ import { agentConfigsStore } from "../../stores/agentConfigs";
 import { appLogger } from "../../stores/appLogger";
 import { githubStore } from "../../stores/github";
 import { mdTabsStore } from "../../stores/mdTabs";
-import type { SavedPrompt } from "../../stores/promptLibrary";
 import { repoSettingsStore } from "../../stores/repoSettings";
 import { repositoriesStore } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
 import { toastsStore } from "../../stores/toasts";
+import { parseLimitError } from "../../transport/limitError";
 import { cx } from "../../utils";
 import { prepareAgentLaunchCommand } from "../../utils/agentSession";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { isAlreadyMerged, mergeWithFallback } from "../../utils/prMerge";
 import { preferredMergeStrategy } from "../../utils/prMergeStrategy";
-import { prContextVariables } from "../../utils/promptContext";
 import { getRepoTextColor } from "../../utils/repoColor";
 import { interpolateTemplate } from "../../utils/templateInterpolation";
 import {
@@ -28,8 +27,10 @@ import {
 	type StepStatus,
 } from "../PostMergeCleanupDialog/PostMergeCleanupDialog";
 import { canMergePr, effectiveMergeMethod } from "../Sidebar/RepoSection";
-import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
+import { PanelToolbar, ToolbarIcons } from "../shared/PanelToolbar";
 import { Button } from "../ui/Button";
+import { GatewayNotice } from "../ui/GatewayNotice";
+import { ciAutoHealMenuItem } from "./ciAutoHeal";
 import { PrDetailContent } from "./PrDetailContent";
 import s from "./PrDetailPopover.module.css";
 
@@ -401,59 +402,67 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 								</div>
 
 								{/* Shared body content: status pills, labels, meta, CI, checks, open link */}
-								<PrDetailContent repoPath={props.repoPath} branch={props.branch} onConversationOpen={props.onClose}>
-									<div class={s.actions}>
-										<Button onClick={handleViewDiff} disabled={diffLoading()}>
-											{diffLoading() ? t("prDetail.loadingDiff", "Loading...") : t("prDetail.viewDiff", "View Diff")}
-										</Button>
-										<Show when={reviewCommand()}>
-											<Button
-												onClick={async () => {
-													const launch = reviewCommand();
-													if (launch && props.onReview) {
-														const command = await prepareAgentLaunchCommand(
-															launch.command,
-															null,
-															launch.agentType,
-															props.repoPath,
-														);
-														props.onReview(props.repoPath, props.branch, command);
-														props.onClose();
-													}
-												}}
-											>
-												{t("prDetail.review", "Review")}
-											</Button>
-										</Show>
-										<Show when={canMergePr(pr())}>
-											<Button variant="primary" class={s.mergeBtn} onClick={() => handleMerge()} disabled={merging()}>
-												{merging() ? t("prDetail.merging", "Merging...") : mergeLabel()}
-											</Button>
-										</Show>
-										<Show when={pr().url}>
-											<Button
-												onClick={() => handleOpenUrl(pr().url)}
-												title={t("prDetail.openOnGithub", "Open on GitHub")}
-											>
-												GitHub {"\u2197"}
-											</Button>
-										</Show>
-										<SmartButtonStrip
-											placement="pr-popover"
-											repoPath={props.repoPath}
-											defaultPromptId="smart-review-pr"
-											extraFilter={(p: SavedPrompt) => {
-												const cs = githubStore.getCheckSummary(props.repoPath, props.branch);
-												if (p.id === "smart-fix-ci") return (cs?.failed ?? 0) > 0;
-												if (p.id === "smart-resolve-conflicts") return pr().mergeable === "CONFLICTING";
-												if (p.id === "smart-review-comments") return pr().review_decision === "CHANGES_REQUESTED";
-												return true;
-											}}
-											contextVariables={() => prContextVariables(pr())}
-										/>
-									</div>
+								<PrDetailContent
+									repoPath={props.repoPath}
+									branch={props.branch}
+									onConversationOpen={props.onClose}
+									onMerge={canMergePr(pr()) ? () => handleMerge() : undefined}
+									merging={merging()}
+									mergeLabel={mergeLabel()}
+								>
+									<PanelToolbar
+										menuLabel={t("sidebar.moreActions", "More actions")}
+										actions={[
+											{
+												id: "diff",
+												label: diffLoading() ? t("prDetail.loadingDiff", "Loading...") : t("sidebar.diff", "Diff"),
+												icon: <ToolbarIcons.diff />,
+												onClick: handleViewDiff,
+												disabled: diffLoading(),
+												tooltip: t("prDetail.viewDiff", "View Diff"),
+											},
+											...(reviewCommand()
+												? [
+														{
+															id: "review",
+															label: t("prDetail.review", "Review"),
+															icon: <ToolbarIcons.tasks />,
+															onClick: async () => {
+																const launch = reviewCommand();
+																if (launch && props.onReview) {
+																	const command = await prepareAgentLaunchCommand(
+																		launch.command,
+																		null,
+																		launch.agentType,
+																		props.repoPath,
+																	);
+																	props.onReview(props.repoPath, props.branch, command);
+																	props.onClose();
+																}
+															},
+														},
+													]
+												: []),
+											...(pr().url
+												? [
+														{
+															id: "github",
+															label: "GitHub",
+															icon: <ToolbarIcons.external />,
+															onClick: () => handleOpenUrl(pr().url),
+															tooltip: t("prDetail.openOnGithub", "Open on GitHub"),
+														},
+													]
+												: []),
+										]}
+										menu={[ciAutoHealMenuItem(props.repoPath, props.branch)]}
+									/>
 									<Show when={mergeError()}>
-										<div class={s.errorMsg}>{mergeError()}</div>
+										<div class={s.errorMsg}>
+											<Show when={parseLimitError(mergeError())} fallback={mergeError()}>
+												{(limit) => <GatewayNotice limit={{ until: limit().retry_at }} />}
+											</Show>
+										</div>
 									</Show>
 								</PrDetailContent>
 							</>

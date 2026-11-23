@@ -1,10 +1,23 @@
 import { createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js";
+import { listen } from "../../../invoke";
 import type { WorkItemProvider } from "../../../plugins/workItemProvider";
 import { tasksNotifications } from "../../../services/tasksNotifications";
+import { appLogger } from "../../../stores/appLogger";
 import type { WorkItemAction, WorkItemCommentEntry, WorkItemDetail, WorkItemRef } from "../../../types/work-items.gen";
 
 export function commentKey(entry: WorkItemCommentEntry): string {
 	return `${entry.kind}:${entry.kind === "review_summary" ? entry.value.comment.id : entry.value.id}`;
+}
+
+/** GitHub change channel for a reference id of the form `owner/repo/(pull|issues)/N`; null for other providers. */
+function githubChannel(reference: WorkItemRef): { event: string; repoUrlPart: string } | null {
+	if (reference.providerId !== "github") return null;
+	const [owner, repo, kind] = reference.id.split("/");
+	if (!owner || !repo) return null;
+	return {
+		event: kind === "pull" ? "github-pr-update" : "github-issues-update",
+		repoUrlPart: `/${owner}/${repo}/`.toLowerCase(),
+	};
 }
 
 export function useTasksDetail(props: {
@@ -177,13 +190,32 @@ export function useTasksDetail(props: {
 	});
 	createEffect(() => {
 		if (!active()) return;
+		const channel = untrack(() => (props.reference ? githubChannel(props.reference) : null));
 		untrack(() => {
 			void refresh();
 		});
-		const timer = setInterval(() => {
+		if (!channel) {
+			// DEFERRED (2026-11-22) — other providers keep the timer until the gateway routes their change events.
+			const timer = setInterval(() => {
+				void refresh();
+			}, 60_000);
+			onCleanup(() => clearInterval(timer));
+			return;
+		}
+		// An update without items cannot name its repo (e.g. the last PR closed), so it refreshes too.
+		let disposed = false;
+		let unlisten: (() => void) | undefined;
+		listen<{ statuses?: { url: string }[]; issues?: { url: string }[] }>(channel.event, (event) => {
+			const items = event.payload.statuses ?? event.payload.issues ?? [];
+			if (items.length && !items.some((item) => item.url.toLowerCase().includes(channel.repoUrlPart))) return;
 			void refresh();
-		}, 60_000);
-		onCleanup(() => clearInterval(timer));
+		})
+			.then((off) => (disposed ? off() : (unlisten = off)))
+			.catch((cause) => appLogger.warn("github", "Could not subscribe to GitHub change events", cause));
+		onCleanup(() => {
+			disposed = true;
+			unlisten?.();
+		});
 	});
 	const visibilityChanged = () => setDocumentVisible(document.visibilityState !== "hidden");
 	document.addEventListener("visibilitychange", visibilityChanged);

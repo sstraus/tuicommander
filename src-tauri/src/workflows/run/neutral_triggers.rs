@@ -192,7 +192,7 @@ impl RuntimeOwner {
         Ok(!snapshot
             .effects
             .values()
-            .any(|e| e.dispatched && !e.settled()))
+            .any(|e| e.dispatched && !e.resources_released()))
     }
 }
 

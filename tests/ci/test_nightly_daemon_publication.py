@@ -77,6 +77,16 @@ class NightlyDaemonPublication(unittest.TestCase):
             self.assertEqual(sorted(path.name for path in store.iterdir()),
                              ["tuic-bridge-" + target, "tuic-remote-" + target])
 
+    # Catches: the updater verification fails after a failed desktop leg, so the
+    # changelog and release-notes step after it is skipped (update-notes runs
+    # under always()).
+    def test_updater_verification_runs_only_when_every_build_succeeded(self):
+        source = (ROOT / ".github/workflows/nightly.yml").read_text()
+        job = re.search(r"^  update-notes:\n(.*?)(?=^  [\w-]+:|\Z)", source, re.M | re.S)[1]
+        step = re.search(r"^      - name: Verify complete desktop updater target selection\n(.*?)(?=^      - |\Z)",
+                         job, re.M | re.S)[1]
+        self.assertIn("        if: needs.build.result == 'success'\n", step)
+
 
 if __name__ == "__main__":
     unittest.main()

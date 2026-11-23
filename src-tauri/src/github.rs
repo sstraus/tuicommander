@@ -4,19 +4,29 @@ use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::process::Command;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Instant;
 #[cfg(feature = "desktop")]
 use tauri::State;
 
-use crate::error_classification::calculate_backoff_delay;
 use crate::state::AppState;
+
+pub(crate) use gateway::Origin;
+
+/// Caller of the background poller's sends: the first traffic shed under pressure.
+const POLL_ORIGIN: Origin = Origin::background("github.poll");
 
 #[path = "github_ci_checks.rs"]
 mod ci_checks;
 
 #[path = "github_ci_logs.rs"]
 mod ci_logs;
+
+#[path = "github_gateway.rs"]
+pub(crate) mod gateway;
+
+#[cfg(test)]
+#[path = "github_gateway_tests.rs"]
+mod github_gateway_tests;
 
 fn extract_graphql_name(query: &str) -> &str {
     // Extract name from "query FooBar {" or "mutation Baz(" patterns
@@ -54,129 +64,29 @@ pub(crate) enum GqlError {
     /// 401 Unauthorized — token is invalid or expired
     Auth(String),
     /// Rate limited by GitHub (429, 403 with exhausted limits, or GraphQL RATE_LIMITED)
-    RateLimit {
-        /// Unix epoch from `x-ratelimit-reset` header (primary limit reset time)
-        reset_at: Option<u64>,
-        /// Seconds from `retry-after` header (secondary/abuse limits)
-        retry_after: Option<u64>,
-        message: String,
-    },
+    RateLimit { message: String },
     /// Any other error (network, parse, non-401 HTTP status, GraphQL errors)
     Other(String),
+}
+
+impl GqlError {
+    /// The caller-facing text; a rate limit keeps its `rate-limit:` prefix so
+    /// callers can tell it from a failure.
+    fn into_message(self) -> String {
+        match self {
+            GqlError::Auth(msg) | GqlError::Other(msg) => msg,
+            GqlError::RateLimit { message } if message.starts_with("rate-limit:") => message,
+            GqlError::RateLimit { message } => format!("rate-limit: {message}"),
+        }
+    }
 }
 
 impl fmt::Display for GqlError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             GqlError::Auth(msg) => write!(f, "Auth error: {msg}"),
-            GqlError::RateLimit { message, .. } => write!(f, "Rate limited: {message}"),
+            GqlError::RateLimit { message } => write!(f, "Rate limited: {message}"),
             GqlError::Other(msg) => write!(f, "{msg}"),
-        }
-    }
-}
-
-/// Circuit breaker for GitHub API calls.
-/// Tracks consecutive failures and stops making requests after a threshold.
-/// Rate limits are tracked separately so they don't inflate the failure count.
-pub(crate) struct GitHubCircuitBreaker {
-    failure_count: AtomicU32,
-    open_until: parking_lot::RwLock<Option<Instant>>,
-    /// Separate backoff for rate limits — does not affect failure_count
-    rate_limit_until: parking_lot::RwLock<Option<Instant>>,
-}
-
-/// Consecutive failures before the circuit opens (tolerates occasional transient errors).
-const CIRCUIT_BREAKER_THRESHOLD: u32 = 3;
-/// Initial backoff when the circuit opens (5 seconds).
-const CIRCUIT_BREAKER_BASE_MS: f64 = 5_000.0;
-/// Maximum backoff cap so the circuit eventually retries (5 minutes).
-const CIRCUIT_BREAKER_MAX_MS: f64 = 300_000.0;
-/// Exponential backoff multiplier (doubles each failure beyond threshold).
-const CIRCUIT_BREAKER_MULTIPLIER: f64 = 2.0;
-
-impl GitHubCircuitBreaker {
-    pub(crate) fn new() -> Self {
-        Self {
-            failure_count: AtomicU32::new(0),
-            open_until: parking_lot::RwLock::new(None),
-            rate_limit_until: parking_lot::RwLock::new(None),
-        }
-    }
-
-    /// Check if the circuit is open (failure-based or rate-limited).
-    /// Returns Ok(()) if closed (requests allowed), or Err with a message.
-    pub(crate) fn check(&self) -> Result<(), String> {
-        // Check rate limit backoff first (more specific message)
-        let rl_guard = self.rate_limit_until.read();
-        if let Some(until) = *rl_guard
-            && Instant::now() < until
-        {
-            let remaining = until.duration_since(Instant::now());
-            return Err(format!(
-                "rate-limit: backing off for {:.0}s",
-                remaining.as_secs_f64()
-            ));
-        }
-        drop(rl_guard);
-
-        // Check failure-based circuit breaker
-        let guard = self.open_until.read();
-        if let Some(until) = *guard
-            && Instant::now() < until
-        {
-            let remaining = until.duration_since(Instant::now());
-            return Err(format!(
-                "GitHub API circuit breaker open — retrying in {:.0}s",
-                remaining.as_secs_f64()
-            ));
-        }
-        Ok(())
-    }
-
-    /// Record a successful API call. Resets failure count and closes the circuit.
-    pub(crate) fn record_success(&self) {
-        self.failure_count.store(0, Ordering::Relaxed);
-        *self.open_until.write() = None;
-    }
-
-    /// Reset the circuit breaker entirely — clears failures, backoff, and rate limits.
-    /// Used after a new token is obtained (e.g. OAuth login).
-    pub(crate) fn reset(&self) {
-        self.failure_count.store(0, Ordering::Relaxed);
-        *self.open_until.write() = None;
-        *self.rate_limit_until.write() = None;
-    }
-
-    /// Record a rate limit response. Sets a dedicated backoff timer
-    /// without inflating the failure count.
-    pub(crate) fn record_rate_limit(&self, wait_secs: u64) {
-        let delay = std::time::Duration::from_secs(wait_secs);
-        *self.rate_limit_until.write() = Some(Instant::now() + delay);
-        tracing::warn!(
-            source = "github",
-            backoff_secs = wait_secs,
-            "Rate limited — backing off"
-        );
-    }
-
-    /// Record a failed API call. Opens the circuit after threshold failures.
-    pub(crate) fn record_failure(&self) {
-        let count = self.failure_count.fetch_add(1, Ordering::Relaxed) + 1;
-        if count >= CIRCUIT_BREAKER_THRESHOLD {
-            let delay_ms = calculate_backoff_delay(
-                count - CIRCUIT_BREAKER_THRESHOLD,
-                CIRCUIT_BREAKER_BASE_MS,
-                CIRCUIT_BREAKER_MAX_MS,
-                CIRCUIT_BREAKER_MULTIPLIER,
-            );
-            let delay = std::time::Duration::from_millis(delay_ms as u64);
-            *self.open_until.write() = Some(Instant::now() + delay);
-            tracing::warn!(
-                source = "github",
-                failures = count,
-                backoff_secs = delay.as_secs_f64(),
-                "Circuit breaker open"
-            );
         }
     }
 }
@@ -222,73 +132,28 @@ pub(crate) fn cooldown_key(
 /// Per-account GitHub runtime state for non-github.com (GHE) accounts.
 ///
 /// github.com uses the global `AppState` fields (unchanged); each GHE account
-/// gets its own breaker + viewer-login cache + rate budget here so a failing or
-/// rate-limited GHE account is fully isolated from github.com and from other
-/// GHE accounts.
+/// gets its own viewer-login cache here. Quota and back-off live in the provider
+/// gateway, keyed by account.
 pub(crate) struct GheAccountState {
-    pub(crate) circuit_breaker: GitHubCircuitBreaker,
     pub(crate) viewer_login: parking_lot::RwLock<Option<String>>,
-    pub(crate) rate_limit_remaining: AtomicU32,
 }
 
 impl GheAccountState {
     pub(crate) fn new() -> Self {
         Self {
-            circuit_breaker: GitHubCircuitBreaker::new(),
             viewer_login: parking_lot::RwLock::new(None),
-            rate_limit_remaining: AtomicU32::new(u32::MAX),
         }
     }
 }
 
-/// Run a closure with the circuit breaker for `account` (the ambient github.com
-/// default → the global breaker; every named account, GHE or additional
-/// github.com → its per-account breaker keyed by id).
-pub(crate) fn with_account_breaker<R>(
-    state: &AppState,
-    account: &crate::github_account::GitHubAccount,
-    f: impl FnOnce(&GitHubCircuitBreaker) -> R,
-) -> R {
-    if account.is_ambient_default() {
-        f(&state.github.circuit_breaker)
-    } else {
-        let entry = state
-            .github
-            .ghe_state
-            .entry(account.id.clone())
-            .or_insert_with(GheAccountState::new);
-        f(&entry.circuit_breaker)
-    }
-}
-
-/// The most-constrained GitHub rate budget across all active accounts: the
-/// ambient default's global budget and every named account's per-account budget.
+/// The most-constrained GitHub rate budget across all accounts and the `graphql`
+/// and `core` buckets, read from the gateway.
 ///
 /// The poller runs a single global loop that polls every account in one batch,
-/// so it must pace for the tightest constraint — otherwise a low-budget named
-/// account would be drained by the shared cadence. (Each account also
-/// self-protects via its own breaker once it actually hits the limit; this just
-/// keeps the proactive throttle honest.)
+/// so it must pace for the tightest constraint — otherwise a low-budget account
+/// would be drained by the shared cadence.
 pub(crate) fn min_rate_budget(state: &AppState) -> u32 {
-    let mut min = state
-        .github
-        .rate_limit_remaining
-        .load(std::sync::atomic::Ordering::Relaxed);
-    for entry in state.github.ghe_state.iter() {
-        let b = entry
-            .value()
-            .rate_limit_remaining
-            .load(std::sync::atomic::Ordering::Relaxed);
-        if b < min {
-            min = b;
-        }
-    }
-    min
-}
-
-/// Parse a header value as a u64, returning None if missing or unparseable.
-fn header_as_u64(headers: &reqwest::header::HeaderMap, name: &str) -> Option<u64> {
-    headers.get(name)?.to_str().ok()?.parse().ok()
+    gateway::min_rate_budget(state)
 }
 
 /// Check a GraphQL JSON response for errors.
@@ -299,11 +164,7 @@ fn header_as_u64(headers: &reqwest::header::HeaderMap, name: &str) -> Option<u64
 ///   not found in a batch query), the caller receives `Ok(())` so it can
 ///   process the valid portion.  The `get_all_pr_statuses_impl` loop already
 ///   handles null repos gracefully.
-pub(crate) fn check_graphql_errors(
-    json: &serde_json::Value,
-    ratelimit_reset: Option<u64>,
-    retry_after: Option<u64>,
-) -> Result<(), GqlError> {
+pub(crate) fn check_graphql_errors(json: &serde_json::Value) -> Result<(), GqlError> {
     let errors = match json["errors"].as_array() {
         Some(arr) if !arr.is_empty() => arr,
         _ => return Ok(()),
@@ -318,8 +179,6 @@ pub(crate) fn check_graphql_errors(
             .as_str()
             .unwrap_or("GraphQL rate limit");
         return Err(GqlError::RateLimit {
-            reset_at: ratelimit_reset,
-            retry_after,
             message: msg.to_string(),
         });
     }
@@ -334,20 +193,6 @@ pub(crate) fn check_graphql_errors(
         .as_str()
         .unwrap_or("Unknown GraphQL error");
     Err(GqlError::Other(format!("GraphQL error: {msg}")))
-}
-
-/// Flatten a `reqwest` error and its source chain into a single line.
-/// `reqwest::Error`'s `Display` omits sources, so the only useful part of a
-/// transport failure ("connection closed before message completed", TLS
-/// errors, …) never reaches the log.
-fn describe_reqwest_error(e: &reqwest::Error) -> String {
-    let mut out = e.to_string();
-    let mut src = std::error::Error::source(e);
-    while let Some(s) = src {
-        out.push_str(&format!(": {s}"));
-        src = s.source();
-    }
-    out
 }
 
 /// The `message` field of a GitHub error body, else a bounded snippet of it.
@@ -415,11 +260,15 @@ pub(crate) fn github_rest_request(
         .header("X-GitHub-Api-Version", "2022-11-28")
 }
 
-/// Execute a GraphQL query against the GitHub API.
+/// Execute a GraphQL query against the GitHub API through the gateway.
 /// Returns the parsed JSON response or a typed error.
-/// Detects rate limits from HTTP status codes, headers, and GraphQL error types.
+/// A refusal the gateway learned from headers (429, 403, an empty bucket on a
+/// 200) arrives as a rate limit; this also reads the rate-limit error types a
+/// GraphQL body can carry.
 pub(crate) async fn graphql_request(
-    client: &reqwest::Client,
+    state: &AppState,
+    account: &crate::github_account::GitHubAccount,
+    origin: Origin,
     token: &str,
     url: &str,
     query: &str,
@@ -429,47 +278,47 @@ pub(crate) async fn graphql_request(
         "query": query,
         "variables": variables,
     });
-
-    let response = client
-        .post(url)
-        .header("Authorization", format!("Bearer {token}"))
-        .header("User-Agent", GITHUB_USER_AGENT)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| {
-            GqlError::Other(format!(
-                "GraphQL request failed: {}",
-                describe_reqwest_error(&e)
-            ))
-        })?;
-
-    let status = response.status();
-
-    // Extract rate limit headers before consuming the response body
-    let ratelimit_remaining = header_as_u64(response.headers(), "x-ratelimit-remaining");
-    let ratelimit_reset = header_as_u64(response.headers(), "x-ratelimit-reset");
-    let retry_after = header_as_u64(response.headers(), "retry-after");
-
-    // 1. HTTP 429 → always a rate limit
-    if status.as_u16() == 429 {
-        return Err(GqlError::RateLimit {
-            reset_at: ratelimit_reset,
-            retry_after,
-            message: "HTTP 429 Too Many Requests".to_string(),
-        });
-    }
-
-    // Read the body as bytes and parse separately: `response.json()` collapses a
-    // transport failure (truncated body) and a non-JSON payload (GitHub 5xx /
-    // proxy HTML error page) into the same opaque "error decoding response body",
-    // discarding the HTTP status that would have explained it.
-    let body = response.bytes().await.map_err(|e| {
-        GqlError::Other(format!(
-            "GraphQL response body read failed (HTTP {status}): {}",
-            describe_reqwest_error(&e)
-        ))
+    let url = url
+        .parse()
+        .map_err(|e| GqlError::Other(format!("GraphQL request failed: invalid URL: {e}")))?;
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::AUTHORIZATION,
+        format!("Bearer {token}")
+            .parse()
+            .map_err(|_| GqlError::Other("GraphQL request failed: invalid token".into()))?,
+    );
+    headers.insert(
+        reqwest::header::USER_AGENT,
+        reqwest::header::HeaderValue::from_static(GITHUB_USER_AGENT),
+    );
+    headers.insert(
+        reqwest::header::CONTENT_TYPE,
+        reqwest::header::HeaderValue::from_static("application/json"),
+    );
+    let payload = serde_json::to_vec(&body)
+        .map_err(|e| GqlError::Other(format!("GraphQL request failed: {e}")))?;
+    let response = gateway::execute(
+        state,
+        account,
+        origin,
+        reqwest::Method::POST,
+        url,
+        headers,
+        Some(payload.into()),
+    )
+    .await
+    .map_err(|e| match e {
+        tuic_gateway::model::GatewayError::RateLimited { .. }
+        | tuic_gateway::model::GatewayError::Shed { .. } => GqlError::RateLimit {
+            message: gateway::error_message(&e),
+        },
+        other => GqlError::Other(format!("GraphQL {}", gateway::error_message(&other))),
     })?;
+
+    let status = reqwest::StatusCode::from_u16(response.status)
+        .map_err(|e| GqlError::Other(format!("GraphQL response has an invalid status: {e}")))?;
+    let body = response.body;
     let parsed: Option<serde_json::Value> = serde_json::from_slice(&body).ok();
 
     if !status.is_success() {
@@ -480,22 +329,12 @@ pub(crate) async fn graphql_request(
             return Err(GqlError::Auth(err_msg));
         }
 
-        // 2. HTTP 403 + x-ratelimit-remaining: 0 → primary rate limit exhausted
-        if status.as_u16() == 403 && ratelimit_remaining == Some(0) {
-            return Err(GqlError::RateLimit {
-                reset_at: ratelimit_reset,
-                retry_after,
-                message: format!("Primary rate limit exhausted: {msg}"),
-            });
-        }
-
-        // 3. HTTP 403 + body mentions "secondary rate" → secondary/abuse rate limit
+        // An exhausted bucket or a named secondary limit never gets here: the
+        // gateway refused it. A 403 that only the body calls abuse is still a limit.
         if status.as_u16() == 403 {
             let msg_lower = msg.to_lowercase();
             if msg_lower.contains("secondary rate") || msg_lower.contains("abuse") {
                 return Err(GqlError::RateLimit {
-                    reset_at: ratelimit_reset,
-                    retry_after,
                     message: format!("Secondary rate limit: {msg}"),
                 });
             }
@@ -512,29 +351,10 @@ pub(crate) async fn graphql_request(
         ))
     })?;
 
-    // 4. HTTP 200 + GraphQL errors
-    check_graphql_errors(&json, ratelimit_reset, retry_after)?;
+    // HTTP 200 + GraphQL errors
+    check_graphql_errors(&json)?;
 
     Ok(json)
-}
-
-/// Calculate how long to wait for a rate limit, in seconds.
-/// Prefers `retry-after` (secondary limits), falls back to `reset_at - now + 1`,
-/// defaults to 60s if neither header is available.
-fn rate_limit_wait_secs(reset_at: Option<u64>, retry_after: Option<u64>) -> u64 {
-    if let Some(secs) = retry_after {
-        return secs;
-    }
-    if let Some(reset) = reset_at {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        if reset > now {
-            return reset - now + 1;
-        }
-    }
-    60 // Default: wait 60 seconds
 }
 
 /// Synthesize the implicit github.com default account from the current token
@@ -624,9 +444,10 @@ async fn resolve_token_for_account_async(
         .unwrap_or((None, crate::github_auth::TokenSource::None))
 }
 
-/// Execute a GraphQL query with token fallback and circuit breaker protection.
+/// Execute a GraphQL query with token fallback, through the gateway.
 /// On 401, tries remaining token candidates and updates the stored token on success.
-/// Rate limits are handled separately from failures — they don't inflate the failure count.
+/// Every attempt, fallback included, is admitted by the gateway, so a closed
+/// bucket ends the call. Rate limits come back prefixed with "rate-limit:".
 ///
 /// `prefetched_token` lets a caller that already resolved a named account's token
 /// (e.g. the batch poller's per-account has-token check) reuse it instead of
@@ -635,15 +456,33 @@ async fn resolve_token_for_account_async(
 pub(crate) async fn graphql_with_retry(
     state: &AppState,
     account: &crate::github_account::GitHubAccount,
+    origin: Origin,
     query: &str,
     variables: serde_json::Value,
     prefetched_token: Option<&str>,
 ) -> Result<serde_json::Value, String> {
-    // Check circuit breaker first
-    with_account_breaker(state, account, |b| b.check())?;
-
     let url = account.host.graphql_url();
+    graphql_at(
+        state,
+        account,
+        origin,
+        &url,
+        query,
+        variables,
+        prefetched_token,
+    )
+    .await
+}
 
+async fn graphql_at(
+    state: &AppState,
+    account: &crate::github_account::GitHubAccount,
+    origin: Origin,
+    url: &str,
+    query: &str,
+    variables: serde_json::Value,
+    prefetched_token: Option<&str>,
+) -> Result<serde_json::Value, String> {
     if crate::github_debug::enabled() {
         let query_name = extract_graphql_name(query);
         tracing::info!(
@@ -667,29 +506,9 @@ pub(crate) async fn graphql_with_retry(
                 None => return Err("No GitHub token available".to_string()),
             },
         };
-        return match graphql_request(&state.http_client, &token, &url, query, &variables).await {
-            Ok(response) => {
-                with_account_breaker(state, account, |b| b.record_success());
-                Ok(response)
-            }
-            Err(GqlError::RateLimit {
-                reset_at,
-                retry_after,
-                message,
-            }) => {
-                let wait = rate_limit_wait_secs(reset_at, retry_after);
-                with_account_breaker(state, account, |b| b.record_rate_limit(wait));
-                Err(format!("rate-limit: {message}"))
-            }
-            Err(GqlError::Auth(msg)) => {
-                with_account_breaker(state, account, |b| b.record_failure());
-                Err(msg)
-            }
-            Err(GqlError::Other(msg)) => {
-                with_account_breaker(state, account, |b| b.record_failure());
-                Err(msg)
-            }
-        };
+        return graphql_request(state, account, origin, &token, url, query, &variables)
+            .await
+            .map_err(|e| e.into_message());
     }
 
     // The runtime resolver honors an explicit disconnect, including lazy loads.
@@ -699,20 +518,7 @@ pub(crate) async fn graphql_with_retry(
         None => return Err("No GitHub token available".to_string()),
     };
 
-    match graphql_request(&state.http_client, &token, &url, query, &variables).await {
-        Ok(response) => {
-            with_account_breaker(state, account, |b| b.record_success());
-            Ok(response)
-        }
-        Err(GqlError::RateLimit {
-            reset_at,
-            retry_after,
-            message,
-        }) => {
-            let wait = rate_limit_wait_secs(reset_at, retry_after);
-            with_account_breaker(state, account, |b| b.record_rate_limit(wait));
-            Err(format!("rate-limit: {message}"))
-        }
+    match graphql_request(state, account, origin, &token, url, query, &variables).await {
         Err(GqlError::Auth(msg)) => {
             tracing::warn!(
                 source = "github",
@@ -724,39 +530,23 @@ pub(crate) async fn graphql_with_retry(
                 if candidate == &token {
                     continue; // Skip the one that already failed
                 }
-                match graphql_request(&state.http_client, candidate, &url, query, &variables).await
+                match graphql_request(state, account, origin, candidate, url, query, &variables)
+                    .await
                 {
                     Ok(response) => {
                         tracing::info!(source = "github", "Token fallback succeeded");
                         *state.github.token.write() = Some(candidate.clone());
                         *state.github.token_source.write() = *candidate_source;
-                        with_account_breaker(state, account, |b| b.record_success());
                         return Ok(response);
                     }
                     Err(GqlError::Auth(_)) => continue, // Try next candidate
-                    Err(GqlError::RateLimit {
-                        reset_at,
-                        retry_after,
-                        message,
-                    }) => {
-                        let wait = rate_limit_wait_secs(reset_at, retry_after);
-                        with_account_breaker(state, account, |b| b.record_rate_limit(wait));
-                        return Err(format!("rate-limit: {message}"));
-                    }
-                    Err(GqlError::Other(e)) => {
-                        with_account_breaker(state, account, |b| b.record_failure());
-                        return Err(e);
-                    }
+                    Err(e) => return Err(e.into_message()),
                 }
             }
             // All candidates failed with 401
-            with_account_breaker(state, account, |b| b.record_failure());
             Err(msg)
         }
-        Err(GqlError::Other(msg)) => {
-            with_account_breaker(state, account, |b| b.record_failure());
-            Err(msg)
-        }
+        other => other.map_err(|e| e.into_message()),
     }
 }
 
@@ -787,6 +577,7 @@ pub(crate) async fn get_viewer_login(state: &AppState) -> Result<String, String>
     let response = graphql_with_retry(
         state,
         &github_com_account(state),
+        Origin::interactive("github.viewer_login"),
         "query { viewer { login } }",
         serde_json::Value::Null,
         None,
@@ -826,6 +617,7 @@ pub(crate) async fn get_viewer_login_for(
     let response = graphql_with_retry(
         state,
         account,
+        Origin::interactive("github.viewer_login"),
         "query { viewer { login } }",
         serde_json::Value::Null,
         prefetched_token,
@@ -907,6 +699,7 @@ pub(crate) async fn get_all_issues_impl(
     let response = graphql_with_retry(
         state,
         &github_com_account(state),
+        Origin::visible("github.issues"),
         &query,
         serde_json::Value::Null,
         None,
@@ -955,18 +748,18 @@ pub(crate) async fn get_all_batch_impl(
     .await
 }
 
-/// Explicit issue-source requests, scoped to their configured repository.
-pub(crate) fn issue_intake_poll_sources()
--> Result<std::collections::BTreeMap<String, String>, String> {
+/// Repositories (`owner/name`, as the binding spells them) with an enabled GitHub
+/// binding of `kind`.
+fn intake_binding_repos(kind: &str) -> Result<std::collections::BTreeSet<String>, String> {
     let workflows = crate::workflows::WorkflowStore::open()?;
-    let mut sources = std::collections::BTreeMap::new();
+    let mut repos = std::collections::BTreeSet::new();
     for binding in workflows
         .all_neutral_trigger_bindings()?
         .into_iter()
         .filter(|b| {
             b.enabled
                 && b.draft.source == crate::workflows::trigger::TriggerSource::Github
-                && b.draft.kind == "issue"
+                && b.draft.kind == kind
         })
     {
         let prefix =
@@ -976,10 +769,27 @@ pub(crate) fn issue_intake_poll_sources()
             .unwrap()
             .strip_suffix('/')
             .unwrap();
-        // A neutral binding selects its own events/labels after a complete poll.
-        sources.insert(repo.into(), String::new());
+        repos.insert(repo.to_string());
     }
-    Ok(sources)
+    Ok(repos)
+}
+
+/// Explicit issue-source requests, scoped to their configured repository.
+pub(crate) fn issue_intake_poll_sources()
+-> Result<std::collections::BTreeMap<String, String>, String> {
+    // A neutral binding selects its own events/labels after a complete poll.
+    Ok(intake_binding_repos("issue")?
+        .into_iter()
+        .map(|repo| (repo, String::new()))
+        .collect())
+}
+
+/// Repositories whose enabled PR binding needs the complete open-PR list, lowercase.
+pub(crate) fn pr_intake_poll_sources() -> Result<std::collections::BTreeSet<String>, String> {
+    Ok(intake_binding_repos("pull_request")?
+        .into_iter()
+        .map(|repo| repo.to_ascii_lowercase())
+        .collect())
 }
 
 pub(crate) async fn get_all_batch_with_intake_impl(
@@ -994,12 +804,14 @@ pub(crate) async fn get_all_batch_with_intake_impl(
         GitHubAccountRegistry, RepoBindingStore, RepoResolution, resolve_repo_account,
     };
 
-    let intake_sources = if intake {
-        tokio::task::spawn_blocking(issue_intake_poll_sources)
-            .await
-            .map_err(|e| format!("intake config load task panicked: {e}"))??
+    let (intake_sources, intake_pr_repos) = if intake {
+        tokio::task::spawn_blocking(|| {
+            Ok::<_, String>((issue_intake_poll_sources()?, pr_intake_poll_sources()?))
+        })
+        .await
+        .map_err(|e| format!("intake config load task panicked: {e}"))??
     } else {
-        std::collections::BTreeMap::new()
+        Default::default()
     };
 
     let now = Instant::now();
@@ -1061,9 +873,10 @@ pub(crate) async fn get_all_batch_with_intake_impl(
     let mut pr_results: std::collections::HashMap<String, Vec<BranchPrStatus>> = Default::default();
     let mut issue_results: std::collections::HashMap<String, Vec<GitHubIssue>> = Default::default();
     let mut intake_results = std::collections::HashMap::new();
+    let mut intake_pr_results = std::collections::HashMap::new();
 
     for ((_id, intake_label), (account, repos_all)) in by_account {
-        // Skip accounts with no token or an open breaker (per-account isolation).
+        // Skip accounts with no token or a closed GraphQL bucket (per-account isolation).
         // Resolve a named account's token exactly ONCE here and reuse it for the
         // account's viewer-login + batch GraphQL calls (see `prefetched_token`),
         // so the keychain shell-out runs once per poll cycle, not twice.
@@ -1078,7 +891,7 @@ pub(crate) async fn get_all_batch_with_intake_impl(
                 None => continue,
             }
         };
-        if with_account_breaker(state, &account, |b| b.check()).is_err() {
+        if gateway::graphql_closed(state, &account) {
             continue;
         }
 
@@ -1108,6 +921,8 @@ pub(crate) async fn get_all_batch_with_intake_impl(
             &mut issue_results,
             intake_label.as_deref(),
             &mut intake_results,
+            &intake_pr_repos,
+            &mut intake_pr_results,
         )
         .await
         {
@@ -1123,6 +938,7 @@ pub(crate) async fn get_all_batch_with_intake_impl(
 
     Ok(BatchPollResult {
         intake_issues: intake_results,
+        intake_prs: intake_pr_results,
         prs: pr_results,
         issues: issue_results,
     })
@@ -1187,6 +1003,11 @@ async fn poll_one_account(
     issue_results: &mut std::collections::HashMap<String, Vec<GitHubIssue>>,
     intake_label: Option<&str>,
     intake_results: &mut std::collections::HashMap<String, Vec<GitHubIssue>>,
+    intake_pr_repos: &std::collections::BTreeSet<String>,
+    intake_pr_results: &mut std::collections::HashMap<
+        String,
+        Vec<tuic_git::github::IntakePullRequest>,
+    >,
 ) -> Result<(), String> {
     // Always fetch viewer login — needed for both issue filtering and viewer PR search.
     let viewer = match get_viewer_login_for(state, account, prefetched_token).await {
@@ -1212,10 +1033,12 @@ async fn poll_one_account(
         &viewer,
         pr_hide_drafts,
         intake_label,
+        intake_pr_repos,
     );
     let mut response = graphql_with_retry(
         state,
         account,
+        POLL_ORIGIN,
         &query,
         serde_json::Value::Null,
         prefetched_token,
@@ -1273,6 +1096,7 @@ async fn poll_one_account(
                             let page = graphql_with_retry(
                                 state,
                                 account,
+                                POLL_ORIGIN,
                                 &query,
                                 serde_json::Value::Null,
                                 prefetched_token,
@@ -1332,6 +1156,7 @@ async fn poll_one_account(
                 let page = graphql_with_retry(
                     state,
                     account,
+                    POLL_ORIGIN,
                     &query,
                     serde_json::Value::Null,
                     prefetched_token,
@@ -1349,6 +1174,22 @@ async fn poll_one_account(
             }
         }
     }
+    for (i, (alias, path)) in aliases.iter().enumerate() {
+        let (_, owner, name) = &repos[i];
+        if !intake_pr_repos.contains(&format!("{owner}/{name}").to_ascii_lowercase()) {
+            continue;
+        }
+        let connection = response["data"][alias]["intakePullRequests"].clone();
+        // A denied repository is not an empty successful snapshot.
+        if connection.is_null() {
+            continue;
+        }
+        let list =
+            read_intake_prs(state, account, prefetched_token, owner, name, connection).await?;
+        if let Some(list) = list {
+            intake_pr_results.insert(path.clone(), list);
+        }
+    }
     adopt_batch_response(
         state,
         account,
@@ -1362,6 +1203,57 @@ async fn poll_one_account(
         issue_results,
     )
     .await
+}
+
+/// Read every page of a repository's open PRs. `None` means the list is not proven
+/// complete (a label list cut at ten, a bad page, or more pages than the bound), so the
+/// trigger source reads the REST list instead.
+async fn read_intake_prs(
+    state: &AppState,
+    account: &crate::github_account::GitHubAccount,
+    prefetched_token: Option<&str>,
+    owner: &str,
+    name: &str,
+    mut connection: serde_json::Value,
+) -> Result<Option<Vec<tuic_git::github::IntakePullRequest>>, String> {
+    let mut list = Vec::new();
+    for _ in 0..tuic_git::github::INTAKE_PR_MAX_PAGES {
+        let Some(nodes) = connection["nodes"].as_array() else {
+            return Ok(None);
+        };
+        for node in nodes {
+            match tuic_git::github::parse_intake_pr_node(node) {
+                Some(pr) => list.push(pr),
+                None => return Ok(None),
+            }
+        }
+        match connection["pageInfo"]["hasNextPage"].as_bool() {
+            Some(false) => return Ok(Some(list)),
+            Some(true) => {}
+            None => return Ok(None),
+        }
+        let Some(cursor) = connection["pageInfo"]["endCursor"]
+            .as_str()
+            .filter(|c| !c.is_empty())
+        else {
+            return Ok(None);
+        };
+        let section = tuic_git::github::intake_pull_requests_section(Some(cursor));
+        let query = format!(
+            "query IntakePullRequests {{ repository(owner: \"{owner}\", name: \"{name}\") {{ {section} }} rateLimit {{ cost remaining resetAt }} }}"
+        );
+        let page = graphql_with_retry(
+            state,
+            account,
+            POLL_ORIGIN,
+            &query,
+            serde_json::Value::Null,
+            prefetched_token,
+        )
+        .await?;
+        connection = page["data"]["repository"]["intakePullRequests"].clone();
+    }
+    Ok(None)
 }
 
 /// Adopt each accessible alias independently; a denied alias must not erase its siblings.
@@ -1378,25 +1270,6 @@ async fn adopt_batch_response(
     pr_results: &mut std::collections::HashMap<String, Vec<BranchPrStatus>>,
     issue_results: &mut std::collections::HashMap<String, Vec<GitHubIssue>>,
 ) -> Result<(), String> {
-    // Store rate-limit budget for proactive throttling in the poller.
-    if let Some(remaining) = response["data"]["rateLimit"]["remaining"].as_u64() {
-        let budget = remaining as u32;
-        if account.is_ambient_default() {
-            state
-                .github
-                .rate_limit_remaining
-                .store(budget, std::sync::atomic::Ordering::Relaxed);
-        } else {
-            state
-                .github
-                .ghe_state
-                .entry(account.id.clone())
-                .or_insert_with(crate::github::GheAccountState::new)
-                .rate_limit_remaining
-                .store(budget, std::sync::atomic::Ordering::Relaxed);
-        }
-    }
-
     let alias_repo_names: std::collections::HashMap<&str, (&str, &str)> = repos
         .iter()
         .enumerate()
@@ -1415,13 +1288,14 @@ async fn adopt_batch_response(
 
         if let Some(mut statuses) = tuic_git::github::parse_batch_pr_nodes(repo_json) {
             stamp_merge_policy(&mut statuses, repo_json);
-            if let Some((owner, name)) = alias_repo_names.get(alias.as_str()) {
+            let repo_name = alias_repo_names.get(alias.as_str());
+            if let Some((owner, name)) = repo_name {
                 settle_truncated_threads(
                     &state.git_cache.settled_review_threads,
                     &format!("{}/{owner}", account.host.as_str()),
                     name,
                     &mut statuses,
-                    |n| fetch_review_thread_counts(state, account, owner, name, n),
+                    |n| fetch_review_thread_counts(state, account, POLL_ORIGIN, owner, name, n),
                 )
                 .await;
             }
@@ -1439,10 +1313,9 @@ async fn adopt_batch_response(
                 });
             }
 
-            state
-                .git_cache
-                .github_status
-                .insert(path.clone(), Arc::new(statuses.clone()));
+            if let Some((owner, name)) = repo_name {
+                gateway::cache_status(state, account, owner, name, path, statuses.clone());
+            }
             pr_results.insert(path.clone(), statuses);
         }
 
@@ -1481,7 +1354,7 @@ async fn adopt_batch_response(
                         &format!("{}/{owner}", account.host.as_str()),
                         name,
                         std::slice::from_mut(&mut pr),
-                        |n| fetch_review_thread_counts(state, account, owner, name, n),
+                        |n| fetch_review_thread_counts(state, account, POLL_ORIGIN, owner, name, n),
                     )
                     .await;
                 }
@@ -1526,6 +1399,7 @@ pub(crate) async fn close_issue_impl(
     let response = send_rest_with_breaker(
         state,
         &account,
+        Origin::interactive("github.issue_close"),
         github_rest_request(
             &state.http_client,
             reqwest::Method::PATCH,
@@ -1576,6 +1450,7 @@ pub(crate) async fn reopen_issue_impl(
     let response = send_rest_with_breaker(
         state,
         &account,
+        Origin::interactive("github.issue_reopen"),
         github_rest_request(
             &state.http_client,
             reqwest::Method::PATCH,
@@ -1610,87 +1485,45 @@ pub(crate) async fn reopen_issue(
     reopen_issue_impl(&repo_path, issue_number, &state).await
 }
 
-/// Send a direct REST request through the account's circuit breaker.
+/// Send a direct REST request through the gateway.
 ///
-/// `graphql_with_retry` and legacy gh writes were breaker-aware; the direct-REST
-/// sites were not, so once an account was rate-limited every one of them kept
-/// hammering GitHub while the GraphQL path politely backed off. This is the same
-/// check-send-record cycle, adapted to REST.
+/// The gateway owns the budget, the back-off and the cache for the account, so a
+/// limit learned here also closes the GraphQL path and the other way round.
 ///
 /// The response is handed back on any non-rate-limit status so each caller keeps
 /// its own status handling and error wording (merge conflicts, self-approval,
 /// diff-too-large fallback all read the body themselves). Only rate limits are
 /// intercepted, because they are the one outcome that must not reach the caller
-/// as an ordinary failure.
+/// as an ordinary failure. A plain permission-denied 403 is not one: the gateway
+/// reads the headers and the body to tell them apart.
 ///
-/// A 403 is classified from headers first — `x-ratelimit-remaining: 0` for the
-/// primary limit, a `retry-after` for a secondary/abuse limit — then from the
-/// JSON message when GitHub omits both headers. Ambiguous bodies are buffered
-/// and rebuilt so plain permission-denied responses still reach their caller.
+/// The body is buffered by the gateway transport, so a log download is read whole
+/// before the caller keeps its tail.
 pub(crate) async fn send_rest_with_breaker(
     state: &AppState,
     account: &crate::github_account::GitHubAccount,
+    origin: Origin,
     request: reqwest::RequestBuilder,
 ) -> Result<reqwest::Response, String> {
-    with_account_breaker(state, account, |b| b.check())?;
-
-    let response = match request.send().await {
-        Ok(response) => response,
-        Err(e) => {
-            with_account_breaker(state, account, |b| b.record_failure());
-            return Err(format!("GitHub API request failed: {e}"));
-        }
-    };
-
-    let status = response.status().as_u16();
-    let reset_at = header_as_u64(response.headers(), "x-ratelimit-reset");
-    let retry_after = header_as_u64(response.headers(), "retry-after");
-    let remaining = header_as_u64(response.headers(), "x-ratelimit-remaining");
-
-    let mut rate_limited =
-        status == 429 || (status == 403 && (remaining == Some(0) || retry_after.is_some()));
-    let response = if status == 403 && !rate_limited {
-        let response_status = response.status();
-        let response_version = response.version();
-        let response_headers = response.headers().clone();
-        let body = match response.bytes().await {
-            Ok(body) => body,
-            Err(error) => {
-                with_account_breaker(state, account, |b| b.record_failure());
-                return Err(format!("Failed to read GitHub 403 response: {error}"));
-            }
-        };
-        let message = serde_json::from_slice::<serde_json::Value>(&body)
-            .ok()
-            .and_then(|json| json["message"].as_str().map(str::to_lowercase))
-            .unwrap_or_default();
-        rate_limited = message.contains("secondary rate") || message.contains("abuse");
-
-        let mut rebuilt = axum::http::Response::builder()
-            .status(response_status)
-            .version(response_version)
-            .body(reqwest::Body::from(body))
-            .map_err(|e| format!("Failed to rebuild GitHub response: {e}"))?;
-        *rebuilt.headers_mut() = response_headers;
-        reqwest::Response::from(rebuilt)
-    } else {
-        response
-    };
-    if rate_limited {
-        let wait = rate_limit_wait_secs(reset_at, retry_after);
-        with_account_breaker(state, account, |b| b.record_rate_limit(wait));
-        return Err(format!("rate-limit: GitHub returned HTTP {status}"));
-    }
-
-    if (500..600).contains(&status) {
-        with_account_breaker(state, account, |b| b.record_failure());
-    } else {
-        // Any ordinary response proves the service is reachable. Authentication,
-        // validation, conflicts and missing resources are caller errors, not an
-        // availability incident for unrelated operations.
-        with_account_breaker(state, account, |b| b.record_success());
-    }
-    Ok(response)
+    let request = request
+        .build()
+        .map_err(|e| format!("GitHub API request failed: {e}"))?;
+    let body = request
+        .body()
+        .and_then(reqwest::Body::as_bytes)
+        .map(bytes::Bytes::copy_from_slice);
+    let response = gateway::execute(
+        state,
+        account,
+        origin,
+        request.method().clone(),
+        request.url().clone(),
+        request.headers().clone(),
+        body,
+    )
+    .await
+    .map_err(|e| gateway::error_message(&e))?;
+    gateway::into_response(response)
 }
 
 /// GET a GitHub REST endpoint and parse the JSON body, returning a descriptive
@@ -1700,10 +1533,11 @@ pub(crate) async fn send_rest_with_breaker(
 async fn fetch_github_json(
     state: &AppState,
     account: &crate::github_account::GitHubAccount,
+    origin: Origin,
     request: reqwest::RequestBuilder,
     context: &str,
 ) -> Result<serde_json::Value, String> {
-    let response = send_rest_with_breaker(state, account, request).await?;
+    let response = send_rest_with_breaker(state, account, origin, request).await?;
 
     let status = response.status().as_u16();
     if !(200..300).contains(&status) {
@@ -1735,7 +1569,14 @@ pub(crate) async fn get_issue_detail_impl(
         &token,
         GITHUB_JSON,
     );
-    let issue_json = fetch_github_json(state, &account, issue_request, "GitHub issue").await?;
+    let issue_json = fetch_github_json(
+        state,
+        &account,
+        Origin::visible("github.issue_detail"),
+        issue_request,
+        "GitHub issue",
+    )
+    .await?;
 
     let comments_path = format!("/repos/{owner}/{repo}/issues/{issue_number}/comments");
     let comments_url = crate::github_account::github_rest_url(&account.host, &comments_path);
@@ -1743,6 +1584,7 @@ pub(crate) async fn get_issue_detail_impl(
     let comments_json = fetch_github_json(
         state,
         &account,
+        Origin::visible("github.issue_detail"),
         github_rest_request(
             &state.http_client,
             reqwest::Method::GET,
@@ -1875,8 +1717,15 @@ pub(crate) async fn get_merged_prs_impl(
 ) -> Result<Vec<MergedPr>, String> {
     let (account, token, owner, repo) = resolve_repo_for_rest(state, repo_path).await?;
     let variables = serde_json::json!({ "owner": owner, "repo": repo, "first": 100 });
-    let response =
-        graphql_with_retry(state, &account, MERGED_PRS_QUERY, variables, Some(&token)).await?;
+    let response = graphql_with_retry(
+        state,
+        &account,
+        Origin::visible("github.merged_prs"),
+        MERGED_PRS_QUERY,
+        variables,
+        Some(&token),
+    )
+    .await?;
     let mut prs = parse_merged_prs(&response);
 
     // Filter to PRs merged since the tag's date, when a resolvable tag is given.
@@ -1976,6 +1825,7 @@ pub(crate) async fn get_repo_pr_statuses_impl(
     match graphql_with_retry(
         state,
         &github_com_account(state),
+        Origin::visible("github.repo_pr_statuses"),
         &query,
         serde_json::Value::Null,
         None,
@@ -2016,7 +1866,8 @@ pub(crate) async fn get_repo_pr_statuses_impl(
     }
 }
 
-/// Get PR statuses for a repository (cached, 30s TTL).
+/// Get PR statuses for a repository (cached for `GITHUB_CACHE_TTL`, 60 s, and dropped
+/// early when the gateway sees a write to the repository).
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn get_repo_pr_statuses(
@@ -2034,10 +1885,21 @@ pub(crate) async fn get_repo_pr_statuses(
     }
 
     let statuses = get_repo_pr_statuses_impl(&path, include_merged, &state).await?;
-    state
-        .git_cache
-        .github_status
-        .insert(path.clone(), Arc::new(statuses.clone()));
+    match get_github_remote_url(Path::new(&path)).and_then(|url| parse_remote_url(&url)) {
+        Some((owner, repo)) => gateway::cache_status(
+            &state,
+            &github_com_account(&state),
+            &owner,
+            &repo,
+            &path,
+            statuses.clone(),
+        ),
+        // No GitHub remote means no PR, so no write can make this entry stale.
+        None => state
+            .git_cache
+            .github_status
+            .insert(path.clone(), Arc::new(statuses.clone())),
+    }
     Ok(statuses)
 }
 
@@ -2291,6 +2153,7 @@ pub(crate) async fn get_ci_checks_impl(
     match graphql_with_retry(
         state,
         &github_com_account(state),
+        Origin::visible("github.ci_checks"),
         PR_CHECKS_QUERY,
         variables,
         None,
@@ -2350,6 +2213,7 @@ const REVIEW_THREADS_MAX_PAGES: usize = 10;
 async fn fetch_review_thread_counts(
     state: &AppState,
     account: &crate::github_account::GitHubAccount,
+    origin: Origin,
     owner: &str,
     repo: &str,
     pr_number: i64,
@@ -2358,9 +2222,16 @@ async fn fetch_review_thread_counts(
         let variables = serde_json::json!({
             "owner": owner, "repo": repo, "number": pr_number, "after": after
         });
-        graphql_with_retry(state, account, PR_REVIEW_THREADS_QUERY, variables, None)
-            .await
-            .map_err(|e| format!("GraphQL review threads query failed: {e}"))
+        graphql_with_retry(
+            state,
+            account,
+            origin,
+            PR_REVIEW_THREADS_QUERY,
+            variables,
+            None,
+        )
+        .await
+        .map_err(|e| format!("GraphQL review threads query failed: {e}"))
     })
     .await
 }
@@ -2477,9 +2348,16 @@ pub(crate) async fn get_pr_review_threads_impl(
         get_github_remote_url(&repo_path).ok_or_else(|| "No GitHub remote".to_string())?;
     let (owner, repo) =
         parse_remote_url(&remote_url).ok_or_else(|| "Unrecognised GitHub remote".to_string())?;
-    fetch_review_thread_counts(state, &github_com_account(state), &owner, &repo, pr_number)
-        .await
-        .map(|(counts, _)| counts)
+    fetch_review_thread_counts(
+        state,
+        &github_com_account(state),
+        Origin::visible("github.pr_review_threads"),
+        &owner,
+        &repo,
+        pr_number,
+    )
+    .await
+    .map(|(counts, _)| counts)
 }
 
 /// Unresolved review threads of a PR, bot vs human (Tauri command).
@@ -2516,6 +2394,7 @@ pub(crate) async fn merge_pr_github_impl(
     let response = send_rest_with_breaker(
         state,
         &account,
+        Origin::interactive("github.pr_merge"),
         github_rest_request(
             &state.http_client,
             reqwest::Method::PUT,
@@ -2775,7 +2654,12 @@ pub(crate) async fn create_pr_impl(
     draft: bool,
     state: &AppState,
 ) -> Result<CreatedPr, String> {
-    let api = crate::github_pr_api::RepoApi::resolve(state, repo_path).await?;
+    let api = crate::github_pr_api::RepoApi::resolve(
+        state,
+        repo_path,
+        Origin::interactive("github.create_pr_impl"),
+    )
+    .await?;
     create_pr_with(&api, title, body, base, head, draft).await
 }
 
@@ -2785,7 +2669,12 @@ pub(crate) async fn create_issue_impl(
     body: &str,
     state: &AppState,
 ) -> Result<CreatedIssue, String> {
-    let api = crate::github_pr_api::RepoApi::resolve(state, repo_path).await?;
+    let api = crate::github_pr_api::RepoApi::resolve(
+        state,
+        repo_path,
+        Origin::interactive("github.create_issue_impl"),
+    )
+    .await?;
     create_issue_with(&api, title, body).await
 }
 
@@ -2798,7 +2687,12 @@ pub(crate) async fn post_pr_review_impl(
     state: &AppState,
 ) -> Result<PostedPrReview, String> {
     crate::github_pr_actions::validate_review_event(body, event.unwrap_or("COMMENT"))?;
-    let api = crate::github_pr_api::RepoApi::resolve(state, repo_path).await?;
+    let api = crate::github_pr_api::RepoApi::resolve(
+        state,
+        repo_path,
+        Origin::interactive("github.post_pr_review_impl"),
+    )
+    .await?;
     post_pr_review_with(&api, pr_number, body, event, comments).await
 }
 
@@ -2868,6 +2762,7 @@ pub(crate) async fn approve_pr_impl(
     let response = send_rest_with_breaker(
         state,
         &account,
+        Origin::interactive("github.pr_approve"),
         github_rest_request(
             &state.http_client,
             reqwest::Method::POST,
@@ -2972,6 +2867,7 @@ pub(crate) async fn update_pr_branch_impl(
     let response = send_rest_with_breaker(
         state,
         &account,
+        Origin::interactive("github.pr_update_branch"),
         github_rest_request(
             &state.http_client,
             reqwest::Method::PUT,
@@ -3023,6 +2919,7 @@ pub(crate) async fn close_pr_impl(
     let response = send_rest_with_breaker(
         state,
         &account,
+        Origin::interactive("github.pr_close"),
         github_rest_request(
             &state.http_client,
             reqwest::Method::PATCH,
@@ -3081,6 +2978,7 @@ pub(crate) async fn get_pr_diff_impl(
     let response = send_rest_with_breaker(
         state,
         &account,
+        Origin::visible("github.pr_diff"),
         github_rest_request(
             &state.http_client,
             reqwest::Method::GET,
@@ -3247,6 +3145,7 @@ pub(crate) async fn get_pr_refs_impl(
     let json: serde_json::Value = send_rest_with_breaker(
         state,
         &account,
+        Origin::visible("github.pr_refs"),
         github_rest_request(
             &state.http_client,
             reqwest::Method::GET,
@@ -3412,7 +3311,12 @@ async fn fetch_ci_failure_logs_impl(
                 .map_err(|error| error.to_string())??
         }
     };
-    let api = crate::github_pr_api::RepoApi::resolve(state, repo_path).await?;
+    let api = crate::github_pr_api::RepoApi::resolve(
+        state,
+        repo_path,
+        Origin::interactive("github.fetch_ci_failure_logs_impl"),
+    )
+    .await?;
     ci_logs::fetch_with(&api, &api.owner, &api.repo, &head_sha, check_url).await
 }
 
@@ -5303,14 +5207,17 @@ mod tests {
         println!("Testing against {owner}/{repo}");
 
         // 3. Call GraphQL API
-        let client = reqwest::Client::new();
         let variables = serde_json::json!({
             "owner": owner,
             "repo": repo,
             "first": 50,
         });
+        let state = crate::state::tests_support::make_test_app_state();
+        let account = github_com_account(&state);
         let graphql_result = graphql_request(
-            &client,
+            &state,
+            &account,
+            Origin::interactive("test"),
             &token,
             "https://api.github.com/graphql",
             BATCH_PR_QUERY,
@@ -5433,10 +5340,13 @@ mod tests {
     async fn test_graphql_auth_and_rate_limit() {
         let token = resolve_github_token().expect("No GitHub token found");
 
-        let client = reqwest::Client::new();
         // Minimal query just to verify auth works
+        let state = crate::state::tests_support::make_test_app_state();
+        let account = github_com_account(&state);
         let result = graphql_request(
-            &client,
+            &state,
+            &account,
+            Origin::interactive("test"),
             &token,
             "https://api.github.com/graphql",
             "query { viewer { login } rateLimit { remaining resetAt } }",
@@ -5552,8 +5462,12 @@ mod tests {
             .create_async()
             .await;
 
+        let state = crate::state::tests_support::make_test_app_state();
+        let account = github_com_account(&state);
         let err = graphql_request(
-            &reqwest::Client::new(),
+            &state,
+            &account,
+            Origin::interactive("test"),
             "token",
             &format!("{}/graphql", server.url()),
             "query { viewer { login } }",
@@ -5583,8 +5497,12 @@ mod tests {
             .create_async()
             .await;
 
+        let state = crate::state::tests_support::make_test_app_state();
+        let account = github_com_account(&state);
         let err = graphql_request(
-            &reqwest::Client::new(),
+            &state,
+            &account,
+            Origin::interactive("test"),
             "token",
             &format!("{}/graphql", server.url()),
             "query { viewer { login } }",
@@ -5615,8 +5533,12 @@ mod tests {
             .create_async()
             .await;
 
+        let state = crate::state::tests_support::make_test_app_state();
+        let account = github_com_account(&state);
         let err = graphql_request(
-            &reqwest::Client::new(),
+            &state,
+            &account,
+            Origin::interactive("test"),
             "token",
             &format!("{}/graphql", server.url()),
             "query { viewer { login } }",
@@ -5626,12 +5548,10 @@ mod tests {
         .expect_err("an exhausted primary limit must not be reported as success");
         mock.assert_async().await;
 
-        match err {
-            GqlError::RateLimit { reset_at, .. } => {
-                assert_eq!(reset_at, Some(99999999999));
-            }
-            other => panic!("expected RateLimit, got {other:?}"),
-        }
+        assert!(
+            matches!(err, GqlError::RateLimit { .. }),
+            "expected RateLimit, got {err:?}"
+        );
     }
 
     #[tokio::test]
@@ -5644,8 +5564,12 @@ mod tests {
             .create_async()
             .await;
 
+        let state = crate::state::tests_support::make_test_app_state();
+        let account = github_com_account(&state);
         let err = graphql_request(
-            &reqwest::Client::new(),
+            &state,
+            &account,
+            Origin::interactive("test"),
             "token",
             &format!("{}/graphql", server.url()),
             "query { viewer { login } }",
@@ -5673,8 +5597,12 @@ mod tests {
             .create_async()
             .await;
 
+        let state = crate::state::tests_support::make_test_app_state();
+        let account = github_com_account(&state);
         let json = graphql_request(
-            &reqwest::Client::new(),
+            &state,
+            &account,
+            Origin::interactive("test"),
             "token",
             &format!("{}/graphql", server.url()),
             "query { viewer { login } }",
@@ -5687,153 +5615,14 @@ mod tests {
         assert_eq!(json["data"]["viewer"]["login"], "octocat");
     }
 
-    // --- GitHubCircuitBreaker tests ---
-
-    #[test]
-    fn test_circuit_breaker_stays_closed_on_success() {
-        let cb = GitHubCircuitBreaker::new();
-        cb.record_success();
-        cb.record_success();
-        assert!(cb.check().is_ok());
-    }
-
-    #[test]
-    fn test_circuit_breaker_opens_after_threshold() {
-        let cb = GitHubCircuitBreaker::new();
-        cb.record_failure();
-        cb.record_failure();
-        assert!(
-            cb.check().is_ok(),
-            "Should still be closed after 2 failures"
-        );
-        cb.record_failure();
-        assert!(cb.check().is_err(), "Should be open after 3 failures");
-    }
-
-    #[test]
-    fn test_circuit_breaker_resets_on_success() {
-        let cb = GitHubCircuitBreaker::new();
-        cb.record_failure();
-        cb.record_failure();
-        cb.record_success(); // Reset before threshold
-        cb.record_failure();
-        cb.record_failure();
-        assert!(
-            cb.check().is_ok(),
-            "Should be closed — success reset the count"
-        );
-    }
-
-    #[test]
-    fn test_circuit_breaker_respects_open_until() {
-        let cb = GitHubCircuitBreaker::new();
-        // Force circuit open with a future instant
-        *cb.open_until.write() = Some(Instant::now() + std::time::Duration::from_secs(60));
-        let result = cb.check();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("circuit breaker open"));
-    }
-
-    // --- Rate limit circuit breaker tests ---
-
-    #[test]
-    fn test_circuit_breaker_rate_limit_blocks_requests() {
-        let cb = GitHubCircuitBreaker::new();
-        cb.record_rate_limit(60);
-        let result = cb.check();
-        assert!(result.is_err());
-        assert!(
-            result.unwrap_err().starts_with("rate-limit:"),
-            "Rate limit check should return error starting with 'rate-limit:'"
-        );
-    }
-
-    #[test]
-    fn test_circuit_breaker_rate_limit_does_not_increment_failure_count() {
-        let cb = GitHubCircuitBreaker::new();
-        // Record 2 failures (below threshold)
-        cb.record_failure();
-        cb.record_failure();
-        // Record a rate limit — this should NOT push us over the failure threshold
-        cb.record_rate_limit(1);
-        // Wait for rate limit to expire
-        std::thread::sleep(std::time::Duration::from_millis(1100));
-        // Should still be open for requests (only 2 failures, threshold is 3)
-        assert!(
-            cb.check().is_ok(),
-            "Rate limit should not inflate failure count"
-        );
-    }
-
-    #[test]
-    fn test_circuit_breaker_rate_limit_expires() {
-        let cb = GitHubCircuitBreaker::new();
-        // Set rate limit that expires in 1 second
-        *cb.rate_limit_until.write() = Some(Instant::now() + std::time::Duration::from_millis(50));
-        assert!(cb.check().is_err(), "Should be rate limited initially");
-        std::thread::sleep(std::time::Duration::from_millis(60));
-        assert!(
-            cb.check().is_ok(),
-            "Should be open after rate limit expires"
-        );
-    }
-
-    #[test]
-    fn test_circuit_breaker_rate_limit_takes_priority_over_open() {
-        let cb = GitHubCircuitBreaker::new();
-        // Set both circuit breaker open and rate limited
-        *cb.open_until.write() = Some(Instant::now() + std::time::Duration::from_secs(60));
-        *cb.rate_limit_until.write() = Some(Instant::now() + std::time::Duration::from_secs(60));
-        let result = cb.check();
-        assert!(result.is_err());
-        // Rate limit message should take priority
-        assert!(
-            result.unwrap_err().starts_with("rate-limit:"),
-            "Rate limit should take priority in error message"
-        );
-    }
-
     // --- GqlError display tests for RateLimit ---
 
     #[test]
     fn test_gql_error_display_rate_limit() {
         let err = GqlError::RateLimit {
-            reset_at: Some(1700000000),
-            retry_after: Some(60),
             message: "API rate limit exceeded".to_string(),
         };
         assert_eq!(format!("{err}"), "Rate limited: API rate limit exceeded");
-    }
-
-    // --- rate_limit_wait_secs tests ---
-
-    #[test]
-    fn test_rate_limit_wait_secs_prefers_retry_after() {
-        // retry-after takes priority over reset_at
-        assert_eq!(rate_limit_wait_secs(Some(9999999999), Some(42)), 42);
-    }
-
-    #[test]
-    fn test_rate_limit_wait_secs_falls_back_to_reset_at() {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let reset = now + 30;
-        let wait = rate_limit_wait_secs(Some(reset), None);
-        // Should be approximately 31 (30 + 1 safety margin)
-        assert!((30..=32).contains(&wait), "Expected ~31, got {wait}");
-    }
-
-    #[test]
-    fn test_rate_limit_wait_secs_defaults_to_60() {
-        assert_eq!(rate_limit_wait_secs(None, None), 60);
-    }
-
-    #[test]
-    fn test_rate_limit_wait_secs_reset_in_past() {
-        // If reset_at is in the past and no retry-after, default to 60
-        assert_eq!(rate_limit_wait_secs(Some(1000), None), 60);
     }
 
     #[test]
@@ -6017,7 +5806,7 @@ mod tests {
         let json = serde_json::json!({
             "data": { "r0": { "pullRequests": { "nodes": [] } } }
         });
-        assert!(check_graphql_errors(&json, None, None).is_ok());
+        assert!(check_graphql_errors(&json).is_ok());
     }
 
     #[test]
@@ -6026,7 +5815,7 @@ mod tests {
             "data": { "r0": null },
             "errors": []
         });
-        assert!(check_graphql_errors(&json, None, None).is_ok());
+        assert!(check_graphql_errors(&json).is_ok());
     }
 
     #[test]
@@ -6035,7 +5824,7 @@ mod tests {
             "data": { "r0": { "pullRequests": { "nodes": [] } } },
             "errors": [{ "type": "RATE_LIMITED", "message": "rate limited" }]
         });
-        let err = check_graphql_errors(&json, Some(9999), None).unwrap_err();
+        let err = check_graphql_errors(&json).unwrap_err();
         assert!(matches!(err, GqlError::RateLimit { .. }));
     }
 
@@ -6052,7 +5841,7 @@ mod tests {
                 "message": "Could not resolve to a Repository with the name 'foo/bar'."
             }]
         });
-        assert!(check_graphql_errors(&json, None, None).is_ok());
+        assert!(check_graphql_errors(&json).is_ok());
     }
 
     #[test]
@@ -6061,7 +5850,7 @@ mod tests {
         let json = serde_json::json!({
             "errors": [{ "message": "Something went wrong" }]
         });
-        let err = check_graphql_errors(&json, None, None).unwrap_err();
+        let err = check_graphql_errors(&json).unwrap_err();
         match err {
             GqlError::Other(msg) => assert!(msg.contains("Something went wrong")),
             _ => panic!("Expected GqlError::Other, got {err:?}"),
@@ -6075,7 +5864,7 @@ mod tests {
             "data": null,
             "errors": [{ "message": "Bad query" }]
         });
-        let err = check_graphql_errors(&json, None, None).unwrap_err();
+        let err = check_graphql_errors(&json).unwrap_err();
         assert!(matches!(err, GqlError::Other(_)));
     }
 
@@ -6160,29 +5949,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn per_account_breaker_is_isolated() {
-        let state = crate::state::tests_support::make_test_app_state();
-        let cloud = cloud_account();
-        let ghe = ghe_account();
-
-        // Trip the GHE breaker (threshold = 3 consecutive failures).
-        with_account_breaker(&state, &ghe, |b| {
-            for _ in 0..3 {
-                b.record_failure();
-            }
-        });
-
-        assert!(
-            with_account_breaker(&state, &ghe, |b| b.check()).is_err(),
-            "GHE breaker should be open"
-        );
-        assert!(
-            with_account_breaker(&state, &cloud, |b| b.check()).is_ok(),
-            "github.com breaker must stay closed"
-        );
-    }
-
     fn named_cloud_account() -> GitHubAccount {
         GitHubAccount::github_com_named("octocat-named")
     }
@@ -6199,90 +5965,6 @@ mod tests {
         assert_eq!(
             cooldown_key(&named_cloud_account(), "octocat", "hello"),
             "octocat-named:octocat/hello"
-        );
-    }
-
-    #[test]
-    fn named_github_com_breaker_isolated_from_ambient_default() {
-        // Two cloud accounts (the ambient default + a named github.com account)
-        // each get their own breaker. Tripping the named one must not open the
-        // ambient default's.
-        let state = crate::state::tests_support::make_test_app_state();
-        let ambient = cloud_account();
-        let named = named_cloud_account();
-
-        with_account_breaker(&state, &named, |b| {
-            for _ in 0..3 {
-                b.record_failure();
-            }
-        });
-        assert!(
-            with_account_breaker(&state, &named, |b| b.check()).is_err(),
-            "named github.com breaker should be open"
-        );
-        assert!(
-            with_account_breaker(&state, &ambient, |b| b.check()).is_ok(),
-            "ambient default breaker must stay closed — one cloud account's limit must not throttle the other"
-        );
-    }
-
-    #[test]
-    fn named_github_com_rate_budget_isolated() {
-        use std::sync::atomic::Ordering;
-        let state = crate::state::tests_support::make_test_app_state();
-        let named = named_cloud_account();
-        state
-            .github
-            .rate_limit_remaining
-            .store(5000, Ordering::Relaxed);
-        state
-            .github
-            .ghe_state
-            .entry(named.id.clone())
-            .or_insert_with(GheAccountState::new)
-            .rate_limit_remaining
-            .store(10, Ordering::Relaxed);
-
-        assert_eq!(
-            state.github.rate_limit_remaining.load(Ordering::Relaxed),
-            5000,
-            "ambient default budget unchanged"
-        );
-        assert_eq!(
-            state
-                .github
-                .ghe_state
-                .get(&named.id)
-                .unwrap()
-                .rate_limit_remaining
-                .load(Ordering::Relaxed),
-            10,
-            "named account budget is isolated in its own ghe_state entry"
-        );
-    }
-
-    #[test]
-    fn min_rate_budget_paces_for_the_tightest_account() {
-        use std::sync::atomic::Ordering;
-        let state = crate::state::tests_support::make_test_app_state();
-        // Ambient default has plenty; a named account is nearly exhausted.
-        state
-            .github
-            .rate_limit_remaining
-            .store(5000, Ordering::Relaxed);
-        let named = named_cloud_account();
-        state
-            .github
-            .ghe_state
-            .entry(named.id.clone())
-            .or_insert_with(GheAccountState::new)
-            .rate_limit_remaining
-            .store(7, Ordering::Relaxed);
-
-        assert_eq!(
-            min_rate_budget(&state),
-            7,
-            "the global poll cadence must pace for the most-constrained account"
         );
     }
 
@@ -6397,18 +6079,15 @@ mod tests {
         );
     }
 
-    #[test]
-    fn diagnostics_flags_open_ghe_breaker() {
+    #[tokio::test]
+    async fn diagnostics_flags_a_ghe_account_backing_off() {
         let state = crate::state::tests_support::make_test_app_state();
         let ghe = ghe_account();
-        with_account_breaker(&state, &ghe, |b| {
-            for _ in 0..3 {
-                b.record_failure();
-            }
-        });
+        github_gateway_tests::trip_graphql_limit(&state, &ghe).await;
         let diag = crate::github_auth::compute_diagnostics(&state);
         assert!(diag.circuit_breaker_open);
-        assert!(diag.circuit_breaker_status.contains("Enterprise"));
+        assert!(diag.circuit_breaker_status.starts_with("rate-limit:"));
+        assert!(diag.circuit_breaker_status.contains("ghe.acme.com"));
     }
 
     #[test]
@@ -6631,231 +6310,6 @@ mod tests {
         );
     }
 
-    // --- direct-REST circuit breaker (#491-6bb2) ---
-
-    /// The defect: only graphql_with_retry and legacy gh writes consulted the breaker,
-    /// so a rate-limited account kept hammering GitHub through every direct-REST
-    /// call while the GraphQL path politely backed off. A tripped breaker must now
-    /// stop the request before it is sent — asserted by the mock NEVER being hit.
-    #[tokio::test]
-    async fn a_tripped_breaker_stops_a_rest_call_before_it_is_sent() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("GET", "/repos/o/r/issues/1")
-            .expect(0)
-            .create_async()
-            .await;
-
-        let state = crate::state::tests_support::make_test_app_state();
-        let account = github_com_account(&state);
-        state.github.circuit_breaker.record_rate_limit(60);
-
-        let url = format!("{}/repos/o/r/issues/1", server.url());
-        let err = send_rest_with_breaker(&state, &account, state.http_client.get(&url))
-            .await
-            .expect_err("an open breaker must refuse the call");
-
-        assert!(err.contains("rate-limit"), "unexpected error: {err}");
-        mock.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn a_rest_429_trips_the_breaker_for_the_next_call() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("PATCH", "/repos/o/r/issues/1")
-            .with_status(429)
-            .with_header("retry-after", "42")
-            .create_async()
-            .await;
-
-        let state = crate::state::tests_support::make_test_app_state();
-        let account = github_com_account(&state);
-        let url = format!("{}/repos/o/r/issues/1", server.url());
-
-        let err = send_rest_with_breaker(&state, &account, state.http_client.patch(&url))
-            .await
-            .expect_err("429 must not be handed back as an ordinary response");
-        assert!(err.contains("rate-limit"), "unexpected error: {err}");
-        mock.assert_async().await;
-
-        let follow_up = state.github.circuit_breaker.check().unwrap_err();
-        assert!(
-            follow_up.contains("rate-limit"),
-            "the 429 must leave the breaker backing off: {follow_up}"
-        );
-    }
-
-    /// GitHub's 403 is ambiguous. An exhausted primary limit (remaining: 0) must
-    /// back off; a plain permission denial must not, or one protected branch would
-    /// silence every GitHub call for the account.
-    #[tokio::test]
-    async fn a_403_is_a_rate_limit_only_when_the_headers_say_so() {
-        let mut server = mockito::Server::new_async().await;
-        let exhausted = server
-            .mock("GET", "/exhausted")
-            .with_status(403)
-            .with_header("x-ratelimit-remaining", "0")
-            .with_header("x-ratelimit-reset", "99999999999")
-            .create_async()
-            .await;
-        let forbidden = server
-            .mock("GET", "/forbidden")
-            .with_status(403)
-            .with_body(r#"{"message":"Resource not accessible"}"#)
-            .create_async()
-            .await;
-
-        let state = crate::state::tests_support::make_test_app_state();
-        let account = github_com_account(&state);
-
-        let err = send_rest_with_breaker(
-            &state,
-            &account,
-            state.http_client.get(format!("{}/exhausted", server.url())),
-        )
-        .await
-        .expect_err("an exhausted primary limit is a rate limit");
-        assert!(err.contains("rate-limit"), "unexpected error: {err}");
-        exhausted.assert_async().await;
-        state.github.circuit_breaker.reset();
-
-        // The permission 403 comes back as a Response so the caller can read the
-        // body and produce its own wording (friendly_approve_error, merge errors…).
-        let response = send_rest_with_breaker(
-            &state,
-            &account,
-            state.http_client.get(format!("{}/forbidden", server.url())),
-        )
-        .await
-        .expect("a permission 403 must reach the caller with its body intact");
-        assert_eq!(response.status().as_u16(), 403);
-        assert!(response.text().await.unwrap().contains("not accessible"));
-        forbidden.assert_async().await;
-        assert!(
-            state.github.circuit_breaker.check().is_ok(),
-            "a single permission denial must not open the breaker"
-        );
-    }
-
-    #[tokio::test]
-    async fn ordinary_rest_4xx_responses_do_not_poison_account_availability() {
-        let mut server = mockito::Server::new_async().await;
-        for (path, status) in [("/missing", 404), ("/conflict", 409), ("/invalid", 422)] {
-            server
-                .mock("GET", path)
-                .with_status(status)
-                .with_body(r#"{"message":"deterministic caller error"}"#)
-                .create_async()
-                .await;
-        }
-        let state = crate::state::tests_support::make_test_app_state();
-        let account = github_com_account(&state);
-
-        for path in ["missing", "conflict", "invalid"] {
-            let response = send_rest_with_breaker(
-                &state,
-                &account,
-                state.http_client.get(format!("{}/{path}", server.url())),
-            )
-            .await
-            .expect("ordinary 4xx must reach its caller");
-            assert!(response.status().is_client_error());
-        }
-
-        assert!(
-            state.github.circuit_breaker.check().is_ok(),
-            "three deterministic 4xx responses must not open the breaker"
-        );
-    }
-
-    #[tokio::test]
-    async fn three_rest_5xx_responses_open_the_availability_breaker() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("GET", "/unavailable")
-            .with_status(503)
-            .expect(3)
-            .create_async()
-            .await;
-        let state = crate::state::tests_support::make_test_app_state();
-        let account = github_com_account(&state);
-
-        for _ in 0..3 {
-            let response = send_rest_with_breaker(
-                &state,
-                &account,
-                state
-                    .http_client
-                    .get(format!("{}/unavailable", server.url())),
-            )
-            .await
-            .expect("5xx body remains caller-readable");
-            assert_eq!(response.status().as_u16(), 503);
-        }
-
-        mock.assert_async().await;
-        assert!(state.github.circuit_breaker.check().is_err());
-    }
-
-    #[tokio::test]
-    async fn a_secondary_limit_body_trips_rest_backoff_without_headers() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("GET", "/secondary")
-            .with_status(403)
-            .with_body(r#"{"message":"You have exceeded a secondary rate limit."}"#)
-            .create_async()
-            .await;
-        let state = crate::state::tests_support::make_test_app_state();
-        let account = github_com_account(&state);
-
-        let error = send_rest_with_breaker(
-            &state,
-            &account,
-            state.http_client.get(format!("{}/secondary", server.url())),
-        )
-        .await
-        .expect_err("body-signalled secondary limit must back off");
-
-        mock.assert_async().await;
-        assert!(error.contains("rate-limit"), "{error}");
-        assert!(
-            state
-                .github
-                .circuit_breaker
-                .check()
-                .unwrap_err()
-                .starts_with("rate-limit:")
-        );
-    }
-
-    #[tokio::test]
-    async fn a_successful_rest_call_clears_earlier_failures() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("GET", "/ok")
-            .with_status(200)
-            .with_body("{}")
-            .create_async()
-            .await;
-
-        let state = crate::state::tests_support::make_test_app_state();
-        let account = github_com_account(&state);
-        state.github.circuit_breaker.record_failure();
-
-        let response = send_rest_with_breaker(
-            &state,
-            &account,
-            state.http_client.get(format!("{}/ok", server.url())),
-        )
-        .await
-        .expect("2xx");
-        assert_eq!(response.status().as_u16(), 200);
-        mock.assert_async().await;
-        assert!(state.github.circuit_breaker.check().is_ok());
-    }
-
     // --- viewer login invalidation (#491-6bb2) ---
 
     /// github_viewer_login was written once and cleared nowhere, so after switching
@@ -6997,6 +6451,7 @@ mod tests {
         fetch_github_json(
             &state,
             &account,
+            Origin::interactive("test"),
             mock_rest_request(&state, &url),
             "GitHub pulls",
         )
@@ -7024,6 +6479,7 @@ mod tests {
         let result = fetch_github_json(
             &state,
             &account,
+            Origin::interactive("test"),
             mock_rest_request(&state, &url),
             "GitHub issue",
         )
@@ -7056,6 +6512,7 @@ mod tests {
         let result = fetch_github_json(
             &state,
             &account,
+            Origin::interactive("test"),
             mock_rest_request(&state, &url),
             "GitHub issue",
         )
@@ -7087,6 +6544,7 @@ mod tests {
         let value = fetch_github_json(
             &state,
             &account,
+            Origin::interactive("test"),
             mock_rest_request(&state, &url),
             "GitHub issue",
         )
@@ -7723,17 +7181,19 @@ mod pr_panel_mutant_tests {
     }
 
     /// Catches (fetch_review_thread_counts whole-fn `Ok((Default, true))`): the public walk
-    /// swallowing a failed GraphQL call as "no unresolved threads, complete". The open breaker
-    /// refuses the call before any request is sent.
+    /// swallowing a failed GraphQL call as "no unresolved threads, complete". The closed graphql
+    /// bucket refuses the call before any request is sent.
     #[tokio::test]
     async fn fetch_review_thread_counts_surfaces_a_refused_graphql_call() {
         let state = crate::state::tests_support::make_test_app_state();
         let account = github_com_account(&state);
-        state.github.circuit_breaker.record_rate_limit(60);
+        *state.github.token.write() = Some("test-token".into());
+        github_gateway_tests::trip_graphql_limit(&state, &account).await;
 
-        let err = fetch_review_thread_counts(&state, &account, "o", "r", 1)
-            .await
-            .expect_err("an open breaker must fail the walk");
+        let err =
+            fetch_review_thread_counts(&state, &account, Origin::interactive("test"), "o", "r", 1)
+                .await
+                .expect_err("an open breaker must fail the walk");
         assert!(
             err.starts_with("GraphQL review threads query failed:"),
             "{err}"
@@ -7763,7 +7223,8 @@ mod pr_panel_mutant_tests {
     async fn poll_one_account_reports_a_refused_graphql_call() {
         let state = crate::state::tests_support::make_test_app_state();
         let account = github_com_account(&state);
-        state.github.circuit_breaker.record_rate_limit(60);
+        *state.github.token.write() = Some("test-token".into());
+        github_gateway_tests::trip_graphql_limit(&state, &account).await;
         let mut prs = std::collections::HashMap::new();
         let mut issues = std::collections::HashMap::new();
 
@@ -7779,6 +7240,8 @@ mod pr_panel_mutant_tests {
             &mut issues,
             None,
             &mut std::collections::HashMap::new(),
+            &Default::default(),
+            &mut Default::default(),
         )
         .await
         .expect_err("an open breaker must fail the poll");

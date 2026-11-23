@@ -4,6 +4,10 @@
 //! and error classification. The TypeScript frontend is a pure state consumer.
 
 use serde::Serialize;
+use tuic_gateway::model::Provider;
+
+use crate::github::gateway::Origin;
+use crate::provider_gateway::direct::{self, Direct};
 
 /// Result of checking a specific update channel.
 #[derive(Debug, Clone, Serialize)]
@@ -45,6 +49,31 @@ const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 /// HTTP request timeout.
 const TIMEOUT_SECS: u64 = 15;
 
+/// The budget the update manifest spends: it belongs to no account.
+const UPDATE_ACCOUNT: &str = "updater";
+
+/// The `platforms` key tauri-action writes for this build, e.g. `darwin-aarch64`.
+fn updater_target() -> String {
+    let os = match std::env::consts::OS {
+        "macos" => "darwin",
+        other => other,
+    };
+    format!("{os}-{}", std::env::consts::ARCH)
+}
+
+/// True when the manifest carries a signed download for `target`. A failed
+/// platform build leaves the feed with a new version but no entry (#161).
+fn manifest_offers_target(json: &serde_json::Value, target: &str) -> bool {
+    let non_empty = |field: &str| {
+        json.get("platforms")
+            .and_then(|p| p.get(target))
+            .and_then(|e| e.get(field))
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.trim().is_empty())
+    };
+    non_empty("url") && non_empty("signature")
+}
+
 /// Look up channel configuration by name.
 fn get_channel_config(channel: &str) -> Result<&'static ChannelConfig, String> {
     CHANNELS
@@ -60,18 +89,18 @@ fn get_channel_config(channel: &str) -> Result<&'static ChannelConfig, String> {
 async fn fetch_channel_manifest(
     manifest_url: &str,
     release_page: &str,
+    target: &str,
 ) -> Result<UpdateCheckResult, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(TIMEOUT_SECS))
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
-
-    let resp = client
-        .get(manifest_url)
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {e}"))?;
+    let resp = Direct::new(
+        Origin::visible("updater.fetch_channel_manifest"),
+        Provider::Generic,
+        UPDATE_ACCOUNT,
+    )
+    .limited_redirects()
+    .timeout(std::time::Duration::from_secs(TIMEOUT_SECS))
+    .send(direct::builder(reqwest::Method::GET, manifest_url))
+    .await
+    .map_err(|e| format!("Network error: {e}"))?;
 
     let status = resp.status();
 
@@ -108,13 +137,14 @@ async fn fetch_channel_manifest(
     let json: serde_json::Value =
         serde_json::from_slice(&bytes).map_err(|e| format!("Invalid JSON: {e}"))?;
 
-    // Extract version — if missing, treat as "no update available"
+    // Extract version — if missing, or if this platform has no download,
+    // treat as "no update available"
     let version = json
         .get("version")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    if version.is_none() {
+    if version.is_none() || !manifest_offers_target(&json, target) {
         return Ok(UpdateCheckResult {
             available: false,
             version: None,
@@ -143,7 +173,8 @@ async fn fetch_update_channel(
     manifest_url: &str,
 ) -> Result<UpdateCheckResult, String> {
     let config = get_channel_config(channel)?;
-    let mut result = fetch_channel_manifest(manifest_url, config.release_page).await?;
+    let mut result =
+        fetch_channel_manifest(manifest_url, config.release_page, &updater_target()).await?;
     // The rolling beta release only hosts latest.json; installers stay on the
     // immutable versioned release so their signed URLs never move.
     if channel == "beta"
@@ -176,6 +207,66 @@ pub async fn check_update_channel(channel: String) -> Result<UpdateCheckResult, 
 mod tests {
     use super::*;
 
+    const TARGET: &str = "darwin-aarch64";
+
+    fn signed_entry() -> serde_json::Value {
+        serde_json::json!({ TARGET: { "signature": "sig", "url": "https://example.com/TUICommander_aarch64.app.tar.gz" } })
+    }
+
+    fn stable_fixture() -> serde_json::Value {
+        serde_json::from_str(include_str!(
+            "../test-fixtures/updater/stable-manifest.json"
+        ))
+        .unwrap()
+    }
+
+    // Catches: a feed whose macOS build failed still announces the new version
+    // to macOS users, who then have nothing to download (#161).
+    #[tokio::test]
+    async fn feed_without_this_platform_offers_no_update() {
+        let mut server = mockito::Server::new_async().await;
+        let mut manifest = stable_fixture();
+        let platforms = manifest["platforms"].as_object_mut().unwrap();
+        platforms.retain(|key, _| !key.starts_with("darwin-"));
+        let mock = server
+            .mock("GET", "/nightly/latest.json")
+            .with_status(200)
+            .with_body(manifest.to_string())
+            .create_async()
+            .await;
+        let url = format!("{}/nightly/latest.json", server.url());
+        let result = fetch_channel_manifest(&url, "https://example.com", TARGET)
+            .await
+            .unwrap();
+        assert!(!result.available);
+        assert!(!result.not_found);
+        let result = fetch_channel_manifest(&url, "https://example.com", "windows-x86_64")
+            .await
+            .unwrap();
+        assert!(
+            result.available,
+            "platforms still in the feed keep their update"
+        );
+        mock.expect(2).assert_async().await;
+    }
+
+    // Catches: an entry without a signature counts as a download the
+    // updater cannot verify.
+    #[test]
+    fn platform_entry_needs_url_and_signature() {
+        let mut manifest = stable_fixture();
+        assert!(manifest_offers_target(&manifest, TARGET));
+        manifest["platforms"][TARGET]["signature"] = serde_json::json!(" ");
+        assert!(!manifest_offers_target(&manifest, TARGET));
+    }
+
+    #[test]
+    fn updater_target_uses_tauri_platform_names() {
+        let target = updater_target();
+        assert!(!target.starts_with("macos-"), "{target}");
+        assert!(target.ends_with(std::env::consts::ARCH), "{target}");
+    }
+
     #[test]
     fn test_channel_urls_are_https_github() {
         for (name, cfg) in CHANNELS {
@@ -205,10 +296,9 @@ mod tests {
     #[tokio::test]
     async fn beta_feed_offers_versioned_downloads_using_recorded_manifest_shape() {
         let mut server = mockito::Server::new_async().await;
-        let mut manifest: serde_json::Value = serde_json::from_str(include_str!(
-            "../test-fixtures/updater/stable-manifest.json"
-        ))
-        .unwrap();
+        let mut manifest = stable_fixture();
+        // The fixture has no entry for every CI host architecture.
+        manifest["platforms"][updater_target()] = signed_entry()[TARGET].clone();
         // There is no published beta yet. Change only its version to exercise
         // the same tauri-action schema recorded from the real stable release.
         manifest["version"] = serde_json::json!("2.0.0-beta.2");
@@ -273,6 +363,7 @@ mod tests {
         let result = fetch_channel_manifest(
             &format!("{}/beta/latest.json", server.url()),
             "https://github.com/sstraus/tuicommander/releases/tag/beta",
+            TARGET,
         )
         .await
         .expect("404 should return Ok, not Err");
@@ -289,7 +380,8 @@ mod tests {
         let body = serde_json::json!({
             "version": "2.0.0-beta.1",
             "notes": "Beta release notes",
-            "pub_date": "2026-03-11"
+            "pub_date": "2026-03-11",
+            "platforms": signed_entry(),
         });
         let mock = server
             .mock("GET", "/beta/latest.json")
@@ -302,6 +394,7 @@ mod tests {
         let result = fetch_channel_manifest(
             &format!("{}/beta/latest.json", server.url()),
             "https://github.com/sstraus/tuicommander/releases/tag/beta",
+            TARGET,
         )
         .await
         .expect("200 with valid manifest should succeed");
@@ -320,8 +413,12 @@ mod tests {
     #[tokio::test]
     async fn test_check_update_channel_network_error() {
         // Use a URL that will fail to connect (port 1 is almost certainly closed)
-        let result =
-            fetch_channel_manifest("http://127.0.0.1:1/nonexistent", "https://example.com").await;
+        let result = fetch_channel_manifest(
+            "http://127.0.0.1:1/nonexistent",
+            "https://example.com",
+            TARGET,
+        )
+        .await;
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -343,8 +440,12 @@ mod tests {
             .create_async()
             .await;
 
-        let result =
-            fetch_channel_manifest(&format!("{}/big", server.url()), "https://example.com").await;
+        let result = fetch_channel_manifest(
+            &format!("{}/big", server.url()),
+            "https://example.com",
+            TARGET,
+        )
+        .await;
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -365,9 +466,12 @@ mod tests {
             .create_async()
             .await;
 
-        let result =
-            fetch_channel_manifest(&format!("{}/garbage", server.url()), "https://example.com")
-                .await;
+        let result = fetch_channel_manifest(
+            &format!("{}/garbage", server.url()),
+            "https://example.com",
+            TARGET,
+        )
+        .await;
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid JSON"));
@@ -389,6 +493,7 @@ mod tests {
         let result = fetch_channel_manifest(
             &format!("{}/noversion", server.url()),
             "https://example.com",
+            TARGET,
         )
         .await
         .expect("Missing version should return Ok, not Err");
@@ -405,6 +510,7 @@ mod tests {
         let body = serde_json::json!({
             "version": "3.0.0-beta.1",
             "notes": "Redirect test",
+            "platforms": signed_entry(),
         });
         let target_mock = server
             .mock("GET", "/cdn/latest.json")
@@ -423,6 +529,7 @@ mod tests {
         let result = fetch_channel_manifest(
             &format!("{}/beta/latest.json", server.url()),
             "https://github.com/sstraus/tuicommander/releases/tag/beta",
+            TARGET,
         )
         .await
         .expect("302 redirect should be followed transparently");
@@ -442,8 +549,12 @@ mod tests {
             .create_async()
             .await;
 
-        let result =
-            fetch_channel_manifest(&format!("{}/error", server.url()), "https://example.com").await;
+        let result = fetch_channel_manifest(
+            &format!("{}/error", server.url()),
+            "https://example.com",
+            TARGET,
+        )
+        .await;
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("HTTP 500"));

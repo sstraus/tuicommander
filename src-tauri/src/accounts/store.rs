@@ -172,6 +172,29 @@ pub(crate) fn read_token(id: &str) -> Result<Option<String>, String> {
         .map_err(|_| "Account credential storage is unavailable".into())
 }
 
+/// An account whose cached provider data must go: removed, or logged out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ClearedAccount {
+    pub(crate) id: String,
+    /// REST base of a GitHub account; `None` for other providers.
+    pub(crate) github_api_base: Option<String>,
+}
+
+static CLEARED: std::sync::LazyLock<tokio::sync::broadcast::Sender<ClearedAccount>> =
+    std::sync::LazyLock::new(|| tokio::sync::broadcast::channel(16).0);
+
+pub(crate) fn subscribe_cleared() -> tokio::sync::broadcast::Receiver<ClearedAccount> {
+    CLEARED.subscribe()
+}
+
+/// Tell the subscribers (the provider gateway cache) that `id` lost its credential.
+pub(crate) fn notify_cleared(id: &str, github: Option<&GitHubAccount>) {
+    let _ = CLEARED.send(ClearedAccount {
+        id: id.to_string(),
+        github_api_base: github.map(|a| a.host.rest_base()),
+    });
+}
+
 pub(crate) fn remove(id: &str) -> Result<Option<Account>, String> {
     // Every removal path reaches this point, the legacy GitHub command included.
     if id == GitHubAccount::GITHUB_COM_ID {
@@ -184,6 +207,11 @@ pub(crate) fn remove(id: &str) -> Result<Option<Account>, String> {
         crate::credentials::delete(Credential::AccountToken(id))
             .map_err(|_| "Account credential removal failed; account was not removed")?;
         Ok((registry.accounts.remove(id), true))
+    })
+    .inspect(|removed| {
+        if let Some(account) = removed {
+            notify_cleared(id, github_account(account).as_ref());
+        }
     })
 }
 

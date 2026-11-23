@@ -73,6 +73,8 @@ scripts/*
 !scripts/plugin-review-desktop-e2e.mjs
 !scripts/jira-cloud-desktop-e2e.mjs
 !scripts/observe-github-volume-1995.py
+!scripts/provider-gateway-bench-before.sh
+!scripts/provider-gateway-bench/
 !scripts/observe-github-volume-1995.vite.ts
 !scripts/check-mobile-session-chat-layout.mjs
 !scripts/check-mobile-jump-layout.mjs

@@ -13,14 +13,16 @@ import { toastsStore } from "../../stores/toasts";
 import type { BranchPrStatus } from "../../types";
 import { cx } from "../../utils";
 import { onClickKeyDown } from "../../utils/a11y";
-import { canApprovePr, effectiveMergeMethod, mergeWithFallback } from "../../utils/prMerge";
+import { effectiveMergeMethod, mergeWithFallback } from "../../utils/prMerge";
 import {
 	type CleanupStep,
 	PostMergeCleanupDialog,
 	type StepId,
 	type StepStatus,
 } from "../PostMergeCleanupDialog/PostMergeCleanupDialog";
+import { ciAutoHealMenuItem } from "../PrDetailPopover/ciAutoHeal";
 import { PrDetailContent } from "../PrDetailPopover/PrDetailContent";
+import { PanelToolbar, ToolbarIcons } from "../shared/PanelToolbar";
 import { Button } from "../ui/Button";
 import { PrStateBadge } from "./PrStateBadge";
 import { canMergePr } from "./prMergeEligibility";
@@ -307,89 +309,55 @@ export const RemoteOnlyPrPopover: Component<{
 									</div>
 									<Show when={expandedBranch() === pr.branch}>
 										<div class={s.remoteOnlyDetail}>
-											<Button
-												size="compact"
-												variant="ghost"
-												class={s.remoteOnlyDetailDismiss}
-												onClick={() => handleDismiss(pr.number)}
-												aria-label={t("sidebar.dismissPr", "Hide this PR from view")}
-												data-tooltip={t("sidebar.dismissPr", "Hide this PR from view")}
-												data-tooltip-pos="bottom"
-												data-tooltip-align="right"
+											<PrDetailContent
+												repoPath={props.repoPath}
+												branch={pr.branch}
+												onApprove={() => handleApprove(pr)}
+												approving={approvingPr() === pr.number}
+												onMerge={canMergePr(pr) ? () => handleMerge(pr) : undefined}
+												merging={mergingPr() === pr.number}
+												mergeLabel={mergeLabel(pr)}
 											>
-												&times;
-											</Button>
-											<PrDetailContent repoPath={props.repoPath} branch={pr.branch}>
-												<div class={s.remoteOnlyDetailActions}>
-													<Button
-														size="compact"
-														variant="ghost"
-														class={s.remoteOnlyCheckout}
-														onClick={() => props.onCheckout(pr.branch)}
-														data-tooltip={t("sidebar.checkoutBranch", "Check out this branch locally")}
-														data-tooltip-pos="bottom"
-														data-tooltip-align="right"
-													>
-														{t("sidebar.checkout", "Checkout")}
-													</Button>
-													<Show when={props.onCreateWorktree}>
-														<Button
-															size="compact"
-															variant="ghost"
-															class={s.remoteOnlyWorktree}
-															onClick={() => props.onCreateWorktree?.(pr.branch)}
-															data-tooltip={t("sidebar.createWorktreeFromBranch", "Create worktree from this branch")}
-															data-tooltip-pos="bottom"
-															data-tooltip-align="right"
-														>
-															{t("sidebar.worktree", "Worktree")}
-														</Button>
-													</Show>
-													<Show when={canApprovePr(pr, githubStore.state.viewerLogin)}>
-														<Button
-															size="compact"
-															variant="primary"
-															class={s.remoteOnlyApprove}
-															onClick={() => handleApprove(pr)}
-															disabled={approvingPr() === pr.number}
-															data-tooltip={t("sidebar.approvePr", "Approve this pull request")}
-															data-tooltip-pos="bottom"
-															data-tooltip-align="right"
-														>
-															{approvingPr() === pr.number
-																? t("sidebar.approving", "Approving...")
-																: t("sidebar.approve", "Approve")}
-														</Button>
-													</Show>
-													<Show when={canMergePr(pr)}>
-														<Button
-															size="compact"
-															variant="ghost"
-															class={s.remoteOnlyMerge}
-															onClick={() => handleMerge(pr)}
-															disabled={mergingPr() === pr.number}
-															data-tooltip={t("sidebar.mergePr", "Merge this pull request")}
-															data-tooltip-pos="bottom"
-															data-tooltip-align="right"
-														>
-															{mergingPr() === pr.number ? t("sidebar.merging", "Merging...") : mergeLabel(pr)}
-														</Button>
-													</Show>
-													<Button
-														size="compact"
-														variant="ghost"
-														class={s.remoteOnlyViewDiff}
-														onClick={() => handleViewDiff(pr)}
-														disabled={diffLoadingPr() === pr.number}
-														data-tooltip={t("sidebar.viewDiff", "View PR diff")}
-														data-tooltip-pos="bottom"
-														data-tooltip-align="right"
-													>
-														{diffLoadingPr() === pr.number
-															? t("sidebar.loadingDiff", "Loading...")
-															: t("sidebar.diff", "Diff")}
-													</Button>
-												</div>
+												<PanelToolbar
+													menuLabel={t("sidebar.moreActions", "More actions")}
+													actions={[
+														{
+															id: "diff",
+															label:
+																diffLoadingPr() === pr.number
+																	? t("sidebar.loadingDiff", "Loading...")
+																	: t("sidebar.diff", "Diff"),
+															icon: <ToolbarIcons.diff />,
+															onClick: () => handleViewDiff(pr),
+															disabled: diffLoadingPr() === pr.number,
+															tooltip: t("sidebar.viewDiff", "View PR diff"),
+														},
+														{
+															id: "checkout",
+															label: t("sidebar.checkout", "Checkout"),
+															icon: <ToolbarIcons.checkout />,
+															onClick: () => props.onCheckout(pr.branch),
+															tooltip: t("sidebar.checkoutBranch", "Check out this branch locally"),
+														},
+													]}
+													menu={[
+														...(props.onCreateWorktree
+															? [
+																	{
+																		id: "worktree",
+																		label: t("sidebar.createWorktreeFromBranch", "Create worktree from this branch"),
+																		onSelect: () => props.onCreateWorktree?.(pr.branch),
+																	},
+																]
+															: []),
+														ciAutoHealMenuItem(props.repoPath, pr.branch),
+														{
+															id: "hide",
+															label: t("sidebar.hideFromList", "Hide from list"),
+															onSelect: () => handleDismiss(pr.number),
+														},
+													]}
+												/>
 												<Show when={approveError()}>
 													<div class={s.remoteOnlyMergeError}>{approveError()}</div>
 												</Show>

@@ -1,6 +1,7 @@
 //! Authorized sandbox only. No branch publication, model call or desktop launch.
 use super::super as run;
 use super::parity_support::*;
+use crate::github::Origin;
 use crate::github_pr_api::{PrApi, RepoApi};
 use crate::workflows::{WorkflowStore, catalog::*, github_trigger::GithubResource, trigger::*};
 use futures_util::FutureExt;
@@ -44,7 +45,15 @@ async fn github_sandbox_issue_and_pr_sources_execute_installed_authenticated_con
         ],
     )
     .unwrap();
-    let api = RepoApi::resolve(&f.state, project).await.unwrap();
+    let api = RepoApi::resolve(
+        &f.state,
+        project,
+        Origin::interactive(
+            "test.github_sandbox_issue_and_pr_sources_execute_installed_authenticated_connector",
+        ),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         format!("{}/{}", api.owner, api.repo),
         "sstraus/tuic-e2e-sandbox"
@@ -151,7 +160,7 @@ async fn github_sandbox_issue_and_pr_sources_execute_installed_authenticated_con
     }
     // Capture actual source baselines before creating the uniquely selected issue.
     for kind in [GithubResource::Issue, GithubResource::PullRequest] {
-        crate::workflows::github_poll::observe(&f.state, project, kind)
+        crate::workflows::github_poll::observe(&f.state, project, kind, None)
             .await
             .unwrap();
     }

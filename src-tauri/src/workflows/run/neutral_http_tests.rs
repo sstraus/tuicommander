@@ -191,3 +191,30 @@ async fn confirmed_empty_write_and_head_complete_instead_of_becoming_uncertain()
         assert!(server.await.unwrap()[0].starts_with(method));
     }
 }
+
+// Catches: a 304 (the validator answer a read can now get through the gateway)
+// treated as a failed status, which a write-style reconciliation would hold forever.
+#[tokio::test]
+async fn revalidated_response_is_success_for_reads() {
+    use super::neutral_effects::EffectOutcome;
+    use super::neutral_execution::NeutralResult;
+    use super::neutral_runtime::NeutralHost;
+    let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let _config = crate::config::set_config_dir_override(dir.path().into());
+    let (state, base, server) = server(dir.path(), vec![(304, json!({}), None)]).await;
+    let mut op = operation(&base, false);
+    op.response.clear();
+    let f = fixture(state, &base, op, contract(false));
+    let observed = f.host.invoke_effect(claimed(&f)).await;
+    server.await.unwrap();
+    assert!(
+        matches!(
+            &observed,
+            Ok(observation) if observation.stopped && matches!(
+                &observation.outcome,
+                EffectOutcome::Completed { result: NeutralResult::Completed { outputs, .. } } if outputs.is_empty()
+            )
+        ),
+        "a 304 on a read must complete the activity, got {observed:?}"
+    );
+}

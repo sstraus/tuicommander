@@ -492,6 +492,12 @@ The live registry exposes status via SSE events (`upstream_status_changed`). Val
 | `execute_headless_prompt` | `command: String, args: Vec<String>, stdin_content: Option<String>, timeout_ms: u64, repo_path: String, env: Option<HashMap<String,String>>` | `Result<String, String>` | Spawn a one-shot agent process in argv form (no shell — metacharacters in args are literal). Prompt content piped via stdin. Timeout capped at 5 minutes |
 | `execute_shell_script` | `script_content: String, timeout_ms: u64, repo_path: String` | `Result<String, String>` | Execute shell script content directly via platform shell (sh/cmd). No agent involved — runs the content as-is. Captures stdout. Timeout capped at 60 seconds |
 
+## Provider Gateway (`provider_gateway/stats.rs`)
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
+| `provider_gateway_stats` | `reset` | `{ counters, recent, buckets, reset }` | Per-caller provider traffic and per-bucket quota state; `reset` starts a new window and keeps bucket state. HTTP: `GET /diagnostics/provider-gateway[?reset=true]` |
+
 ## Claude Usage (`claude_usage.rs`)
 
 | Command | Args | Returns | Description |
@@ -720,7 +726,7 @@ empty result.
 | `suspended_session_action` | `request` | JSON | Rust-owned durable suspend/resume, metadata sync, list, forget and verified resume resolution. HTTP: `POST /sessions/suspended`; actions and shapes documented in HTTP API |
 | `mcp_confirm_response` | `request_id, confirmed` | `()` | Answer a pending `ui(action=confirm)`. HTTP: `POST /mcp/confirm-response`. Every client is shown the same request and the first answer wins, so an unknown or already-answered id is a no-op, not an error |
 | `get_connect_url` | `ip` | `String` | Build QR connect URL server-side (token stays in backend) |
-| `check_update_channel` | `channel` | `UpdateCheckResult` | Check beta/nightly channel for updates (hardcoded URLs, SSRF-safe) |
+| `check_update_channel` | `channel` | `UpdateCheckResult` | Check beta/nightly channel for updates (hardcoded URLs, SSRF-safe); `available` is false when the feed has no signed entry for this platform |
 | `clear_caches` | -- | `()` | Clear in-memory caches |
 | `get_local_ip` | -- | `Option<String>` | Get primary local IP |
 | `get_local_ips` | -- | `Vec<LocalIpEntry>` | List local addresses in shared pairing/phone-entry preference order: active Tailscale HTTPS, LAN, HTTP-only Tailscale, then other networks |
@@ -946,6 +952,7 @@ the prepared launch prompt, counting escaped stdout bytes before framing/marker.
 - `get_pr_thread_comments(repoPath, threadId, after?)`: GitHub comments connection.
 - `set_pr_thread_resolved(repoPath, threadId, resolved)`: confirmed thread.
 - `reply_pr_thread(repoPath, threadId, body)`: posted comment.
+- `visit_work_item(itemUrl, commentCount)`: records a visit of an issue or PR panel and returns `{count, sinceMs}`, the comments added since the previous visit and its time (`0`, `null` on a first visit). Stored in `work_item_visits` of `tuic.sqlite3`.
 - `submit_pr_draft_review(repoPath, prNumber, draft)`: posted review. Draft `{headSha, body, event, comments}` accepts COMMENT, APPROVE, REQUEST_CHANGES; request changes needs a body. Inline comments retain path/line/side/body.
 
 ### PR action commands

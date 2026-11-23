@@ -96,6 +96,13 @@ pub(crate) fn last_exchange(updates: &[Value]) -> Option<Exchange> {
     })
 }
 
+/// The dedup key of an exchange. A transcript's own message ids are only
+/// unique within one session (Grok numbers its prompts from 0), while the
+/// store dedups globally, so the key carries the TUIC session.
+fn source_id(session_id: &str, message_id: &str) -> String {
+    format!("{session_id}:{message_id}")
+}
+
 /// File the last exchange of an agent terminal. `Ok(true)` when the exchange
 /// was found (filed now or before), `Ok(false)` when there is none yet.
 fn capture(state: &Arc<AppState>, session_id: &str) -> Result<bool, String> {
@@ -127,7 +134,7 @@ fn capture(state: &Arc<AppState>, session_id: &str) -> Result<bool, String> {
         &ProgressStore::open()?,
         &q,
         &exchange.answer,
-        &exchange.message_id,
+        &source_id(session_id, &exchange.message_id),
     )? {
         crate::mcp_http::mcp_transport::emit_progress_entry(state, question);
         crate::mcp_http::mcp_transport::emit_progress_entry(state, answer);

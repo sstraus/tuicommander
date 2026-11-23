@@ -4,6 +4,7 @@ import { useOutsideDismiss } from "../../hooks/useOutsideDismiss";
 import { executeCleanup } from "../../hooks/usePostMergeCleanup";
 import { t } from "../../i18n";
 import { invoke } from "../../invoke";
+import { openTaskConversation } from "../../services/taskNavigation";
 import { appLogger } from "../../stores/appLogger";
 import { autofixBranchName, createPrArgsFromBranch } from "../../stores/autofix";
 import { githubStore } from "../../stores/github";
@@ -26,7 +27,7 @@ import {
 	type StepId,
 	type StepStatus,
 } from "../PostMergeCleanupDialog/PostMergeCleanupDialog";
-import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
+import { PanelToolbar, ToolbarIcons } from "../shared/PanelToolbar";
 import { Button } from "../ui/Button";
 import { ChevronIcon } from "../ui/ChevronIcon";
 import { Select } from "../ui/Select";
@@ -70,9 +71,9 @@ export const GitHubPanel: Component<{
 	// PR accordion state, lifted out of PrSection: Enter on a keyboard-navigated
 	// row has to reach whichever section that row belongs to.
 	const [expandedPr, setExpandedPr] = createSignal<string | null>(null);
-	// Dismissed PRs per section — lifted for the same reason, so the navigable
-	// row list cannot include a PR the section has hidden.
-	const [dismissedPrs, setDismissedPrs] = createSignal<Record<string, number[]>>({});
+	// Rows hidden per section (PR or issue numbers) — lifted for the same reason,
+	// so the navigable row list cannot include a row the section has hidden.
+	const [dismissed, setDismissed] = createSignal<Record<string, number[]>>({});
 	const [closingIssue, setClosingIssue] = createSignal<number | null>(null);
 	const [issueActionError, setIssueActionError] = createSignal<{ num: number; msg: string } | null>(null);
 	// Changelog modal visibility. The modal runs the ego turn itself on mount.
@@ -185,7 +186,7 @@ export const GitHubPanel: Component<{
 		});
 	});
 
-	const issues = createMemo(() => githubStore.getRepoIssues(props.repoPath));
+	const allIssues = createMemo(() => githubStore.getRepoIssues(props.repoPath));
 	const issuesLoading = () => githubStore.state.issuesLoading;
 	const circuitOpen = () => githubStore.state.circuitBreakerOpen;
 	const issuesEnabled = () => settingsStore.state.issueFilter !== "disabled";
@@ -197,18 +198,22 @@ export const GitHubPanel: Component<{
 	const toggleSection = (id: SectionId, fallback: boolean) =>
 		uiStore.setGithubSectionCollapsed(id, !sectionCollapsed(id, fallback));
 
-	const dismissedIn = (id: SectionId) => dismissedPrs()[id] ?? [];
+	const dismissedIn = (id: SectionId) => dismissed()[id] ?? [];
 	const visiblePrsFor = (id: SectionId, prs: BranchPrStatus[]) => {
 		const hidden = dismissedIn(id);
 		return hidden.length === 0 ? prs : prs.filter((pr) => !hidden.includes(pr.number));
 	};
 
-	const handleDismissPr = (id: SectionId, prNumber: number) =>
-		setDismissedPrs((prev) => ({ ...prev, [id]: [...(prev[id] ?? []), prNumber] }));
-	const handleShowDismissedPrs = (id: SectionId) => setDismissedPrs((prev) => ({ ...prev, [id]: [] }));
+	const handleDismiss = (id: SectionId, num: number) =>
+		setDismissed((prev) => ({ ...prev, [id]: [...(prev[id] ?? []), num] }));
+	const handleShowDismissed = (id: SectionId) => setDismissed((prev) => ({ ...prev, [id]: [] }));
 
 	const visibleMyPrs = createMemo(() => visiblePrsFor("my-prs", myPrs()));
 	const visiblePrs = createMemo(() => visiblePrsFor("prs", filteredPrs()));
+	const issues = createMemo(() => {
+		const hidden = dismissedIn("issues");
+		return hidden.length === 0 ? allIssues() : allIssues().filter((issue) => !hidden.includes(issue.number));
+	});
 
 	// ── Keyboard navigation ───────────────────────────────────────────────────
 	// Rows of every expanded section, in visual order. Arrow keys walk this list
@@ -326,6 +331,15 @@ export const GitHubPanel: Component<{
 		} finally {
 			setClosingIssue(null);
 		}
+	};
+
+	/** The issue's auto-fix branch has a local worktree and no pull request yet. */
+	const autofixBranchReady = (issue: GitHubIssue) => {
+		const branch = autofixBranchName(issue.number);
+		return (
+			repositoriesStore.workspaceIdOnBranch(props.repoPath, branch) !== null &&
+			!githubStore.getBranchPrData(props.repoPath, branch)
+		);
 	};
 
 	const handleCopyIssueNumber = (issue: GitHubIssue) => {
@@ -479,8 +493,8 @@ export const GitHubPanel: Component<{
 								onToggleExpanded={toggleExpandedPr}
 								activeKey={activeKeyFor("my-prs")}
 								dismissedCount={dismissedIn("my-prs").length}
-								onDismiss={(n) => handleDismissPr("my-prs", n)}
-								onShowDismissed={() => handleShowDismissedPrs("my-prs")}
+								onDismiss={(n) => handleDismiss("my-prs", n)}
+								onShowDismissed={() => handleShowDismissed("my-prs")}
 								onCheckout={props.onCheckout}
 								onCreateWorktree={props.onCreateWorktree}
 								onConflictAssist={props.onConflictAssist}
@@ -501,8 +515,8 @@ export const GitHubPanel: Component<{
 							onToggleExpanded={toggleExpandedPr}
 							activeKey={activeKeyFor("prs")}
 							dismissedCount={dismissedIn("prs").length}
-							onDismiss={(n) => handleDismissPr("prs", n)}
-							onShowDismissed={() => handleShowDismissedPrs("prs")}
+							onDismiss={(n) => handleDismiss("prs", n)}
+							onShowDismissed={() => handleShowDismissed("prs")}
 							onCheckout={props.onCheckout}
 							onCreateWorktree={props.onCreateWorktree}
 							onConflictAssist={props.onConflictAssist}
@@ -530,6 +544,19 @@ export const GitHubPanel: Component<{
 									<span>{t("github.issues", "Issues")}</span>
 									<Show when={issues().length > 0}>
 										<span class={s.ghSectionCount}>{issues().length}</span>
+									</Show>
+									<Show when={dismissedIn("issues").length > 0}>
+										<Button
+											size="compact"
+											variant="ghost"
+											class={s.ghShowDismissed}
+											onClick={(e) => {
+												e.stopPropagation();
+												handleShowDismissed("issues");
+											}}
+										>
+											{t("sidebar.showDismissed", "Show")} {dismissedIn("issues").length}
+										</Button>
 									</Show>
 								</div>
 								<Show when={!sectionCollapsed("issues", false)}>
@@ -569,111 +596,96 @@ export const GitHubPanel: Component<{
 															>
 																<span class={s.ghItemNum}>#{issue.number}</span>
 																<span class={s.ghItemTitle}>{issue.title}</span>
-																<span
-																	class={cx(
-																		s.ghIssueBadge,
-																		issue.state?.toUpperCase() === "OPEN" ? s.ghIssueOpen : s.ghIssueClosed,
-																	)}
-																>
-																	{issue.state?.toUpperCase() === "OPEN" ? "Open" : "Closed"}
-																</span>
+																{/* Expanded, the state pill leads the detail's status row instead. */}
+																<Show when={expandedIssue() !== issue.number}>
+																	<span
+																		class={cx(
+																			s.ghIssueBadge,
+																			issue.state?.toUpperCase() === "OPEN" ? s.ghIssueOpen : s.ghIssueClosed,
+																		)}
+																	>
+																		{issue.state?.toUpperCase() === "OPEN" ? "Open" : "Closed"}
+																	</span>
+																</Show>
 															</div>
 															<Show when={expandedIssue() === issue.number}>
 																<div class={s.ghItemDetail} data-compact>
-																	<IssueDetailContent issue={issue} repoPath={props.repoPath}>
-																		<div class={s.ghItemActions}>
-																			<Button
-																				size="compact"
-																				variant="ghost"
-																				class={cx(
-																					s.ghActionBtn,
-																					issue.state?.toUpperCase() === "OPEN" ? s.ghCloseBtn : s.ghReopenBtn,
-																				)}
-																				onClick={() => handleCloseReopenIssue(issue)}
-																				disabled={closingIssue() === issue.number}
-																				data-tooltip={
-																					issue.state?.toUpperCase() === "OPEN"
-																						? t("github.closeIssue", "Close issue")
-																						: t("github.reopenIssue", "Reopen issue")
-																				}
-																				data-tooltip-pos="bottom"
-																				data-tooltip-align="right"
-																			>
-																				{closingIssue() === issue.number
-																					? "..."
-																					: issue.state?.toUpperCase() === "OPEN"
-																						? t("github.close", "Close")
-																						: t("github.reopen", "Reopen")}
-																			</Button>
-																			<Button
-																				size="compact"
-																				variant="ghost"
-																				class={s.ghActionBtn}
-																				onClick={() => handleCopyIssueNumber(issue)}
-																				data-tooltip={t("github.copyNumber", "Copy issue number")}
-																				data-tooltip-pos="bottom"
-																				data-tooltip-align="right"
-																			>
-																				#{issue.number}
-																			</Button>
-																			<Show when={issue.url}>
-																				<Button
-																					size="compact"
-																					variant="ghost"
-																					class={cx(s.ghActionBtn, s.ghLinkBtn)}
-																					onClick={() => handleOpenUrl(issue.url)}
-																					data-tooltip={t("prDetail.openOnGithub", "Open on GitHub")}
-																					data-tooltip-pos="bottom"
-																					data-tooltip-align="right"
-																				>
-																					GitHub {"↗"}
-																				</Button>
-																			</Show>
-																			<Show when={issue.state?.toUpperCase() === "OPEN"}>
-																				<Button
-																					size="compact"
-																					variant="ghost"
-																					class={s.ghActionBtn}
-																					onClick={() => setAutofixIssue(issue.number)}
-																					data-tooltip={t("github.autofixTooltip", "Auto-fix in a worktree agent")}
-																					data-tooltip-pos="bottom"
-																					data-tooltip-align="right"
-																				>
-																					{t("github.autofix", "Auto-fix")}
-																				</Button>
-																				<Button
-																					size="compact"
-																					variant="ghost"
-																					class={s.ghActionBtn}
-																					onClick={() => handleCreatePr(issue)}
-																					disabled={creatingPr() === issue.number}
-																					data-tooltip={t(
-																						"github.createPrTooltip",
-																						"Create draft PR from auto-fix branch",
-																					)}
-																					data-tooltip-pos="bottom"
-																					data-tooltip-align="right"
-																				>
-																					{creatingPr() === issue.number ? "..." : t("github.createPr", "Create PR")}
-																				</Button>
-																			</Show>
-																			<SmartButtonStrip
-																				placement="issue-popover"
-																				repoPath={props.repoPath}
-																				defaultPromptId="smart-review-issue"
-																				contextVariables={() => ({
-																					issue_number: String(issue.number),
-																					issue_title: issue.title,
-																					issue_author: issue.author,
-																					issue_state: issue.state,
-																					issue_url: issue.url,
-																					issue_labels: issue.labels?.map((l) => l.name).join(", ") || "none",
-																					issue_assignees: issue.assignees?.join(", ") || "none",
-																					issue_milestone: issue.milestone || "none",
-																					issue_comments_count: String(issue.comments_count),
-																				})}
-																			/>
-																		</div>
+																	<IssueDetailContent
+																		issue={issue}
+																		repoPath={props.repoPath}
+																		autofixBranchReady={autofixBranchReady(issue)}
+																		onReopen={() => handleCloseReopenIssue(issue)}
+																		reopening={closingIssue() === issue.number}
+																		onAutofix={() => setAutofixIssue(issue.number)}
+																		onCreatePr={() => handleCreatePr(issue)}
+																		creatingPr={creatingPr() === issue.number}
+																		onOpenBranch={() => props.onCheckout(autofixBranchName(issue.number))}
+																	>
+																		<PanelToolbar
+																			menuLabel={t("sidebar.moreActions", "More actions")}
+																			actions={[
+																				...(issue.url
+																					? [
+																							{
+																								id: "github",
+																								label: "GitHub",
+																								icon: <ToolbarIcons.external />,
+																								onClick: () => handleOpenUrl(issue.url),
+																								tooltip: t("prDetail.openOnGithub", "Open on GitHub"),
+																							},
+																						]
+																					: []),
+																				{
+																					id: "copy",
+																					label: `#${issue.number}`,
+																					icon: <ToolbarIcons.copy />,
+																					onClick: () => handleCopyIssueNumber(issue),
+																					tooltip: t("github.copyNumber", "Copy issue number"),
+																				},
+																				...(issue.url
+																					? [
+																							{
+																								id: "tasks",
+																								label: t("issueDetail.tasks", "Tasks"),
+																								icon: <ToolbarIcons.tasks />,
+																								onClick: () => void openTaskConversation(issue.url),
+																								tooltip: t("issueDetail.openInTasks", "Open the issue in Tasks"),
+																							},
+																						]
+																					: []),
+																			]}
+																			menu={[
+																				...(issue.state?.toUpperCase() === "OPEN"
+																					? [
+																							{
+																								id: "create-pr",
+																								label: t(
+																									"github.createPrTooltip",
+																									"Create draft PR from auto-fix branch",
+																								),
+																								onSelect: () => handleCreatePr(issue),
+																								disabled: creatingPr() === issue.number,
+																							},
+																						]
+																					: []),
+																				{
+																					id: "hide",
+																					label: t("sidebar.hideFromList", "Hide from list"),
+																					onSelect: () => handleDismiss("issues", issue.number),
+																				},
+																				...(issue.state?.toUpperCase() === "OPEN"
+																					? [
+																							{
+																								id: "close",
+																								label: t("github.closeIssue", "Close issue"),
+																								onSelect: () => handleCloseReopenIssue(issue),
+																								disabled: closingIssue() === issue.number,
+																								divider: true,
+																							},
+																						]
+																					: []),
+																			]}
+																		/>
 																		<Show when={issueActionError()?.num === issue.number}>
 																			<div class={s.ghActionError}>{issueActionError()!.msg}</div>
 																		</Show>

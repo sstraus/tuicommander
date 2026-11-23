@@ -467,8 +467,8 @@ pub(super) async fn github_set_hide_drafts(
     ))
 }
 
-pub(super) async fn github_start_login(State(state): State<Arc<AppState>>) -> Response {
-    json_result(crate::github_auth::start_device_flow(&state.http_client).await)
+pub(super) async fn github_start_login() -> Response {
+    json_result(crate::github_auth::start_device_flow().await)
 }
 
 pub(super) async fn github_poll_login(

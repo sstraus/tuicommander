@@ -581,18 +581,19 @@ order.
 
 ### PrDetailPopover (`PrDetailPopover/`)
 
-Rich PR detail popup shown on hover/click in sidebar.
+Rich PR detail popup shown on hover/click in sidebar. `PrDetailContent` is the shared body,
+laid out per UI v3 (`docs/frontend/ui-v3.md`); the sidebar PR rows, the remote-only PR popover
+and this popover all render it.
 
 **Displays:**
-- PR title, number, author
-- State (open, merged, closed, draft)
-- Merge readiness (ready, conflicts, behind, blocked)
-- Review decision (approved, changes requested, review required)
-- CI check summary (passed/failed/pending ring)
-- Individual CI check details
-- Labels with computed colors
-- Line change counts (+additions/-deletions)
-- Timestamps (created, updated)
+- PR title (wrapping, never truncated), number, author, last update
+- Status row: readiness, merge state, review decision, and a comments pill that opens the conversation
+- Next-action block chosen by `prNextAction` (Approve, Merge, Resolve conflicts, Open in Tasks) with the agent prompt split button
+- The caller's fixed toolbar (`shared/PanelToolbar.tsx`)
+- Sections (`ui/PanelSection.tsx`): Description, Checks (failed and pending first), Threads, AI Review
+- Labels with computed colors and line change counts (+additions/-deletions)
+
+`IssueDetailPopover/IssueDetailContent.tsx` is the issue counterpart with the same layers.
 
 ### StatusBar (`StatusBar/`)
 

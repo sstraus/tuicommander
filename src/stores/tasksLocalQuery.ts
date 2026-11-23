@@ -5,18 +5,23 @@ import type { WorkItem, WorkItemGroupedPage, WorkItemQuery } from "../types/work
 export const LOCAL_TASK_LIMIT = 1000;
 export type LocalSource = Pick<WorkItemProvider, "list" | "fields"> & Partial<Pick<WorkItemProvider, "providerId">>;
 
+/** The provider query that bounds one collection; sort and grouping are projected locally. */
+export function localScope(provider: Pick<LocalSource, "providerId">, query: WorkItemQuery): WorkItemQuery {
+	// GitLab type/state select the endpoint and its scope, not just a local predicate.
+	const filters =
+		provider.providerId === "gitlab"
+			? query.filters.filter((filter) => ["type", "state"].includes(filter.fieldId))
+			: [];
+	return { ...query, filters, sort: null, groupBy: null, cursor: null, limit: 100 };
+}
+
 /** Collection is transport orchestration only. Rust owns every query projection. */
 export async function collectLocalTasks(
 	provider: LocalSource,
 	query: WorkItemQuery,
 	signal: AbortSignal,
 ): Promise<WorkItem[] | null> {
-	// GitLab type/state select the endpoint and its scope, not just a local predicate.
-	const filters =
-		provider.providerId === "gitlab"
-			? query.filters.filter((filter) => ["type", "state"].includes(filter.fieldId))
-			: [];
-	const scope = { ...query, filters, sort: null, groupBy: null, cursor: null, limit: 100 };
+	const scope = localScope(provider, query);
 	let page = await provider.list(scope, signal);
 	const total = page.total;
 	if (total == null || !Number.isInteger(total) || total < 0 || total > LOCAL_TASK_LIMIT) return null;

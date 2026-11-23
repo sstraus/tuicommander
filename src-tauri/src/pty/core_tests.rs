@@ -1384,7 +1384,7 @@ fn codex_draft_prompt_above_tall_hud_is_current_chrome() {
 }
 
 #[test]
-fn gemini_markdown_quote_in_history_is_not_a_ready_prompt() {
+fn agy_markdown_quote_in_history_is_not_a_ready_prompt() {
     let mut screen = vec!["> quoted user prose".to_string()];
     screen.extend((0..8).map(|n| format!("current output row {n}")));
 
@@ -1395,7 +1395,7 @@ fn gemini_markdown_quote_in_history_is_not_a_ready_prompt() {
 }
 
 #[test]
-fn gemini_prompt_above_tall_hud_is_current_chrome() {
+fn agy_prompt_above_tall_hud_is_current_chrome() {
     let mut screen = vec![
         "current output".to_string(),
         "─".repeat(80),
@@ -5196,6 +5196,24 @@ fn test_inline_tui_does_not_override_alt_screen_mode() {
     }
 }
 
+// Bug caught: the Store build of WSL lives in `C:\Program Files\WSL`; reading
+// the first whitespace token sees the program `C:\Program`, so the session
+// gets neither the unix terminal environment nor the WSL integration.
+#[test]
+fn is_wsl_shell_reads_a_program_path_with_spaces() {
+    assert!(super::is_wsl_shell(r"C:\Program Files\WSL\wsl.exe"));
+    assert!(super::is_wsl_shell(
+        r"C:\Program Files\WSL\wsl.exe -d Ubuntu"
+    ));
+    assert!(super::is_wsl_shell(
+        r#""C:\Program Files\WSL\wsl.exe" -d Ubuntu"#
+    ));
+    // A WSL path passed as an argument does not make the shell WSL.
+    assert!(!super::is_wsl_shell(
+        r"C:\Program Files\Git\bin\bash.exe C:\tools\wsl.exe"
+    ));
+}
+
 // --- is_wsl_shell tests ---
 
 #[test]
@@ -5294,6 +5312,37 @@ fn build_shell_command_single_exe() {
     let cmd = super::build_shell_command("/bin/zsh");
     let argv = cmd.as_unix_command_line().unwrap();
     assert!(argv.contains("/bin/zsh"), "Expected /bin/zsh in: {}", argv);
+}
+
+// Bug caught: the configured shell is split on whitespace again, so
+// `C:\Program Files\Git\bin\bash.exe` reaches CreateProcessW as the program
+// `C:\Program` (story 3101-6b39). portable-pty quotes argv[0] itself, so the
+// argv this builder holds is the whole contract.
+#[test]
+fn build_shell_command_keeps_a_program_path_with_spaces_as_argv0() {
+    let argv_of = |shell: &str| -> Vec<String> {
+        super::build_shell_command(shell)
+            .get_argv()
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            // The login flag is appended on unix hosts only.
+            .filter(|arg| arg != "-l")
+            .collect()
+    };
+    let bash = r"C:\Program Files\Git\bin\bash.exe";
+    assert_eq!(argv_of(bash), [bash]);
+    assert_eq!(
+        argv_of(&format!("{bash} --login -i")),
+        [bash, "--login", "-i"]
+    );
+    assert_eq!(
+        argv_of(&format!("\"{bash}\" --login")),
+        [bash, "--login"]
+    );
+    assert_eq!(
+        argv_of(r"C:\Windows\System32\cmd.exe /K"),
+        [r"C:\Windows\System32\cmd.exe", "/K"]
+    );
 }
 
 // --- windows_to_wsl_path tests ---
@@ -14238,13 +14287,13 @@ mod grid_delivery_tests {
 
 // ---------------------------------------------------------------------
 // Critic tests for #1312-3ba6: the live-prompt window widened from 3 to 4 rows
-// is shared with Gemini, and the paste-placeholder probe reads 8 bottom rows.
+// is shared with agy, and the paste-placeholder probe reads 8 bottom rows.
 // ---------------------------------------------------------------------
 
 #[test]
-fn gemini_quote_four_rows_above_the_bottom_is_not_a_ready_prompt() {
+fn agy_quote_four_rows_above_the_bottom_is_not_a_ready_prompt() {
     // catches: the widened 4-row window lets a markdown quote in history read
-    // as the live Gemini composer, flipping a working agent to Ready.
+    // as the live agy composer, flipping a working agent to Ready.
     let screen: Vec<String> = ["> quoted user prose", "output a", "output b", "output c"]
         .iter()
         .map(|s| s.to_string())

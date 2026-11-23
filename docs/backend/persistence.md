@@ -28,15 +28,23 @@ the same directory as `config.json`), never in a repository. Stories 3104-2fd1,
 
 | File | Owning modules | What it saves | Write rate | Size before 2026-11-21 |
 |---|---|---|---|---|
-| `tuic.sqlite3` | `stories/store*`, `workflows/store.rs`, `workflows/{activity_preset,reusable_operation,neutral_publication,trigger_bindings}.rs`, `workflows/neutral_api/drafts.rs`, `mcp_http/launch_transaction.rs`, `mcp_http/mcp_usage_rollup.rs` | Native plans and stories, workflow definitions, managed launch records, daily MCP usage | Per user action; MCP usage every 30 s | 2.8 MB across the 4 old files |
+| `tuic.sqlite3` | `stories/store*`, `workflows/store.rs`, `workflows/{activity_preset,reusable_operation,neutral_publication,trigger_bindings}.rs`, `workflows/neutral_api/drafts.rs`, `mcp_http/launch_transaction.rs`, `mcp_http/mcp_usage_rollup.rs`, `work_item_visits.rs` | Native plans and stories, workflow definitions, managed launch records, daily MCP usage | Per user action; MCP usage every 30 s | 2.8 MB across the 4 old files |
 | `progress.sqlite3` | `progress/store.rs` | Progress journal entries, views, contextual replies | Every agent progress line | 61 MB |
 | `automation_runs.sqlite3` | `automations/store*` | Automation run ledger, schedule cursors, notification deliveries | Every run transition | 24 MB |
 | `workflow_runs.sqlite3` | `workflows/run/*` | Neutral workflow runs, events, effect resources, native batch and policy ledgers, trigger state | Every run event | 0.2 MB |
 | `mail.sqlite3` | `mail_subscriptions.rs` | Durable peer-mail journal and subscriptions | Every peer message | 33 MB |
 | `tunnel_audit.sqlite3` | `tunnels/audit.rs` | SSH tunnel lifecycle events | Every tunnel state change | 4 MB |
+| `provider_cache.sqlite3` | `provider_gateway/l2_sqlite.rs` | zstd-compressed provider response bodies and validators (L2 of the gateway cache) | Write-behind batch every 2 s | new |
 
 `tuic.sqlite3` holds one migration list, `db::TUIC_SCHEMA` in `db/tuic.rs`.
 Each log file declares its own `Schema` beside its store.
+
+`provider_cache.sqlite3` is not an append log: it is a disposable, high-volume
+cache with constant churn and rows of up to 2 MiB, so it stays out of the
+durable `tuic.sqlite3`. It is the one file whose `user_version` mismatch is
+resolved by deleting the file (the content is refetchable) instead of refusing
+it. It never stores `Authorization`, cookie or token headers, nor a URL that
+carries a credential. Story 3131-92ad (2026-11-22).
 
 ### Retired files
 
@@ -79,6 +87,7 @@ and the tunnel retention-on-connect.
 | `activity_presets`, `reusable_operations`, `neutral_workflow_drafts`, `neutral_workflow_presentation`, `neutral_workflow_publications`, `neutral_trigger_bindings` | Workflow definitions | Yes | Keep (user data) |
 | `launches` | Managed launch identity, digest and stage (`updated_ms`) | Yes: retry with the same `launch_id` | Delete `retention.launch_days` (30) after the last update once the stage is `created` or `blocked`; other stages are open |
 | `mcp_usage_daily` | Per-day MCP call counts | Yes: Settings > MCP > Usage (7 days) | Delete days older than `retention.mcp_usage_days` (90) |
+| `work_item_visits` | Last visit of each issue or PR panel: comment count and time (migration 2) | Yes: the next visit's "N new" mark | Delete visits older than `retention.work_item_visit_days` (90); the next visit then marks nothing new |
 
 ### Logs
 
@@ -91,6 +100,7 @@ and the tunnel retention-on-connect.
 | `automation_runs` `automation_cursors` | Last consumed occurrence per automation | Yes: prevents replaying a consumed schedule | Keep (one row per automation) |
 | `workflow_runs` (all tables) | Neutral run events and native ledgers | Yes: run replay derives status from events | Keep: a run's closed state is derived, not stored, and the file is small |
 | `mail` `mail_events`, `mail_heads`, `mail_subscriptions` | Peer mail per recipient, newest 1000 | Yes: subscription inbox | A recipient is dead when it received nothing for `retention.mail_days` (14) and none of its subscriptions has unacknowledged mail; all its rows are deleted |
+| `provider_cache` `l2_entries` | Provider response bodies, validators, TTL state | Yes: the L1-miss read path | Self-managed by `tuic_gateway::l2` (not the daily job): at start and every 5 min, delete rows unused for 7 days, then least recently used rows until the stored bytes fit 256 MiB; `incremental_vacuum` after; an account's rows are deleted on logout |
 | `tunnel_audit` `tunnel_events` | Tunnel events | Yes: Tunnels panel (last 20) | Delete after `retention.tunnel_audit_days` (30) |
 
 ## Files in the data directory

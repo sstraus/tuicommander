@@ -20,6 +20,7 @@ vi.mock("../../hooks/usePty", () => ({
 }));
 
 vi.mock("../../stores/terminals", () => ({
+	registerBlockFoldingGate: vi.fn(),
 	terminalsStore: {
 		getActive: () => ({
 			id: "terminal-1",

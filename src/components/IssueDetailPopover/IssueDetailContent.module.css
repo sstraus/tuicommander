@@ -3,11 +3,9 @@
 /* State badge */
 .stateBadge {
   display: inline-flex;
-  padding: 2px 8px;
-  border-radius: var(--radius-pill);
-  font-size: var(--font-2xs);
-  font-weight: 700;
-  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: var(--font-xs);
   flex-shrink: 0;
 }
 
@@ -21,90 +19,42 @@
   color: var(--merged);
 }
 
-/* Labels */
-.labels {
+/* Status pills */
+.pills {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
-  padding: 4px 12px;
+  padding: 4px 12px 6px;
 }
 
 .label {
   display: inline-flex;
   align-items: center;
-  padding: 1px 8px;
+  padding: 0 6px;
   border-radius: var(--radius-pill);
-  font-size: var(--font-xs);
-  font-weight: 600;
-  border: 1px solid;
+  font-size: var(--font-2xs);
+  line-height: 15px;
+  border: 1px solid var(--border);
   white-space: nowrap;
 }
 
-/* Meta row */
+/* Meta line */
 .meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  font-size: var(--font-sm);
+  gap: 4px;
+  padding: 8px 12px 0;
+  font-size: var(--font-xs);
   color: var(--fg-muted);
 }
 
 .author {
-  font-weight: 600;
   color: var(--fg-secondary);
-}
-
-.separator {
-  color: var(--fg-muted);
-}
-
-/* Assignees */
-.assignees {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 2px 12px;
-  font-size: var(--font-xs);
-  color: var(--fg-secondary);
-}
-
-.assignee {
-  background: rgba(255, 255, 255, 0.06);
-  padding: 1px 6px;
-  border-radius: var(--radius-md);
-}
-
-/* Milestone */
-.milestone {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 12px;
-  font-size: var(--font-xs);
-  color: var(--fg-muted);
-}
-
-.milestoneIcon {
-  color: var(--fg-muted);
-}
-
-/* Timestamps */
-.timestamps {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 12px;
-  font-size: var(--font-xs);
-  color: var(--fg-muted);
 }
 
 /* ── Compact mode (sidebar accordion) ── */
 :global([data-compact]) .meta {
-  padding: 6px 12px;
-  font-size: var(--font-xs);
-}
-
-:global([data-compact]) .timestamps {
-  padding: 2px 12px;
+  padding: 6px 12px 0;
 }

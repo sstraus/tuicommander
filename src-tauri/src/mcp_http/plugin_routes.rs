@@ -284,6 +284,10 @@ pub(super) struct HttpFetchBody {
     pub headers: Option<HashMap<String, String>>,
     pub body: Option<String>,
     pub account: Option<String>,
+    #[serde(rename = "timeoutMs")]
+    pub timeout_ms: Option<u64>,
+    #[serde(rename = "maxResponseBytes")]
+    pub max_response_bytes: Option<u64>,
 }
 
 pub(super) async fn plugin_http_fetch(
@@ -301,6 +305,10 @@ pub(super) async fn plugin_http_fetch(
             body.account,
             plugin_id,
             body.request_id,
+            crate::provider_gateway::plugin_egress::FetchOptions {
+                timeout_ms: body.timeout_ms,
+                max_response_bytes: body.max_response_bytes,
+            },
         )
         .await,
     )

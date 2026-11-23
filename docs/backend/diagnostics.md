@@ -62,3 +62,24 @@ Two traps this exists to close. **`grid frame gate stuck` is not a frontend-live
 - grid frames outstanding on a session (WebView JS thread blocked)
 - FD/thread leak (progressive growth without cleanup)
 - Sleep/wake false idle cascades (tokio timers firing stale)
+
+## Provider gateway traffic
+
+`GET /diagnostics/provider-gateway[?reset=true]`, the Tauri command
+`provider_gateway_stats(reset)` and MCP `debug action=gateway [reset=true]` return
+one snapshot with identical JSON: `counters` (one row per caller, provider,
+account, bucket and route template, with calls, sent, cache hits, 304
+revalidations, stale served, shed, rate-limited, bytes, units and p50/p95
+latency), `recent` (the last 2,000 requests) and `buckets` (limit, remaining,
+reset, in-flight, pressure and burn rate per account and bucket). Labels are
+static call-site names, account ids, bucket names and route templates: no URL,
+query value, header or token. `reset` returns the closing window and then zeroes
+counters and `recent`; bucket state belongs to the provider and stays. Code:
+`src-tauri/src/provider_gateway/stats.rs`.
+
+Sends outside the REST client (OAuth endpoints, account verification, update
+manifest, release downloads, CircleCI logs) use `provider_gateway/direct.rs`:
+never cached, with their own redirect policy and timeout. A download goes
+through `Gateway::execute_stream` (budget and metrics, no cache, bytes counted
+when the body ends). `provider_gateway/bypass_tests.rs` fails on a new
+`.send()` to a GitHub host outside the gateway; git over HTTPS is out of scope.

@@ -391,6 +391,7 @@ async fn native_tool_definitions_are_the_one_surviving_family() {
             "plugin_dev_guide",
             "settings",
             "debug",
+            "batch",
         ],
         "native_tool_definitions must return exactly the one family, in order"
     );
@@ -775,8 +776,9 @@ fn grok_session_uses_meta_tools_without_mutating_global_config() {
 }
 
 /// Sanity check on the token-reduction claim for lazy tool loading.
-/// Measured on the native-only test state (no upstreams registered):
-/// baseline ≈ 11 KiB, collapsed ≈ 1.7 KiB — roughly 6.7× reduction.
+/// Measured 2026-11-22 on the native-only test state (no upstreams registered):
+/// collapsed = 4590 bytes for the five directly listed tools (search_tools 1400,
+/// call_tool 997, progress 1136, batch 668, get_tool_schema 383).
 /// In production with typical upstreams (100+ tools) the baseline is
 /// ~35 KiB, pushing the real reduction toward ~20×. Thresholds here
 /// are regression guards, not targets, so they use the conservative
@@ -795,8 +797,8 @@ fn collapse_tools_payload_size_meets_reduction_target() {
         .len();
 
     assert!(
-        collapsed < 4096,
-        "collapsed tools/list must stay under 4 KiB, got {collapsed} bytes"
+        collapsed < 5120,
+        "collapsed tools/list must stay under 5 KiB, got {collapsed} bytes"
     );
     assert!(
         baseline >= collapsed * 5,

@@ -53,5 +53,14 @@
     "rules": [
       "[[],\".viewer, .editor\",[\"min-height: 0\",\"padding: 16px\",\"border: 0\"]]"
     ]
+  },
+  {
+    "file": "src/components/Sidebar/Sidebar.module.css",
+    "reason": "Rich sidebar redesign (Boss 2026-11-22): the branch icon is the bare agents toggle, the done/idle/Quiet folds match the rows they fold, and the hover actions take the text height.",
+    "rules": [
+      "[[],\".branchIdentity > .branchIconToggle\",[\"padding: 0\",\"height: calc(var(--font-sm) * 1.35)\"]]",
+      "[[],\".subagentFold\",[\"height: auto\",\"padding: 0 4px\"]]",
+      "[[],\".sidebar[data-density=\\\"rich\\\"] .branchActions > button\",[\"height: calc(var(--font-sm) * 1.4)\",\"min-height: 0\",\"padding: 0 5px\"]]"
+    ]
   }
 ]

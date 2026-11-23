@@ -108,3 +108,5 @@ reads `ws.protocol` in `onopen` before the first frame.
 - [ ] When a display is available, screenshot-check List/Kanban in the Stories header immediately before New story, with filters below. Automated DOM geometry confirms a shared row, 8px gap and standard 22px toolbar controls; screenshot capture was unavailable while macOS had no active display (2026-11-18).
 
 - [ ] Inline panel retention: load a large File Browser tree and Git log, close each for over 60 seconds, and reopen. Check fresh data, restored folder/tab and scroll, and no lost commit draft. Compare WebView footprint and time to restored navigation in isolated desktop runs.
+
+- [ ] After a `make dev` restart (Rust change, #3119-693a): open Settings, change nothing, and trigger a preferences save (e.g. toggle a UI pref back and forth to the original value, or reopen a panel that saves view prefs). `GET :9876/logs` and the Tasks panel must show no `preferences` settings-change event and no extra reload/GitHub search. Then change a real preference in one window and confirm a second window picks it up exactly once.

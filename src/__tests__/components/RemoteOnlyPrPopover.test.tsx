@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockInvoke } from "../mocks/tauri";
 import "../mocks/tauri";
 import { fireEvent, render, waitFor } from "@solidjs/testing-library";
+
+// The review workflow action has its own tests; its mount-time lookup would consume the
+// ordered invoke replies these tests queue for the merge flow.
+vi.mock("../../components/PrReviewWorkflow/PrReviewWorkflowAction", () => ({ PrReviewWorkflowAction: () => null }));
+
 import { RemoteOnlyPrPopover } from "../../components/Sidebar/RemoteOnlyPrPopover";
 import { repoSettingsStore } from "../../stores/repoSettings";
 import type { BranchPrStatus } from "../../types";

@@ -1,0 +1,83 @@
+{
+  "repository": "sstraus/tuicommander",
+  "results": {
+    "search_issues": {
+      "method": "GET",
+      "url": "https://api.github.com/search/issues?q=repo%3Asstraus%2Ftuicommander+is%3Aissue&per_page=1",
+      "first": {
+        "status": 200,
+        "if_none_match_sent": false,
+        "headers": {
+          "cache-control": "no-cache",
+          "vary": "Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With",
+          "x-ratelimit-limit": "30",
+          "x-ratelimit-remaining": "29",
+          "x-ratelimit-used": "1",
+          "x-ratelimit-resource": "search",
+          "x-github-media-type": "github.v3; format=json"
+        }
+      },
+      "second": null,
+      "verdict": {
+        "sends_etag": false,
+        "honours_if_none_match": false
+      }
+    },
+    "graphql": {
+      "method": "POST",
+      "url": "https://api.github.com/graphql",
+      "first": {
+        "status": 200,
+        "if_none_match_sent": false,
+        "headers": {
+          "vary": "Accept-Encoding, Accept, X-Requested-With",
+          "x-ratelimit-limit": "5000",
+          "x-ratelimit-remaining": "4946",
+          "x-ratelimit-used": "54",
+          "x-ratelimit-resource": "graphql",
+          "x-github-media-type": "github.v4; format=json"
+        }
+      },
+      "second": null,
+      "verdict": {
+        "sends_etag": false,
+        "honours_if_none_match": false
+      }
+    },
+    "core_issues_control": {
+      "method": "GET",
+      "url": "https://api.github.com/repos/sstraus/tuicommander/issues?state=all&per_page=1",
+      "first": {
+        "status": 200,
+        "if_none_match_sent": false,
+        "headers": {
+          "etag": "W/\"efaaf60317ca5fe32d0fd06150a9f901081bfcd86fe1b0608e627cf77402610b\"",
+          "cache-control": "private, max-age=60, s-maxage=60",
+          "vary": "Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With",
+          "x-ratelimit-limit": "5000",
+          "x-ratelimit-remaining": "4973",
+          "x-ratelimit-used": "27",
+          "x-ratelimit-resource": "core",
+          "x-github-media-type": "github.v3; format=json"
+        }
+      },
+      "second": {
+        "status": 304,
+        "if_none_match_sent": true,
+        "headers": {
+          "etag": "\"efaaf60317ca5fe32d0fd06150a9f901081bfcd86fe1b0608e627cf77402610b\"",
+          "cache-control": "private, max-age=60, s-maxage=60",
+          "vary": "Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With",
+          "x-ratelimit-limit": "5000",
+          "x-ratelimit-remaining": "4973",
+          "x-ratelimit-used": "27",
+          "x-ratelimit-resource": "core"
+        }
+      },
+      "verdict": {
+        "sends_etag": true,
+        "honours_if_none_match": true
+      }
+    }
+  }
+}

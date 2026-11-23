@@ -115,7 +115,10 @@ fn read_only(name: &str, action: &str) -> bool {
                 "screenshot" | "design_status" | "design_screenshot" | "design_errors" | "help"
             )
             | ("settings", "describe" | "get")
-            | ("debug", "logs" | "sessions" | "agent_detection" | "help")
+            | (
+                "debug",
+                "logs" | "sessions" | "agent_detection" | "gateway" | "help"
+            )
             | ("voice", "status" | "help")
             | ("plugin_dev_guide" | "search_tools" | "get_tool_schema", _)
     )

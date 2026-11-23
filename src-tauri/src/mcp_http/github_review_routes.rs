@@ -1,5 +1,6 @@
 //! IPC-equivalent line review API. Repository resolution is shared with desktop.
 use super::{json_result, validate_repo_path};
+use crate::github::Origin;
 use crate::{github_pr_api::RepoApi, github_review_threads as reviews, state::AppState};
 use axum::{
     Json,
@@ -80,7 +81,12 @@ pub(super) async fn comments(
         return e.into_response();
     }
     let result = async {
-        let api = RepoApi::resolve(&state, &q.repo_path).await?;
+        let api = RepoApi::resolve(
+            &state,
+            &q.repo_path,
+            Origin::interactive("mcp.review.comments"),
+        )
+        .await?;
         reviews::read_comments(&api, &q.thread_id, q.after).await
     }
     .await;
@@ -94,7 +100,12 @@ pub(super) async fn resolve(
         return e.into_response();
     }
     let result = async {
-        let api = RepoApi::resolve(&state, &q.repo_path).await?;
+        let api = RepoApi::resolve(
+            &state,
+            &q.repo_path,
+            Origin::interactive("mcp.review.resolve"),
+        )
+        .await?;
         reviews::resolve_thread(&api, &q.thread_id, q.resolved).await
     }
     .await;
@@ -108,7 +119,12 @@ pub(super) async fn reply(
         return e.into_response();
     }
     let result = async {
-        let api = RepoApi::resolve(&state, &q.repo_path).await?;
+        let api = RepoApi::resolve(
+            &state,
+            &q.repo_path,
+            Origin::interactive("mcp.review.reply"),
+        )
+        .await?;
         reviews::reply_thread(&api, &q.thread_id, &q.body).await
     }
     .await;
@@ -122,7 +138,12 @@ pub(super) async fn submit(
         return e.into_response();
     }
     let result = async {
-        let api = RepoApi::resolve(&state, &q.repo_path).await?;
+        let api = RepoApi::resolve(
+            &state,
+            &q.repo_path,
+            Origin::interactive("mcp.review.submit"),
+        )
+        .await?;
         reviews::submit_review(&api, api.variables(q.pr_number), q.pr_number, q.draft).await
     }
     .await;

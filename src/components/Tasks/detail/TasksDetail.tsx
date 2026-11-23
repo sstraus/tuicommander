@@ -7,6 +7,7 @@ import { appLogger } from "../../../stores/appLogger";
 import type { WorkItemDetail, WorkItemRef } from "../../../types/work-items.gen";
 import { writeClipboard } from "../../../utils/clipboard";
 import { handleOpenUrl } from "../../../utils/openUrl";
+import { PrReviewWorkflowAction } from "../../PrReviewWorkflow/PrReviewWorkflowAction";
 import { Button } from "../../ui/Button";
 import { Textarea } from "../../ui/Textarea";
 import { START_WORK_NEEDS_REPO, suggestedBranch, useStartWork } from "../startWork";
@@ -127,6 +128,9 @@ export function TasksDetail(props: TasksDetailProps) {
 									</Button>
 								</Show>
 							</div>
+							<Show when={detail().item.itemType === "pull" && (workspace()?.repoPath ?? props.repoPath)}>
+								{(project) => <PrReviewWorkflowAction project={project()} pullRequestUrl={detail().item.url} />}
+							</Show>
 							<h2>{detail().item.title}</h2>
 							<Show when={detail().item.assignees.length || detail().item.labels.length}>
 								<div class={styles.metadata}>

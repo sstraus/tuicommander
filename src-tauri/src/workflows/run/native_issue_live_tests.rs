@@ -4,6 +4,7 @@ use super::native_issue_source::IssueSource;
 use super::native_test_support::Fixture;
 use super::neutral_effects::{EffectObservation, EffectOutcome};
 use super::neutral_execution::NeutralResult;
+use crate::github::Origin;
 use crate::github_pr_api::{PrApi, RepoApi};
 use crate::workflows::github_trigger::GithubResource;
 use futures_util::FutureExt;
@@ -99,9 +100,15 @@ async fn native_issue_live_sandbox_comment_and_label_have_provider_receipts() {
         ],
     )
     .unwrap();
-    let api = RepoApi::resolve(&f.state, &f.context.workspace_path().to_string_lossy())
-        .await
-        .unwrap();
+    let api = RepoApi::resolve(
+        &f.state,
+        &f.context.workspace_path().to_string_lossy(),
+        Origin::interactive(
+            "test.native_issue_live_sandbox_comment_and_label_have_provider_receipts",
+        ),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         format!("{}/{}", api.owner, api.repo),
         "sstraus/tuic-e2e-sandbox"

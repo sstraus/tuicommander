@@ -3,6 +3,7 @@ use super::github_trigger::{GithubResource, GithubSnapshot};
 use crate::github_pr_api::PrApi;
 use serde_json::Value;
 use std::collections::BTreeSet;
+use tuic_git::github::{GitHubIssue, IntakePullRequest};
 
 pub(crate) async fn read_snapshot(
     api: &impl PrApi,
@@ -136,13 +137,19 @@ pub(crate) struct PollSnapshots {
 }
 /// Complete list payloads are authoritative; only vanished known-open resources
 /// need an individual GET to distinguish closure from deletion/transfer.
+/// `listed` is the poller's list when its GraphQL pass proved it complete; `None`
+/// reads the REST pages instead.
 pub(crate) async fn poll_snapshots(
     api: &impl PrApi,
     repository: &str,
     kind: GithubResource,
     known: &[i64],
+    listed: Option<Vec<GithubSnapshot>>,
 ) -> Result<PollSnapshots, String> {
-    let mut snapshots = open_snapshots(api, kind, repository).await?;
+    let mut snapshots = match listed {
+        Some(listed) => listed,
+        None => open_snapshots(api, kind, repository).await?,
+    };
     let listed = snapshots.iter().map(|s| s.number).collect::<BTreeSet<_>>();
     let missing = known.iter().copied().collect::<BTreeSet<_>>();
     let mut unavailable = Vec::new();
@@ -166,4 +173,60 @@ pub(crate) async fn poll_snapshots(
         snapshots,
         unavailable,
     })
+}
+
+/// The poller's issue list as snapshots, equal to what the REST pages would give.
+/// `None` when an issue carries no body digest, so the list proves nothing.
+pub(crate) fn from_poller_issues(
+    repository: &str,
+    issues: &[GitHubIssue],
+) -> Result<Option<Vec<GithubSnapshot>>, String> {
+    let mut snapshots = Vec::with_capacity(issues.len());
+    for issue in issues {
+        if issue.requirements_digest.is_empty() {
+            return Ok(None);
+        }
+        let snapshot = GithubSnapshot {
+            repository: super::github_trigger::repository(repository)?,
+            number: i64::from(issue.number),
+            kind: GithubResource::Issue,
+            open: issue.state == "OPEN",
+            title: issue.title.clone(),
+            material_digest: issue.requirements_digest.clone(),
+            labels: issue.labels.iter().map(|l| l.name.clone()).collect(),
+            head: None,
+            base: None,
+            updated_at: issue.updated_at.clone(),
+            actor: None,
+        };
+        snapshot.validate()?;
+        snapshots.push(snapshot);
+    }
+    Ok(Some(snapshots))
+}
+
+/// The poller's open-PR list as snapshots, equal to what the REST pages would give.
+pub(crate) fn from_poller_prs(
+    repository: &str,
+    prs: &[IntakePullRequest],
+) -> Result<Vec<GithubSnapshot>, String> {
+    prs.iter()
+        .map(|pr| {
+            let snapshot = GithubSnapshot {
+                repository: super::github_trigger::repository(repository)?,
+                number: pr.number,
+                kind: GithubResource::PullRequest,
+                open: true,
+                title: pr.title.clone(),
+                material_digest: pr.requirements_digest.clone(),
+                labels: pr.labels.iter().cloned().collect(),
+                head: Some(pr.head_sha.clone()),
+                base: Some(pr.base_sha.clone()),
+                updated_at: pr.updated_at.clone(),
+                actor: None,
+            };
+            snapshot.validate()?;
+            Ok(snapshot)
+        })
+        .collect()
 }

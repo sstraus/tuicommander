@@ -1253,6 +1253,18 @@ interface HttpResponse {
 
 **Account requests:** `httpFetch(url, { account: "<account id>" })` makes Rust inject that account's credential (`Authorization: Bearer <token>`, or `Basic` for Basic accounts). The plugin never sees the token. Rules: the manifest `providers` list must contain the account's provider; the URL must be under the account host (same scheme, host and port, path prefix of the site URL; GitHub accounts use their API base, `https://api.github.com/` or `https://<ghe>/api/`); the account host rule replaces the `allowedUrls` check for the first URL; you must not set `Authorization` yourself. Each redirect hop must be under the account host, match `allowedUrls` or match an owner destination, and a hop to another scheme, host or port loses the `Authorization` header. The token is read again for each request, so a re-entered credential applies at once; a 401 comes back to you as a normal response. Token values in the response body and headers are replaced with `[redacted]`.
 
+**Gateway:** each request is admitted first (capability, manifest, owner destinations, then the account rules or the `allowedUrls` rules); only an admitted request reaches the provider gateway. Account reads are budgeted, cached and coalesced: a served-from-cache answer carries `x-tuic-cache: hit|revalidated|stale`. Under quota pressure you get a synthetic `429` with `x-tuic-gateway: rate_limited` and `retry-after` (seconds). Requests without an account are budgeted but never cached. The host follows redirects itself: at most 5 hops, each admitted again with the same rules. `options.timeoutMs` and `options.maxResponseBytes` lower the 30 s and 10 MiB host limits; they never raise them.
+
+The host owns the budget and the cache; a plugin must not keep its own retry loop. What a plugin can read and set:
+
+| Header | Direction | Meaning |
+|--------|-----------|---------|
+| `x-tuic-cache: hit\|revalidated\|stale` | Response | The answer came from the host cache. Absent on a network answer. `stale` means the provider could not be reached or the quota is low. |
+| `x-tuic-gateway: rate_limited` with status `429` | Response | The host refused the request to protect the quota, or the provider limit is active. Wait for `retry-after` (seconds). |
+| `x-tuic-freshness: force` | Request | Ask for a fresh read (a Refresh action). The host removes the header before it sends. `httpFetch(url, { freshness: "force" })` sets it. A forced read does not pass an exhausted quota. |
+
+Plugin account responses are cached in memory only, never on disk. Policy details: [Provider gateway](backend/provider-gateway.md).
+
 ```typescript
 const me = await host.httpFetch(`${site}/rest/api/3/myself`, { account: accountId });
 ```

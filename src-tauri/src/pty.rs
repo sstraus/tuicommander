@@ -3291,6 +3291,8 @@ impl ChunkProcessor {
                             .then(|| crate::output_parser::parse_choice_prompt(screen))
                             .flatten()
                     })
+            } else if agent_type.as_deref() == Some("agy") {
+                crate::output_parser::parse_agy_dialog(screen)
             } else {
                 crate::output_parser::parse_choice_prompt(screen)
             };

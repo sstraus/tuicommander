@@ -8,6 +8,7 @@ use super::native_git::NativeFailure;
 use super::native_github_git::{Transfer, transfer};
 use super::native_host::NativeBinding;
 use super::neutral_effects::EffectKey;
+use crate::github::Origin;
 use crate::github_pr_api::{PrApi, RepoApi};
 use review::ReviewVerdict;
 pub(super) use review::verify_open_pr;
@@ -142,7 +143,12 @@ pub(super) async fn publish_owned<T: Serialize + serde::de::DeserializeOwned + S
     let state = context.authorize(&bound.store, key, handler, original, None)?;
     context.require_artifact(&r.commit, &r.tree)?;
     let path = context.workspace_path();
-    let api = RepoApi::resolve(&state, &path.to_string_lossy()).await?;
+    let api = RepoApi::resolve(
+        &state,
+        &path.to_string_lossy(),
+        Origin::background("workflow.native_github.publish_owned"),
+    )
+    .await?;
     if api.account.id != r.account || format!("{}/{}", api.owner, api.repo) != r.repository {
         return Err(NativeFailure::Refused(
             "GitHub destination/account differs from approved request".into(),

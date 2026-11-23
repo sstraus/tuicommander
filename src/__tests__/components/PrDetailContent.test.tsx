@@ -8,6 +8,7 @@ const mockGithubStore = vi.hoisted(() => ({
 	getCheckSummary: vi.fn(() => null),
 	getCheckDetails: vi.fn((): CheckDetail[] => []),
 	loadCheckDetails: vi.fn(() => Promise.resolve()),
+	state: { viewerLogin: null as string | null },
 }));
 const mockRpc = vi.hoisted(() =>
 	vi.fn<(command: string, args?: Record<string, unknown>) => Promise<unknown>>(async () => undefined),
@@ -270,5 +271,82 @@ describe("PrDetailContent — readiness and unresolved threads", () => {
 		const { container } = render(() => <PrDetailContent repoPath={repo} branch="feature" />);
 		expect(container.querySelector("[data-readiness]")?.getAttribute("data-readiness")).toBe("ready");
 		expect(mockRpc).not.toHaveBeenCalledWith("get_pr_review_threads", expect.anything());
+	});
+});
+
+describe("PrDetailContent — next action and sections", () => {
+	const readyPr = {
+		...basePr,
+		url: "https://github.com/acme/widget/pull/42",
+		is_draft: false,
+		conflict_state: "clear",
+		merge_state_status: "CLEAN",
+		review_decision: "APPROVED",
+		viewer_did_approve: false,
+		unresolved_threads: 0,
+		unresolved_threads_truncated: false,
+		checks: { passed: 1, failed: 0, pending: 0, total: 1 },
+	};
+	const sectionOpen = (container: HTMLElement, title: string) =>
+		Array.from(container.querySelectorAll<HTMLButtonElement>("button[aria-expanded]"))
+			.find((b) => b.textContent?.includes(title))
+			?.getAttribute("aria-expanded");
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockGithubStore.getCheckSummary.mockReturnValue(null);
+		mockGithubStore.getCheckDetails.mockReturnValue([]);
+		mockGithubStore.state.viewerLogin = null;
+	});
+
+	it("puts Approve first for a reviewer and never for the author", () => {
+		// Catches: Approve hidden on a PR the viewer must review, or offered to the author (GitHub 422).
+		mockGithubStore.getBranchPrData.mockReturnValue({ ...readyPr, review_decision: "REVIEW_REQUIRED" });
+		mockGithubStore.state.viewerLogin = "reviewer";
+		const onApprove = vi.fn();
+		const asReviewer = render(() => <PrDetailContent repoPath={nextRepo()} branch="feature" onApprove={onApprove} />);
+		fireEvent.click(asReviewer.getByRole("button", { name: "Approve" }));
+		expect(onApprove).toHaveBeenCalledOnce();
+		asReviewer.unmount();
+
+		mockGithubStore.state.viewerLogin = "boss";
+		const asAuthor = render(() => <PrDetailContent repoPath={nextRepo()} branch="feature" onApprove={onApprove} />);
+		expect(asAuthor.queryByRole("button", { name: "Approve" })).toBeNull();
+	});
+
+	it("offers Merge only when the readiness verdict is ready", () => {
+		// Catches: a Merge button next to a badge that says the PR is blocked.
+		const onMerge = vi.fn();
+		mockGithubStore.getBranchPrData.mockReturnValue(readyPr);
+		const ready = render(() => (
+			<PrDetailContent repoPath={nextRepo()} branch="feature" onMerge={onMerge} mergeLabel="Squash & Merge" />
+		));
+		fireEvent.click(ready.getByRole("button", { name: "Squash & Merge" }));
+		expect(onMerge).toHaveBeenCalledOnce();
+		ready.unmount();
+
+		mockGithubStore.getBranchPrData.mockReturnValue({ ...readyPr, unresolved_threads: 2 });
+		const blocked = render(() => (
+			<PrDetailContent repoPath={nextRepo()} branch="feature" onMerge={onMerge} mergeLabel="Squash & Merge" />
+		));
+		expect(blocked.queryByRole("button", { name: "Squash & Merge" })).toBeNull();
+	});
+
+	it("opens only Checks when CI is red, even with open threads", () => {
+		// Catches: every relevant section expanding at once and burying the failure.
+		mockGithubStore.getBranchPrData.mockReturnValue({ ...readyPr, unresolved_threads: 2 });
+		mockGithubStore.getCheckDetails.mockReturnValue([{ context: "build", state: "failure", html_url: "" }]);
+		const { container } = render(() => <PrDetailContent repoPath={nextRepo()} branch="feature" />);
+		expect(sectionOpen(container, "Checks")).toBe("true");
+		expect(sectionOpen(container, "Threads")).toBe("false");
+		expect(sectionOpen(container, "Description")).toBe("false");
+	});
+
+	it("opens Threads when CI is green and threads are open", () => {
+		mockGithubStore.getBranchPrData.mockReturnValue({ ...readyPr, unresolved_threads: 2 });
+		mockGithubStore.getCheckDetails.mockReturnValue([{ context: "build", state: "success", html_url: "" }]);
+		const { container } = render(() => <PrDetailContent repoPath={nextRepo()} branch="feature" />);
+		expect(sectionOpen(container, "Threads")).toBe("true");
+		expect(sectionOpen(container, "Checks")).toBe("false");
 	});
 });

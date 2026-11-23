@@ -244,8 +244,10 @@ pub(super) async fn put_ui_prefs(
         return resp;
     }
     match crate::config::save_ui_prefs(request.base, request.config) {
-        Ok(()) => {
-            crate::settings::api::publish_change(&state, "preferences", true);
+        Ok(changed) => {
+            if changed {
+                crate::settings::api::publish_change(&state, "preferences", true);
+            }
             (StatusCode::OK, Json(serde_json::json!({"ok": true})))
         }
         Err(e) => (

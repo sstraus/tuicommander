@@ -46,7 +46,7 @@ impl Logins {
             .github
             .login_epoch
             .load(std::sync::atomic::Ordering::SeqCst);
-        let response = crate::github_auth::start_device_flow(&state.http_client)
+        let response = crate::github_auth::start_device_flow()
             .await
             .map_err(|_| Error::new(ID, "unavailable"))?;
         self.insert(response, additional, epoch)

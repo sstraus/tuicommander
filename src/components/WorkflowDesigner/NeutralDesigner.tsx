@@ -1,4 +1,6 @@
-import { createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, Show } from "solid-js";
+import { workflowsUi } from "../../stores/workflowsUi";
+import { randomUuid } from "../../utils/randomId";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { SegmentedControl } from "../ui/SegmentedControl";
@@ -52,10 +54,16 @@ export function NeutralDesigner(props: { project: string }) {
 	const [search, setSearch] = createSignal("");
 	const [view, setView] = createSignal<"design" | "interface" | "inspect" | "advanced">("design");
 	const [inspectionOpened, setInspectionOpened] = createSignal(false);
+	// A run opened from elsewhere (PR review start) lands on Preview & runs.
+	createEffect(() => {
+		if (!workflowsUi.run()) return;
+		setInspectionOpened(true);
+		setView("inspect");
+	});
 	const [documentKey, setDocumentKey] = createSignal(0);
 	function addControl(node: ControlNode) {
 		const definition = state.definition();
-		const id = crypto.randomUUID();
+		const id = randomUuid();
 		state.edit({
 			...definition,
 			control: { ...definition.control, nodes: { ...definition.control.nodes, [id]: node } },
@@ -64,7 +72,7 @@ export function NeutralDesigner(props: { project: string }) {
 	}
 	function add(descriptor: ActivityDescriptor) {
 		const definition = state.definition();
-		const id = crypto.randomUUID();
+		const id = randomUuid();
 		state.edit({
 			...definition,
 			instances: [...definition.instances, { descriptor: descriptor.id, config: {}, execution_policy: "" }],

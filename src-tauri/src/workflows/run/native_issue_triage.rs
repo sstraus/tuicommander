@@ -6,6 +6,7 @@ use super::native_issue_service::{IssuePolicy, IssueProfile, IssueServices, Scop
 use super::native_issue_source::IssueSource;
 use super::neutral_effects::{EffectKey, EffectOutcome};
 use super::neutral_execution::{NeutralResult, NeutralStatus};
+use crate::github::Origin;
 use crate::github_pr_api::{PrApi, RepoApi};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -63,7 +64,12 @@ pub(super) async fn triage(
     request.validate()?;
     request.source.require(bound, key)?;
     let state = bound.context.current(None)?;
-    let api = RepoApi::resolve(&state, &bound.context.workspace_path().to_string_lossy()).await?;
+    let api = RepoApi::resolve(
+        &state,
+        &bound.context.workspace_path().to_string_lossy(),
+        Origin::background("workflow.native_issue_triage.triage"),
+    )
+    .await?;
     if api.account.id != request.source.account
         || format!("{}/{}", api.owner, api.repo).to_ascii_lowercase() != request.source.repository
     {

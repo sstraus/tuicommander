@@ -110,7 +110,7 @@ pub(super) const REPO_GUIDE: Guide = &[
     ),
     (
         &["worktree_create"],
-        "worktree_create: path required; optional branch/base_ref/spawn_session (bare shell, not agent). Shares Git refs/objects, not parent tracked edits. Ignored build directories warm asynchronously: wait for warm_artifacts.status=done|failed in worktree_list before installing/building. ",
+        "worktree_create: path required; optional base_ref/spawn_session (bare shell, not agent). Pass branch as a short name for the task in the repo's convention (e.g. fix/<topic>, feat/<topic>); if omitted, a random name is generated. Shares Git refs/objects, not parent tracked edits. Ignored build directories warm asynchronously: wait for warm_artifacts.status=done|failed in worktree_list before installing/building. ",
     ),
     (
         &["worktree_remove"],

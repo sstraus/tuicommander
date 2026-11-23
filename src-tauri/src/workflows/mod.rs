@@ -36,6 +36,8 @@ pub(crate) mod fork_scope;
 mod fork_scope_tests;
 mod github_event;
 pub(crate) mod github_poll;
+#[cfg(test)]
+pub(crate) mod github_poll_bench;
 pub(crate) mod github_trigger;
 pub(crate) mod jira;
 pub(crate) mod loop_data;

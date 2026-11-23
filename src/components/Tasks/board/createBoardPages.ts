@@ -1,5 +1,7 @@
 import { createSignal } from "solid-js";
+import { forceFreshness } from "../../../plugins/freshness";
 import type { WorkItemProvider } from "../../../plugins/workItemProvider";
+import { parseLimitError } from "../../../transport/limitError";
 import type { WorkItemBoardPage, WorkItemQuery } from "../../../types/work-items.gen";
 import { cardKey } from "./types";
 
@@ -17,6 +19,8 @@ export function createBoardPages() {
 	const [page, setPage] = createSignal<WorkItemBoardPage>();
 	const [loading, setLoading] = createSignal(false);
 	const [error, setError] = createSignal("");
+	const [limit, setLimit] = createSignal<{ until: number } | null>(null);
+	const [cachedAt, setCachedAt] = createSignal<number | null>(null);
 	let source: WorkItemProvider | undefined;
 	let boardId = "";
 	let generation = 0;
@@ -43,7 +47,7 @@ export function createBoardPages() {
 			lanes: [...lanes.values()],
 		};
 	}
-	async function request(append: boolean) {
+	async function request(append: boolean, force = false) {
 		const provider = source;
 		const id = boardId;
 		const cursor = append ? (page()?.nextCursor ?? null) : null;
@@ -51,15 +55,20 @@ export function createBoardPages() {
 		cancel();
 		const attempt = generation;
 		const abort = new AbortController();
+		if (force) forceFreshness(abort.signal);
 		controller = abort;
 		setLoading(true);
 		setError("");
+		setLimit(null);
 		try {
 			const next = await provider.board(id, { ...query, cursor }, abort.signal);
 			if (attempt !== generation || abort.signal.aborted) return;
 			setPage(merge(page(), next));
+			setCachedAt(Date.now());
 		} catch (cause) {
 			if (attempt !== generation || abort.signal.aborted) return;
+			const typed = parseLimitError(cause);
+			if (typed) setLimit({ until: typed.retry_at });
 			setError(cause instanceof Error ? cause.message : String(cause));
 		} finally {
 			if (attempt === generation) setLoading(false);
@@ -69,6 +78,8 @@ export function createBoardPages() {
 		page,
 		loading,
 		error,
+		limit,
+		cachedAt,
 		cancel,
 		select(provider: WorkItemProvider, id: string) {
 			cancel();
@@ -79,6 +90,6 @@ export function createBoardPages() {
 			if (id) void request(false);
 		},
 		more: () => request(true),
-		refresh: () => request(false),
+		refresh: () => request(false, true),
 	};
 }

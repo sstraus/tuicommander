@@ -3116,14 +3116,22 @@ where
     /// Apply only the fields changed by this caller to the latest locked file.
     /// Arrays are replaced as values; a null delta removes an object key.
     pub(crate) fn save_delta(&self, base: &T, desired: &T) -> Result<(), String> {
+        self.save_delta_changed(base, desired).map(|_| ())
+    }
+
+    /// `save_delta` that reports whether the document on disk changed. An identical
+    /// save returns `false` without rewriting the file.
+    pub(crate) fn save_delta_changed(&self, base: &T, desired: &T) -> Result<bool, String> {
         let base = serde_json::to_value(base).map_err(|e| e.to_string())?;
         let desired = serde_json::to_value(desired).map_err(|e| e.to_string())?;
         let Some(delta) = json_merge_delta(&base, &desired) else {
-            return Ok(());
+            return Ok(false);
         };
         self.update_with(move |latest: &mut T| {
+            let before = serde_json::to_value(&*latest).map_err(|e| e.to_string())?;
             apply_typed_json_merge_delta(latest, &delta)?;
-            Ok(((), true))
+            let changed = serde_json::to_value(&*latest).map_err(|e| e.to_string())? != before;
+            Ok((changed, changed))
         })
     }
 
@@ -3831,9 +3839,10 @@ pub(crate) fn load_ui_prefs() -> UIPrefsConfig {
     load_json_config(UI_PREFS_FILE)
 }
 
-pub(crate) fn save_ui_prefs(base: UIPrefsConfig, config: UIPrefsConfig) -> Result<(), String> {
+/// Returns whether the file on disk changed; an identical save is a no-op.
+pub(crate) fn save_ui_prefs(base: UIPrefsConfig, config: UIPrefsConfig) -> Result<bool, String> {
     let file: ConfigFile<UIPrefsConfig> = ConfigFile::new(UI_PREFS_FILE);
-    file.save_delta(&base, &config)
+    file.save_delta_changed(&base, &config)
 }
 
 // Repo settings

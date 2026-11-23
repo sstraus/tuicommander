@@ -51,6 +51,8 @@ vi.mock("../../stores/repositories", () => ({
 		getRevision: vi.fn(() => 0),
 		getAllReposOrdered: mockGetAllReposOrdered,
 		isGitRepo: mockIsGitRepo,
+		workspaceIdOnBranch: vi.fn(() => undefined),
+		state: { repositories: {} },
 	},
 }));
 
@@ -93,6 +95,7 @@ vi.mock("../../stores/github", () => ({
 		getCheckSummary: vi.fn(() => null),
 		getCheckDetails: vi.fn(() => []),
 		loadCheckDetails: vi.fn().mockResolvedValue(undefined),
+		state: { viewerLogin: null },
 	},
 }));
 

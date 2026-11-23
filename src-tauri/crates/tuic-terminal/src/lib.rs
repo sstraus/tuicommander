@@ -1,3 +1,4 @@
+mod agy_dialog;
 pub mod chrome;
 mod ego_question;
 pub mod grid_gate;

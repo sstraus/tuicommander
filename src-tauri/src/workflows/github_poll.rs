@@ -4,8 +4,10 @@ use super::{
     github_trigger::{GithubResource, repository},
     trigger::{NeutralTriggerBinding, TriggerSource},
 };
+use crate::github::Origin;
 use crate::{github_pr_api::RepoApi, state::AppState};
 use std::{collections::BTreeSet, sync::Arc};
+use tuic_git::github::{GitHubIssue, IntakePullRequest};
 
 fn binding_repository(binding: &NeutralTriggerBinding) -> Result<String, String> {
     let prefix = binding
@@ -84,10 +86,19 @@ pub(crate) fn report_intake_refusals(state: &AppState, bindings: &mut [NeutralTr
     }
 }
 
+/// The open resources one poll tick already downloaded for a repository.
+pub(crate) enum PolledList<'a> {
+    Issues(&'a [GitHubIssue]),
+    PullRequests(&'a [IntakePullRequest]),
+}
+
+/// `polled` is the poller's complete GraphQL list; `None` makes the source read the
+/// REST pages itself.
 pub(crate) async fn observe(
     state: &AppState,
     path: &str,
     kind: GithubResource,
+    polled: Option<PolledList<'_>>,
 ) -> Result<(), String> {
     let store = WorkflowStore::open()?;
     let kind_name = match kind {
@@ -105,7 +116,12 @@ pub(crate) async fn observe(
         return Ok(());
     }
     let host = state.workflow_runtime.neutral_catalog_host()?;
-    let api = RepoApi::resolve(state, path).await?;
+    let api = RepoApi::resolve(
+        state,
+        path,
+        Origin::background("workflow.github_poll.observe"),
+    )
+    .await?;
     let repository = format!("{}/{}", api.owner, api.repo).to_ascii_lowercase();
     let projects = bindings
         .iter()
@@ -121,7 +137,17 @@ pub(crate) async fn observe(
     let known = state
         .workflow_runtime
         .known_github_numbers(&repository, kind)?;
-    let polled = super::github_event::poll_snapshots(&api, &repository, kind, &known).await?;
+    let listed = match polled {
+        Some(PolledList::Issues(issues)) if kind == GithubResource::Issue => {
+            super::github_event::from_poller_issues(&repository, issues)?
+        }
+        Some(PolledList::PullRequests(prs)) if kind == GithubResource::PullRequest => {
+            Some(super::github_event::from_poller_prs(&repository, prs)?)
+        }
+        _ => None,
+    };
+    let polled =
+        super::github_event::poll_snapshots(&api, &repository, kind, &known, listed).await?;
     for number in polled.unavailable {
         state
             .workflow_runtime

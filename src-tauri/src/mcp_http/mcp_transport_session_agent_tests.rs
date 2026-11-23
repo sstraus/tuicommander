@@ -4838,7 +4838,7 @@ fn merge_params_output_format_no_conflict() {
 }
 
 // Claude-only-param guard: --print / --output-format must be
-// dropped for non-claude agents (codex/gemini/goose die with clap error 2).
+// dropped for non-claude agents (codex/agy/goose die with a usage error).
 
 #[test]
 fn merge_params_codex_drops_print_mode() {

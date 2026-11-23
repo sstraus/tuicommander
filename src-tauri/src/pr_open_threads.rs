@@ -1,5 +1,6 @@
 //! The open review threads of a PR as untrusted prompt data, the value of the
 //! `{pr_open_threads}` smart-prompt variable ("Address Review Comments").
+use crate::github::Origin;
 use crate::{
     github_pr_api::{PrApi, RepoApi},
     github_review_threads::read_threads,
@@ -34,7 +35,12 @@ pub(crate) async fn get_pr_open_threads_impl(
     number: i64,
     state: &AppState,
 ) -> Result<String, String> {
-    let api = RepoApi::resolve(state, path).await?;
+    let api = RepoApi::resolve(
+        state,
+        path,
+        Origin::visible("pr_open_threads.get_pr_open_threads_impl"),
+    )
+    .await?;
     open_threads_prompt(&api, api.variables(number)).await
 }
 

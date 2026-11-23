@@ -1,4 +1,5 @@
 //! Review threads on the existing PR diff. The count-only API remains separate.
+use crate::github::Origin;
 use crate::{
     github_pr_api::{PrApi, RepoApi},
     state::AppState,
@@ -186,7 +187,12 @@ pub(crate) async fn get_pr_line_threads_impl(
     after: Option<String>,
     state: &AppState,
 ) -> Result<ReviewThreadsPage, String> {
-    let api = RepoApi::resolve(state, path).await?;
+    let api = RepoApi::resolve(
+        state,
+        path,
+        Origin::interactive("review_threads.get_pr_line_threads_impl"),
+    )
+    .await?;
     read_threads(&api, api.variables(number), after).await
 }
 
@@ -209,7 +215,12 @@ pub(crate) async fn get_pr_thread_comments(
     after: Option<String>,
     state: tauri::State<'_, std::sync::Arc<AppState>>,
 ) -> Result<Value, String> {
-    let api = RepoApi::resolve(&state, &repo_path).await?;
+    let api = RepoApi::resolve(
+        &state,
+        &repo_path,
+        Origin::interactive("review_threads.get_pr_thread_comments"),
+    )
+    .await?;
     read_comments(&api, &thread_id, after).await
 }
 
@@ -221,7 +232,12 @@ pub(crate) async fn set_pr_thread_resolved(
     resolved: bool,
     state: tauri::State<'_, std::sync::Arc<AppState>>,
 ) -> Result<Value, String> {
-    let api = RepoApi::resolve(&state, &repo_path).await?;
+    let api = RepoApi::resolve(
+        &state,
+        &repo_path,
+        Origin::interactive("review_threads.set_pr_thread_resolved"),
+    )
+    .await?;
     resolve_thread(&api, &thread_id, resolved).await
 }
 
@@ -233,7 +249,12 @@ pub(crate) async fn reply_pr_thread(
     body: String,
     state: tauri::State<'_, std::sync::Arc<AppState>>,
 ) -> Result<Value, String> {
-    let api = RepoApi::resolve(&state, &repo_path).await?;
+    let api = RepoApi::resolve(
+        &state,
+        &repo_path,
+        Origin::interactive("review_threads.reply_pr_thread"),
+    )
+    .await?;
     reply_thread(&api, &thread_id, &body).await
 }
 
@@ -245,7 +266,12 @@ pub(crate) async fn submit_pr_draft_review(
     draft: DraftReview,
     state: tauri::State<'_, std::sync::Arc<AppState>>,
 ) -> Result<crate::github::PostedPrReview, String> {
-    let api = RepoApi::resolve(&state, &repo_path).await?;
+    let api = RepoApi::resolve(
+        &state,
+        &repo_path,
+        Origin::interactive("review_threads.submit_pr_draft_review"),
+    )
+    .await?;
     submit_review(&api, api.variables(pr_number), pr_number, draft).await
 }
 

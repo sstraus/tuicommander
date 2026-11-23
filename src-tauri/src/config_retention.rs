@@ -25,6 +25,9 @@ pub(crate) struct RetentionConfig {
     /// Managed launch records that reached `created` or `blocked`.
     #[schemars(extend("x-setting" = {"sensitivity":"public","apply":"live","effect":"Used by the next database cleanup.","operations":["get","set"],"confirmationClass":"ordinary"}))]
     pub(crate) launch_days: u32,
+    /// Last visits of issue and pull request panels (the "new comments" mark).
+    #[schemars(extend("x-setting" = {"sensitivity":"public","apply":"live","effect":"Used by the next database cleanup.","operations":["get","set"],"confirmationClass":"ordinary"}))]
+    pub(crate) work_item_visit_days: u32,
     /// Config directories under `instances/` that no running process holds.
     #[schemars(extend("x-setting" = {"sensitivity":"public","apply":"live","effect":"Used by the next database cleanup.","operations":["get","set"],"confirmationClass":"ordinary"}))]
     pub(crate) instance_days: u32,
@@ -48,6 +51,7 @@ impl Default for RetentionConfig {
             tunnel_audit_days: 30,
             mcp_usage_days: 90,
             launch_days: 30,
+            work_item_visit_days: 90,
             instance_days: 3,
             session_file_days: 30,
             capture_days: 14,

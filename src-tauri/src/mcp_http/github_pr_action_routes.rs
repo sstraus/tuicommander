@@ -1,4 +1,5 @@
 use super::{json_result, validate_repo_path};
+use crate::github::Origin;
 use crate::{
     github_pr_actions::{self as actions, PrAction},
     github_pr_api::RepoApi,
@@ -58,7 +59,12 @@ pub(super) async fn state(
         return e.into_response();
     }
     let result = async {
-        let api = RepoApi::resolve(&state, &q.repo_path).await?;
+        let api = RepoApi::resolve(
+            &state,
+            &q.repo_path,
+            Origin::interactive("mcp.pr_actions.state"),
+        )
+        .await?;
         actions::action_state(&api, api.variables(q.pr_number)).await
     }
     .await;
@@ -77,7 +83,12 @@ pub(super) async fn auto_merge(
         PrAction::DisableAutoMerge
     };
     let result = async {
-        let api = RepoApi::resolve(&state, &q.repo_path).await?;
+        let api = RepoApi::resolve(
+            &state,
+            &q.repo_path,
+            Origin::interactive("mcp.pr_actions.auto_merge"),
+        )
+        .await?;
         actions::change_action(
             &api,
             api.variables(q.pr_number),
@@ -103,7 +114,12 @@ pub(super) async fn queue(
         PrAction::Dequeue
     };
     let result = async {
-        let api = RepoApi::resolve(&state, &q.repo_path).await?;
+        let api = RepoApi::resolve(
+            &state,
+            &q.repo_path,
+            Origin::interactive("mcp.pr_actions.queue"),
+        )
+        .await?;
         actions::change_action(
             &api,
             api.variables(q.pr_number),
@@ -124,7 +140,12 @@ pub(super) async fn merge(
         return e.into_response();
     }
     let result = async {
-        let api = RepoApi::resolve(&state, &q.repo_path).await?;
+        let api = RepoApi::resolve(
+            &state,
+            &q.repo_path,
+            Origin::interactive("mcp.pr_actions.merge"),
+        )
+        .await?;
         actions::merge_or_enqueue(
             &api,
             api.variables(q.pr_number),
@@ -145,7 +166,12 @@ pub(super) async fn rerun(
         return e.into_response();
     }
     let result = async {
-        let api = RepoApi::resolve(&state, &q.repo_path).await?;
+        let api = RepoApi::resolve(
+            &state,
+            &q.repo_path,
+            Origin::interactive("mcp.pr_actions.rerun"),
+        )
+        .await?;
         actions::rerun_failed_jobs(&api, q.run_id).await
     }
     .await;

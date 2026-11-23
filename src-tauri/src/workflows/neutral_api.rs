@@ -112,6 +112,8 @@ pub(crate) fn neutral_action(
         NeutralAction::Start { .. }
         | NeutralAction::StartDelivery { .. }
         | NeutralAction::DeliveryRuns { .. }
+        | NeutralAction::PrReviewTargets { .. }
+        | NeutralAction::StartPrReview { .. }
         | NeutralAction::ListRuns { .. }
         | NeutralAction::Inspect { .. }
         | NeutralAction::Events { .. }

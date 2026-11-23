@@ -123,6 +123,20 @@ pub(crate) enum NeutralAction {
     DeliveryRuns {
         story: String,
     },
+    /// The project's GitHub pull_request bindings that can review this pull
+    /// request (its web URL) by hand.
+    PrReviewTargets {
+        pull_request: String,
+    },
+    /// Review one pull request (its web URL) with the publication of its
+    /// pull_request binding. GitHub supplies the head and base now; the same
+    /// head and base return the run that already reviews them.
+    StartPrReview {
+        pull_request: String,
+        /// Required when several bindings review the repository.
+        #[serde(default)]
+        binding: Option<String>,
+    },
     ListRuns {},
     Inspect {
         run_id: String,
@@ -225,6 +239,7 @@ pub(crate) enum NeutralReply {
     Inspection(Value),
     Events(Value),
     DeliveryRuns(Vec<Value>),
+    PrReviewTargets(Vec<super::super::run::neutral_pr_review::PrReviewTarget>),
     Runs(Vec<Value>),
 }
 

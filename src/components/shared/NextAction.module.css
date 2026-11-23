@@ -1,0 +1,51 @@
+/* UI v3 header pieces shared by the PR and issue panels (docs/frontend/ui-v3.md) */
+button[data-control-layout="row"].commentsPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-secondary));
+  color: color-mix(in srgb, var(--accent) 55%, var(--fg-primary));
+  font-size: var(--font-xs);
+  cursor: pointer;
+}
+
+button[data-control-layout="row"].commentsPill:hover:not(:disabled) {
+  color: var(--fg-primary);
+  background: var(--bg-highlight);
+}
+
+button[data-control-layout="row"].commentsPillOpen {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.nextAction {
+  margin: 6px 12px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: var(--radius-md, 6px);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-secondary));
+}
+
+.nextActionWhy {
+  font-size: var(--font-xs);
+  color: var(--fg-secondary);
+  margin-bottom: 6px;
+}
+
+.nextActionRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+
+.nextActionError {
+  margin-top: 6px;
+  font-size: var(--font-xs);
+  color: var(--error);
+}

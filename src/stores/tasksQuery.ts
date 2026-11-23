@@ -1,5 +1,7 @@
 import { createSignal } from "solid-js";
+import { forceFreshness } from "../plugins/freshness";
 import type { WorkItemProvider } from "../plugins/workItemProvider";
+import { parseLimitError } from "../transport/limitError";
 import type {
 	WorkItem,
 	WorkItemGroup,
@@ -7,7 +9,8 @@ import type {
 	WorkItemPage,
 	WorkItemQuery,
 } from "../types/work-items.gen";
-import { collectLocalTasks, projectLocalTasks } from "./tasksLocalQuery";
+import { clockTime } from "../utils/clockTime";
+import { collectLocalTasks, localScope, projectLocalTasks } from "./tasksLocalQuery";
 
 type Source = Pick<WorkItemProvider, "providerId" | "accountId" | "list" | "grouped"> &
 	Partial<Pick<WorkItemProvider, "fields">>;
@@ -20,6 +23,10 @@ interface QueryState {
 	local: boolean;
 	loading: boolean;
 	stale: boolean;
+	/** When the rows on screen were last loaded, epoch milliseconds. */
+	cachedAt: number | null;
+	/** The gateway's typed refusal, when it is why the load failed. */
+	limit: { kind: "rate_limited" | "shed"; bucket: string | null; until: number } | null;
 	error: string | null;
 }
 const empty = (): QueryState => ({
@@ -30,8 +37,49 @@ const empty = (): QueryState => ({
 	local: false,
 	loading: false,
 	stale: false,
+	cachedAt: null,
+	limit: null,
 	error: null,
 });
+
+const DEFAULT_RETRY_SECONDS = 60;
+const clock = clockTime;
+
+/**
+ * GitHub answers an exhausted quota with 429, or with 403 plus a retry hint; a bare 403 is a permission error.
+ * The retry time comes from retry-after (seconds or date) or from x-ratelimit-reset (epoch seconds).
+ */
+function rateLimitOf(
+	error: unknown,
+): { until: number; message: string; limit: NonNullable<QueryState["limit"]> } | null {
+	const typed = parseLimitError(error);
+	if (typed)
+		return {
+			until: typed.retry_at,
+			message: `Rate limited — retry after ${clock(typed.retry_at)}`,
+			limit: { kind: typed.kind, bucket: typed.bucket, until: typed.retry_at },
+		};
+	const { status, retryAfter, resetAt } = (error ?? {}) as {
+		status?: unknown;
+		retryAfter?: unknown;
+		resetAt?: unknown;
+	};
+	const hint = retryAfter ?? resetAt;
+	if (status !== 429 && !(status === 403 && hint != null)) return null;
+	const now = Date.now();
+	let until = now + DEFAULT_RETRY_SECONDS * 1000;
+	if (retryAfter != null) {
+		const seconds = Number(retryAfter);
+		const date = Date.parse(String(retryAfter));
+		if (Number.isFinite(seconds)) until = now + seconds * 1000;
+		else if (Number.isFinite(date)) until = date;
+	} else if (resetAt != null && Number.isFinite(Number(resetAt))) until = Number(resetAt) * 1000;
+	return {
+		until,
+		message: `GitHub rate limit — retry after ${clock(until)}`,
+		limit: { kind: "rate_limited", bucket: null, until },
+	};
+}
 
 /** View state and transport: providers own server queries; Rust projects certified complete scopes. */
 export function createTasksQuery(options: { maxCachedPages?: number; local?: boolean } = {}) {
@@ -45,6 +93,10 @@ export function createTasksQuery(options: { maxCachedPages?: number; local?: boo
 	let acceptedQuery: WorkItemQuery | undefined;
 	let controller: AbortController | undefined;
 	const consumedCursors = new Set<string>();
+	/** Collected local scopes; null records a scope that must stay in server mode. */
+	const collected = new Map<string, WorkItem[] | null>();
+	/** Accounts whose quota is exhausted, until the time they named. */
+	const limits = new Map<string, NonNullable<ReturnType<typeof rateLimitOf>>>();
 	const key = (provider: Source, request: WorkItemQuery) =>
 		JSON.stringify([provider.providerId, provider.accountId, request]);
 	const identity = (item: WorkItem) =>
@@ -58,10 +110,24 @@ export function createTasksQuery(options: { maxCachedPages?: number; local?: boo
 		if (append && (!cursor || state().loading || consumedCursors.has(cursor))) return;
 		const pageQuery = { ...query, cursor };
 		const pageKey = key(provider, pageQuery);
+		const accountKey = JSON.stringify([provider.providerId, provider.accountId]);
+		const limit = force ? undefined : limits.get(accountKey);
+		if (limit && limit.until > Date.now()) {
+			setState((previous) => ({
+				...previous,
+				loading: false,
+				stale: previous.items.length > 0,
+				limit: limit.limit,
+				error: limit.message,
+			}));
+			return;
+		}
+		limits.delete(accountKey);
 		controller?.abort();
 		const abort = new AbortController();
+		if (force) forceFreshness(abort.signal);
 		controller = abort;
-		setState((previous) => ({ ...previous, loading: true, error: null }));
+		setState((previous) => ({ ...previous, loading: true }));
 		try {
 			let local = false;
 			let page: WorkItemPage | WorkItemGroupedPage | undefined;
@@ -75,8 +141,19 @@ export function createTasksQuery(options: { maxCachedPages?: number; local?: boo
 					list: provider.list.bind(provider),
 					fields: provider.fields,
 				};
-				const items = await collectLocalTasks(localSource, pageQuery, abort.signal);
-				if (token !== generation || abort.signal.aborted) return;
+				const scopeKey = key(provider, localScope(localSource, pageQuery));
+				let items = force ? undefined : collected.get(scopeKey);
+				if (items === undefined) {
+					items = await collectLocalTasks(localSource, pageQuery, abort.signal);
+					if (token !== generation || abort.signal.aborted) return;
+					collected.delete(scopeKey);
+					collected.set(scopeKey, items);
+					while (collected.size > capacity) {
+						const oldest = collected.keys().next().value;
+						if (oldest === undefined) break;
+						collected.delete(oldest);
+					}
+				}
 				if (items) {
 					page = await projectLocalTasks(localSource, items, pageQuery);
 					local = true;
@@ -119,6 +196,8 @@ export function createTasksQuery(options: { maxCachedPages?: number; local?: boo
 				total: page.total ?? null,
 				loading: false,
 				stale: false,
+				cachedAt: Date.now(),
+				limit: null,
 				error: null,
 			});
 		} catch (error) {
@@ -126,11 +205,14 @@ export function createTasksQuery(options: { maxCachedPages?: number; local?: boo
 			// Restore rejected controls, not the attempted search or its retry target.
 			if (acceptedQuery)
 				query = { ...query, sort: acceptedQuery.sort, groupBy: acceptedQuery.groupBy, filters: acceptedQuery.filters };
+			const limited = rateLimitOf(error);
+			if (limited) limits.set(accountKey, limited);
 			setState((previous) => ({
 				...previous,
 				loading: false,
 				stale: previous.items.length > 0,
-				error: error instanceof Error ? error.message : String(error),
+				limit: limited?.limit ?? null,
+				error: limited?.message ?? (error instanceof Error ? error.message : String(error)),
 			}));
 		}
 	}
@@ -155,6 +237,8 @@ export function createTasksQuery(options: { maxCachedPages?: number; local?: boo
 		async refresh() {
 			generation++;
 			cache.clear();
+			collected.clear();
+			limits.clear();
 			consumedCursors.clear();
 			await request(false, true);
 		},
@@ -171,6 +255,8 @@ export function createTasksQuery(options: { maxCachedPages?: number; local?: boo
 			generation++;
 			controller?.abort();
 			cache.clear();
+			collected.clear();
+			limits.clear();
 		},
 	};
 }

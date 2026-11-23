@@ -223,6 +223,7 @@ async fn observe_joined_live_github_1995() {
         .timeout(Duration::from_secs(30))
         .build()
         .unwrap();
+    state.gateway = crate::provider_gateway::ProviderGateway::l1_only(state.http_client.clone());
     *state.github.token.write() = Some(token);
     *state.github.token_source.write() = crate::github_auth::TokenSource::Env;
     state.github.disconnected.store(false, Ordering::Relaxed);

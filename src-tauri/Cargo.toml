@@ -10,6 +10,7 @@ members = [
     "crates/tuic-dictation",
     "crates/tuic-bridge",
     "crates/tuic-cli",
+    "crates/tuic-gateway",
     "patches/alacritty_terminal",
     "patches/bm25",
     "patches/vte",
@@ -196,6 +197,7 @@ tuic-ansi = { path = "crates/tuic-ansi" }
 tuic-core = { path = "crates/tuic-core" }
 tuic-ipc = { path = "crates/tuic-ipc" }
 tuic-git = { path = "crates/tuic-git" }
+tuic-gateway = { path = "crates/tuic-gateway" }
 tuic-dictation = { path = "crates/tuic-dictation", optional = true }
 agent-client-protocol = { version = "=2.0.0", features = [
     "unstable_elicitation",
@@ -266,6 +268,9 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls-no-p
 # it directly, per frame, with a retained window (#794-832e).
 flate2 = "1.1"
 futures-util = "0.3"
+futures = "0.3"
+bytes = "1"
+http = "1"
 axum = { version = "0.8", features = ["ws"] }
 async-stream = "0.3"
 tauri-plugin-window-state = { version = "2.4.1", optional = true }
@@ -459,6 +464,7 @@ ctor = "0.8"
 tuic-test-support = { path = "crates/tuic-test-support" }
 tuic-core = { path = "crates/tuic-core", features = ["test-support"] }
 tuic-git = { path = "crates/tuic-git", features = ["test-support"] }
+tuic-gateway = { path = "crates/tuic-gateway", features = ["test-support"] }
 # `full` does not include `test-util`, and `start_paused` needs it. It used to
 # arrive transitively through a dependency of the embedded AI engine; deleting
 # that engine (#784-0aec) made the suite stop compiling, so it is declared here

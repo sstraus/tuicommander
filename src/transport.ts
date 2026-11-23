@@ -9,6 +9,7 @@ export { DEDICATED_WS_COMMANDS, INTENTIONALLY_UNMAPPED, mapCommandToHttp } from 
 export { isTauri } from "./transport/environment";
 export { buildHttpUrl, HttpRpcError, owningConnectionFor, rpc } from "./transport/http";
 export { subscribeEvents, subscribePty } from "./transport/ipc";
+export { type LimitError, parseLimitError } from "./transport/limitError";
 export type {
 	FilterMode,
 	HttpMapping,

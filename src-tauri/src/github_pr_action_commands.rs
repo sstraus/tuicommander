@@ -1,4 +1,5 @@
 //! Desktop wrappers for the PR action backend; HTTP calls the same core functions.
+use crate::github::Origin;
 use crate::{
     github_pr_actions::{self as actions, PrAction, PrActionState},
     github_pr_api::RepoApi,
@@ -14,7 +15,12 @@ pub(crate) async fn get_pr_action_state(
     pr_number: i64,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<PrActionState, String> {
-    let api = RepoApi::resolve(&state, &repo_path).await?;
+    let api = RepoApi::resolve(
+        &state,
+        &repo_path,
+        Origin::interactive("pr_actions.get_pr_action_state"),
+    )
+    .await?;
     actions::action_state(&api, api.variables(pr_number)).await
 }
 #[cfg(feature = "desktop")]
@@ -27,7 +33,12 @@ pub(crate) async fn set_pr_auto_merge(
     expected_head_sha: Option<String>,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, String> {
-    let api = RepoApi::resolve(&state, &repo_path).await?;
+    let api = RepoApi::resolve(
+        &state,
+        &repo_path,
+        Origin::interactive("pr_actions.set_pr_auto_merge"),
+    )
+    .await?;
     let action = if enabled {
         PrAction::EnableAutoMerge
     } else {
@@ -51,7 +62,12 @@ pub(crate) async fn set_pr_merge_queue(
     expected_head_sha: Option<String>,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, String> {
-    let api = RepoApi::resolve(&state, &repo_path).await?;
+    let api = RepoApi::resolve(
+        &state,
+        &repo_path,
+        Origin::interactive("pr_actions.set_pr_merge_queue"),
+    )
+    .await?;
     let action = if enqueued {
         PrAction::Enqueue
     } else {
@@ -75,7 +91,12 @@ pub(crate) async fn merge_or_enqueue_pr(
     expected_head_sha: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, String> {
-    let api = RepoApi::resolve(&state, &repo_path).await?;
+    let api = RepoApi::resolve(
+        &state,
+        &repo_path,
+        Origin::interactive("pr_actions.merge_or_enqueue_pr"),
+    )
+    .await?;
     actions::merge_or_enqueue(
         &api,
         api.variables(pr_number),
@@ -92,6 +113,11 @@ pub(crate) async fn rerun_failed_pr_jobs(
     run_id: u64,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Value, String> {
-    let api = RepoApi::resolve(&state, &repo_path).await?;
+    let api = RepoApi::resolve(
+        &state,
+        &repo_path,
+        Origin::interactive("pr_actions.rerun_failed_pr_jobs"),
+    )
+    .await?;
     actions::rerun_failed_jobs(&api, run_id).await
 }

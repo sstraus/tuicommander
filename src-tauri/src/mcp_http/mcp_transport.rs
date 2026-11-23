@@ -477,7 +477,7 @@ fn secret_inspection_tool(state: &AppState, name: &str, args: &serde_json::Value
     let action = args["action"].as_str().unwrap_or("");
     match name {
         "ui" => !matches!(action, "toast" | "confirm" | "help"),
-        "debug" => !matches!(action, "agent_detection" | "sessions" | "help"),
+        "debug" => !matches!(action, "agent_detection" | "sessions" | "gateway" | "help"),
         "call_tool" => secret_inspection_tool(
             state,
             args["tool_name"].as_str().unwrap_or(""),

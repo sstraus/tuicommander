@@ -1,0 +1,28 @@
+[package]
+name = "tuic-gateway"
+version.workspace = true
+edition = "2024"
+
+# Pure policy core for outbound provider traffic: no reqwest, no wall-clock reads.
+# The HTTP adapter lives in the app crate. Later steps add their own dependencies.
+
+[features]
+default = []
+test-support = []
+
+[dependencies]
+bytes = "1"
+futures = "0.3"
+http = "1"
+percent-encoding = "2"
+moka = { version = "0.12", features = ["future"] }
+thiserror = "2"
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+url = "2"
+zstd = "0.14"
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync", "time", "test-util"] }

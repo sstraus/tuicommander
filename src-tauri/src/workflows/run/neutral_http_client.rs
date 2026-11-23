@@ -6,6 +6,7 @@
 
 use super::neutral_effects::{EffectObservation, EffectOutcome, NeutralEffect};
 use super::neutral_execution::NeutralResult;
+use crate::provider_gateway::plugin_egress::Declared;
 use crate::workflows::connector::{ConnectorContract, Reconciliation};
 use crate::workflows::http_operation::HttpOperation;
 use serde_json::Value;
@@ -59,7 +60,7 @@ async fn execute_request(
     let mut bytes = 0usize;
     let pages = contract.pagination.as_ref().map_or(1, |p| p.max_pages);
     for page in 0..pages {
-        let reply = crate::plugin_http::plugin_http_fetch_impl(
+        let reply = crate::plugin_http::plugin_http_fetch_declared_impl(
             &state,
             resolved.url.to_string(),
             Some(op.method.clone()),
@@ -67,6 +68,7 @@ async fn execute_request(
             resolved.body.clone(),
             super::neutral_http::credential(&contract),
             plugin.clone(),
+            Declared::workflow(!effect.preparation.mutation, "neutral_http.execute"),
         )
         .await?;
         if reply.status == 202 {
@@ -109,7 +111,9 @@ async fn execute_request(
                 },
             });
         }
-        if !(200..300).contains(&reply.status) {
+        // A 304 answers a read's own validator: nothing changed, nothing failed.
+        let revalidated = reply.status == 304 && !effect.preparation.mutation;
+        if !revalidated && !(200..300).contains(&reply.status) {
             // A write can commit before an error response. Do not release its
             // ownership on a generic HTTP status without service evidence.
             return Err(format!(

@@ -4,7 +4,6 @@ import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { githubStore } from "../../stores/github";
 import { mdTabsStore } from "../../stores/mdTabs";
-import type { SavedPrompt } from "../../stores/promptLibrary";
 import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { repoSettingsStore } from "../../stores/repoSettings";
 import { repositoriesStore } from "../../stores/repositories";
@@ -14,11 +13,11 @@ import { cx } from "../../utils";
 import { onClickKeyDown } from "../../utils/a11y";
 import { writeClipboard } from "../../utils/clipboard";
 import { handleOpenUrl } from "../../utils/openUrl";
-import { canApprovePr, effectiveMergeMethod, mergeWithFallback } from "../../utils/prMerge";
-import { prContextVariables } from "../../utils/promptContext";
+import { effectiveMergeMethod, mergeWithFallback } from "../../utils/prMerge";
 import { canUpdatePrBranch, prAgeMarker, prReference } from "../../utils/prRow";
+import { ciAutoHealMenuItem } from "../PrDetailPopover/ciAutoHeal";
 import { PrDetailContent } from "../PrDetailPopover/PrDetailContent";
-import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
+import { PanelToolbar, ToolbarIcons } from "../shared/PanelToolbar";
 import { Button } from "../ui/Button";
 import { ChevronIcon } from "../ui/ChevronIcon";
 import { PrStateBadge } from "./PrStateBadge";
@@ -337,161 +336,107 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 									</div>
 									<Show when={props.expandedKey === pr.branch}>
 										<div class={s.ghItemDetail} data-compact>
-											<Button
-												size="compact"
-												variant="ghost"
-												class={s.ghItemDismiss}
-												onClick={() => props.onDismiss(pr.number)}
-												aria-label={t("sidebar.dismissPr", "Hide this PR from view")}
-												data-tooltip={t("sidebar.dismissPr", "Hide this PR from view")}
-												data-tooltip-pos="bottom"
-												data-tooltip-align="right"
-											>
-												&times;
-											</Button>
 											<PrDetailContent
 												repoPath={props.repoPath}
 												branch={pr.branch}
 												onConflictAssist={props.onConflictAssist}
 												onPushBranch={props.onPushBranch}
+												onApprove={() => handleApprove(pr)}
+												approving={approvingPrs().has(pr.number)}
+												onMerge={canMergePr(pr) ? () => handleMerge(pr) : undefined}
+												merging={mergingPrs().has(pr.number)}
+												mergeLabel={mergeLabel(pr)}
 											>
-												<div class={s.ghItemActions}>
-													<Button
-														size="compact"
-														variant="ghost"
-														class={s.ghActionBtn}
-														onClick={() => props.onCheckout(pr.branch)}
-														data-tooltip={t("sidebar.checkoutBranch", "Check out this branch locally")}
-														data-tooltip-pos="bottom"
-														data-tooltip-align="right"
-													>
-														{t("sidebar.checkout", "Checkout")}
-													</Button>
-													<Show when={props.onCreateWorktree}>
-														<Button
-															size="compact"
-															variant="ghost"
-															class={s.ghActionBtn}
-															onClick={() => props.onCreateWorktree?.(pr.branch)}
-															data-tooltip={t("sidebar.createWorktreeFromBranch", "Create worktree from this branch")}
-															data-tooltip-pos="bottom"
-															data-tooltip-align="right"
-														>
-															{t("sidebar.worktree", "Worktree")}
-														</Button>
-													</Show>
-													<Show when={canApprovePr(pr, githubStore.state.viewerLogin)}>
-														<Button
-															size="compact"
-															variant="primary"
-															class={cx(s.ghActionBtn, s.ghApproveBtn)}
-															onClick={() => handleApprove(pr)}
-															disabled={approvingPrs().has(pr.number)}
-															data-tooltip={t("sidebar.approvePr", "Approve this pull request")}
-															data-tooltip-pos="bottom"
-															data-tooltip-align="right"
-														>
-															{approvingPrs().has(pr.number)
-																? t("sidebar.approving", "Approving...")
-																: t("sidebar.approve", "Approve")}
-														</Button>
-													</Show>
-													<Show when={canUpdatePrBranch(pr) && !updateRequestedFor().has(updateHoldKey(pr))}>
-														<Button
-															size="compact"
-															variant="ghost"
-															class={s.ghActionBtn}
-															onClick={() => handleUpdateBranch(pr)}
-															disabled={busyPrs().has(pr.number)}
-															data-tooltip={t("sidebar.updateBranchTitle", "Merge the base branch into this PR branch")}
-															data-tooltip-pos="bottom"
-															data-tooltip-align="right"
-														>
-															{t("sidebar.updateBranch", "Update branch")}
-														</Button>
-													</Show>
-													<Show when={canMergePr(pr)}>
-														<Button
-															size="compact"
-															variant="ghost"
-															class={cx(s.ghActionBtn, s.ghMergeBtn)}
-															onClick={() => handleMerge(pr)}
-															disabled={mergingPrs().has(pr.number)}
-															data-tooltip={t("sidebar.mergePr", "Merge this pull request")}
-															data-tooltip-pos="bottom"
-															data-tooltip-align="right"
-														>
-															{mergingPrs().has(pr.number) ? t("sidebar.merging", "Merging...") : mergeLabel(pr)}
-														</Button>
-													</Show>
-													<Button
-														size="compact"
-														variant="ghost"
-														class={s.ghActionBtn}
-														onClick={() => handleViewDiff(pr)}
-														disabled={diffLoadingPr() === pr.number}
-														data-tooltip={t("sidebar.viewDiff", "View PR diff")}
-														data-tooltip-pos="bottom"
-														data-tooltip-align="right"
-													>
-														{diffLoadingPr() === pr.number
-															? t("sidebar.loadingDiff", "Loading...")
-															: t("sidebar.diff", "Diff")}
-													</Button>
-													<Show when={prReference(pr)}>
-														<Button
-															size="compact"
-															variant="ghost"
-															class={s.ghActionBtn}
-															onClick={() => handleCopyReference(pr)}
-															data-tooltip={t("sidebar.copyReference", "Copy owner/repo#number")}
-															data-tooltip-pos="bottom"
-															data-tooltip-align="right"
-														>
-															{t("sidebar.copyRef", "Copy ref")}
-														</Button>
-													</Show>
-													<Show when={pr.state?.toUpperCase() === "OPEN"}>
-														<Button
-															size="compact"
-															variant="ghost"
-															class={cx(s.ghActionBtn, s.ghCloseBtn)}
-															onClick={() => handleClosePr(pr)}
-															disabled={busyPrs().has(pr.number)}
-															data-tooltip={t("sidebar.closePr", "Close this pull request without merging")}
-															data-tooltip-pos="bottom"
-															data-tooltip-align="right"
-														>
-															{t("sidebar.close", "Close")}
-														</Button>
-													</Show>
-													<Show when={pr.url}>
-														<Button
-															size="compact"
-															variant="ghost"
-															class={cx(s.ghActionBtn, s.ghLinkBtn)}
-															onClick={() => handleOpenUrl(pr.url)}
-															data-tooltip={t("prDetail.openOnGithub", "Open on GitHub")}
-															data-tooltip-pos="bottom"
-															data-tooltip-align="right"
-														>
-															GitHub {"↗"}
-														</Button>
-													</Show>
-													<SmartButtonStrip
-														placement="pr-popover"
-														repoPath={props.repoPath}
-														defaultPromptId="smart-review-pr"
-														extraFilter={(p: SavedPrompt) => {
-															const cs = githubStore.getCheckSummary(props.repoPath, pr.branch);
-															if (p.id === "smart-fix-ci") return (cs?.failed ?? 0) > 0;
-															if (p.id === "smart-resolve-conflicts") return pr.conflict_state === "conflicting";
-															if (p.id === "smart-review-comments") return pr.review_decision === "CHANGES_REQUESTED";
-															return true;
-														}}
-														contextVariables={() => prContextVariables(pr)}
-													/>
-												</div>
+												<PanelToolbar
+													menuLabel={t("sidebar.moreActions", "More actions")}
+													actions={[
+														{
+															id: "diff",
+															label:
+																diffLoadingPr() === pr.number
+																	? t("sidebar.loadingDiff", "Loading...")
+																	: t("sidebar.diff", "Diff"),
+															icon: <ToolbarIcons.diff />,
+															onClick: () => handleViewDiff(pr),
+															disabled: diffLoadingPr() === pr.number,
+															tooltip: t("sidebar.viewDiff", "View PR diff"),
+														},
+														{
+															id: "checkout",
+															label: t("sidebar.checkout", "Checkout"),
+															icon: <ToolbarIcons.checkout />,
+															onClick: () => props.onCheckout(pr.branch),
+															tooltip: t("sidebar.checkoutBranch", "Check out this branch locally"),
+														},
+														...(pr.url
+															? [
+																	{
+																		id: "github",
+																		label: "GitHub",
+																		icon: <ToolbarIcons.external />,
+																		onClick: () => handleOpenUrl(pr.url),
+																		tooltip: t("prDetail.openOnGithub", "Open on GitHub"),
+																	},
+																]
+															: []),
+													]}
+													menu={[
+														...(props.onCreateWorktree
+															? [
+																	{
+																		id: "worktree",
+																		label: t("sidebar.createWorktreeFromBranch", "Create worktree from this branch"),
+																		onSelect: () => props.onCreateWorktree?.(pr.branch),
+																	},
+																]
+															: []),
+														...(prReference(pr)
+															? [
+																	{
+																		id: "copy-ref",
+																		label: t("sidebar.copyReference", "Copy owner/repo#number"),
+																		onSelect: () => handleCopyReference(pr),
+																	},
+																]
+															: []),
+														...(canUpdatePrBranch(pr) && !updateRequestedFor().has(updateHoldKey(pr))
+															? [
+																	{
+																		id: "update-branch",
+																		label: t("sidebar.updateBranchTitle", "Merge the base branch into this PR branch"),
+																		onSelect: () => handleUpdateBranch(pr),
+																		disabled: busyPrs().has(pr.number),
+																	},
+																]
+															: []),
+														...(pr.conflict_state === "conflicting" && props.onConflictAssist
+															? [
+																	{
+																		id: "resolve-conflicts",
+																		label: t("prDetail.resolveConflicts", "Resolve conflicts"),
+																		onSelect: () => props.onConflictAssist?.(pr.number),
+																	},
+																]
+															: []),
+														ciAutoHealMenuItem(props.repoPath, pr.branch),
+														{
+															id: "hide",
+															label: t("sidebar.hideFromList", "Hide from list"),
+															onSelect: () => props.onDismiss(pr.number),
+														},
+														...(pr.state?.toUpperCase() === "OPEN"
+															? [
+																	{
+																		id: "close",
+																		label: t("sidebar.closePr", "Close this pull request without merging"),
+																		onSelect: () => handleClosePr(pr),
+																		disabled: busyPrs().has(pr.number),
+																		divider: true,
+																	},
+																]
+															: []),
+													]}
+												/>
 												<Show when={rowErrors().get(pr.number)}>
 													{(message) => <div class={s.ghActionError}>{message()}</div>}
 												</Show>

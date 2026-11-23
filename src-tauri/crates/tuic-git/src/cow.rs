@@ -1175,6 +1175,76 @@ mod tests {
         assert!(!worktree.exists());
     }
 
+    // Catches a copy that Git started ignoring after warming (the branch later
+    // added `__pycache__/` to .gitignore) still counted as uncommitted work
+    // forever, while the Changes panel shows nothing. The unignored sibling
+    // catches a fix that drops proof for every copied file.
+    #[test]
+    fn copy_provenance_follows_ignore_rules_added_after_the_copy() {
+        let (_temp, repo, worktree) = provenance_fixture();
+        std::fs::write(repo.join("build/cache/other"), "warm too").unwrap();
+        std::fs::write(repo.join("build/kept"), "warm kept").unwrap();
+        let report = warm_worktree_with(&repo, &worktree, plain_copy);
+        assert!(report.warnings.is_empty(), "{report:?}");
+        std::fs::write(worktree.join("build/cache/data"), "rebuilt cache").unwrap();
+        std::fs::write(repo.join("build/cache/other"), "source rebuilt").unwrap();
+        std::fs::write(worktree.join("build/kept"), "user work").unwrap();
+        let exclude = git_cmd(&worktree)
+            .args([
+                "rev-parse",
+                "--path-format=absolute",
+                "--git-path",
+                "info/exclude",
+            ])
+            .run()
+            .unwrap()
+            .stdout;
+        let exclude = PathBuf::from(exclude.trim());
+        std::fs::create_dir_all(exclude.parent().unwrap()).unwrap();
+        std::fs::write(&exclude, "build/cache/\n").unwrap();
+
+        let lifecycle = crate::worktree::inspect_workspace_lifecycle(&repo, "feature");
+        assert_eq!(lifecycle.dirty_files, Some(1), "{lifecycle:?}");
+        let inventory: Vec<_> = crate::copy_provenance::inventory(&worktree)
+            .unwrap()
+            .into_iter()
+            .map(|entry| (entry.path, entry.classification))
+            .collect();
+        assert_eq!(
+            inventory,
+            [(PathBuf::from("build/kept"), "modified".to_string())],
+            "ignored copies are skipped; the unignored edit keeps its proof"
+        );
+
+        std::fs::write(&exclude, "build/\n").unwrap();
+        let lifecycle = crate::worktree::inspect_workspace_lifecycle(&repo, "feature");
+        assert_eq!(lifecycle.dirty_files, Some(0), "{lifecycle:?}");
+        assert_eq!(
+            lifecycle.removal_safety,
+            crate::worktree::WorkspaceRemovalSafety::Safe
+        );
+
+        // Catches an inspection that rewrites the receipt: once the rule goes
+        // away the copies must come back with their proof, not as bare `??`.
+        std::fs::write(&exclude, "").unwrap();
+        let classifications: Vec<_> = crate::copy_provenance::inventory(&worktree)
+            .unwrap()
+            .into_iter()
+            .map(|entry| (entry.path, entry.classification))
+            .collect();
+        assert_eq!(
+            classifications,
+            [
+                (PathBuf::from("build/cache/data"), "modified".to_string()),
+                (
+                    PathBuf::from("build/cache/other"),
+                    "source-changed".to_string()
+                ),
+                (PathBuf::from("build/kept"), "modified".to_string()),
+            ]
+        );
+    }
+
     // Catches exemptions that survive edits, replaced parents, new work,
     // changed source bytes, failed receipt publication, or legacy warming.
     #[test]

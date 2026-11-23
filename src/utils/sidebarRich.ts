@@ -198,3 +198,44 @@ export function subagentRows(flow: ProgressFlow | undefined, sessionId: string |
 		});
 	return [...rows.filter((r) => r.running), ...rows.filter((r) => !r.running)];
 }
+
+/** `feat/pgw/cache` → `["feat/pgw/", "cache"]`: the path up to the last slash renders muted. */
+export function splitBranchPath(name: string): [prefix: string, leaf: string] {
+	const cut = name.lastIndexOf("/") + 1;
+	return [name.slice(0, cut), name.slice(cut)];
+}
+
+export interface QuietBranchInput {
+	isMainCheckout: boolean;
+	isSelected: boolean;
+	isShell?: boolean;
+	sessions: number;
+	additions: number;
+	deletions: number;
+	dirtyFiles: number | null | undefined;
+	hasPr: boolean;
+	/** The lifecycle chip the row prints (`BranchFacts.state`), null when it prints none. */
+	lifecycleChip: BranchFacts["state"];
+	/** A kept checkout carries the Reset Keep control. */
+	kept: boolean;
+}
+
+/**
+ * A branch with nothing to say: no session, no uncommitted work, no pull request
+ * and no lifecycle chip. R and C fold these into the repository's Quiet section.
+ * The main checkout and the selected branch always stay in sight.
+ */
+export function isQuietBranch(i: QuietBranchInput): boolean {
+	return (
+		!i.isMainCheckout &&
+		!i.isSelected &&
+		!i.isShell &&
+		i.sessions === 0 &&
+		i.additions === 0 &&
+		i.deletions === 0 &&
+		!i.dirtyFiles &&
+		!i.hasPr &&
+		i.lifecycleChip === null &&
+		!i.kept
+	);
+}

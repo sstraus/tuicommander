@@ -1,4 +1,5 @@
 import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
+import { workflowsUi } from "../../stores/workflowsUi";
 import { subscribeEvents } from "../../transport";
 import { Button } from "../ui/Button";
 import { Textarea } from "../ui/Textarea";
@@ -43,6 +44,15 @@ export function NeutralInspection(props: { state: ReturnType<typeof useNeutralDr
 		setRun("");
 		setInspection(undefined);
 		void refreshRuns().catch((cause) => props.state.setError(String(cause)));
+	});
+	// After the project reset above: select the run another surface asked for.
+	createEffect(() => {
+		if (!workflowsUi.run()) return;
+		const id = workflowsUi.takeRun();
+		if (!id) return;
+		readGeneration++;
+		setRun(id);
+		void props.state.perform(() => inspect());
 	});
 	createEffect(
 		on(

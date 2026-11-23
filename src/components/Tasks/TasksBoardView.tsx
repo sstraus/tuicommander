@@ -1,6 +1,7 @@
 import { createEffect, createSignal, For, onCleanup, Show, untrack } from "solid-js";
 import type { WorkItemProvider } from "../../plugins/workItemProvider";
 import type { WorkItemBoard, WorkItemRef } from "../../types/work-items.gen";
+import { GatewayNotice } from "../ui/GatewayNotice";
 import { Select } from "../ui/Select";
 import { createBoardPages } from "./board/createBoardPages";
 import { TasksBoard } from "./board/TasksBoard";
@@ -73,7 +74,8 @@ export function TasksBoardView(props: {
 					{discoveryError()}
 				</p>
 			</Show>
-			<Show when={pages.error()}>
+			<GatewayNotice limit={pages.limit()} stale={!!pages.error() && !!pages.page()} cachedAt={pages.cachedAt()} />
+			<Show when={pages.error() && !pages.limit()}>
 				<p class={s.error} role="alert">
 					{pages.error()}
 				</p>

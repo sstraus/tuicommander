@@ -17,6 +17,15 @@ it("maps the outside request answer to its HTTP twin", () => {
 	});
 });
 
+// Catches: the "new comments" mark working on desktop but never recording a visit in the browser.
+it("maps the work item visit to its HTTP twin", () => {
+	expect(mapCommandToHttp("visit_work_item", { itemUrl: "https://x/issues/7", commentCount: 4 })).toEqual({
+		method: "POST",
+		path: "/github/work-item-visit",
+		body: { itemUrl: "https://x/issues/7", commentCount: 4 },
+	});
+});
+
 // Catches: browser reload dropping the changed-ID filter and scanning every plugin.
 it("maps targeted plugin discovery with the same ID array as IPC", () => {
 	const ids = ["plugin-a", "odd,id"];
@@ -50,10 +59,12 @@ it("maps the work-item provider bridge to its HTTP twin", () => {
 import {
 	buildHttpUrl,
 	DEDICATED_WS_COMMANDS,
+	HttpRpcError,
 	INTENTIONALLY_UNMAPPED,
 	isTauri,
 	mapCommandToHttp,
 	owningConnectionFor,
+	parseLimitError,
 } from "../transport";
 import {
 	setRemoteBaseUrlLookup,
@@ -1624,6 +1635,17 @@ describe("transport", () => {
 			});
 		});
 
+		it("maps gateway stats and carries the reset flag — catches a reset that silently reads", () => {
+			expect(mapCommandToHttp("provider_gateway_stats", { reset: false })).toEqual({
+				method: "GET",
+				path: "/diagnostics/provider-gateway",
+			});
+			expect(mapCommandToHttp("provider_gateway_stats", { reset: true })).toEqual({
+				method: "GET",
+				path: "/diagnostics/provider-gateway?reset=true",
+			});
+		});
+
 		it("routes quota commands without losing the key or session identity", () => {
 			expect(mapCommandToHttp("get_provider_quotas", {})).toMatchObject({ method: "GET", path: "/provider-quotas" });
 			expect(mapCommandToHttp("get_session_quota_binding", { sessionId: "a/b" })).toMatchObject({
@@ -2373,6 +2395,8 @@ describe("transport", () => {
 				body: "{}",
 				account: "acct-1",
 				requestId: "req-1",
+				timeoutMs: 5000,
+				maxResponseBytes: 1024,
 			});
 			expect(hf.method).toBe("POST");
 			expect(hf.path).toBe("/api/plugins/my-plugin/http");
@@ -2384,6 +2408,8 @@ describe("transport", () => {
 				body: "{}",
 				account: "acct-1",
 				requestId: "req-1",
+				timeoutMs: 5000,
+				maxResponseBytes: 1024,
 			});
 
 			// plugin_read_session_output — with and without maxLines
@@ -4607,4 +4633,31 @@ it("keeps an explicit local RPC on the browser backend despite changed repositor
 		setRepoConnectionLookup(() => undefined);
 		setRemoteBaseUrlLookup(() => undefined);
 	}
+});
+
+describe("typed limit error parity", () => {
+	const payload = { kind: "rate_limited", bucket: "graphql", retry_at: 1_900_000_000_000, message: "limit" };
+	const wire = `rate-limit:${JSON.stringify(payload)}`;
+	const typed = { kind: "rate_limited", bucket: "graphql", retry_at: 1_900_000_000_000 };
+
+	// Catches: IPC and HTTP surfaces drifting apart so the same banner code reads one but not the other.
+	it("reads the same typed error from an IPC rejection and an HTTP error body", () => {
+		const ipc = parseLimitError(wire);
+		const http = parseLimitError(new HttpRpcError("get_github_status", 429, JSON.stringify({ error: wire })));
+		expect(ipc).toEqual(typed);
+		expect(http).toEqual(ipc);
+	});
+
+	it("reads shed, a plugin error object and rejects unrelated failures", () => {
+		const shed = `rate-limit:${JSON.stringify({ ...payload, kind: "shed" })}`;
+		expect(parseLimitError(shed)?.kind).toBe("shed");
+		expect(parseLimitError({ kind: "rate_limited", bucket: null, retry_at: 5 })).toEqual({
+			kind: "rate_limited",
+			bucket: null,
+			retry_at: 5,
+		});
+		expect(parseLimitError("rate-limit: GitHub core bucket is backing off")).toBeNull();
+		expect(parseLimitError(new Error("GitHub request failed"))).toBeNull();
+		expect(parseLimitError(null)).toBeNull();
+	});
 });

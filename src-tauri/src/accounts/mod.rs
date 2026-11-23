@@ -25,7 +25,10 @@ pub(crate) use model::{Account, AccountAction, AuthKind, NewAccount};
 pub(crate) use providers::VerifyRequest;
 pub(crate) use providers::{ProviderDescriptor, register_provider, unregister_providers};
 pub(crate) use store::installed_accounts;
-pub(crate) use store::{github_account, github_accounts, remove, upsert_github};
+pub(crate) use store::{
+    ClearedAccount, github_account, github_accounts, notify_cleared, remove, subscribe_cleared,
+    upsert_github,
+};
 
 #[cfg(feature = "desktop")]
 #[tauri::command]

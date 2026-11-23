@@ -1,0 +1,25 @@
+.action {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.muted {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--font-xs);
+}
+
+.error {
+  margin: 0;
+  color: var(--error);
+  font-size: var(--font-xs);
+  overflow-wrap: anywhere;
+}

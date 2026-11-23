@@ -94,3 +94,14 @@ it("own_comment_advances_baseline_without_requesting_a_notice", async () => {
 	await tasksNotifications.observe(detail());
 	expect(invoke.mock.calls[1][1].input.previous).toEqual({ latest: 4, ids: [], count: null });
 });
+
+// Catches: every 60 s detail refresh rewrites an unchanged snapshot -> prefs write -> list reload.
+it("unchanged_comment_snapshot_is_not_written_again", async () => {
+	const value = detail();
+	tasksNotifications.setFollowed(value.item.reference, true);
+	invoke.mockResolvedValue({ snapshot: { latest: 2, ids: ["a"], count: null }, notify: false });
+	await tasksNotifications.observe(value);
+	await tasksNotifications.observe(value);
+	const snapshotWrites = save.mock.calls.filter(([, patch]) => patch.commentSnapshot !== undefined);
+	expect(snapshotWrites).toHaveLength(1);
+});

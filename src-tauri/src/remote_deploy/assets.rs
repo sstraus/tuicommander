@@ -5,6 +5,10 @@ use std::sync::OnceLock;
 use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tuic_gateway::model::Provider;
+
+use crate::github::gateway::Origin;
+use crate::provider_gateway::direct::{self, Direct};
 
 const TARGETS: &[(&str, &str)] = &[
     ("Linux x86_64", "x86_64-unknown-linux-gnu"),
@@ -18,6 +22,11 @@ const BUILD_SIBLING_COMMAND: &str =
     "cd src-tauri && cargo build --bin tuic-remote --no-default-features";
 const MAX_ASSET_BYTES: u64 = 512 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+/// The gateway send's own ceiling; `DOWNLOAD_TIMEOUT` (or the caller's) bounds
+/// the transfer from outside, so this only has to exceed it.
+const TRANSFER_CEILING: std::time::Duration = std::time::Duration::from_secs(3600);
+/// The budget a release download spends: it belongs to no account.
+const RELEASE_ACCOUNT: &str = "release";
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BuildIdentity {
@@ -250,11 +259,15 @@ async fn download_and_promote(
     staging: &Path,
     destination: &Path,
 ) -> Result<LocalAsset, String> {
-    let response = reqwest::Client::new()
-        .get(url)
-        .send()
-        .await
-        .map_err(|error| format!("could not download {url}: {error}"))?;
+    let response = Direct::new(
+        Origin::interactive("remote_deploy.download_and_promote"),
+        Provider::Generic,
+        RELEASE_ACCOUNT,
+    )
+    .timeout(TRANSFER_CEILING)
+    .stream(direct::builder(reqwest::Method::GET, url))
+    .await
+    .map_err(|error| format!("could not download {url}: {error}"))?;
     if response.status() == reqwest::StatusCode::NOT_FOUND {
         return Err(format!(
             "no tuic-remote release asset for {target} at v{version}"
@@ -266,10 +279,7 @@ async fn download_and_promote(
             response.status()
         ));
     }
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_ASSET_BYTES)
-    {
+    if direct::declared_length(&response).is_some_and(|length| length > MAX_ASSET_BYTES) {
         return Err(format!("tuic-remote asset exceeds {MAX_ASSET_BYTES} bytes"));
     }
 

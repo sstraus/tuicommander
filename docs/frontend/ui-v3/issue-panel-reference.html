@@ -1,0 +1,82 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><style>
+:root{--bg2:#252526;--bg3:#2d2d30;--bd:#3a3a3a;--fg:#e6e6e6;--mu:#9a9a9a;--red:#f14c4c;--grn:#3fb950;--yel:#d7ba3d;--acc:#3b82f6;--pur:#a371f7}
+*{box-sizing:border-box}body{margin:0;background:#141414;color:var(--fg);font:13px -apple-system,system-ui,sans-serif;padding:20px}
+h1{font-size:18px;margin:0 0 4px}.sub{color:var(--mu);margin-bottom:18px;max-width:1400px;line-height:1.5}
+.grid{display:grid;grid-template-columns:repeat(4,330px);gap:22px;align-items:start}
+.lbl{font-weight:700}.lbl span{color:var(--mu);font-weight:400;font-size:12px;display:block;margin-top:2px}
+.p{background:var(--bg2);border:1px solid var(--bd);border-radius:8px;margin-top:8px;position:relative}
+.hd{padding:10px 12px;border-bottom:1px solid var(--bd);background:#202022;border-radius:8px 8px 0 0}.num{color:var(--mu);font-size:12px}.ttl{font-weight:600;font-size:13.5px;line-height:1.35;margin:2px 0 6px}
+.st{display:flex;gap:5px;flex-wrap:wrap}.pill{font-size:11px;padding:1px 7px;border-radius:9px}.po{background:#173a22;color:var(--grn)}.pcl{background:#2e2340;color:var(--pur)}.pm{background:#333;color:var(--mu)}.pc{background:#1b2a40;color:#8fb8ff}
+.lab{font-size:10.5px;padding:0 6px;border-radius:9px;border:1px solid}
+.next{margin-top:9px;padding:8px;border-radius:6px;background:#1b2433;border:1px solid #2c3e5c}.next .why{font-size:11px;color:#9bb4d8;margin-bottom:6px}
+.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.b{border:1px solid var(--bd);background:var(--bg3);color:var(--fg);border-radius:5px;padding:4px 9px;font-size:12px;white-space:nowrap}
+.b.pri{background:var(--acc);border-color:var(--acc);color:#fff}.b.sm{padding:2px 7px;font-size:11px}
+.split{display:inline-flex}.split .b:first-child{border-radius:5px 0 0 5px}.split .b:last-child{border-radius:0 5px 5px 0;border-left:1px solid #6b9bf0;padding:4px 6px}
+.tl{background:none;color:#c8c8c8;border-radius:5px;padding:4px 7px;font-size:12px;white-space:nowrap}.tl i{font-style:normal;color:var(--mu);margin-right:4px}
+.tools{display:flex;gap:2px;padding:5px 8px;border-bottom:1px solid var(--bd);align-items:center}
+.sec{border-bottom:1px solid var(--bd)}.sh{display:flex;justify-content:space-between;align-items:center;padding:7px 12px;font-size:12px}
+.car{color:var(--mu);margin-right:5px;display:inline-block;width:9px}.body{padding:0 12px 9px}.desc{font-size:12px;line-height:1.5;color:#cfcfcf}
+.m{color:var(--mu)}.lnk{color:var(--acc);font-size:11.5px}.note{font-size:11.5px;color:var(--mu);margin-top:8px;line-height:1.45}
+.th{background:var(--bg3);border-radius:6px;padding:7px 8px;margin-bottom:5px;font-size:12px}.th .who{display:flex;justify-content:space-between;font-size:11px;color:var(--mu);margin-bottom:3px}.th .who b{color:var(--fg)}
+.th .txt{line-height:1.4;color:#d6d6d6}
+.menu{position:absolute;background:#2a2a2d;border:1px solid #4a4a4a;border-radius:7px;box-shadow:0 8px 24px #000a;padding:5px 0;width:230px;z-index:5;font-size:12px}
+.menu .g{color:var(--mu);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;padding:6px 12px 3px}.menu .it{padding:5px 12px;display:flex;justify-content:space-between}.menu .it.hl{background:#2f4a73}.menu .it small{color:var(--mu)}.menu hr{border:0;border-top:1px solid #444;margin:4px 0}
+.legend{margin-top:22px;max-width:1400px;background:var(--bg2);border:1px solid var(--bd);border-radius:8px;padding:12px 16px;line-height:1.6;font-size:12.5px}
+.legend table{border-collapse:collapse;margin-top:6px}.legend td{padding:3px 14px 3px 0;vertical-align:top}.legend td:first-child{color:var(--mu)}
+</style></head><body>
+<h1>UI v3 visual reference — issue panel (the PR panel uses the same pieces)</h1>
+<div class="sub">Same structure as the PR panel: fixed header with the next action, fixed toolbar <b>↗ GitHub · ⎘ Copy # · ↗ Tasks · ⋯</b>, sections <b>Description · Comments</b>. The next action of an issue is about <i>how to start the work</i>: <b>✦ Work on it ▾</b> joins Auto-fix in worktree, workflows and agent prompts, like ✦ Review ▾ on a PR.</div>
+<div class="grid">
+
+<div><div class="lbl">Open issue, nobody works on it<span>The most common case</span></div>
+<div class="p"><div class="hd"><div class="num">#212 · opened by jklap · 3d ago</div><div class="ttl">Sidebar PR panel hides the Approve button below the check list</div>
+<div class="st"><span class="pill po">Open</span><span class="lab" style="border-color:#d73a4a;color:#f08b96">bug</span><span class="lab" style="border-color:#0e8a16;color:#5fd36b">ui</span><span class="pill pc">💬 4</span></div>
+<div class="next"><div class="why">No branch or worktree for this issue</div><div class="row"><span class="split"><span class="b pri">✦ Work on it</span><span class="b pri">▾</span></span><span class="b">◎ Assign me</span></div></div></div>
+<div class="tools"><span class="tl"><i>↗</i>GitHub</span><span class="tl"><i>⎘</i>#212</span><span class="tl"><i>▤</i>Tasks</span><span class="tl" style="margin-left:auto">⋯</span></div>
+<div class="sec"><div class="sh"><span><span class="car">▸</span>Description</span><span class="m">9 lines</span></div></div>
+<div class="sec" style="border:0"><div class="sh"><span><span class="car">▸</span>Comments</span><span class="m">4</span></div></div></div></div>
+
+<div><div class="lbl">Auto-fix already started<span>The issue branch exists, the PR does not yet</span></div>
+<div class="p"><div class="hd"><div class="num">#209 · opened by Sbaia · 1w ago</div><div class="ttl">Tasks search burns the GitHub quota on every preferences save</div>
+<div class="st"><span class="pill po">Open</span><span class="lab" style="border-color:#d73a4a;color:#f08b96">bug</span><span class="pill m" style="background:#333">⑂ fix/issue-209</span><span class="pill pm">💬 1</span></div>
+<div class="next"><div class="why">Branch fix/issue-209 ready · no linked PR</div><div class="row"><span class="b pri">⇡ Create draft PR</span><span class="b">⤓ Open worktree</span></div></div></div>
+<div class="tools"><span class="tl"><i>↗</i>GitHub</span><span class="tl"><i>⎘</i>#209</span><span class="tl"><i>▤</i>Tasks</span><span class="tl" style="margin-left:auto">⋯</span></div>
+<div class="sec"><div class="sh"><span><span class="car">▾</span>Description</span><span class="m">open in tab ↗</span></div>
+<div class="body desc">save_ui_prefs always publishes a preferences change, so useTasksListQuery reloads and pages the whole repo…</div></div>
+<div class="sec" style="border:0"><div class="sh"><span><span class="car">▸</span>Comments</span><span class="m">1</span></div></div></div></div>
+
+<div><div class="lbl">Comments open inside the panel<span>Comments opens by itself when there are new comments</span></div>
+<div class="p"><div class="hd"><div class="num">#212 · opened by jklap · 3d ago</div><div class="ttl">Sidebar PR panel hides the Approve button below the check list</div>
+<div class="st"><span class="pill po">Open</span><span class="lab" style="border-color:#d73a4a;color:#f08b96">bug</span><span class="pill pc">💬 4 · 2 new</span></div>
+<div class="next"><div class="why">2 new comments since the last visit</div><div class="row"><span class="b pri">↩ Reply</span><span class="split"><span class="b">✦ Work on it</span><span class="b">▾</span></span></div></div></div>
+<div class="tools"><span class="tl"><i>↗</i>GitHub</span><span class="tl"><i>⎘</i>#212</span><span class="tl"><i>▤</i>Tasks</span><span class="tl" style="margin-left:auto">⋯</span></div>
+<div class="sec"><div class="sh"><span><span class="car">▸</span>Description</span><span class="m">9 lines</span></div></div>
+<div class="sec" style="border:0"><div class="sh"><span><span class="car">▾</span>Comments</span><span class="m">4</span></div>
+<div class="body">
+<div class="th"><div class="who"><span><b>jklap</b></span><span>2h ago · new</span></div><div class="txt">Same on the remote-only list, the button is after 14 checks.</div></div>
+<div class="th"><div class="who"><span><b>Sbaia</b></span><span>40m ago · new</span></div><div class="txt">Repro on 2.1.1: expand any PR with more than 8 checks.</div></div>
+<span class="lnk">2 older · Open all in Tasks ↗</span></div></div></div></div>
+
+<div><div class="lbl">Menu ✦ Work on it ▾ open<span>The same model as ✦ Review ▾</span></div>
+<div class="p"><div class="hd"><div class="num">#212 · opened by jklap · 3d ago</div><div class="ttl">Sidebar PR panel hides the Approve button below the check list</div>
+<div class="st"><span class="pill po">Open</span><span class="lab" style="border-color:#d73a4a;color:#f08b96">bug</span><span class="pill pc">💬 4</span></div>
+<div class="next"><div class="why">No branch or worktree for this issue</div><div class="row"><span class="split"><span class="b pri">✦ Work on it</span><span class="b pri" style="background:#2563c9">▾</span></span><span class="b">◎ Assign me</span></div></div></div>
+<div class="menu" style="left:12px;top:150px">
+<div class="g">Start</div><div class="it hl"><span>Auto-fix in worktree</span><small>last used</small></div>
+<hr><div class="g">Workflow</div><div class="it"><span>Issue triage</span><small></small></div><div class="it"><span>Fix and open PR</span><small></small></div>
+<hr><div class="g">Agent prompt</div><div class="it"><span>Review issue</span><small>Claude</small></div><div class="it"><span>Write a plan</span><small>Claude</small></div>
+<hr><div class="it"><span class="m">Manage workflows…</span></div></div>
+<div class="tools"><span class="tl"><i>↗</i>GitHub</span><span class="tl"><i>⎘</i>#212</span><span class="tl"><i>▤</i>Tasks</span><span class="tl" style="margin-left:auto">⋯</span></div>
+<div class="sec"><div class="sh"><span><span class="car">▸</span>Description</span><span class="m">9 lines</span></div></div>
+<div class="sec" style="border:0"><div class="sh"><span><span class="car">▸</span>Comments</span><span class="m">4</span></div></div><div style="height:150px"></div></div></div>
+</div>
+<div class="legend"><b>Next action of an issue (the first matching row wins)</b>
+<table>
+<tr><td>closed</td><td><b>Reopen</b></td></tr>
+<tr><td>branch fix/issue-N exists, no PR</td><td><b>⇡ Create draft PR</b> · ⤓ Open worktree</td></tr>
+<tr><td>open</td><td><b>✦ Work on it ▾</b> (Auto-fix · workflow · agent prompt) · ◎ Assign me</td></tr>
+</table>
+<b>⋯ on an issue:</b> Close issue (red, last) · Hide from list. &nbsp;<b>Always the same:</b> toolbar ↗ GitHub · ⎘ Copy # · ▤ Tasks · ⋯, sections Description · Comments.<br>
+<b>Not in the first cut (needs new backend work):</b> "◎ Assign me" and "2 new" (they need the assignees API and a read state). Added <i>only</i> on request; they are not in the first cut.</div>
+</body></html>

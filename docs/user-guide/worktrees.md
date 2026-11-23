@@ -419,6 +419,7 @@ The WF07 backend trial is disabled by default for each repository. Enable it onl
 ### Explicit bases in automation
 
 For MCP `repo action=worktree_create`, set `base_ref` to a commit, branch or tag.
+Pass `branch` with a short name for the task (for example `fix/<topic>`); without it, TUIC generates a random adjective-character name.
 Check the returned `base_commit` before using the checkout as test evidence.
 An invalid base fails without creating a branch or checkout. If the requested
 branch already exists at a different commit, choose another branch name; TUIC

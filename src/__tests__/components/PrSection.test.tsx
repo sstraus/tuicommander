@@ -1,7 +1,8 @@
-import { fireEvent, render } from "@solidjs/testing-library";
+import { render } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BranchPrStatus } from "../../types";
+import { menuItem, rowsOfferingMenuItem, selectMenuItem } from "../helpers/panelToolbarMenu";
 import { mockInvoke } from "../mocks/tauri";
 
 const { pollRepo, writeClipboard } = vi.hoisted(() => ({
@@ -16,7 +17,9 @@ vi.mock("../../stores/repoSettings", () => ({
 	repoSettingsStore: { getEffectiveField: () => undefined, getOrCreate: vi.fn(), update: vi.fn() },
 }));
 vi.mock("../../stores/repoDefaults", () => ({ repoDefaultsStore: { state: { prMergeStrategy: "merge" } } }));
-vi.mock("../../stores/repositories", () => ({ repositoriesStore: { get: () => undefined } }));
+vi.mock("../../stores/repositories", () => ({
+	repositoriesStore: { get: () => undefined, workspaceIdOnBranch: () => null, state: { repositories: {} } },
+}));
 vi.mock("../../stores/mdTabs", () => ({ mdTabsStore: { addPrDiff: vi.fn() } }));
 vi.mock("../../utils/clipboard", () => ({ writeClipboard }));
 vi.mock("../../components/PrDetailPopover/PrDetailContent", () => ({
@@ -61,8 +64,7 @@ const renderSection = (p: BranchPrStatus) =>
 		/>
 	));
 
-const button = (container: HTMLElement, label: string) =>
-	Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.trim() === label) as HTMLButtonElement;
+const UPDATE_BRANCH = "Merge the base branch into this PR branch";
 
 describe("PrSection row actions", () => {
 	beforeEach(() => {
@@ -77,7 +79,7 @@ describe("PrSection row actions", () => {
 	it("update branch is pinned to the head the row showed", async () => {
 		// Catches: updating against a head that moved after the user looked.
 		const { container } = renderSection(pr());
-		fireEvent.click(button(container, "Update branch"));
+		selectMenuItem(container, UPDATE_BRANCH);
 		expect(mockInvoke).toHaveBeenCalledWith("update_pr_branch", {
 			repoPath: "/repo",
 			prNumber: 12,
@@ -89,7 +91,7 @@ describe("PrSection row actions", () => {
 		// Catches: close without confirmation.
 		const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
 		const { container } = renderSection(pr());
-		fireEvent.click(button(container, "Close"));
+		selectMenuItem(container, "Close this pull request without merging");
 		expect(confirm).toHaveBeenCalledOnce();
 		expect(mockInvoke).not.toHaveBeenCalledWith("close_pr", expect.anything());
 	});
@@ -97,29 +99,53 @@ describe("PrSection row actions", () => {
 	it("close sends only this PR once confirmed", () => {
 		vi.spyOn(window, "confirm").mockReturnValue(true);
 		const { container } = renderSection(pr());
-		fireEvent.click(button(container, "Close"));
+		selectMenuItem(container, "Close this pull request without merging");
 		expect(mockInvoke).toHaveBeenCalledWith("close_pr", { repoPath: "/repo", prNumber: 12 });
+	});
+
+	it("hides the PR from the list through the row menu", () => {
+		// Catches: Hide from list dismissing another PR, or no way left to dismiss once the × is gone.
+		const onDismiss = vi.fn();
+		const { container } = render(() => (
+			<PrSection
+				title="PRs"
+				prs={[pr()]}
+				repoPath="/repo"
+				collapsed={false}
+				onToggleCollapsed={vi.fn()}
+				expandedKey="feat/login"
+				onToggleExpanded={vi.fn()}
+				activeKey={null}
+				dismissedCount={0}
+				onDismiss={onDismiss}
+				onShowDismissed={vi.fn()}
+				onCheckout={vi.fn()}
+				onMerged={vi.fn()}
+			/>
+		));
+		selectMenuItem(container, "Hide from list");
+		expect(onDismiss).toHaveBeenCalledWith(12);
 	});
 
 	it("copy ref writes owner/repo#N", () => {
 		// Catches: copying the URL or the bare number.
 		const { container } = renderSection(pr());
-		fireEvent.click(button(container, "Copy ref"));
+		selectMenuItem(container, "Copy owner/repo#number");
 		expect(writeClipboard).toHaveBeenCalledWith("acme/api#12");
 	});
 
 	it("shows the stale-age marker and hides Update branch for a non-BEHIND PR", () => {
 		const { container } = renderSection(pr({ merge_state_status: "CLEAN" }));
 		expect(container.querySelector(".ghAgeMarker")?.textContent).toBe("3m");
-		expect(button(container, "Update branch")).toBeUndefined();
+		expect(rowsOfferingMenuItem(container, UPDATE_BRANCH)).toEqual([]);
 	});
 
 	it("keeps Update branch out of reach after the request was accepted, until the head changes", async () => {
 		// Catches: 202 clearing the busy flag while the row still reads BEHIND, so a second click
 		// is sent against a stale head and answered with a misleading "PR head changed".
 		const { container } = renderSection(pr());
-		fireEvent.click(button(container, "Update branch"));
-		await vi.waitFor(() => expect(button(container, "Update branch")).toBeUndefined());
+		selectMenuItem(container, UPDATE_BRANCH);
+		await vi.waitFor(() => expect(rowsOfferingMenuItem(container, UPDATE_BRANCH)).toEqual([]));
 		expect(mockInvoke.mock.calls.filter(([cmd]) => cmd === "update_pr_branch")).toHaveLength(1);
 	});
 
@@ -146,7 +172,7 @@ describe("PrSection row actions", () => {
 				onMerged={vi.fn()}
 			/>
 		));
-		fireEvent.click(button(container, "Update branch"));
+		selectMenuItem(container, UPDATE_BRANCH);
 		await vi.waitFor(() => expect(container.textContent).toContain("boom"));
 		setKey(other.branch);
 		await vi.waitFor(() => expect(container.textContent).not.toContain("boom"));
@@ -158,7 +184,7 @@ describe("PrSection row actions", () => {
 		// Catches: an empty rejection rendering an empty error line.
 		mockInvoke.mockRejectedValueOnce("");
 		const { container } = renderSection(pr());
-		fireEvent.click(button(container, "Update branch"));
+		selectMenuItem(container, UPDATE_BRANCH);
 		await vi.waitFor(() => expect(container.textContent).toContain("Update branch failed"));
 	});
 
@@ -167,11 +193,11 @@ describe("PrSection row actions", () => {
 		vi.useFakeTimers();
 		try {
 			const { container } = renderSection(pr());
-			fireEvent.click(button(container, "Update branch"));
+			selectMenuItem(container, UPDATE_BRANCH);
 			await vi.advanceTimersByTimeAsync(0);
-			expect(button(container, "Update branch")).toBeUndefined();
+			expect(rowsOfferingMenuItem(container, UPDATE_BRANCH)).toEqual([]);
 			await vi.advanceTimersByTimeAsync(UPDATE_BRANCH_HOLD_MS);
-			expect(button(container, "Update branch")).toBeDefined();
+			expect(rowsOfferingMenuItem(container, UPDATE_BRANCH)).toEqual([0]);
 		} finally {
 			vi.useRealTimers();
 		}
@@ -213,13 +239,13 @@ describe("PrSection row actions", () => {
 				onMerged={vi.fn()}
 			/>
 		));
-		fireEvent.click(button(container, "Update branch"));
+		selectMenuItem(container, UPDATE_BRANCH);
 		setKey(second.branch);
-		await vi.waitFor(() => expect(button(container, "Update branch")).toBeDefined());
-		fireEvent.click(button(container, "Update branch"));
+		await vi.waitFor(() => expect(rowsOfferingMenuItem(container, UPDATE_BRANCH)).toEqual([0]));
+		selectMenuItem(container, UPDATE_BRANCH);
 		finishFirst();
-		await vi.waitFor(() => expect(button(container, "Update branch")?.disabled).toBe(true));
+		await vi.waitFor(() => expect(menuItem(container, UPDATE_BRANCH)?.getAttribute("aria-disabled")).toBe("true"));
 		finishSecond();
-		await vi.waitFor(() => expect(button(container, "Update branch")).toBeUndefined());
+		await vi.waitFor(() => expect(rowsOfferingMenuItem(container, UPDATE_BRANCH)).toEqual([]));
 	});
 });

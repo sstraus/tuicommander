@@ -2143,12 +2143,17 @@ pub(super) fn handle_debug_unified(
             super::log_routes::eval_debug_script(state, script)
         }
         "agent_detection" | "logs" | "sessions" => handle_debug(state, args),
+        "gateway" => crate::provider_gateway::stats::report(
+            &state.gateway.gateway,
+            args["reset"].as_bool().unwrap_or(false),
+        ),
         "help" => serde_json::json!({
             "actions": {
                 "help": "This guide.",
                 "agent_detection": "Agent detection pipeline diagnostics. Optional session_id (omit for all sessions).",
                 "logs": "App log entries (info/warn/error mirrored from JS). Params: level, source, limit (default 50).",
                 "sessions": "All PTY sessions with pid, cwd, foreground process info.",
+                "gateway": "Provider gateway per-caller counters, recent requests and per-bucket quota state. Optional reset=true starts a new window (buckets stay).",
                 "frame_workload_dump": "Persist enabled frame recorder; async result in eval_js logs. Requires responsive desktop JS.",
                 "invoke_js": "Execute JS in the main WebView (local or authenticated callers). Use `return expr` for output. Result + captured console output logged as source='eval_js'. Read via logs(source='eval_js', limit=1)."
             },

@@ -1,4 +1,5 @@
 //! Jira uses the installed plugin HTTP/account owner, including credential redaction.
+use crate::provider_gateway::plugin_egress::Declared;
 use crate::workflows::jira::*;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -27,7 +28,7 @@ impl JiraClient {
             url.query_pairs_mut()
                 .extend_pairs(query.iter().map(|(k, v)| (*k, v.as_str())));
         }
-        let reply = crate::plugin_http::plugin_http_fetch_impl(
+        let reply = crate::plugin_http::plugin_http_fetch_declared_impl(
             &self.state,
             url.into(),
             Some(method.into()),
@@ -38,6 +39,7 @@ impl JiraClient {
             body.map(|body| body.to_string()),
             super::neutral_http::credential(&self.binding.contract),
             self.binding.plugin.clone(),
+            Declared::workflow(is_read(method, path), "neutral_jira.request"),
         )
         .await?;
         if reply.status == 429 {
@@ -47,8 +49,14 @@ impl JiraClient {
                 .find(|(k, _)| k.eq_ignore_ascii_case("retry-after"))
                 .map(|(_, v)| v.as_str())
                 .unwrap_or("unspecified");
+            let retry_at = retry.parse::<u64>().ok().map(|seconds| {
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |now| now.as_secs().saturating_add(seconds))
+            });
             return Err(format!(
-                "Jira rate limited; Retry-After={}; no automatic retry",
+                "Jira rate limited; retry_at={}; Retry-After={}; no automatic retry",
+                retry_at.map_or("unspecified".into(), |at| at.to_string()),
                 retry.chars().take(128).collect::<String>()
             ));
         }
@@ -169,6 +177,10 @@ impl JiraClient {
         }
         Err("Jira metadata page bound exceeded".into())
     }
+}
+/// Jira search and the bulk comment fetch are POSTs, but they only read.
+fn is_read(method: &str, path: &[&str]) -> bool {
+    method == "GET" || matches!(path, ["search", "jql"] | ["comment", "list"])
 }
 pub(super) fn quote(value: &str) -> String {
     format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))

@@ -8,6 +8,12 @@ set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
 # shellcheck source=test-tmp-lib.sh
 . "$root/scripts/test-tmp-lib.sh"
+# Case 1 keeps its run root under a base in the host temp dir, which is past the
+# mbx socket budget on default macOS: with mbx on PATH the wrapper moves the root
+# to its short private fallback and the fence under test is never exercised. This
+# test checks the ceiling, not mbx: run without it.
+PATH="$(tuic_path_without_mbx "$PATH")"
+export PATH
 test_tmp="$(tuic_test_tmp_root "$root")"
 scratch="$(mktemp -d "$test_tmp/git-ceiling.XXXXXX")"
 trap 'rm -rf "$scratch"' EXIT

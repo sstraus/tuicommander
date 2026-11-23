@@ -412,6 +412,12 @@ export interface HttpFetchOptions {
 	 * account host, and the manifest must declare the account's provider.
 	 */
 	account?: string;
+	/** Request time limit in ms. The host caps it at 30 000. */
+	timeoutMs?: number;
+	/** Response body limit in bytes. The host caps it at 10 MiB. */
+	maxResponseBytes?: number;
+	/** "force" bypasses the gateway cache for this read; only an explicit Refresh sets it. */
+	freshness?: "force";
 }
 
 // ---------------------------------------------------------------------------

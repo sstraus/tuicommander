@@ -19,7 +19,7 @@ Manual checks that need a live build, a phone, Windows or Boss's eye. The list i
 - [workflows-stories-2.md](to-test/workflows-stories-2.md) — 17 items
 - [workflows-stories-3.md](to-test/workflows-stories-3.md) — 19 items
 - [workflows-stories-4.md](to-test/workflows-stories-4.md) — 39 items
-- [workflows-stories-5.md](to-test/workflows-stories-5.md) — 17 items
+- [workflows-stories-5.md](to-test/workflows-stories-5.md) — 18 items
 
 ## Agents, hooks and PTY state
 
@@ -35,7 +35,7 @@ Manual checks that need a live build, a phone, Windows or Boss's eye. The list i
 - [misc-4.md](to-test/misc-4.md) — 25 items
 - [misc-5.md](to-test/misc-5.md) — 27 items
 - [misc-6.md](to-test/misc-6.md) — 39 items
-- [misc-7.md](to-test/misc-7.md) — 11 items
+- [misc-7.md](to-test/misc-7.md) — 44 items
 
 ## Settings, themes, tabs, panels and terminal UI
 
@@ -68,7 +68,7 @@ Manual checks that need a live build, a phone, Windows or Boss's eye. The list i
 ## Git, GitHub and repositories
 
 - [git-repos.md](to-test/git-repos.md) — 33 items
-- [git-repos-2.md](to-test/git-repos-2.md) — 1 item
+- [git-repos-2.md](to-test/git-repos-2.md) — 3 items
 
 ## Archive
 

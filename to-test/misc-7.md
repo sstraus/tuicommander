@@ -103,3 +103,54 @@ Install/update Stories Ticker 1.1.0 only after rebuilding the matching 2.1.2 hos
 ## MCP batch tool (2026-11-21)
 
 - [ ] After a manual backend rebuild/restart and an MCP reconnect, an agent lists `batch` among the TUIC tools (direct and collapsed surface). Call `batch` with `calls=[{tool:"session",arguments:{action:"list"}},{tool:"repo",arguments:{action:"list"}}]`: `results` holds both replies in order and `errors` is 0. Rust changes do not load through frontend hot reload.
+
+## Release review P2 fixes (2026-11-22)
+
+- [ ] After a manual backend rebuild/restart, ask a Discussion side question on a Grok terminal, then on a second Grok session: both questions and answers appear in the journal. Rust changes do not load through frontend hot reload.
+- [ ] After the restart, a saved tab that has not been reopened for more than 30 days keeps its operator capability when it is restored.
+- [ ] In the Progress dialog, open **All projects** and click a row: the dialog leaves the all-projects view and shows that project's entries.
+
+## Provider gateway — Rust restart required
+
+The gateway is Rust code. It does not load through hot reload: do these checks after a manual `make dev` restart (or `make build`). Design and code map: `docs/backend/provider-gateway.md`. Read the traffic with `curl http://localhost:9876/diagnostics/provider-gateway` (`?reset=true` starts a new window) and the log with `GET http://localhost:9876/logs?source=gateway`.
+
+### Phase 0 — request storm stopped (stories 3120 to 3123)
+
+- [ ] Reset the gateway stats, open Tasks on a GitHub repository and keep the list visible for 5 min without input. The stats show at most one collection (2 search calls). Each explicit Refresh adds one. A preference save in a second window does not reload the list.
+- [ ] Make a Tasks load fail (go offline): the error stays visible, and the view does not retry by itself.
+
+### Phase 3 — core GitHub client (stories 3135 to 3138, 3150)
+
+- [ ] `provider_cache.sqlite3` exists in the app data dir (mode 0600 on unix), and the log has no "provider cache unavailable" warning.
+- [ ] The stats return `counters`, `recent` and `buckets`. `?reset=true` empties `counters` on the next read while `buckets` stays. MCP `debug action=gateway` returns the same shape.
+- [ ] GitHub traffic (poller, PR panel, issue close/reopen, CI logs) is in the stats with callers of the form `<module>.<fn>` (`github.poll`, `github.issue_close`), never an empty or `test` caller. `provider_cache.sqlite3` fills and the poll cadence still runs. GitHub diagnostics report `circuit_breaker_open: false` while the quota is healthy.
+- [ ] A REST `GET` that repeats inside its TTL (30 s to 60 s for lists and items) counts as `cacheHits`, not `sent`; a read after a write is `sent` again. GraphQL calls always count as `sent`. A fresh GitHub login clears an earlier rate-limit hold.
+- [ ] **A write clears the PR status (3138).** With a repo open and its PRs shown in the sidebar, close or comment on a PR/issue through TUIC (or the plugin). The PR badge for that repo must refresh at once, not after up to 60 s. Another repo's badges must stay.
+- [ ] **Signals (3149).** Log out of GitHub (or remove a GitHub account in Settings): no "gateway" error is in the log, the cached entries of that account are dropped (the next read is `sent`), and a PR/issue poll update makes the next list read of that repo `sent`. Unit coverage: `signal_tests::pr_update_event_invalidates_that_repo_lists_only`, `head_changed_invalidates_branch_pr`, `logout_clears_account`.
+
+### Phase 4 — auth, verification and downloads (story 3139)
+
+- [ ] Start a GitHub device-flow login, an account verification, an update check and an ego/mdkb install. The stats list callers `github_auth.*`, `accounts.verify`, `updater.fetch_channel_manifest` and `release_install.download_and_install` with `generic`/`github` providers. A download shows its bytes and no cache hits. Unit coverage: `release_download_is_uncached_and_counted`, `device_flow_poll_honours_slow_down_and_failure_memory`, `no_production_reqwest_send_to_github_hosts_outside_the_gateway`.
+
+### Phase 5 — plugin egress and workflow connectors (stories 3140 to 3142)
+
+- [ ] Open the GitHub Work plugin Tasks view twice within a minute: the second load makes no new GitHub request (caller `plugin` shows `cacheHits`) and the list still renders.
+- [ ] A plugin `httpFetch` to a URL outside its `allowedUrls`, a private-IP literal, and an account request with a caller `Authorization` header all still fail with the same messages as before the change.
+- [ ] A plugin request to a URL that redirects to a host the plugin did not declare fails with the "require explicit allowedUrls" text; a redirect to a declared host succeeds and the target sees no `Authorization`.
+- [ ] Run a workflow that reads the same Jira issue or GitLab MR two times in a minute: caller `neutral_jira.request` or `neutral_gitlab.fetch` shows two `sent` (a `304` also counts as `revalidated`) and no `cacheHits` (workflow reads are always forced fresh). More connector checks: `to-test/workflows-stories-5.md`.
+
+### Phase 6 — typed limits and Refresh (stories 3143, 3144)
+
+- [ ] **Typed limits reach the UI (3143).** With a GitHub account whose `core` or `graphql` bucket is exhausted (or a plugin 429): the Tasks list, board and roadmap show "Rate limited · resets hh:mm" with no Retry button and no automatic reload before that time; stale rows show a muted "cached hh:mm". A merge refused by a limit in the PR popover shows the same reset time, not `rate-limit:{"kind":…}` text. A GitHub primary-limit 403 (x-ratelimit-remaining 0) shows the reset time too. Check placement against STYLE_GUIDE.md by screenshot.
+- [ ] **Refresh forces a fresh read (3144).** In Tasks, switch between List, Board and Roadmap within 30 s: a list request that is already loaded shows `cacheHits` and no new `sent`. Click Refresh one time: one new `sent` per list request.
+## Prerelease feed without this platform (2026-11-22, #161)
+
+- [ ] After a manual backend rebuild/restart, on the Nightly channel, check for updates while the nightly `latest.json` has no entry for this platform (as when the macOS build fails at notarization): no update is announced. When the entry is present, the newer nightly is announced as before. Rust changes do not load through frontend hot reload.
+## Sidebar rich rows and Quiet section (2026-11-22, #3154-de6f)
+
+- [ ] [VISUAL] In R, branches show ⎇, merged branches a purple ⌥; a dirty merged worktree shows a lock in its Merged pill with the reason in the tooltip; hovering still offers Clean. Help > UI legend lists Merged.
+- [ ] Click the branch icon of a branch with agents: the agents hide and show; clicking the name selects the branch. Done subagents fold under **› N done**, long-idle sessions under **› N idle**, level with the repository name.
+- [ ] [VISUAL] In R, a long branch such as `feat/pgw-3141-plugin-egress-admission` shows in full with a muted prefix and wraps; its facts move to a right-aligned second line. A short name keeps its facts on the same line. In C the name stays on one ellipsized line.
+- [ ] In R and C, a branch with no session, diff, dirty files, PR or lifecycle chip folds under **Quiet · N branches · oldest X** at the end of the repo; the main checkout and the selected branch never fold. H shows no Quiet header. Click the header: the rows appear and keep their ⌘^N numbers.
+- [ ] On a merged worktree summary, hover or tab to the **Merged** pill: it reads **Clean**; click it and the removal confirmation opens. Cancel keeps the worktree.
+- [ ] Click the yellow `● N` dirty badge: the Changes tab opens for that worktree. The dot is centred on the digits.

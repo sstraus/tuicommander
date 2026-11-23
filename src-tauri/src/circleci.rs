@@ -1,4 +1,8 @@
+use tuic_gateway::model::Provider;
 pub(crate) use tuic_git::circleci::{CircleCiJob, TokenSource, parse_check_url};
+
+use crate::github::gateway::Origin;
+use crate::provider_gateway::direct::{self, Direct};
 
 const MAX_FAILED_ACTIONS: usize = 5;
 const MAX_LOG_BODY_BYTES: usize = 64 * 1024;
@@ -17,10 +21,17 @@ fn allowed_log_url(value: &str, api_base: &str) -> bool {
         && url.password().is_none())
         || (cfg!(test) && url::Url::parse(api_base).is_ok_and(|base| base.origin() == url.origin()))
 }
-/// Bounds a half-open credential-bearing API connection without constraining S3 downloads.
-const CIRCLECI_API_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 /// Bounds the complete CircleCI API request so callers cannot leave healing active indefinitely.
 const CIRCLECI_API_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// A CircleCI send: no redirect (a credential header or a pre-signed URL must
+/// not follow one), the API's own timeout, one budget for the provider.
+fn circleci_call(caller: &'static str) -> Direct<'static> {
+    Direct::new(Origin::visible(caller), Provider::Generic, "circleci")
+        .no_redirect()
+        .redact_url()
+        .timeout(CIRCLECI_API_TIMEOUT)
+}
 
 fn token_from_cli_config(config: &str) -> Option<String> {
     let config: serde_yaml::Value = serde_yaml::from_str(config).ok()?;
@@ -200,20 +211,15 @@ pub(crate) async fn fetch_job_log_from_base(
             &job.build_num.to_string(),
         ]);
     // The credential must never follow a provider-controlled redirect. S3 log
-    // downloads below use a separate client without this header.
-    let api_client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(CIRCLECI_API_CONNECT_TIMEOUT)
-        .timeout(CIRCLECI_API_TIMEOUT)
-        .build()
-        .map_err(|error| format!("Failed to build CircleCI client: {error}"))?;
-    let detail: serde_json::Value = api_client
-        .get(url)
-        .header("Circle-Token", token)
-        .header("Accept", "application/json")
-        .send()
+    // downloads below use a separate call without this header.
+    let detail: serde_json::Value = circleci_call("circleci.fetch_job_log")
+        .send(
+            direct::builder(reqwest::Method::GET, url)
+                .header("Circle-Token", token)
+                .header("Accept", "application/json"),
+        )
         .await
-        .map_err(|error| format!("CircleCI request failed: {}", error.without_url()))?
+        .map_err(|error| format!("CircleCI request failed: {error}"))?
         .error_for_status()
         .map_err(|error| format!("CircleCI API error: {}", error.without_url()))?
         .json()
@@ -234,12 +240,6 @@ pub(crate) async fn fetch_job_log_from_base(
         return Err("CircleCI job contains no failed action logs".to_string());
     }
 
-    let log_client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(CIRCLECI_API_CONNECT_TIMEOUT)
-        .timeout(CIRCLECI_API_TIMEOUT)
-        .build()
-        .map_err(|error| format!("Failed to build CircleCI log client: {error}"))?;
     let mut output = String::new();
     for (step, output_url) in actions {
         // output_url is a pre-signed S3 bearer URL: never attach Circle-Token
@@ -247,16 +247,10 @@ pub(crate) async fn fetch_job_log_from_base(
         if !allowed_log_url(&output_url, api_base) {
             return Err(format!("CircleCI log URL for {step} has an untrusted host"));
         }
-        let response = log_client
-            .get(&output_url)
-            .send()
+        let response = circleci_call("circleci.fetch_action_log")
+            .stream(direct::builder(reqwest::Method::GET, &output_url))
             .await
-            .map_err(|error| {
-                format!(
-                    "CircleCI log fetch failed for {step}: {}",
-                    error.without_url()
-                )
-            })?
+            .map_err(|error| format!("CircleCI log fetch failed for {step}: {error}"))?
             .error_for_status()
             .map_err(|error| {
                 format!("CircleCI log API error for {step}: {}", error.without_url())

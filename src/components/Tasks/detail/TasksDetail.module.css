@@ -43,3 +43,8 @@
 .fieldGroup { margin-bottom: 24px; }
 .fieldGroup > summary { cursor: pointer; margin-bottom: 12px; color: var(--fg-secondary); font-size: var(--font-lg, 16px); }
 .fieldGroup > .fields { margin-bottom: 0; }
+
+/* Compact comments inside a narrow UI v3 detail panel (WorkItemPreview). */
+[data-compact] .comment { margin-bottom: 6px; padding: 8px; }
+[data-compact] .commentHeader { margin-bottom: 6px; font-size: var(--font-xs); }
+[data-compact] .thread { padding-left: 8px; margin-bottom: 8px; }

@@ -3,6 +3,7 @@ import type { WorkItemProvider } from "../../../plugins/workItemProvider";
 import { createTasksQuery } from "../../../stores/tasksQuery";
 import type { WorkItemQuery, WorkItemRef } from "../../../types/work-items.gen";
 import { Button } from "../../ui/Button";
+import { GatewayNotice } from "../../ui/GatewayNotice";
 import { Select } from "../../ui/Select";
 import { TaskRows } from "../list/TaskRows";
 import listStyles from "../list/tasksList.module.css";
@@ -99,7 +100,8 @@ export function TasksRoadmap(props: TasksRoadmapProps) {
 				<Show when={model.state().stale}>
 					<span class={s.warning}>Stale results</span>
 				</Show>
-				<Show when={model.state().error}>
+				<GatewayNotice limit={model.state().limit} stale={model.state().stale} cachedAt={model.state().cachedAt} />
+				<Show when={model.state().error && !model.state().limit}>
 					<span class={s.error}>{model.state().error}</span>
 				</Show>
 			</div>

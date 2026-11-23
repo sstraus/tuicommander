@@ -69,3 +69,9 @@
   padding: 8px;
   background: var(--bg-secondary);
 }
+
+/* A portaled (anchored) menu lives at the end of <body>, so it must stack above fixed panels
+ * (the sidebar GitHub panel is 201) and dialogs (1000-1100), and stay below toasts. */
+.anchored {
+  z-index: 1500;
+}

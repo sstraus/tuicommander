@@ -1,0 +1,62 @@
+/* UI v3 accordion section (docs/frontend/ui-v3.md) */
+.section {
+  border-top: 1px solid var(--border);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 8px;
+}
+
+button[data-control-layout="row"].toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  background: none;
+  border: none;
+  color: var(--fg-primary);
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+button[data-control-layout="row"].toggle:hover {
+  background: var(--bg-highlight);
+}
+
+.chevron {
+  display: inline-flex;
+  color: var(--fg-secondary);
+  transition: transform 150ms ease;
+  flex-shrink: 0;
+}
+
+.chevron[data-open] {
+  transform: rotate(90deg);
+}
+
+.title {
+  font-weight: 600;
+}
+
+.summary {
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: var(--font-xs);
+  white-space: nowrap;
+}
+
+.actions {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.body {
+  padding: 0 8px 8px;
+}

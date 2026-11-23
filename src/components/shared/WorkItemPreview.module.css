@@ -1,0 +1,70 @@
+/* Description and comments inside a UI v3 detail panel (docs/frontend/ui-v3.md) */
+.muted {
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+  padding: 2px 0;
+}
+
+.error {
+  color: var(--error);
+}
+
+.markdown {
+  font-size: var(--font-sm);
+  max-height: 320px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+
+.comments {
+  font-size: var(--font-sm);
+}
+
+button[data-control-layout="row"].openAll {
+  background: none;
+  border: none;
+  padding: 2px 0;
+  color: var(--accent);
+  font-size: var(--font-xs);
+  cursor: pointer;
+}
+
+button[data-control-layout="row"].openAll:hover {
+  text-decoration: underline;
+}
+
+.newMark {
+	display: inline-block;
+	margin-bottom: 2px;
+	padding: 0 6px;
+	border-radius: 8px;
+	background: color-mix(in srgb, var(--accent) 22%, transparent);
+	color: var(--accent);
+	font-size: var(--font-2xs);
+	line-height: 15px;
+}
+
+.entry + .entry {
+  margin-top: 6px;
+}
+
+.threadActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 2px;
+}
+
+.reply {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin: 6px 0;
+}
+
+.replyActions {
+  display: flex;
+  gap: 6px;
+}

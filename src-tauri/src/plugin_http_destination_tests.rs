@@ -6,11 +6,11 @@ use super::plugin_http_fetch_impl;
 use std::sync::Arc;
 
 /// A manifest `net:http` pattern no test server answers.
-pub(super) const UNRELATED: &str = "https://unrelated.example.test/*";
+pub(crate) const UNRELATED: &str = "https://unrelated.example.test/*";
 
 /// Write `plugin_http_destinations` the way an owner config save lands in
 /// memory: through the serialized config, so this helper names no Rust field.
-pub(super) fn set_owner_destinations(state: &crate::AppState, patterns: &[String]) {
+pub(crate) fn set_owner_destinations(state: &crate::AppState, patterns: &[String]) {
     let mut value = serde_json::to_value(&*state.config.read()).unwrap();
     value["plugin_http_destinations"] = serde_json::json!(patterns);
     *state.config.write() = serde_json::from_value(value).unwrap();
@@ -120,9 +120,25 @@ fn owner_destination_keeps_http_schemes_only() {
         "ftp://*".into(),
     ];
     for url in ["file:///etc/passwd", "ftp://192.168.1.20/x"] {
-        let err = super::validate_destination(url, &[], &owner).unwrap_err();
+        let err =
+            crate::provider_gateway::plugin_egress::rules::validate_destination(url, &[], &owner)
+                .unwrap_err();
         assert!(err.contains("not allowed"), "{url}: {err}");
     }
-    assert!(super::validate_destination("http://192.168.1.20:3000", &[], &owner).is_ok());
-    assert!(super::validate_destination("http://192.168.1.21:3000/x", &[], &owner).is_err());
+    assert!(
+        crate::provider_gateway::plugin_egress::rules::validate_destination(
+            "http://192.168.1.20:3000",
+            &[],
+            &owner
+        )
+        .is_ok()
+    );
+    assert!(
+        crate::provider_gateway::plugin_egress::rules::validate_destination(
+            "http://192.168.1.21:3000/x",
+            &[],
+            &owner
+        )
+        .is_err()
+    );
 }

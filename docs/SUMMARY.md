@@ -91,6 +91,7 @@
 - [Git Operations](./backend/git.md)
   - [Native Worktree Recycling Measurement](./evidence/worktree-recycling-1705-native.md)
 - [GitHub Integration](./backend/github.md)
+- [Provider Gateway](./backend/provider-gateway.md)
 - [Workflow Trigger Admission](./backend/workflow-trigger-admission.md)
 - [Workflow HTTP Connectors](./backend/workflow-http-connectors.md)
 - [MCP & HTTP Server](./backend/mcp-http.md)

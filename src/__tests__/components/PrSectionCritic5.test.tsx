@@ -1,7 +1,8 @@
-import { fireEvent, render } from "@solidjs/testing-library";
+import { render } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BranchPrStatus } from "../../types";
+import { selectMenuItem } from "../helpers/panelToolbarMenu";
 import { mockInvoke } from "../mocks/tauri";
 
 const { pollRepo } = vi.hoisted(() => ({ pollRepo: vi.fn() }));
@@ -13,7 +14,9 @@ vi.mock("../../stores/repoSettings", () => ({
 	repoSettingsStore: { getEffectiveField: () => undefined, getOrCreate: vi.fn(), update: vi.fn() },
 }));
 vi.mock("../../stores/repoDefaults", () => ({ repoDefaultsStore: { state: { prMergeStrategy: "merge" } } }));
-vi.mock("../../stores/repositories", () => ({ repositoriesStore: { get: () => undefined } }));
+vi.mock("../../stores/repositories", () => ({
+	repositoriesStore: { get: () => undefined, workspaceIdOnBranch: () => null, state: { repositories: {} } },
+}));
 vi.mock("../../stores/mdTabs", () => ({ mdTabsStore: { addPrDiff: vi.fn() } }));
 vi.mock("../../utils/clipboard", () => ({ writeClipboard: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("../../components/PrDetailPopover/PrDetailContent", () => ({
@@ -38,11 +41,6 @@ const pr = (o: Partial<BranchPrStatus> = {}): BranchPrStatus =>
 		created_at: new Date().toISOString(),
 		...o,
 	}) as BranchPrStatus;
-
-const buttons = (container: HTMLElement, label: string) =>
-	Array.from(container.querySelectorAll("button")).filter(
-		(b) => b.textContent?.trim() === label,
-	) as HTMLButtonElement[];
 
 describe("PrSection critic r5", () => {
 	beforeEach(() => {
@@ -82,7 +80,7 @@ describe("PrSection critic r5", () => {
 				onMerged={vi.fn()}
 			/>
 		));
-		fireEvent.click(buttons(container, "Update branch")[0]);
+		selectMenuItem(container, "Merge the base branch into this PR branch");
 		await vi.waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("update_pr_branch", expect.anything()));
 		setExpanded("feat/b");
 		rejectUpdate("branch protection: boom-12");

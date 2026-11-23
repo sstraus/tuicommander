@@ -18,7 +18,7 @@ const KIND_LABEL: Partial<Record<ProgressKind, string>> = {
 };
 
 /** Every project's newest entries for the user; a click opens the project and terminal. */
-export const ProgressRecent: Component<{ revision: unknown }> = (props) => {
+export const ProgressRecent: Component<{ revision: unknown; onOpen?: () => void }> = (props) => {
 	const [kind, setKind] = createSignal<ProgressKind | "">("");
 	const [unreadOnly, setUnreadOnly] = createSignal(false);
 	const [entries] = createResource(
@@ -28,11 +28,14 @@ export const ProgressRecent: Component<{ revision: unknown }> = (props) => {
 				input: { ...(kind ? { kind } : {}), unreadOnly, limit: 100 },
 			}),
 	);
+	/** Reading an errored resource rethrows, so every read goes through this guard. */
+	const rows = () => (entries.error ? [] : (entries() ?? []));
 	const projectName = (path: string) =>
 		repositoriesStore.get(path)?.displayName ?? path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 
 	const openEntry = (entry: RecentEntry) => {
 		progressStore.open(entry.project, entry.ptyId ?? null);
+		props.onOpen?.();
 		const terminalId = entry.ptyId ? terminalsStore.findBySessionId(entry.ptyId) : null;
 		// Loaded on click: navigation pulls in the pane and tab stores.
 		if (terminalId) void import("../../utils/navigateToTerminal").then((m) => m.navigateToTerminal(terminalId));
@@ -57,11 +60,8 @@ export const ProgressRecent: Component<{ revision: unknown }> = (props) => {
 			<Show when={entries.error}>
 				<p class={s.error}>{String(entries.error)}</p>
 			</Show>
-			<Show
-				when={(entries() ?? []).length > 0}
-				fallback={<p class={s.empty}>{entries.loading ? "Loading…" : "Nothing here."}</p>}
-			>
-				<For each={entries()}>
+			<Show when={rows().length > 0} fallback={<p class={s.empty}>{entries.loading ? "Loading…" : "Nothing here."}</p>}>
+				<For each={rows()}>
 					{(entry) => (
 						<button
 							type="button"

@@ -3,6 +3,7 @@ use super::native_git::NativeFailure;
 use super::native_host::NativeBinding;
 use super::native_issue_source::IssueSource;
 use super::neutral_effects::EffectKey;
+use crate::github::Origin;
 use crate::github_pr_api::{PrApi, RepoApi};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -97,7 +98,12 @@ pub(super) async fn publish(
     let state = bound
         .context
         .authorize(&bound.store, key, "native.issue.effect", request, None)?;
-    let api = RepoApi::resolve(&state, &bound.context.workspace_path().to_string_lossy()).await?;
+    let api = RepoApi::resolve(
+        &state,
+        &bound.context.workspace_path().to_string_lossy(),
+        Origin::background("workflow.native_issue_effect.publish"),
+    )
+    .await?;
     if api.account.id != request.source.account
         || format!("{}/{}", api.owner, api.repo).to_ascii_lowercase() != request.source.repository
     {

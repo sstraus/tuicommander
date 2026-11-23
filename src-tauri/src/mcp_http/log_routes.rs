@@ -111,6 +111,24 @@ pub(crate) async fn memory_report_get(
     Json(crate::memory_report::report(&state))
 }
 
+#[derive(Deserialize)]
+pub(crate) struct GatewayStatsQuery {
+    #[serde(default)]
+    reset: bool,
+}
+
+/// GET /diagnostics/provider-gateway[?reset=true] — per-caller provider traffic
+/// and per-bucket quota state; `reset` starts a new benchmark window.
+pub(crate) async fn provider_gateway_get(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<GatewayStatsQuery>,
+) -> Json<serde_json::Value> {
+    Json(crate::provider_gateway::stats::report(
+        &state.gateway.gateway,
+        q.reset,
+    ))
+}
+
 /// GET /diagnostics/markers — per-session protocol-marker compliance.
 ///
 /// Exists because the only way to ask "are the agents still emitting `intent:`

@@ -1365,7 +1365,8 @@ const DELAYED_AGENT_QUEUED_SUBMISSION_CONFIRMATION: std::time::Duration =
 /// | pi       | 0.84.2  | ok at 0ms | ok at 50ms | ok at 0/50ms |
 /// | opencode | 1.18.30 | ok at 50ms | ok at 50ms | ok at 50ms |
 /// | goose    | 1.49.0  | ok at 50ms | ok at 50ms | ok at 50ms |
-/// | agy, amp, cursor, droid | not verified: UNVERIFIED |
+/// | agy      | 1.5.10  | one 86-char submit accepted (`agy-1.5.10-trust-turn.tcap`); gaps not measured |
+/// | amp, cursor, droid | not verified: UNVERIFIED |
 ///
 /// Ground truth of the probe was an answer token that exists only if the turn
 /// ran; the `confirmation` signals below were NOT re-measured against the screen
@@ -1395,19 +1396,19 @@ pub(super) struct AgentSubmitProfile {
 #[derive(Clone, Copy)]
 enum SubmitConfirmation {
     WorkingScreen,
-    PromptGone,
     HookOnly,
     LegacyWrite,
 }
 
 pub(super) fn agent_submit_profile(agent_type: Option<&str>) -> AgentSubmitProfile {
-    use SubmitConfirmation::{HookOnly, LegacyWrite, PromptGone, WorkingScreen};
+    use SubmitConfirmation::{HookOnly, LegacyWrite, WorkingScreen};
     let (enter_gap, confirmation) = match agent_type {
         Some("codex") => (INJECT_ENTER_GAP, WorkingScreen),
         Some("ego") => (UNVERIFIED_ENTER_GAP, WorkingScreen),
         Some("claude" | "opencode" | "goose" | "grok" | "pi") => (INJECT_ENTER_GAP, WorkingScreen),
-        // UNVERIFIED (2026-11-21): inherited from the Gemini CLI profile; agy was not signed in.
-        Some("agy") => (INJECT_ENTER_GAP, PromptGone),
+        // agy 1.5.10 keeps its composer visible and switches the footer to
+        // `esc to cancel` (`agy-1.5.10-trust-turn.tcap`). The Enter gap is not measured.
+        Some("agy") => (INJECT_ENTER_GAP, WorkingScreen),
         Some("amp" | "cursor" | "droid") => (INJECT_ENTER_GAP, LegacyWrite),
         _ => (UNVERIFIED_ENTER_GAP, HookOnly),
     };
@@ -2647,9 +2648,6 @@ fn wait_for_queued_submission(
                 }
                 SubmitConfirmation::WorkingScreen => {
                     screen_state == "working_screen" && fresh_working_transition
-                }
-                SubmitConfirmation::PromptGone => {
-                    initial_screen == "ready_screen" && screen_state == "terminal_output"
                 }
                 SubmitConfirmation::HookOnly | SubmitConfirmation::LegacyWrite => false,
             };

@@ -362,3 +362,37 @@ fn recent_spans_projects_with_unread_per_project() {
         .unwrap();
     assert_eq!(intents.len(), 1, "an explicit kind still selects the trace");
 }
+
+// Catches: an empty fork answer building an empty entry text that the journal
+// rejects, leaving the turn open (thread running) for ever.
+#[test]
+fn an_empty_answer_closes_the_turn_as_a_failure() {
+    let j = journal();
+    let (question, turn) = ask(&j.store, &q("t1", "q")).unwrap();
+    let mut empty = answer("f", Category::Answer, "");
+    if let Ok(a) = empty.as_mut() {
+        a.classified.body.clear();
+    }
+    let entry = finish(&j.store, turn, &empty).unwrap();
+    assert_eq!(entry.step.as_deref(), Some("failed"));
+    let thread = get(&j.store, question.id).unwrap();
+    assert!(!thread.running);
+    assert_eq!(
+        thread.turns[0].error.as_deref(),
+        Some("The fork returned no answer")
+    );
+}
+
+// Catches: a second finish of a closed turn adding a duplicate answer entry
+// and overwriting the first outcome.
+#[test]
+fn finishing_a_closed_turn_changes_nothing() {
+    let j = journal();
+    let (question, turn) = ask(&j.store, &q("t1", "q")).unwrap();
+    finish(&j.store, turn, &answer("f", Category::Answer, "first")).unwrap();
+    let before = kinds(&j.store, Some(false)).len();
+    assert!(finish(&j.store, turn, &Err("late failure".to_owned())).is_err());
+    assert_eq!(kinds(&j.store, Some(false)).len(), before);
+    let thread = get(&j.store, question.id).unwrap();
+    assert_eq!(thread.turns[0].error, None);
+}

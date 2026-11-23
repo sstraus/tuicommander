@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
-import { beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, expect, it, onTestFinished, vi } from "vitest";
 import type { ActivityDescriptor } from "../../components/WorkflowDesigner/catalogTypes";
 import { NeutralDesigner } from "../../components/WorkflowDesigner/NeutralDesigner";
 import type { NeutralDefinition } from "../../components/WorkflowDesigner/neutralClient";
@@ -138,6 +138,12 @@ const savedDefinition = async () => {
 };
 
 it("starts the published revision, not the newer draft revision, and reads the run back as rows", async () => {
+	const original = crypto.randomUUID;
+	// A plain-http remote client has no crypto.randomUUID.
+	Object.defineProperty(crypto, "randomUUID", { value: undefined, configurable: true });
+	onTestFinished(() => {
+		Object.defineProperty(crypto, "randomUUID", { value: original, configurable: true });
+	});
 	await openDraft();
 	fireEvent.click(screen.getByRole("tab", { name: "Preview & runs" }));
 	expect(screen.getByText(/Starts published revision 1\./)).toHaveTextContent("not part of the run");

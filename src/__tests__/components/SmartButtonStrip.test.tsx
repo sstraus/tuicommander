@@ -13,16 +13,16 @@ vi.mock("../../hooks/useSmartPrompts", () => ({
 
 import { SmartButtonStrip } from "../../components/SmartButtonStrip/SmartButtonStrip";
 import { appLogger } from "../../stores/appLogger";
-import { promptLibraryStore } from "../../stores/promptLibrary";
+import { promptLibraryStore, type SmartPlacement } from "../../stores/promptLibrary";
 
-const prompt = (name: string, enabled = true) =>
+const prompt = (name: string, enabled = true, placement: SmartPlacement = "file-context") =>
 	promptLibraryStore.createPrompt({
 		name,
 		content: "Geometry fixture",
 		category: "custom",
 		isFavorite: false,
 		tags: ["smart", "geometry-test"],
-		placement: ["file-context"],
+		placement: [placement],
 		enabled,
 	});
 const mount = (props = {}) =>
@@ -69,12 +69,36 @@ describe("SmartButtonStrip shared controls preserve actions", () => {
 		prompt("First");
 		const chosen = prompt("Second");
 		const { getByTitle, getByRole, queryByRole } = mount();
-		fireEvent.click(getByTitle("More actions"));
+		fireEvent.click(getByTitle("More agent actions"));
 		fireEvent.click(getByRole("button", { name: "Second" }));
 		await Promise.resolve();
 		expect(execute).toHaveBeenCalledWith(expect.objectContaining({ id: chosen.id }), undefined);
 		expect(queryByRole("button", { name: "First" })).toBeNull();
 		expect(getByRole("button", { name: "Second" })).toBeInTheDocument();
+	});
+
+	it("runs the first start from the main part, then the prompt picked from the menu", async () => {
+		// catches: a fixed label hiding which action the main part runs, or a start that a prompt pick cannot replace
+		// A placement of its own: the last pick is remembered per placement across mounts.
+		const picked = prompt("Review it", true, "issue-popover");
+		const autofix = vi.fn();
+		const { getByTitle, getByRole } = mount({
+			placement: "issue-popover",
+			label: "Work on it",
+			variant: "primary",
+			starts: [{ id: "autofix", label: "Auto-fix in worktree", onSelect: autofix }],
+		});
+		fireEvent.click(getByRole("button", { name: "Work on it" }));
+		expect(autofix).toHaveBeenCalledOnce();
+		expect(execute).not.toHaveBeenCalled();
+		fireEvent.click(getByTitle("More agent actions"));
+		fireEvent.click(getByRole("button", { name: "Review it" }));
+		await Promise.resolve();
+		fireEvent.click(getByRole("button", { name: "Work on it" }));
+		await Promise.resolve();
+		expect(autofix).toHaveBeenCalledOnce();
+		expect(execute).toHaveBeenCalledTimes(2);
+		expect(execute).toHaveBeenLastCalledWith(expect.objectContaining({ id: picked.id }), undefined);
 	});
 
 	it("explains why the main action is disabled instead of showing its description", () => {
@@ -99,7 +123,7 @@ describe("SmartButtonStrip shared controls preserve actions", () => {
 		const mainAction = getByRole("button", { name: "Active" });
 		fireEvent.click(mainAction);
 		expect(mainAction).toBeDisabled();
-		fireEvent.click(getByTitle("More actions"));
+		fireEvent.click(getByTitle("More agent actions"));
 		expect(getByRole("button", { name: "Unavailable" })).toBeDisabled();
 		expect(execute).toHaveBeenCalledTimes(1);
 		finish({ ok: true });
@@ -125,7 +149,7 @@ describe("SmartButtonStrip shared controls preserve actions", () => {
 		prompt("First");
 		prompt("Other");
 		const { getByTitle, queryByRole } = mount();
-		fireEvent.click(getByTitle("More actions"));
+		fireEvent.click(getByTitle("More agent actions"));
 		expect(queryByRole("button", { name: "Other" })).toBeInTheDocument();
 		fireEvent.mouseDown(document.body);
 		expect(queryByRole("button", { name: "Other" })).toBeNull();

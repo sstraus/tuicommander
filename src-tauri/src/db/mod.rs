@@ -24,6 +24,8 @@ pub(crate) const AUTOMATION_RUNS_DB: &str = "automation_runs.sqlite3";
 pub(crate) const WORKFLOW_RUNS_DB: &str = "workflow_runs.sqlite3";
 pub(crate) const MAIL_DB: &str = "mail.sqlite3";
 pub(crate) const TUNNEL_AUDIT_DB: &str = "tunnel_audit.sqlite3";
+/// Disposable provider response cache, bounded by its own size cap and idle limit.
+pub(crate) const PROVIDER_CACHE_DB: &str = "provider_cache.sqlite3";
 
 /// How long a writer waits for another connection's lock.
 pub(crate) const BUSY_TIMEOUT: Duration = Duration::from_secs(5);

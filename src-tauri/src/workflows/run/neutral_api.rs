@@ -84,6 +84,15 @@ pub(crate) fn run_action(
             start_delivery(state, project, &story, &key, caller)
         }
         NeutralAction::DeliveryRuns { story } => delivery_runs(state, project, &story),
+        NeutralAction::PrReviewTargets { pull_request } => {
+            let pull = super::neutral_pr_review::parse_url(&pull_request)?;
+            super::neutral_pr_review::targets(&WorkflowStore::open()?, project, &pull.repository)
+                .map(NeutralReply::PrReviewTargets)
+        }
+        NeutralAction::StartPrReview {
+            pull_request,
+            binding,
+        } => start_pr_review(state, project, &pull_request, binding.as_deref(), caller),
         NeutralAction::Cancel {
             run_id,
             command_id,
@@ -355,6 +364,54 @@ fn start_delivery(
             max_duration_ms: 86_400_000,
         },
     };
+    start_request(state, project, request, caller)
+}
+
+/// Selects the binding before reading GitHub, so a missing or ambiguous PR
+/// review workflow refuses without a network call. The project's account-aware
+/// client must address the PR's own repository: a fork remote would read
+/// another pull request with the same number.
+fn start_pr_review(
+    state: &Arc<AppState>,
+    project: &str,
+    url: &str,
+    binding: Option<&str>,
+    caller: Option<super::NativeCaller>,
+) -> Result<NeutralReply, String> {
+    use super::neutral_pr_review as pr;
+    let pull = pr::parse_url(url)?;
+    let workflows = WorkflowStore::open()?;
+    let binding = pr::select(
+        pr::bindings(&workflows, project, &pull.repository)?,
+        &pull.repository,
+        binding,
+    )?;
+    let host = state.workflow_runtime.neutral_catalog_host()?;
+    let installed = host.catalog(project)?;
+    let registry = host.registry();
+    let catalog = workflows.build_project_catalog(project, &installed, &registry)?;
+    let handlers = registry.available_handlers();
+    let request = tokio::runtime::Handle::current().block_on(async {
+        let api = crate::github_pr_api::RepoApi::resolve(
+            state,
+            project,
+            crate::github::gateway::Origin::interactive("workflow.neutral_pr_review.start"),
+        )
+        .await?;
+        let resolved = format!("{}/{}", api.owner, api.repo).to_ascii_lowercase();
+        if resolved != pull.repository || api.account.host.as_str() != pull.host {
+            return Err(format!(
+                "{}{}; the project uses {}/{resolved}",
+                crate::workflows::neutral_api::refusal::PR_REPOSITORY_MISMATCH,
+                url,
+                api.account.host.as_str()
+            ));
+        }
+        pr::start_request(
+            &api, &workflows, &catalog, &handlers, project, &binding, &pull,
+        )
+        .await
+    })?;
     start_request(state, project, request, caller)
 }
 

@@ -104,6 +104,15 @@ impl GitHubPoller {
         }
     }
 
+    /// A polled MERGED PR for `branch` whose head is exactly `tip`.
+    pub(crate) fn merged_pr_proves_tip(&self, repo: &str, branch: &str, tip: &str) -> bool {
+        self.previous_prs
+            .read()
+            .get(repo)
+            .and_then(|branches| branches.get(branch))
+            .is_some_and(|pr| pr.state.eq_ignore_ascii_case("MERGED") && pr.head_ref_oid == tip)
+    }
+
     pub(crate) fn monitored_repo_count(&self) -> usize {
         self.previous_prs.read().len()
     }
@@ -482,11 +491,12 @@ async fn poll_filtered_batch(
             let force = ps.force_resync;
             ps.force_resync = false;
 
-            for repo_path in result.intake_issues.keys() {
+            for (repo_path, issues) in &result.intake_issues {
                 if let Err(error) = crate::workflows::github_poll::observe(
                     state,
                     repo_path,
                     crate::workflows::github_trigger::GithubResource::Issue,
+                    Some(crate::workflows::github_poll::PolledList::Issues(issues)),
                 )
                 .await
                 {
@@ -498,6 +508,10 @@ async fn poll_filtered_batch(
                     state,
                     repo_path,
                     crate::workflows::github_trigger::GithubResource::PullRequest,
+                    result
+                        .intake_prs
+                        .get(repo_path)
+                        .map(|prs| crate::workflows::github_poll::PolledList::PullRequests(prs)),
                 )
                 .await
                 {

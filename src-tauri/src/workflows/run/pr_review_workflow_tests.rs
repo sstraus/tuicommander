@@ -6,6 +6,7 @@ use super::neutral_execution::{NeutralResult, NeutralStatus};
 use super::neutral_github_review::{self as github, Operation};
 use super::neutral_runtime::{NeutralHost, NeutralInvocation, ObservationFuture};
 use super::runtime::{RuntimeOwner, run_actor};
+use crate::github::Origin;
 use crate::github_pr_api::PrApi;
 use crate::workflows::catalog::{
     ActivityDescriptor, ActivityInstance, HandlerRef, WorkflowCatalog,
@@ -24,13 +25,13 @@ const REPO: &str = "octo-org/example";
 /// In-memory GitHub REST surface for one PR. Reviews behave as GitHub does:
 /// pinned to commit_id, listed, and readable by id.
 #[derive(Default)]
-struct FakeGitHub {
-    state: parking_lot::Mutex<PrState>,
+pub(super) struct FakeGitHub {
+    pub(super) state: parking_lot::Mutex<PrState>,
 }
 #[derive(Default)]
-struct PrState {
-    head: String,
-    base: String,
+pub(super) struct PrState {
+    pub(super) head: String,
+    pub(super) base: String,
     /// Simulates a push that lands between the snapshot and the review.
     head_after_compare: Option<String>,
     reviews: Vec<Value>,
@@ -41,6 +42,7 @@ impl FakeGitHub {
         match (method, endpoint) {
             ("GET", "pulls/1347") => Ok(json!({
                 "number": 1347, "state": "open", "title": "Found a bug", "body": "Fix it",
+                "labels": [], "updated_at": "2026-11-22T10:00:00Z",
                 "head": {"sha": pr.head}, "base": {"sha": pr.base},
             })),
             ("GET", e) if e.starts_with("compare/") => {
@@ -73,7 +75,7 @@ impl FakeGitHub {
             _ => Err(format!("unexpected GitHub call {method} {endpoint}")),
         }
     }
-    fn reviewed_heads(&self) -> Vec<String> {
+    pub(super) fn reviewed_heads(&self) -> Vec<String> {
         self.state
             .lock()
             .reviews
@@ -197,19 +199,19 @@ impl NeutralHost for ReviewHost {
     }
 }
 
-struct Fixture {
+pub(super) struct Fixture {
     _dir: tempfile::TempDir,
-    owner: Arc<RuntimeOwner>,
-    workflows: WorkflowStore,
-    catalog: WorkflowCatalog,
-    handlers: BTreeSet<HandlerRef>,
-    github: Arc<FakeGitHub>,
-    project: String,
+    pub(super) owner: Arc<RuntimeOwner>,
+    pub(super) workflows: WorkflowStore,
+    pub(super) catalog: WorkflowCatalog,
+    pub(super) handlers: BTreeSet<HandlerRef>,
+    pub(super) github: Arc<FakeGitHub>,
+    pub(super) project: String,
     repo: String,
     raw: parking_lot::Mutex<Value>,
 }
 
-fn fixture() -> Fixture {
+pub(super) fn fixture() -> Fixture {
     fixture_for("/project", REPO, None)
 }
 
@@ -331,7 +333,7 @@ fn fixture_for(project: &str, repo: &str, live: Option<github::GitHubHost>) -> F
 
 impl Fixture {
     /// One production poll cycle. `push` moves the PR to a new head first.
-    fn poll(&self, push: Option<char>) -> Vec<TriggerAdmission> {
+    pub(super) fn poll(&self, push: Option<char>) -> Vec<TriggerAdmission> {
         let snapshots = match push {
             None if self.github.state.lock().head.is_empty() => Vec::new(),
             push => {
@@ -371,7 +373,7 @@ impl Fixture {
             + chrono::Duration::seconds(1);
         raw["updated_at"] = json!(next.to_rfc3339());
     }
-    async fn drive(&self, run: &str) -> NeutralStatus {
+    pub(super) async fn drive(&self, run: &str) -> NeutralStatus {
         run_actor(
             Arc::downgrade(&self.owner),
             run.to_owned(),
@@ -565,7 +567,13 @@ async fn github_sandbox_pr_gets_one_review_from_the_neutral_engine() {
         ],
     )
     .unwrap();
-    let api = RepoApi::resolve(&native.state, &project).await.unwrap();
+    let api = RepoApi::resolve(
+        &native.state,
+        &project,
+        Origin::interactive("test.github_sandbox_pr_gets_one_review_from_the_neutral_engine"),
+    )
+    .await
+    .unwrap();
     let open = api
         .rest("GET", "pulls?state=open&per_page=100", Value::Null)
         .await

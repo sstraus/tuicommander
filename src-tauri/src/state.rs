@@ -1976,18 +1976,15 @@ pub(crate) struct GitHubState {
     /// Explicit runtime disconnect; read/write while holding the token lock.
     /// Prevents lazy resolution from restoring credentials.
     pub(crate) disconnected: std::sync::atomic::AtomicBool,
-    /// Circuit breaker for GitHub API calls
-    pub(crate) circuit_breaker: crate::github::GitHubCircuitBreaker,
     /// Background GitHub poller task handle
     pub(crate) poller: parking_lot::Mutex<Option<crate::github_poller::GitHubPoller>>,
     /// Cached GitHub viewer login (authenticated user) for issue filtering.
+    /// Deliberately not a gateway identity entry: the login is token-scoped and cleared from
+    /// synchronous credential paths (rotate, remove, logout), while a gateway entry is keyed by
+    /// account and would serve a rotated token's old login.
     pub(crate) viewer_login: parking_lot::RwLock<Option<String>>,
-    /// Remaining GraphQL points from last poll — used for proactive throttling.
-    /// Initialized to u32::MAX (no constraint). Written by each successful batch poll.
-    /// This is the github.com budget; GHE accounts track their own in `ghe_state`.
-    pub(crate) rate_limit_remaining: std::sync::atomic::AtomicU32,
-    /// Per-account runtime state for non-github.com (GHE) accounts: breaker +
-    /// viewer-login cache + rate budget, keyed by account id. github.com uses the
+    /// Per-account runtime state for non-github.com (GHE) accounts: the
+    /// viewer-login cache, keyed by account id. github.com uses the
     /// global fields above, so a github.com-only user is byte-for-byte unchanged.
     pub(crate) ghe_state: DashMap<String, crate::github::GheAccountState>,
 }
@@ -2000,11 +1997,8 @@ impl Default for GitHubState {
             token: parking_lot::RwLock::new(None),
             token_source: parking_lot::RwLock::new(Default::default()),
             disconnected: std::sync::atomic::AtomicBool::new(false),
-            circuit_breaker: crate::github::GitHubCircuitBreaker::new(),
             poller: parking_lot::Mutex::new(None),
             viewer_login: parking_lot::RwLock::new(None),
-            // u32::MAX means "no constraint known yet", not "no budget left".
-            rate_limit_remaining: std::sync::atomic::AtomicU32::new(u32::MAX),
             ghe_state: dashmap::DashMap::new(),
         }
     }
@@ -2331,6 +2325,9 @@ pub struct AppState {
     /// Built by [`build_http_client`] — always with timeouts, never
     /// `reqwest::Client::new()`.
     pub(crate) http_client: reqwest::Client,
+    /// Every outbound provider request goes through it (stories 3136+ move
+    /// the call sites; none has yet).
+    pub(crate) gateway: crate::provider_gateway::ProviderGateway,
     /// Everything GitHub: credentials, the poller, and per-account budgets.
     pub(crate) github: GitHubState,
     /// Shutdown sender for the HTTP server — send () to gracefully stop it.
@@ -3948,6 +3945,17 @@ impl AppState {
         let tunnel_manager = Arc::new(crate::tunnels::manager::TunnelManager::new(
             tunnel_audit.clone(),
         ));
+        let http_client = build_http_client();
+        let gateway = crate::provider_gateway::ProviderGateway::new(
+            http_client.clone(),
+            &data_dir.join(crate::db::PROVIDER_CACHE_DB),
+        );
+        let git_cache = GitCacheState::new();
+        gateway
+            .gateway
+            .set_signal_sink(Arc::new(crate::github::gateway::StatusInvalidator::new(
+                &git_cache,
+            )));
         Self {
             telegram_recent: Default::default(),
             workflow_runtime: Default::default(),
@@ -3963,7 +3971,7 @@ impl AppState {
             webview_unloaded: AtomicBool::new(false),
             background_visibility: Mutex::new(Default::default()),
             config: parking_lot::RwLock::new(config),
-            git_cache: GitCacheState::new(),
+            git_cache,
             repo_watchers: DashMap::new(),
             repo_git_fingerprints: DashMap::new(),
             repo_head_targets: DashMap::new(),
@@ -3974,7 +3982,8 @@ impl AppState {
             subagent_map_cache: parking_lot::Mutex::new(Default::default()),
             chat_views: Default::default(),
             mdkb_daemon: crate::mdkb_daemon::create_shared_daemon(),
-            http_client: build_http_client(),
+            http_client,
+            gateway,
             github: GitHubState::default(),
             server_shutdown: parking_lot::Mutex::new(None),
             ipc_started: std::sync::atomic::AtomicBool::new(false),
@@ -4554,6 +4563,10 @@ pub(crate) struct GitCacheState {
     pub(crate) repo_diff_stats: GitCache<crate::git::RepoDiffStats>,
     pub(crate) branches_detail: GitCache<Vec<crate::git::BranchDetail>>,
     pub(crate) github_status: GitCache<Vec<crate::github::BranchPrStatus>>,
+    /// Repo path -> gateway repo tag of each `github_status` entry, so a write
+    /// the gateway sees can find the entries it made stale. Written only by
+    /// `github_gateway::cache_status`; read by the gateway's signal sink.
+    pub(crate) github_status_repos: Arc<DashMap<String, String>>,
     pub(crate) git_status: GitCache<crate::github::GitHubStatus>,
     pub(crate) worktree_paths: GitCache<crate::worktree::WorktreeInventory>,
     /// Repos explicitly reported NOT_FOUND by GitHub GraphQL.
@@ -4564,7 +4577,8 @@ pub(crate) struct GitCacheState {
     pub(crate) github_repo_access_errors: DashMap<String, crate::github::RepoAccessFailure>,
     /// Settled review-thread totals of PRs with more threads than the batch poll reads, keyed by
     /// "host/owner/name#number". Not a TTL cache: an entry is valid while the PR's `updatedAt` and head
-    /// are unchanged and it is younger than `SETTLED_THREADS_TTL`.
+    /// are unchanged and it is younger than `SETTLED_THREADS_TTL`. Domain cache, not a gateway
+    /// entry: it stores a paged walk's derived totals, validated by `updatedAt` and head.
     pub(crate) settled_review_threads: DashMap<String, SettledReviewThreads>,
     /// Count of entries evicted by TTL expiry (watcher-miss observability).
     /// Shared across all git caches; surfaced in the cpu_watchdog snapshot.
@@ -4582,6 +4596,7 @@ impl GitCacheState {
             repo_diff_stats: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
             branches_detail: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
             github_status: build_git_cache(GITHUB_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
+            github_status_repos: Arc::default(),
             git_status: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
             worktree_paths: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
             github_repo_cooldown: DashMap::new(),

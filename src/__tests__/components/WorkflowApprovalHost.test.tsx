@@ -81,7 +81,8 @@ it("restores a real Markdown dialog and answers the exact retained question", as
 	render(() => <WorkflowApprovalHost />);
 	const dialog = await screen.findByRole("dialog", { name: "Workflow approval" });
 	expect(dialog).toHaveTextContent("Publish?");
-	expect(screen.getByText("Evidence").tagName).toBe("STRONG");
+	// The renderer loads on demand, so the Markdown arrives after the dialog.
+	expect((await screen.findByText("Evidence")).tagName).toBe("STRONG");
 	expect(activityStore.getActive().some((item) => item.title === "Release needs approval")).toBe(true);
 	expect(notificationsStore.play).toHaveBeenCalledWith("attention");
 	expect(toastsStore.toasts.find((toast) => toast.title === "Release needs approval")?.message).toBe(

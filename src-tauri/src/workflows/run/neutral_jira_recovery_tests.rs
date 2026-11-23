@@ -108,3 +108,40 @@ async fn stale_transition_and_uneditable_fields_do_not_send_mutation() {
     );
     server.await.unwrap();
 }
+
+// Catches: a rate-limited reconcile read that drops the wait, so the owner can
+// only guess when to observe the original effect again. It must also not POST.
+#[tokio::test]
+async fn rate_limited_read_reports_retry_at() {
+    let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let _config = crate::config::set_config_dir_override(dir.path().into());
+    let (state, base, server) =
+        super::neutral_http_fixture_server::server(dir.path(), vec![(429, json!({}), Some("12"))])
+            .await;
+    let mut fields = fields();
+    fields.summary = Some("Original create".into());
+    let f = fixture(
+        state,
+        &base,
+        JiraRequest::Create {
+            issue_type_id: "10006".into(),
+            fields,
+        },
+    );
+    let effect = claimed(&f);
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let error = f.host.reconcile(effect).await.unwrap_err();
+    let retry_at: u64 = error
+        .split("retry_at=")
+        .nth(1)
+        .and_then(|rest| rest.split(|c: char| !c.is_ascii_digit()).next())
+        .and_then(|digits| digits.parse().ok())
+        .unwrap_or_else(|| panic!("no retry_at in {error:?}"));
+    assert!((before + 12..=before + 20).contains(&retry_at), "{error}");
+    let requests = server.await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].starts_with("POST /api/rest/api/3/search/jql"));
+}

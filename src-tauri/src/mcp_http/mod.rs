@@ -138,7 +138,7 @@ fn validate_repo_path(path: &str) -> Result<(), (StatusCode, Json<serde_json::Va
 
 /// Wrap an `Ok(T)` / `Err(String)` into a JSON HTTP response.
 /// Ok → 200 with JSON body, Err → 500 with `{"error": msg}`.
-fn json_result<T: serde::Serialize>(result: Result<T, String>) -> Response {
+pub(crate) fn json_result<T: serde::Serialize>(result: Result<T, String>) -> Response {
     match result {
         Ok(val) => (StatusCode::OK, Json(serde_json::json!(val))).into_response(),
         Err(e) => err_500(&e),
@@ -1393,6 +1393,10 @@ fn shared_routes() -> Router<Arc<AppState>> {
         )
         .route("/diagnostics/memory", get(log_routes::memory_report_get))
         .route(
+            "/diagnostics/provider-gateway",
+            get(log_routes::provider_gateway_get),
+        )
+        .route(
             "/diagnostics/heap",
             get(heap_profile_routes::status).post(heap_profile_routes::control),
         )
@@ -1873,6 +1877,10 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         )
         .route("/repo/pr-thread-reply", post(github_review_routes::reply))
         .route("/repo/pr-draft-review", post(github_review_routes::submit))
+        .route(
+            "/github/work-item-visit",
+            post(crate::work_item_visits::endpoint),
+        )
         .route("/repo/pr-diff", get(github_routes::repo_pr_diff))
         .route("/repo/merged-prs", get(github_routes::repo_merged_prs))
         .route(

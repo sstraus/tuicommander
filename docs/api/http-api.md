@@ -2256,7 +2256,7 @@ Content-Type: application/json
 { "agentType": "claude", "sessionId": "af467730-5e79-49d9-8a17-ebd94c99f262", "cwd": "/work/project", "agentPid": null, "envOverrides": { "CLAUDE_CONFIG_DIR": "/profiles/work" } }
 ```
 
-Returns a JSON boolean. `agentPid` is a live process ID when available and `null` after restart; `envOverrides` carries the saved launch profile so verification reads the same session store the agent used. The same fields apply to Codex (`CODEX_HOME`) and Gemini (`GEMINI_CLI_HOME`).
+Returns a JSON boolean. `agentPid` is a live process ID when available and `null` after restart; `envOverrides` carries the saved launch profile so verification reads the same session store the agent used. The same fields apply to Codex (`CODEX_HOME`) and agy (`HOME`).
 
 ### Detect All Agents
 
@@ -3330,6 +3330,10 @@ The ACP session fork route accepts optional `atMessageId` beside `authority`. It
 
 The host ACP session list gathers all ego pages before ordering ancestry. Each row retains `_meta.ego.lineage` and adds `_meta.tuicommander.lineageDepth`; placeholder rows for deleted parents add `_meta.tuicommander.deleted=true`. The response has no continuation cursor after collecting the pages.
 
+### Provider gateway diagnostics
+
+`GET /diagnostics/provider-gateway[?reset=true]` returns `{ counters[], recent[], buckets[], reset }`: per-caller provider traffic and per-bucket quota state. `reset=true` returns the closing window and starts a new one (counters and `recent` zero, `buckets` stay). Same shape as the Tauri command `provider_gateway_stats` and MCP `debug action=gateway`. See [diagnostics](../backend/diagnostics.md#provider-gateway-traffic).
+
 ### Memory diagnostics
 
 `GET /diagnostics/memory` performs payload accounting and the native large-malloc-block census on demand. The watchdog logs only cheap allocator counters and structure counts at footprint thresholds; it does not walk payloads or malloc zones.
@@ -3540,6 +3544,7 @@ Desktop command arguments and HTTP bodies use the same camelCase fields.
 | POST | `/repo/pr-thread-resolved` | `{repoPath, threadId, resolved}` |
 | POST | `/repo/pr-thread-reply` | `{repoPath, threadId, body}` |
 | POST | `/repo/pr-draft-review` | `{repoPath, prNumber, draft:{headSha, body, event, comments}}` |
+| POST | `/github/work-item-visit` | `{itemUrl, commentCount}` — returns `{count, sinceMs}` (`visit_work_item`) |
 
 Draft submission rejects a moved reviewed head and pins REST `commit_id`. Thread and comment connections expose pagination; outdated threads retain null current lines. Thread shapes match `get_pr_line_threads`: comment authors carry `bot`, and each thread carries a nullable parsed `finding` (untrusted bot text).
 

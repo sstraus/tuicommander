@@ -1,7 +1,10 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mockInvoke } from "../../../__tests__/mocks/tauri";
+import { withFreshness } from "../../../plugins/freshness";
 import { appLogger } from "../../../stores/appLogger";
+import { uiStore } from "../../../stores/ui";
 import type { WorkItem, WorkItemQuery } from "../../../types/work-items.gen";
 import { allDemoRows, listDemo } from "./demo";
 import { TaskRows } from "./TaskRows";
@@ -409,4 +412,141 @@ it("failed_jql_search_keeps_the_typed_query_after_a_successful_load", async () =
 	expect(screen.getByLabelText("Search tasks")).toHaveValue("jql: project =");
 	fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 	await waitFor(() => expect(attempts.filter((search) => search === "jql: project =")).toHaveLength(2));
+});
+
+describe("Tasks view preferences echo", () => {
+	const settle = () => new Promise((resolve) => setTimeout(resolve, 150));
+	const storedPreferences = () => ({
+		tasks_view_preferences: Object.fromEntries(
+			Object.entries(uiStore.state.tasksViewPreferences).map(([key, value]) => [key, JSON.stringify(value)]),
+		),
+	});
+	/** The backend answers every preferences write with a reload of the stored values. */
+	function echoEveryWrite() {
+		const write = uiStore.setTaskViewPreference.bind(uiStore);
+		mockInvoke.mockImplementation(async (command: string) =>
+			command === "load_ui_prefs" ? storedPreferences() : undefined,
+		);
+		return vi.spyOn(uiStore, "setTaskViewPreference").mockImplementation((key, patch) => {
+			write(key, patch);
+			setTimeout(() => void uiStore.hydrate(), 0);
+		});
+	}
+	afterEach(() => {
+		uiStore._testCancelPendingSave();
+		mockInvoke.mockReset().mockResolvedValue(undefined);
+	});
+
+	// Catches: a save on every select, so a preferences reload that restores the same query writes it again.
+	it("identical query does not save preferences", async () => {
+		render(() => <TasksList providers={[listDemo(2)]} repoPath="/repo-a" onOpen={() => {}} />);
+		await screen.findByRole("button", { name: /Task 00002/ });
+		const save = vi.spyOn(uiStore, "setTaskViewPreference");
+		mockInvoke.mockImplementation(async (command: string) =>
+			command === "load_ui_prefs" ? storedPreferences() : undefined,
+		);
+		await uiStore.hydrate();
+		await settle();
+		expect(save).not.toHaveBeenCalled();
+	});
+
+	// Catches: error -> restore -> save -> reload loop (a failed query is saved, echoed back and loaded again forever).
+	it("a failed load is not retried by the view", async () => {
+		const provider = listDemo(2);
+		let calls = 0;
+		provider.list = async () => {
+			calls++;
+			throw new Error("GitHub request failed");
+		};
+		echoEveryWrite();
+		render(() => <TasksList providers={[provider]} repoPath="/repo-b" onOpen={() => {}} />);
+		await screen.findByText("GitHub request failed");
+		await settle();
+		const settled = calls;
+		await settle();
+		expect(calls).toBe(settled);
+		expect(settled).toBeLessThanOrEqual(2);
+	});
+});
+
+describe("Tasks list typed gateway states", () => {
+	const limited = (retryAt: number) => ({ status: 429, kind: "rate_limited", bucket: "core", retry_at: retryAt });
+
+	// Catches: R7 regressions — a limit answered as a failure that flashes a Retry and reloads on its own.
+	it("rate_limited answer shows reset time and schedules no reload", async () => {
+		const provider = listDemo(2);
+		let calls = 0;
+		provider.list = async () => {
+			calls++;
+			throw limited(new Date(2030, 0, 1, 14, 5).getTime());
+		};
+		const timers = vi.spyOn(globalThis, "setTimeout");
+		render(() => <TasksList providers={[provider]} onOpen={() => {}} />);
+		await screen.findByText("Rate limited · resets 14:05");
+		const settled = calls;
+		timers.mockClear();
+		expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+		await new Promise((resolve) => setTimeout(resolve, 30));
+		expect(calls).toBe(settled);
+		const reloads = timers.mock.calls.filter(([, delay]) => typeof delay === "number" && delay >= 1000);
+		expect(reloads).toEqual([]);
+	});
+
+	// Catches: stale rows shown without saying how old they are.
+	it("stale source shows a muted 'cached hh:mm' marker", async () => {
+		const base = listDemo(3);
+		let fail = false;
+		const flaky = {
+			...base,
+			list: async (query: Parameters<typeof base.list>[0], signal?: AbortSignal) => {
+				if (fail) throw new Error("GitHub request failed");
+				return base.list(query, signal);
+			},
+		};
+		render(() => <TasksList providers={[flaky]} onOpen={() => {}} />);
+		await screen.findByRole("button", { name: /Task 00003/ });
+		expect(screen.queryByText(/^cached \d{2}:\d{2}$/)).not.toBeInTheDocument();
+		fail = true;
+		fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+		const marker = await screen.findByText(/^cached \d{2}:\d{2}$/);
+		expect(marker).toHaveAttribute("data-tone", "muted");
+	});
+});
+
+describe("Tasks list freshness", () => {
+	// Records, per provider read, whether its signal asks the gateway for a fresh read.
+	function spyOnReads() {
+		const provider = listDemo(4);
+		const reads: boolean[] = [];
+		const list = provider.list.bind(provider);
+		provider.list = (query, signal) => {
+			reads.push(withFreshness({ signal }) !== null);
+			return list(query, signal);
+		};
+		return { provider, reads };
+	}
+
+	// Catches: Refresh reading the cache, or asking for fresh data more than once.
+	it("refresh sends freshness force once", async () => {
+		const { provider, reads } = spyOnReads();
+		const view = render(() => <TasksList providers={[provider]} onOpen={() => {}} />);
+		await view.findByRole("button", { name: /Task 00004/ });
+		const loaded = reads.length;
+		fireEvent.click(view.getAllByRole("button", { name: "Refresh" })[0]);
+		await waitFor(() => expect(reads.length).toBeGreaterThan(loaded));
+		await view.findByRole("button", { name: /Task 00004/ });
+		expect(reads.slice(loaded)).toEqual([true]);
+	});
+
+	// Catches: a view switch or remount bypassing the cache, defeating the gateway.
+	it("view switches and remounts read the cache", async () => {
+		const { provider, reads } = spyOnReads();
+		for (let mount = 0; mount < 2; mount++) {
+			const view = render(() => <TasksList providers={[provider]} onOpen={() => {}} />);
+			await view.findByRole("button", { name: /Task 00004/ });
+			view.unmount();
+		}
+		expect(reads.length).toBeGreaterThanOrEqual(2);
+		expect(reads.every((forced) => !forced)).toBe(true);
+	});
 });

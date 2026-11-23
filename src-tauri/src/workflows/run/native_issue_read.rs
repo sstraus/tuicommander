@@ -2,6 +2,7 @@
 use super::native_host::NativeBinding;
 use super::native_issue_source::IssueSource;
 use super::neutral_effects::EffectKey;
+use crate::github::Origin;
 use crate::github_pr_api::{PrApi, RepoApi};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -70,7 +71,12 @@ pub(super) async fn read(
         .store
         .trigger_intent(receipt)?
         .ok_or("issue trigger receipt unavailable")?;
-    let api = RepoApi::resolve(&state, &bound.context.workspace_path().to_string_lossy()).await?;
+    let api = RepoApi::resolve(
+        &state,
+        &bound.context.workspace_path().to_string_lossy(),
+        Origin::background("workflow.native_issue_read.read"),
+    )
+    .await?;
     let source = IssueSource {
         receipt: receipt.into(),
         account: api.account.id.clone(),

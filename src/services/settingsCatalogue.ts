@@ -47,12 +47,6 @@ export function settingOptions(
 	});
 }
 
-export function settingNumberDefault(id: SettingId): number {
-	const value = settingDescriptor(id).default;
-	if (typeof value !== "number") throw new Error(`Setting ${id} has no numeric default`);
-	return value;
-}
-
 interface CatalogueEditorField {
 	id: string;
 	sensitivity: string;

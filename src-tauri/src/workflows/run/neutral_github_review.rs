@@ -5,6 +5,7 @@
 use super::neutral_effects::{EffectObservation, EffectOutcome, EffectPreparation, NeutralEffect};
 use super::neutral_execution::NeutralResult;
 use super::neutral_runtime::{NeutralHost, NeutralInvocation, ObservationFuture};
+use crate::github::Origin;
 use crate::github_pr_api::{PrApi, RepoApi};
 use crate::workflows::catalog::{
     ActivityDescriptor, ActivityInstance, DescriptorId, FieldSchema, HandlerRef, ObjectSchema,
@@ -451,7 +452,13 @@ impl NeutralHost for GitHubHost {
         let state = self.state.clone();
         Box::pin(async move {
             ready?;
-            let api = match RepoApi::resolve(&state, &effect.invocation.publication.project).await {
+            let api = match RepoApi::resolve(
+                &state,
+                &effect.invocation.publication.project,
+                Origin::background("workflow.neutral_github_review.invoke_effect"),
+            )
+            .await
+            {
                 Ok(api) => api,
                 // No request was sent: the account or repository is unresolved.
                 Err(error) => return Ok(failed(format!("GitHub account unavailable: {error}"))),
@@ -463,7 +470,12 @@ impl NeutralHost for GitHubHost {
     fn reconcile(&self, effect: NeutralEffect) -> ObservationFuture {
         let state = self.state.clone();
         Box::pin(async move {
-            let api = RepoApi::resolve(&state, &effect.invocation.publication.project).await?;
+            let api = RepoApi::resolve(
+                &state,
+                &effect.invocation.publication.project,
+                Origin::background("workflow.neutral_github_review.reconcile"),
+            )
+            .await?;
             let repository = format!("{}/{}", api.owner, api.repo);
             let r = request(
                 operation(&effect.invocation.descriptor)?,

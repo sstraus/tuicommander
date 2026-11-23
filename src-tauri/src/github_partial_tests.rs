@@ -1,4 +1,5 @@
 use super::*;
+use crate::github::Origin;
 
 // Catches: rejecting a partial GraphQL response, or dropping healthy aliases with a denied sibling.
 #[tokio::test]
@@ -24,13 +25,12 @@ async fn recorded_not_found_keeps_accessible_prs_and_issues() {
             .await
             .unwrap();
     });
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .unwrap();
+    let state = crate::state::tests_support::make_test_app_state();
+    let account = github_com_account(&state);
     let response = graphql_request(
-        &client,
+        &state,
+        &account,
+        Origin::interactive("test"),
         "test-only-credential",
         &format!("http://{address}/graphql"),
         fixture["request"]["query"].as_str().unwrap(),
@@ -117,6 +117,8 @@ async fn batch_poll_never_selects_projects_fields() {
                     &mut issues,
                     None,
                     &mut std::collections::HashMap::new(),
+                    &Default::default(),
+                    &mut Default::default(),
                 )
                 .await
                 .unwrap();
@@ -230,6 +232,8 @@ impl PollHttpFixture {
             .timeout(std::time::Duration::from_secs(10))
             .build()
             .unwrap();
+        state.gateway =
+            crate::provider_gateway::ProviderGateway::l1_only(state.http_client.clone());
         *state.github.token.write() = Some("test-only-credential".into());
         *state.github.viewer_login.write() = Some("sstraus".into());
         Self {
@@ -295,6 +299,8 @@ async fn intake_follows_pages_and_retains_labels_beyond_display_limit() {
         &mut Default::default(),
         Some("C-bug"),
         &mut intake,
+        &Default::default(),
+        &mut Default::default(),
     )
     .await
     .unwrap();
@@ -336,6 +342,8 @@ async fn intake_rejects_missing_or_repeated_cursors_without_publishing_partial_p
             &mut Default::default(),
             Some("C-bug"),
             &mut intake,
+            &Default::default(),
+            &mut Default::default(),
         )
         .await;
         assert!(result.unwrap_err().contains(if missing {
@@ -396,6 +404,8 @@ async fn all_open_poll_retains_eleventh_label_in_mixed_repository_intake() {
         &mut Default::default(),
         Some(""),
         &mut intake,
+        &Default::default(),
+        &mut Default::default(),
     )
     .await
     .unwrap();

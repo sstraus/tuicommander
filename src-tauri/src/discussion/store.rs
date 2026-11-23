@@ -58,6 +58,9 @@ fn sql(e: rusqlite::Error) -> String {
     e.to_string()
 }
 
+/// Closes a turn whose fork produced neither a title nor a body.
+const NO_ANSWER: &str = "The fork returned no answer";
+
 /// The journal line for a long text: redaction happens in the store, the cap here.
 fn entry_text(text: &str) -> String {
     let text = text.trim();
@@ -159,6 +162,16 @@ pub(crate) fn finish(
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .map_err(|e| format!("no such discussion turn: {e}"))?;
+    // An answer without a title and a body would build an entry the journal
+    // rejects and leave the turn open: close it as a failure instead. One place
+    // covers every adapter.
+    let no_answer = Err(NO_ANSWER.to_owned());
+    let result = match result {
+        Ok(a) if a.classified.title.trim().is_empty() && a.classified.body.trim().is_empty() => {
+            &no_answer
+        }
+        other => other,
+    };
     let (text, step) = match result {
         Ok(answer) => {
             let c = &answer.classified;
@@ -180,14 +193,14 @@ pub(crate) fn finish(
     };
     let (entry, ()) = store.record_exchange(&project, &entry, pty_id.as_deref(), |tx, entry| {
         let now = entry.created_at_ms as i64;
-        match result {
+        let changed = match result {
             Ok(answer) => {
                 let (u, c) = (&answer.outcome.usage, &answer.classified);
                 tx.execute(
                     "UPDATE discussion_turns SET answer_entry_id = ?2, answer = ?3, category = ?4, title = ?5,
                        fork_session_id = COALESCE(fork_session_id, ?6), input_tokens = ?7, output_tokens = ?8,
                        cache_read_tokens = ?9, cache_creation_tokens = ?10, cost_usd = ?11, finished_ms = ?12
-                     WHERE id = ?1",
+                     WHERE id = ?1 AND finished_ms IS NULL",
                     params![
                         turn_id,
                         entry.id,
@@ -203,15 +216,20 @@ pub(crate) fn finish(
                         now
                     ],
                 )
-                .map_err(sql)?;
+                .map_err(sql)?
             }
             Err(error) => {
                 tx.execute(
-                    "UPDATE discussion_turns SET answer_entry_id = ?2, error = ?3, finished_ms = ?4 WHERE id = ?1",
+                    "UPDATE discussion_turns SET answer_entry_id = ?2, error = ?3, finished_ms = ?4
+                     WHERE id = ?1 AND finished_ms IS NULL",
                     params![turn_id, entry.id, error, now],
                 )
-                .map_err(sql)?;
+                .map_err(sql)?
             }
+        };
+        // Dropping the transaction also drops the duplicate answer entry.
+        if changed == 0 {
+            return Err("this discussion turn is already finished".to_owned());
         }
         Ok(())
     })?;

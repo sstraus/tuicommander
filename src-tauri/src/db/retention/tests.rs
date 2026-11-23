@@ -216,6 +216,25 @@ fn launches_and_mcp_usage_keep_open_and_fresh_rows() {
     assert_eq!(ids(&path, "SELECT day FROM mcp_usage_daily").len(), 2);
 }
 
+// Catches: a panel visit inside the window being forgotten, which would make
+// the next visit report no new comments.
+#[test]
+fn work_item_visits_keep_visits_inside_the_window() {
+    let dir = temp_dir();
+    let path = dir.path().join(crate::db::TUIC_DB);
+    for (url, visited) in [("old", OLD), ("edge", CUTOFF), ("fresh", NOW)] {
+        crate::work_item_visits::visit(&path, url, 1, visited).unwrap();
+    }
+    assert_eq!(apply_twice(work_item_visits, &path), 1);
+    assert_eq!(
+        ids(
+            &path,
+            "SELECT item_url FROM work_item_visits ORDER BY item_url"
+        ),
+        ["edge", "fresh"]
+    );
+}
+
 // Catches: removing a running instance or an instance still inside the
 // retention window; a non-agent-test name is no longer special.
 #[test]
@@ -250,6 +269,7 @@ fn disabled() -> RetentionConfig {
         tunnel_audit_days: 0,
         mcp_usage_days: 0,
         launch_days: 0,
+        work_item_visit_days: 0,
         instance_days: 0,
         session_file_days: 0,
         capture_days: 0,

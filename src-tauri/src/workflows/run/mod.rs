@@ -137,6 +137,9 @@ mod neutral_gitlab_intake_tests;
 mod neutral_gitlab_read_tests;
 #[cfg(test)]
 mod neutral_gitlab_tests;
+pub(crate) mod neutral_pr_review;
+#[cfg(test)]
+mod neutral_pr_review_tests;
 
 mod neutral_telegram;
 mod neutral_telegram_callbacks;

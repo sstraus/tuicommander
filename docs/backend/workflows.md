@@ -24,6 +24,19 @@ dispatch. Operational cutover remains staged. The installed
 [Telegram connector](workflow-telegram-connectors.md) adds typed send/update/reply
 operations through the existing worker and durable exact-revision callbacks.
 
+### Provider gateway and workflow connectors
+
+The Jira, GitLab and HTTP connectors send through the plugin egress path of the
+[provider gateway](provider-gateway.md). Each call passes
+`Declared::workflow(read, caller)` with the caller id `neutral_jira.request`,
+`neutral_gitlab.fetch` or `neutral_http.execute`.
+
+- `Declared::workflow` sets `Freshness::Force`. A connector read decides what an effect does next, and reconcile observes a write that just landed, so a read never takes a cached answer. A workflow gets no cache benefit from the gateway.
+- The gateway still applies the account budget and the failure memory, counts the call in the per-caller metrics and coalesces identical reads that run at the same time. A read with a body (a Jira `POST` search) is not coalesced.
+- A `429`, from the provider or from the gateway, is reported in the activity diagnostic with the retry hint. No automatic retry runs and a write is not repeated.
+- The HTTP connector accepts a `304` answer to a read as "not changed".
+- Native GitHub workflow code uses the GitHub client with `Origin::background("workflow.<module>.<fn>")`. It is the first traffic that the gateway sheds when the quota is low.
+
 ## Trusted public native starts and answers
 
 Desktop IPC supplies authenticated Owner identity. HTTP supplies Owner only for
@@ -72,10 +85,31 @@ or authenticated caller. Request fields never grant service authority.
 Actions: `catalog`, `templates`, `create_draft`, `list_drafts`, `get_draft`, `update_draft`,
 `validate`, `preview`, `publish`, `get_publication`, `clone_publication`,
 `save_operation`, `save_preset`, `get_preset`, `start`, `inspect`, `events`,
-`cancel`, `answer`, `operator_answer`, `resolve_mutation`, `start_delivery`, `delivery_runs`. The MCP input schema derives from the same `NeutralAction`
+`cancel`, `answer`, `operator_answer`, `resolve_mutation`, `start_delivery`, `delivery_runs`,
+`pr_review_targets`, `start_pr_review`. The MCP input schema derives from the same `NeutralAction`
 used by HTTP and desktop. Internal effect observation/completion commands are
 not public variants. Neutral triggers remain a 010 handoff; legacy bindings keep
 their existing transports.
+
+### Manual PR review start
+
+`run/neutral_pr_review.rs` starts the project's PR review workflow for one pull
+request by hand. The action takes the PR web URL
+(`https://<host>/<owner>/<repo>/pull/<n>`). The project's GitHub `pull_request`
+trigger bindings for that exact repository identify the workflow; a disabled
+binding counts, because a manual start needs no automatic intake.
+`pr_review_targets {pull_request}` lists them (`binding_id`, `enabled`,
+`publication`, `name`). `start_pr_review {pull_request, binding?}` refuses
+without a binding (404), with several bindings and no `binding` (409, the
+refusal lists the ids), for a closed PR (409) and when the project's
+account-aware GitHub client addresses another repository, such as a fork remote
+(400). It reads the PR through that client at the request, never from the caller
+or the poller's retained snapshot, maps it with the binding's own mapping and
+limits (`trigger_request`, event `manual`) and calls the normal neutral `start`.
+The request id is `pr-review:<binding>@<binding revision>:<repo>#<n>:<head>:<base>`,
+so a repeated request for the same head returns the existing run instead of a
+second review. The sidebar PR popover and the Tasks PR detail show this as
+**Review with workflow**; **Open run** opens the Designer on that run.
 
 ### Plan and story delivery workflow
 

@@ -110,18 +110,24 @@ StatusContexts with their detail links. An incomplete response is an error;
 a commit with a null rollup has no checks. CI job log retrieval remains a
 separate operation.
 
-### Circuit breaker coverage
+### Provider gateway coverage
 
-**Every** call out to GitHub goes through the account's circuit breaker:
-GraphQL via `graphql_with_retry`, PR/issue/review writes via `RepoApi::rest`, and direct
+**Every** call out to GitHub goes through the provider gateway
+(`github_gateway.rs`, [Provider gateway](provider-gateway.md)): GraphQL via
+`graphql_with_retry`, PR/issue/review writes via `RepoApi::rest`, and direct
 REST via `send_rest_with_breaker` (close/reopen issue, merge PR, approve PR,
-`fetch_github_json`, PR diff, PR refs). The availability breaker counts transport
-errors and `5xx` responses, not deterministic `4xx` caller outcomes such as a
-missing issue, merge conflict, validation failure, or permission denial. Rate
-limits use their separate backoff: `429`, primary-limit `403` headers,
-`retry-after`, or a secondary/abuse-limit message in an otherwise ambiguous
-`403` body. Non-rate-limit bodies remain available to caller-specific error
-formatting.
+`fetch_github_json`, PR diff, PR refs). The function names keep the word
+"breaker"; the circuit breaker itself is removed. Where older sections of this
+document say "breaker", read "gateway budget and failure memory".
+
+- Each call site passes an `Origin`: a caller id `<module>.<fn>` and a channel (`interactive`, `visible` or `background`).
+- The budget is kept per account and bucket (`core`, `graphql`, `search`, `code_search`). A limit learned on one path stops the other paths of that account and bucket only.
+- A `GET` or `HEAD` is a cached read (30 s to 24 h by route). Every other method, and every GraphQL `POST`, is a write and is not cached.
+- A `2xx` write drops the cached reads of its item and repository, and the parsed PR status of that repository.
+- The host back-off counts transport failures only: three in a row close the host for 5 s, doubling to 5 min. A `4xx` caller outcome such as a missing issue, merge conflict, validation failure or permission denial does not count.
+- Rate limits close the bucket: `429`, primary-limit `403` headers, `retry-after`, or a secondary/abuse-limit message in an otherwise ambiguous `403` body. Non-rate-limit bodies remain available to caller-specific error formatting.
+- A refusal reaches the caller as `rate-limit:{"kind","bucket","retry_at","message"}`, identical on IPC and HTTP. The poller paces itself from the `graphql` and `core` buckets and skips an account whose `graphql` bucket is exhausted.
+- OAuth, account verification, update and release downloads and CI logs use `provider_gateway/direct.rs`. `provider_gateway/bypass_tests.rs` fails on a `.send()` to a GitHub host outside the gateway.
 
 ### Cached viewer login
 

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mockInvoke } from "../../../__tests__/mocks/tauri";
 import { createTasksQuery } from "../../../stores/tasksQuery";
 import type { WorkItem, WorkItemPage, WorkItemQuery } from "../../../types/work-items.gen";
 
@@ -213,4 +214,109 @@ it("gitlab_username_filters_remain_in_server_mode", async () => {
 		expect(model.state().items[0].assignees[0].id).toBe("2");
 		model.dispose();
 	}
+});
+
+// Catches: the previous error clears the moment a retry starts, so the view flashes red off and on.
+it("error_stays_visible_while_no_new_request_runs", async () => {
+	const retry = deferred();
+	let fail = true;
+	const provider = source("a", () => {
+		if (fail) return Promise.reject(new Error("offline"));
+		return retry.promise;
+	});
+	const model = createTasksQuery();
+	await model.select(provider, query);
+	expect(model.state().error).toBe("offline");
+	fail = false;
+	const pending = model.refresh();
+	expect(model.state().loading).toBe(true);
+	expect(model.state().error).toBe("offline");
+	retry.resolve({ items: [item("ok")], nextCursor: null });
+	await pending;
+	expect(model.state().error).toBeNull();
+});
+
+describe("Tasks local projection transport", () => {
+	const localSource = (list: (q: WorkItemQuery) => Promise<WorkItemPage>) => ({
+		...source("a", list),
+		fields: [],
+	});
+	const rateLimited = (status: number, extra: Record<string, unknown>) =>
+		Object.assign(new Error("GitHub request failed"), { status, ...extra });
+	beforeEach(() => {
+		mockInvoke.mockReset().mockImplementation(async (command: string, args?: unknown) =>
+			command === "project_work_items"
+				? {
+						groups: [
+							{
+								id: "all",
+								name: "All",
+								items: (args as { input: { items: WorkItem[] } }).input.items,
+							},
+						],
+						nextCursor: null,
+					}
+				: undefined,
+		);
+	});
+	afterEach(() => mockInvoke.mockReset().mockResolvedValue(undefined));
+
+	// Catches: collection runs before the page cache check, so a repeated query spends the scope again.
+	it("same_query_twice_collects_the_scope_once", async () => {
+		const list = vi.fn(async () => ({ items: [item("one")], nextCursor: null, total: 1 }));
+		const model = createTasksQuery();
+		await model.select(localSource(list), query);
+		await model.select(localSource(list), query);
+		expect(model.state().local).toBe(true);
+		expect(model.state().items.map((row) => row.key)).toEqual(["one"]);
+		expect(list).toHaveBeenCalledTimes(1);
+	});
+
+	// Catches: collection keeps paging after a 403/429, or the error changes on every retry, or refresh stays blocked.
+	it.each([
+		[429, { retryAfter: "90" }],
+		[403, { resetAt: String(Math.floor(Date.now() / 1000) + 600) }],
+	])("status_%s_stops_collection_with_a_stable_rate_limit_error", async (status, extra) => {
+		const list = vi.fn(async (q: WorkItemQuery) => {
+			if (q.cursor) throw rateLimited(status, extra);
+			return { items: [item("one")], nextCursor: "page2", total: 2 };
+		});
+		const model = createTasksQuery();
+		await model.select(localSource(list), query);
+		expect(list).toHaveBeenCalledTimes(2);
+		const message = model.state().error;
+		expect(message).toMatch(/^GitHub rate limit — retry after \d{2}:\d{2}$/);
+		await model.select(localSource(list), query);
+		expect(list).toHaveBeenCalledTimes(2);
+		expect(model.state().error).toBe(message);
+		await model.refresh();
+		expect(list).toHaveBeenCalledTimes(4);
+	});
+
+	// Catches: every 403 is reported as a rate limit although it is a permission error.
+	it("plain_403_is_not_a_rate_limit", async () => {
+		const model = createTasksQuery();
+		await model.select(
+			localSource(async () => {
+				throw rateLimited(403, {});
+			}),
+			query,
+		);
+		expect(model.state().error).toBe("GitHub request failed");
+	});
+});
+
+describe("typed gateway limit", () => {
+	// Catches: the typed rate_limited error is read as a generic failure and the default 60 s guess replaces its retry_at.
+	it("honours retry_at of a typed rate_limited error and exposes it", async () => {
+		const retryAt = Date.now() + 600_000;
+		const list = vi.fn(async () => {
+			throw { status: 429, kind: "rate_limited", bucket: "core", retry_at: retryAt };
+		});
+		const model = createTasksQuery();
+		await model.select(source("a", list), query);
+		expect(model.state().limit).toEqual({ kind: "rate_limited", bucket: "core", until: retryAt });
+		await model.select(source("a", list), query);
+		expect(list).toHaveBeenCalledTimes(1);
+	});
 });

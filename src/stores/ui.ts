@@ -271,8 +271,10 @@ function createUIStore() {
 				appLogger.debug("store", "Failed to decode Tasks view preference", err);
 			}
 		}
+		// Only a real Tasks change reloads the list; an unrelated remote save must not.
+		const tasksChanged = JSON.stringify(taskPreferences) !== JSON.stringify(state.tasksViewPreferences);
 		setState("tasksViewPreferences", reconcile(taskPreferences));
-		setState("tasksPreferencesRevision", (revision) => revision + 1);
+		if (tasksChanged) setState("tasksPreferencesRevision", (revision) => revision + 1);
 		if (loaded) {
 			if (loaded.sidebar_visible !== undefined) {
 				setState("sidebarVisible", loaded.sidebar_visible);

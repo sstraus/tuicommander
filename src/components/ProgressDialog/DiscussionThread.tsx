@@ -24,10 +24,12 @@ function report(title: string, error: unknown): void {
 
 /** A Discussion thread opened inline under its journal entry. */
 export const DiscussionThread: Component<DiscussionThreadProps> = (props) => {
-	const [thread] = createResource(
+	const [resource] = createResource(
 		() => ({ id: props.entryId, revision: props.revision }),
 		({ id }) => discussionStore.get(id),
 	);
+	/** Reading an errored resource rethrows, so every read goes through this guard. */
+	const thread = () => (resource.error ? undefined : resource());
 	const [followUp, setFollowUp] = createSignal("");
 	const lastAnswer = () => {
 		const turns = thread()?.turns ?? [];
@@ -61,8 +63,8 @@ export const DiscussionThread: Component<DiscussionThreadProps> = (props) => {
 
 	return (
 		<div class={s.thread}>
-			<Show when={thread.error}>
-				<p class={s.error}>{String(thread.error)}</p>
+			<Show when={resource.error}>
+				<p class={s.error}>{String(resource.error)}</p>
 			</Show>
 			<For each={thread()?.turns ?? []}>
 				{(turn) => (

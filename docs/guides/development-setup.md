@@ -412,6 +412,14 @@ Test scratch comes from your temp directory, never from `$HOME`:
 | root | an inherited `TUIC_TEST_TMP_ROOT`, used as is and never deleted → `scripts/with-test-tmp.sh`: a fresh `<base>/tuic-run.XXXXXX`, removed on exit; nextest without the wrapper, a bare test binary and the shell tests: the per-checkout `<base>/tuic-co-<checkout hash>` |
 | Unix sockets | `TUIC_TEST_SOCKET_ROOT` → a private, random `<host temp>/t.XXXXXX` per test process (mode 0700, removed when the process exits) → fail; never `/tmp` |
 
+When the host temp dir is too long for the socket mbx binds inside the per-run
+root (default macOS `/private/var/folders/xx/.../T` is 56 bytes; the budget is 51)
+and `mbx` is on `PATH`, `scripts/with-test-tmp.sh` puts the run dir in a short
+private per-user directory, `/tmp/tuic-<uid>` (mode 0700, outside `$HOME` and the
+checkout), instead of failing. It refuses that directory when it is a symlink or
+not owned by you, and fails only when even it does not fit.
+`TUIC_TEST_FALLBACK_PARENT` replaces `/tmp` (the shell test uses it).
+
 `scripts/with-test-tmp.sh`, `src-tauri/scripts/nextest-test-tmp.{sh,ps1}`,
 `scripts/mutants.sh` and the shell tests (all through `scripts/test-tmp-lib.sh`),
 `tuic-test-support` and `scripts/test-tmp-root.mjs` (vitest, cycle checker) all

@@ -160,7 +160,7 @@ export const Dropdown: Component<DropdownProps> = (props) => {
 			<div
 				ref={dropdownRef}
 				style={props.anchor ? placement() : undefined}
-				class={cx(s.dropdown, props.position === "top" && s.top, props.class)}
+				class={cx(s.dropdown, props.anchor && s.anchored, props.position === "top" && s.top, props.class)}
 				role="menu"
 				aria-label={props["aria-label"]}
 				onKeyDown={handleKeyDown}

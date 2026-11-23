@@ -1145,20 +1145,52 @@ pub(super) fn claude_composer_holds_text(rows: &[String]) -> bool {
     .is_some()
 }
 
-// DEFERRED (2026-11-21) — agy screen detection is UNVERIFIED. The installed agy
-// 1.5.10 was not signed in, so no working/idle/awaiting capture exists yet; this
-// reuses the bare `>` composer rule until `.tcap` fixtures prove the real chrome.
-fn agy_prompt_present(rows: &[String]) -> bool {
-    find_live_prompt_row(rows, 3, |row| {
-        let t = row.trim_start();
-        t == ">" || t.starts_with("> ")
-    })
-    .is_some()
+fn is_agy_rule_row(row: &str) -> bool {
+    let row = row.trim_end();
+    row.chars().count() >= 20 && row.chars().all(|c| c == '\u{2500}')
 }
 
-/// Prompt-based only — see `detect_claude_screen_activity` for the rationale.
+/// The live agy composer: a `>` row with a rule above it and a rule within
+/// four rows below it (a draft can wrap). The echo of a submitted prompt in the
+/// transcript has a rule above it only. Returns the prompt row and the lower rule.
+fn find_agy_composer(rows: &[String], content_end: usize) -> Option<(usize, usize)> {
+    let refs: Vec<&str> = rows[..content_end].iter().map(String::as_str).collect();
+    let prompt = crate::chrome::find_input_box_prompt_row(&refs)?;
+    let text = rows[prompt].trim_end();
+    if !(text == ">" || text.starts_with("> "))
+        || prompt == 0
+        || !is_agy_rule_row(&rows[prompt - 1])
+    {
+        return None;
+    }
+    let bottom =
+        (prompt + 1..content_end.min(prompt + 5)).find(|&index| is_agy_rule_row(&rows[index]))?;
+    Some((prompt, bottom))
+}
+
+/// Recorded from agy 1.5.10 (`agy-1.5.10-*.tcap`). The composer stays on the
+/// screen while a turn runs, so the prompt alone does not mean ready: the hint
+/// row below the composer reads `esc to cancel` for the whole turn, dialogs
+/// included, and `? for shortcuts` (or nothing, with a draft) when the composer
+/// is ready. The workspace-trust, approval and question pickers draw a `> `
+/// cursor row with no rules around it; that row is not a composer.
+///
+/// agy has a user status-line command. Its rows are not recorded, so the hint
+/// is read from every row below the composer, and from the last three rows when
+/// a dialog replaces the composer.
 pub(super) fn detect_agy_screen_activity(rows: &[String]) -> AgentScreenActivity {
-    if agy_prompt_present(rows) {
+    let content_end = rows
+        .iter()
+        .rposition(|row| !row.trim().is_empty())
+        .map_or(0, |index| index + 1);
+    let composer = find_agy_composer(rows, content_end);
+    let hint_start = composer.map_or(content_end.saturating_sub(3), |(_, bottom)| bottom + 1);
+    if rows[hint_start..content_end]
+        .iter()
+        .any(|row| row.starts_with("esc to cancel"))
+    {
+        AgentScreenActivity::Working
+    } else if composer.is_some() {
         AgentScreenActivity::Ready
     } else {
         AgentScreenActivity::Unknown

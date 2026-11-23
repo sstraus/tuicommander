@@ -6,7 +6,9 @@ use crate::plugins::PluginManifest;
 use reqwest::header::HeaderValue;
 
 /// The credential of one account, bound to the API base it may be sent to.
-pub(super) struct AccountAuth {
+pub(crate) struct AccountAuth {
+    account_id: String,
+    provider: String,
     base: url::Url,
     header: HeaderValue,
     /// Every form of the secret that may appear on the wire, for redaction.
@@ -16,7 +18,7 @@ pub(super) struct AccountAuth {
 /// Resolve `account_id` for a request from the plugin that owns `manifest`.
 /// The provider must be declared in the on-disk manifest (consent); the token
 /// is re-read on every request, so a re-entered credential applies at once.
-pub(super) async fn resolve(
+pub(crate) async fn resolve(
     state: &crate::AppState,
     manifest: &PluginManifest,
     account_id: &str,
@@ -47,6 +49,8 @@ pub(super) async fn resolve(
     header.set_sensitive(true);
     secrets.push(token);
     Ok(AccountAuth {
+        account_id: account_id.to_owned(),
+        provider: account.provider,
         base,
         header,
         secrets,
@@ -77,7 +81,7 @@ fn api_base(account: &Account) -> Result<url::Url, String> {
 /// `Url::parse` has already normalised `..` and `%2e` segments. A redirect hop
 /// under the base is followed; reqwest drops `Authorization` on any hop that
 /// changes scheme, host or port (`redirect::remove_sensitive_headers`).
-pub(super) fn is_under(url: &url::Url, base: &url::Url) -> bool {
+pub(crate) fn is_under(url: &url::Url, base: &url::Url) -> bool {
     url.scheme() == base.scheme()
         && url.host_str() == base.host_str()
         && url.port_or_known_default() == base.port_or_known_default()
@@ -88,7 +92,7 @@ pub(super) fn is_under(url: &url::Url, base: &url::Url) -> bool {
 
 impl AccountAuth {
     /// The account host rule: the credential goes only under the account API base.
-    pub(super) fn check_url(&self, url: &str) -> Result<(), String> {
+    pub(crate) fn check_url(&self, url: &str) -> Result<(), String> {
         let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL: {e}"))?;
         if !is_under(&parsed, &self.base) {
             return Err(format!(
@@ -99,16 +103,24 @@ impl AccountAuth {
         Ok(())
     }
 
-    pub(super) fn base(&self) -> url::Url {
+    pub(crate) fn account_id(&self) -> &str {
+        &self.account_id
+    }
+
+    pub(crate) fn provider(&self) -> &str {
+        &self.provider
+    }
+
+    pub(crate) fn base(&self) -> url::Url {
         self.base.clone()
     }
 
-    pub(super) fn header(&self) -> HeaderValue {
+    pub(crate) fn header(&self) -> HeaderValue {
         self.header.clone()
     }
 
     /// Remove every form of the secret from text a provider sent back.
-    pub(super) fn redact(&self, text: String) -> String {
+    pub(crate) fn redact(&self, text: String) -> String {
         self.secrets
             .iter()
             .filter(|secret| !secret.is_empty())

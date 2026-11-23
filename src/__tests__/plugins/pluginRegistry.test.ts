@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "../../invoke";
 import { dashboardRegistry } from "../../plugins/dashboardRegistry";
 import { filePreviewRegistry } from "../../plugins/filePreviewRegistry";
+import { forceFreshness } from "../../plugins/freshness";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { createInMemoryWorkItemProvider } from "../../plugins/testing/inMemoryWorkItemProvider";
@@ -1896,6 +1897,33 @@ describe("PluginHost — Tier 3c httpFetch capability gating", () => {
 		expect(httpCall?.[1]).not.toHaveProperty("allowedUrls");
 	});
 
+	// Catches: Refresh not reaching the gateway, or a plain read asking for a fresh one.
+	it("sends x-tuic-freshness only for a forced option or a forced signal", async () => {
+		let host: PluginHost | null = null;
+		await pluginRegistry.register(
+			makePlugin("ext", (h) => {
+				host = h;
+			}),
+			["net:http"],
+		);
+		const { invoke } = await import("../../invoke");
+		const sent = () => {
+			const calls = (invoke as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter(
+				(c) => c[0] === "plugin_http_fetch",
+			);
+			const last = calls.at(-1) ?? [];
+			return (last[1] as { headers: Record<string, string> | null }).headers;
+		};
+		await host!.httpFetch("https://example.com/a", { headers: { Accept: "x" } });
+		expect(sent()).toEqual({ Accept: "x" });
+		await host!.httpFetch("https://example.com/a", { freshness: "force", headers: { Accept: "x" } });
+		expect(sent()).toEqual({ Accept: "x", "x-tuic-freshness": "force" });
+		const refresh = new AbortController();
+		forceFreshness(refresh.signal);
+		await host!.httpFetch("https://example.com/a", { signal: refresh.signal });
+		expect(sent()).toEqual({ "x-tuic-freshness": "force" });
+	});
+
 	// Catches: the account option dropped before IPC, so Rust sends the request unauthenticated.
 	it("forwards the account id to the Rust command", async () => {
 		let host: PluginHost | null = null;
@@ -1910,6 +1938,23 @@ describe("PluginHost — Tier 3c httpFetch capability gating", () => {
 		expect(invoke).toHaveBeenCalledWith(
 			"plugin_http_fetch",
 			expect.objectContaining({ account: "acct-1", pluginId: "ext" }),
+		);
+	});
+
+	// Catches: timeoutMs/maxResponseBytes dropped before IPC, so the host never honours them.
+	it("forwards the timeout and size limits to the Rust command", async () => {
+		let host: PluginHost | null = null;
+		await pluginRegistry.register(
+			makePlugin("ext", (h) => {
+				host = h;
+			}),
+			["net:http"],
+		);
+		await host!.httpFetch("https://api.example.test/data", { timeoutMs: 5000, maxResponseBytes: 1024 });
+		const { invoke } = await import("../../invoke");
+		expect(invoke).toHaveBeenCalledWith(
+			"plugin_http_fetch",
+			expect.objectContaining({ timeoutMs: 5000, maxResponseBytes: 1024, pluginId: "ext" }),
 		);
 	});
 });

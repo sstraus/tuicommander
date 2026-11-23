@@ -64,6 +64,18 @@ pub(crate) const CHILD_CROSS_PROJECT: &str = "cross-project child dispatch is no
 pub(crate) const OPERATOR_WAIT_TYPED: &str =
     "operator wait requires typed operator_answer, not effect approval";
 
+pub(crate) const PR_URL_INVALID: &str =
+    "pull request URL must be https://<host>/<owner>/<repo>/pull/<number>: ";
+pub(crate) const PR_REPOSITORY_MISMATCH: &str =
+    "pull request does not belong to the GitHub repository of this project: ";
+pub(crate) const PR_REVIEW_NOT_CONFIGURED: &str =
+    "no GitHub pull_request trigger binding in this project reviews ";
+pub(crate) const PR_REVIEW_BINDING_NOT_FOUND: &str =
+    "pull_request trigger binding not found for this repository: ";
+pub(crate) const PR_REVIEW_AMBIGUOUS: &str =
+    "several pull_request trigger bindings review this repository; choose one of: ";
+pub(crate) const PR_NOT_OPEN: &str = "pull request is not open: #";
+
 pub(crate) const RUN_FOREIGN_PROJECT: &str = "neutral run does not belong to project";
 pub(crate) const PUBLICATION_FOREIGN_PROJECT: &str =
     "neutral publication does not belong to project";
@@ -79,6 +91,8 @@ const NOT_FOUND: &[&str] = &[
     PRESET_NOT_FOUND,
     RUN_NOT_FOUND,
     ANSWER_BINDING_NOT_FOUND,
+    PR_REVIEW_NOT_CONFIGURED,
+    PR_REVIEW_BINDING_NOT_FOUND,
 ];
 const CONFLICT: &[&str] = &[
     MUTATION_RESOLUTION_STATE,
@@ -93,6 +107,8 @@ const CONFLICT: &[&str] = &[
     RUN_TERMINAL,
     RUN_DEADLINE_ELAPSED,
     OPERATION_VERSION_STALE,
+    PR_REVIEW_AMBIGUOUS,
+    PR_NOT_OPEN,
 ];
 const INVALID: &[&str] = &[
     MUTATION_RESOLUTION_EVIDENCE,
@@ -105,6 +121,8 @@ const INVALID: &[&str] = &[
     DELIVERY_KEY_INVALID,
     CHILD_CROSS_PROJECT,
     OPERATOR_WAIT_TYPED,
+    PR_URL_INVALID,
+    PR_REPOSITORY_MISMATCH,
 ];
 const FORBIDDEN: &[&str] = &[
     RUN_FOREIGN_PROJECT,
@@ -174,6 +192,21 @@ mod tests {
             (DELIVERY_KEY_INVALID, Refusal::Invalid),
             (CHILD_CROSS_PROJECT, Refusal::Invalid),
             (OPERATOR_WAIT_TYPED, Refusal::Invalid),
+            (
+                "pull request URL must be https://<host>/<owner>/<repo>/pull/<number>: x",
+                Refusal::Invalid,
+            ),
+            (PR_REPOSITORY_MISMATCH, Refusal::Invalid),
+            (
+                "no GitHub pull_request trigger binding in this project reviews o/r",
+                Refusal::NotFound,
+            ),
+            (PR_REVIEW_BINDING_NOT_FOUND, Refusal::NotFound),
+            (
+                "several pull_request trigger bindings review this repository; choose one of: a, b",
+                Refusal::Conflict,
+            ),
+            ("pull request is not open: #7", Refusal::Conflict),
             (RUN_FOREIGN_PROJECT, Refusal::Forbidden),
             (PUBLICATION_FOREIGN_PROJECT, Refusal::Forbidden),
             (OPERATOR_CONSENT_OWNER, Refusal::Forbidden),

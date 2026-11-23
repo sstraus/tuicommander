@@ -45,6 +45,25 @@ mkdir -p "$test_tmp_base"
 # machines have none). An inherited TUIC_TEST_TMP_ROOT is the caller's choice.
 tuic_run_dir_len=15
 tuic_mbx_room=67
+# The host temp dir is over the mbx budget (default macOS: /private/var/folders/xx/.../T,
+# 56 bytes): fall back to a short private per-user directory outside $HOME and the
+# checkout, <parent>/tuic-<uid>, mode 0700. Refused when it exists and is a symlink or
+# not ours, and when even it leaves no room. Prints the directory, or fails.
+# TUIC_TEST_FALLBACK_PARENT replaces the parent (the shell test uses it).
+tuic_short_private_base() {
+  local dir
+  dir="${TUIC_TEST_FALLBACK_PARENT:-/tmp}/tuic-$(id -u)"
+  if [[ -L "$dir" ]] || { [[ -e "$dir" ]] && { [[ ! -d "$dir" ]] || [[ ! -O "$dir" ]]; }; }; then
+    echo "with-test-tmp.sh: refusing $dir: not a directory owned by you" >&2
+    return 1
+  fi
+  (( ${#dir} + 1 + tuic_run_dir_len <= tuic_mbx_room )) || return 1
+  mkdir -p -m 700 "$dir" && chmod 700 "$dir" || return 1
+  # Physical spelling (macOS /tmp -> /private/tmp) is what the socket path really holds.
+  dir="$(cd "$dir" && pwd -P)"
+  (( ${#dir} + 1 + tuic_run_dir_len <= tuic_mbx_room )) || return 1
+  printf '%s\n' "$dir"
+}
 tuic_base_is_host=0
 if [[ -z "${TUIC_TEST_TMP_ROOT:-}" ]]; then
   physical_base="$(cd "$test_tmp_base" && pwd -P)"
@@ -54,8 +73,12 @@ if [[ -z "${TUIC_TEST_TMP_ROOT:-}" ]]; then
       test_tmp_base="$host"
       tuic_base_is_host=1
     elif command -v mbx >/dev/null 2>&1; then
-      echo "with-test-tmp.sh: $physical_host is ${#physical_host} bytes; the mbx socket path limit leaves $((tuic_mbx_room - 1 - tuic_run_dir_len)) for the temp dir. Set TMPDIR to a shorter directory." >&2
-      exit 1
+      if short_base="$(tuic_short_private_base)"; then
+        test_tmp_base="$short_base"
+      else
+        echo "with-test-tmp.sh: $physical_host is ${#physical_host} bytes and no short private directory fits; the mbx socket path limit leaves $((tuic_mbx_room - 1 - tuic_run_dir_len)) for the temp dir. Set TMPDIR to a shorter directory." >&2
+        exit 1
+      fi
     fi
   fi
 fi

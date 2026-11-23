@@ -1,6 +1,9 @@
 //! Verification returns identity only, never a provider response body or token.
 use super::model::{Account, AuthKind};
 use super::providers::{ProviderDescriptor, descriptor};
+use crate::github::gateway::Origin;
+use crate::provider_gateway::direct::{self, Direct};
+use tuic_gateway::model::Provider;
 
 /// A verification request has one fixed deadline, no redirects, and a small body.
 const VERIFY_TIMEOUT_SECS: u64 = 30;
@@ -16,18 +19,25 @@ async fn verify_with_descriptor(
     token: &str,
     provider: &ProviderDescriptor,
 ) -> Result<String, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(VERIFY_TIMEOUT_SECS))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|_| "Account verifier is unavailable")?;
+    // A credential must not follow a redirect: the verifier never does.
+    let call = Direct::new(
+        Origin::interactive("accounts.verify"),
+        if account.provider == "github" {
+            Provider::GitHub
+        } else {
+            Provider::Generic
+        },
+        &account.id,
+    )
+    .no_redirect()
+    .timeout(std::time::Duration::from_secs(VERIFY_TIMEOUT_SECS));
     if account.provider == "github" {
         let host = account
             .host
             .strip_prefix("https://")
             .and_then(crate::github_account::GitHubHost::new)
             .ok_or("GitHub requires a canonical HTTPS hostname")?;
-        return crate::github_account::fetch_account_login(&client, &host, token)
+        return crate::github_account::fetch_account_login(call, &host, token)
             .await?
             .ok_or_else(|| "Account verification did not return a viewer identity".into());
     }
@@ -36,8 +46,7 @@ async fn verify_with_descriptor(
         account.host,
         provider.verify.path.trim_start_matches('/')
     );
-    let request = client
-        .get(url)
+    let request = direct::builder(reqwest::Method::GET, url)
         .header("User-Agent", "TUICommander")
         .header("Accept", "application/json");
     let request = match account.kind {
@@ -50,8 +59,8 @@ async fn verify_with_descriptor(
         ),
         _ => request.bearer_auth(token),
     };
-    let response = request
-        .send()
+    let response = call
+        .send(request)
         .await
         .map_err(|_| "Account verification could not reach the site")?;
     read_verified_identity(response, &provider.verify.login_pointer, token).await

@@ -4,6 +4,7 @@ use super::native_host::NativeBinding;
 use super::native_issue_service::{IssueChildReceipt, IssueChildRequest, IssueServices};
 use super::native_issue_triage::{owned, require_triage};
 use super::neutral_effects::EffectKey;
+use crate::github::Origin;
 use crate::github_pr_api::{PrApi, RepoApi};
 use crate::workflows::review_verdict::TriageOutcome;
 use serde_json::Value;
@@ -54,7 +55,12 @@ pub(super) async fn handoff(
         .context
         .authorize(&bound.store, key, "native.issue.handoff", request, None)?;
     let state = bound.context.current(None)?;
-    let api = RepoApi::resolve(&state, &bound.context.workspace_path().to_string_lossy()).await?;
+    let api = RepoApi::resolve(
+        &state,
+        &bound.context.workspace_path().to_string_lossy(),
+        Origin::background("workflow.native_issue_handoff.handoff"),
+    )
+    .await?;
     if api.account.id != request.source.account
         || format!("{}/{}", api.owner, api.repo).to_ascii_lowercase() != request.source.repository
     {

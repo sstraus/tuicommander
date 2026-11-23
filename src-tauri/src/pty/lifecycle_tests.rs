@@ -1031,7 +1031,7 @@ fn replay_sanitized_agent_trace(agent: &str, steps: &[SanitizedTraceStep]) -> Si
                 let rows = match agent {
                     "codex" => vec!["sanitized final".into(), "› sanitized prompt".into()],
                     "claude" => vec!["sanitized final".into(), "❯".into()],
-                    "agy" => vec!["> Type your message".into()],
+                    "agy" => vec!["─".repeat(80), ">".into(), "─".repeat(80)],
                     _ => Vec::new(),
                 };
                 if detect_agent_screen_activity(Some(agent), &rows) == AgentScreenActivity::Ready {

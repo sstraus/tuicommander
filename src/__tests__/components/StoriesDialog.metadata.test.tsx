@@ -12,6 +12,7 @@ vi.mock("../../invoke", () => ({ invoke: vi.fn() }));
 vi.mock("../../stores/modalStack", () => ({ registerModal: vi.fn() }));
 vi.mock("../../stores/appLogger", () => ({ appLogger: { warn: vi.fn() } }));
 vi.mock("../../stores/terminals", () => ({
+	registerBlockFoldingGate: vi.fn(),
 	terminalsStore: {
 		state: {
 			terminals: {

@@ -3,6 +3,7 @@
 use super::native_test_support::Fixture;
 use super::neutral_execution::{NeutralExecution, NeutralStatus};
 use super::neutral_runtime::NeutralHost;
+use crate::github::Origin;
 use crate::github_pr_api::{PrApi, RepoApi};
 use crate::workflows::neutral_api::model::NeutralAction;
 use crate::workflows::{
@@ -130,7 +131,15 @@ async fn sandbox_labelled_issue_gets_one_triage_comment_and_no_second_run() {
     .unwrap();
     *f.owner.state.lock() = std::sync::Arc::downgrade(&f.state);
     f.state.workflow_runtime.attach_owner(f.owner.clone());
-    let api = RepoApi::resolve(&f.state, &project).await.unwrap();
+    let api = RepoApi::resolve(
+        &f.state,
+        &project,
+        Origin::interactive(
+            "test.sandbox_labelled_issue_gets_one_triage_comment_and_no_second_run",
+        ),
+    )
+    .await
+    .unwrap();
     assert_eq!(format!("{}/{}", api.owner, api.repo), REPO);
     let marker = format!("wer3036-{}", &uuid::Uuid::new_v4().to_string()[..8]);
     let done = format!("{marker}-done");
@@ -205,7 +214,7 @@ async fn sandbox_labelled_issue_gets_one_triage_comment_and_no_second_run() {
         )
         .unwrap();
     // The real poll records the baseline before the issue exists.
-    crate::workflows::github_poll::observe(&f.state, &project, GithubResource::Issue)
+    crate::workflows::github_poll::observe(&f.state, &project, GithubResource::Issue, None)
         .await
         .unwrap();
     let created = api

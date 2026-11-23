@@ -29,6 +29,7 @@ import { getShellFamily, sendCommand } from "../utils/sendCommand";
 import { dashboardRegistry } from "./dashboardRegistry";
 import { fileIconRegistry } from "./fileIconRegistry";
 import { filePreviewRegistry } from "./filePreviewRegistry";
+import { withFreshness } from "./freshness";
 import { markdownProviderRegistry } from "./markdownProviderRegistry";
 import { guardPluginAsyncCallback, guardPluginCallback, guardPluginPredicate } from "./pluginCallbackGuard";
 import type {
@@ -968,9 +969,11 @@ function createPluginRegistry() {
 					const response = await invoke<HttpResponse>("plugin_http_fetch", {
 						url,
 						method: options?.method ?? null,
-						headers: options?.headers ?? null,
+						headers: withFreshness(options),
 						body: options?.body ?? null,
 						account: options?.account ?? null,
+						timeoutMs: options?.timeoutMs ?? null,
+						maxResponseBytes: options?.maxResponseBytes ?? null,
 						pluginId,
 						requestId,
 					});

@@ -708,6 +708,51 @@ pub fn intake_issues_section(label: &str, after: Option<&str>) -> String {
     )
 }
 
+/// Pages of 100 open PRs the poller reads before it calls a list incomplete.
+pub const INTAKE_PR_MAX_PAGES: usize = 10;
+
+/// The fields a workflow trigger needs from one open PR. The body is reduced to a digest.
+#[derive(Clone, Debug, PartialEq)]
+pub struct IntakePullRequest {
+    pub number: i64,
+    pub title: String,
+    pub requirements_digest: String,
+    pub labels: Vec<String>,
+    pub head_sha: String,
+    pub base_sha: String,
+    pub updated_at: String,
+}
+
+/// One page of open PRs for a workflow trigger source.
+pub fn intake_pull_requests_section(after: Option<&str>) -> String {
+    let after = serde_json::to_string(&after).expect("a cursor is a JSON string or null");
+    format!(
+        "intakePullRequests: pullRequests(first: 100, states: [OPEN], after: {after}, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{\n      nodes {{ number title body updatedAt headRefOid baseRefOid labels(first: 10) {{ nodes {{ name }} pageInfo {{ hasNextPage }} }} }}\n      pageInfo {{ hasNextPage endCursor }}\n    }}"
+    )
+}
+
+/// Parse one `intakePullRequests` node. `None` when the node cannot prove a
+/// complete snapshot: a missing field or a label list cut at ten.
+pub fn parse_intake_pr_node(v: &serde_json::Value) -> Option<IntakePullRequest> {
+    if v["labels"]["pageInfo"]["hasNextPage"].as_bool() != Some(false) {
+        return None;
+    }
+    let title = v["title"].as_str()?.to_string();
+    Some(IntakePullRequest {
+        number: v["number"].as_i64()?,
+        requirements_digest: requirements_digest(&title, v["body"].as_str()?),
+        title,
+        labels: v["labels"]["nodes"]
+            .as_array()?
+            .iter()
+            .map(|l| l["name"].as_str().map(String::from))
+            .collect::<Option<_>>()?,
+        head_sha: v["headRefOid"].as_str()?.to_string(),
+        base_sha: v["baseRefOid"].as_str()?.to_string(),
+        updated_at: v["updatedAt"].as_str()?.to_string(),
+    })
+}
+
 /// Build a batched GraphQL query for issues only (on-demand Tauri command path).
 /// Uses `repository().issues()` — cheaper than `search()` in GraphQL points.
 pub fn build_multi_repo_issues_query(
@@ -753,6 +798,7 @@ pub fn build_unified_batch_query(
         viewer,
         hide_drafts,
         None,
+        &Default::default(),
     )
 }
 
@@ -764,6 +810,7 @@ pub fn build_unified_batch_query_with_intake(
     viewer: &str,
     hide_drafts: bool,
     intake_label: Option<&str>,
+    intake_pr_repos: &std::collections::BTreeSet<String>,
 ) -> (String, Vec<(String, String)>) {
     let states = if include_merged {
         "[OPEN, MERGED]"
@@ -814,6 +861,9 @@ pub fn build_unified_batch_query_with_intake(
         if let Some(label) = intake_label {
             issues_section.push_str(&format!("\n    {}", intake_issues_section(label, None)));
         }
+        if intake_pr_repos.contains(&format!("{owner}/{name}").to_ascii_lowercase()) {
+            issues_section.push_str(&format!("\n    {}", intake_pull_requests_section(None)));
+        }
         parts.push(format!(
             "  {alias}: repository(owner: \"{owner}\", name: \"{name}\") {{\n    mergeCommitAllowed\n    squashMergeAllowed\n    rebaseMergeAllowed\n    pullRequests(first: {pr_first}, states: {states}, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{\n      nodes {{ {pr_node_fields} }}\n    }}\n    closedPullRequests: pullRequests(first: 10, states: [CLOSED], orderBy: {{field: UPDATED_AT, direction: DESC}}) {{\n      nodes {{ {pr_node_fields} }}\n    }}{issues_section}\n  }}"
         ));
@@ -863,6 +913,9 @@ pub struct BatchPollResult {
     /// Complete label-filtered machine-owned intake snapshots; never delivered to clients.
     pub intake_issues: std::collections::HashMap<String, Vec<GitHubIssue>>,
     pub prs: std::collections::HashMap<String, Vec<BranchPrStatus>>,
+    /// Complete open-PR lists for repositories with an enabled PR source; a repository
+    /// whose list the poll could not prove complete has no entry.
+    pub intake_prs: std::collections::HashMap<String, Vec<IntakePullRequest>>,
     /// Client snapshots; disabled intake paths carry empty lists to clear stale badges.
     pub issues: std::collections::HashMap<String, Vec<GitHubIssue>>,
 }
@@ -1061,6 +1114,24 @@ mod tests {
             "line endings do not change the requirements"
         );
         assert!(intake_issues_section("run", None).contains("body"));
+    }
+
+    // Catches: a PR with more than ten labels passing as a complete snapshot, so a label
+    // trigger would miss it.
+    #[test]
+    fn intake_pr_node_with_cut_labels_is_incomplete() {
+        let node = |more: bool| {
+            serde_json::json!({
+                "number": 5, "title": "t", "body": "b", "updatedAt": "2026-11-11T10:00:00Z",
+                "headRefOid": "a", "baseRefOid": "b",
+                "labels": {"nodes": [{"name": "bug"}], "pageInfo": {"hasNextPage": more}}
+            })
+        };
+        let pr = parse_intake_pr_node(&node(false)).unwrap();
+        assert_eq!(pr.labels, ["bug"]);
+        assert_eq!(pr.requirements_digest, requirements_digest("t", "b"));
+        assert!(parse_intake_pr_node(&node(true)).is_none());
+        assert!(intake_pull_requests_section(Some("c1")).contains("after: \"c1\""));
     }
 
     // Catches: triage polls retain the intake label filter or omit author-association evidence.

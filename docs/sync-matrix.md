@@ -516,6 +516,21 @@ When modifying git operations, worktree logic, or GitHub API:
 | `docs/FEATURES.md` | Sections 7 (Git) and 8 (GitHub) |
 | `docs/api/tauri-commands.md` | Git/worktree commands |
 
+### Provider gateway (outbound GitHub, GitLab, Jira and plugin requests)
+When changing `src-tauri/crates/tuic-gateway/`, `src-tauri/src/provider_gateway/`, `github_gateway.rs`, a route, a bucket, a caller id, the typed refusal shape, or when adding an outbound provider request:
+
+| File | What to update |
+|------|----------------|
+| `docs/backend/provider-gateway.md` | Request model, buckets, pressure levels, admission table, cache tiers, invalidation, metrics, bypass allow-list, the "Not wired" list |
+| `docs/backend/github.md` | "Provider gateway coverage" |
+| `docs/plugins.md` | `httpFetch` "Gateway" paragraph and the header table (`x-tuic-cache`, `x-tuic-gateway`, `x-tuic-freshness`) |
+| `docs/backend/workflows.md` | "Provider gateway and workflow connectors" |
+| `docs/backend/diagnostics.md`, `docs/api/http-api.md`, `docs/api/tauri-commands.md` | The stats snapshot shape (`provider_gateway/stats.rs`) |
+| `docs/backend/persistence.md` | `provider_cache.sqlite3` retention |
+| `src-tauri/src/provider_gateway/bypass_tests.rs` | `ALLOWED` and `GATEWAY_ONLY` for a new sender; an allow-list entry needs its reason |
+| `src/transport/limitError.ts`, `src/components/ui/GatewayNotice.tsx` | The typed refusal, identical over IPC and HTTP |
+| `to-test/misc-7.md` | "Provider gateway — Rust restart required" |
+
 ### Voice dictation, spoken replies and hands-free
 When modifying `src-tauri/src/dictation/**`, `src-tauri/crates/tuic-dictation/**`, or the Voice settings page (`DictationSettings.tsx`):
 

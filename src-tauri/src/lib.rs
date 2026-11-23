@@ -92,14 +92,13 @@ mod build_sidecars;
 mod dictation;
 pub(crate) mod dir_watcher;
 pub(crate) mod ego_cli;
-#[cfg(all(feature = "desktop", not(feature = "dictation")))]
-#[path = "dictation/ownership.rs"]
-mod input_ownership;
-pub(crate) use tuic_core::error_classification;
 pub(crate) mod frontend_liveness;
 pub(crate) mod fs;
 pub(crate) mod generators;
 pub(crate) mod git;
+#[cfg(all(feature = "desktop", not(feature = "dictation")))]
+#[path = "dictation/ownership.rs"]
+mod input_ownership;
 pub(crate) mod remote_transfer;
 pub(crate) use tuic_git::git_cli;
 pub(crate) mod git_graph;
@@ -119,6 +118,7 @@ pub(crate) mod github_pr_actions;
 pub(crate) mod github_pr_api;
 pub(crate) mod github_review_threads;
 pub(crate) mod pr_open_threads;
+pub(crate) mod work_item_visits;
 pub(crate) use tuic_git::github_debug;
 pub(crate) mod github_poller;
 #[cfg(feature = "desktop")]
@@ -185,6 +185,7 @@ pub(crate) mod private_scratch;
 pub(crate) use tuic_core::process_env;
 pub(crate) mod progress;
 pub(crate) mod prompt;
+pub(crate) mod provider_gateway;
 pub(crate) mod provider_quota;
 mod provider_quota_transport;
 pub(crate) mod pty;
@@ -2526,6 +2527,7 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             github_review_threads::set_pr_thread_resolved,
             github_review_threads::reply_pr_thread,
             github_review_threads::submit_pr_draft_review,
+            work_item_visits::visit_work_item,
             github::get_merged_prs,
             pr_review::run_pr_review,
             changelog::generate_changelog,
@@ -2816,6 +2818,7 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             plugin_exec::plugin_exec_cli,
             plugin_credentials::plugin_read_credential,
             registry::fetch_plugin_registry,
+            provider_gateway::stats::provider_gateway_stats,
             provider_quota_transport::get_provider_quotas,
             provider_quota_transport::get_session_quota_binding,
             provider_quota_transport::refresh_provider_quota,
@@ -3021,6 +3024,8 @@ fn build_remote_base_url(scheme: &str, host: &str, port: u16) -> String {
 /// Spawn background tasks shared by both desktop and headless modes.
 fn spawn_background_tasks(state: &Arc<AppState>) {
     stories::ingest::spawn();
+    state.gateway.spawn_maintenance();
+    provider_gateway::signals::spawn(state.clone());
     workflows::WorkflowRuntime::spawn(state);
     automations::runtime::AutomationRuntime::spawn(state);
     AppState::spawn_session_state_accumulator(state.clone());
@@ -3101,6 +3106,8 @@ pub fn set_password_interactive() -> anyhow::Result<()> {
 #[cfg(not(feature = "desktop"))]
 fn spawn_daemon_background_tasks(state: &Arc<AppState>) {
     stories::ingest::spawn();
+    state.gateway.spawn_maintenance();
+    provider_gateway::signals::spawn(state.clone());
     workflows::WorkflowRuntime::spawn(state);
     automations::runtime::AutomationRuntime::spawn(state);
     AppState::spawn_session_state_accumulator(state.clone());

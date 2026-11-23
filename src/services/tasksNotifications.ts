@@ -38,7 +38,11 @@ export const tasksNotifications = {
 				},
 			);
 			if (revisions.get(key) !== revision || !tasksNotifications.followed(ref)) return;
-			uiStore.setTaskViewPreference(key, { commentSnapshot: result.snapshot });
+			const previous = uiStore.state.tasksViewPreferences[key]?.commentSnapshot;
+			// An unchanged snapshot must not write preferences: the write reloads the Tasks list.
+			if (JSON.stringify(previous) !== JSON.stringify(result.snapshot)) {
+				uiStore.setTaskViewPreference(key, { commentSnapshot: result.snapshot });
+			}
 			if (result.notify && tasksNotifications.enabled()) {
 				notifyTasksItem({
 					isCurrent: () => tasksNotifications.enabled() && tasksNotifications.followed(ref),

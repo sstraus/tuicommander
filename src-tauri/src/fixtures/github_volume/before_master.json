@@ -1,0 +1,80 @@
+{
+  "tree": "master@128e2fc246919423879d5f8f2302501bf1da727e",
+  "scenarios": {
+    "cold_start": {
+      "wire": {
+        "sends": 2,
+        "rest": 0,
+        "graphql": 2,
+        "conditional": 0,
+        "not_modified": 0,
+        "limit_answers": 0
+      },
+      "workload": {}
+    },
+    "idle": {
+      "wire": {
+        "sends": 1,
+        "rest": 0,
+        "graphql": 1,
+        "conditional": 0,
+        "not_modified": 0,
+        "limit_answers": 0
+      },
+      "workload": {
+        "seconds": 60.202775667,
+        "repositories": 1
+      }
+    },
+    "pr_popover": {
+      "wire": {
+        "sends": 2,
+        "rest": 0,
+        "graphql": 2,
+        "conditional": 0,
+        "not_modified": 0,
+        "limit_answers": 0
+      },
+      "workload": {
+        "popover_opens": 2
+      }
+    },
+    "tasks_list_160": {
+      "wire": {
+        "sends": 26,
+        "rest": 26,
+        "graphql": 0,
+        "conditional": 0,
+        "not_modified": 0,
+        "limit_answers": 0
+      },
+      "workload": {
+        "collections_requested": 13,
+        "requests": 26,
+        "pages_per_collection": 2,
+        "items": 160,
+        "step_seconds": 5,
+        "window_seconds": 60,
+        "ttl_seconds": null
+      }
+    },
+    "trigger_binding": {
+      "wire": {
+        "sends": 15,
+        "rest": 15,
+        "graphql": 0,
+        "conditional": 0,
+        "not_modified": 0,
+        "limit_answers": 0
+      },
+      "workload": {
+        "poll_ticks": 5,
+        "tick_seconds": 60,
+        "open_issues": 160,
+        "open_pull_requests": 30,
+        "source": "REST pages"
+      }
+    }
+  },
+  "scope": "production Rust poller, GitHub client, plugin HTTP path and trigger source of the tree before the provider gateway, against the controlled loopback API of the gateway benchmark"
+}

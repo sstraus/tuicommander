@@ -2424,11 +2424,12 @@ async fn stable_ready_ticks_do_not_rearm_not_started_mail_wake() {
     assert_eq!(state.orchestrator_wake_needed_through(sid), Some(1));
 }
 
-/// Gemini removes its bottom prompt while a turn runs. The child
-/// repaint after Enter, rather than the master's successful write, settles it.
+/// agy keeps its composer and switches the hint row to `esc to cancel` while a
+/// turn runs (`agy-1.5.10-trust-turn.tcap`). The child repaint after Enter,
+/// rather than the master's successful write, settles it.
 #[cfg(unix)]
 #[test]
-fn queued_prompt_disappearing_after_enter_confirms_agy() {
+fn queued_working_hint_after_enter_confirms_agy() {
     struct RecordingChannel(std::sync::mpsc::Sender<Vec<u8>>);
 
     impl std::io::Write for RecordingChannel {
@@ -2444,7 +2445,7 @@ fn queued_prompt_disappearing_after_enter_confirms_agy() {
 
     let agent_type = "agy";
     let state = crate::state::tests_support::make_test_app_state();
-    let sid = format!("prompt-gone-{agent_type}");
+    let sid = format!("working-hint-{agent_type}");
     agent_session(&state, &sid, SHELL_IDLE);
     state
         .session_maps
@@ -2453,7 +2454,8 @@ fn queued_prompt_disappearing_after_enter_confirms_agy() {
         .unwrap()
         .agent_type = Some(agent_type.into());
     let mut vt = VtLogBuffer::new(24, 80, 1000);
-    vt.process(b"\x1b[24;1H> ");
+    let rule = "\u{2500}".repeat(80);
+    vt.process(format!("\x1b[21;1H{rule}\r\n>\r\n{rule}\r\n? for shortcuts").as_bytes());
     state
         .grid
         .vt_log_buffers
@@ -2480,7 +2482,7 @@ fn queued_prompt_disappearing_after_enter_confirms_agy() {
                 expected
             );
         }
-        let repaint = b"\x1b[2J\x1b[HProcessing request";
+        let repaint = b"\x1b[24;1Hesc to cancel  ";
         state
             .grid
             .vt_log_buffers
@@ -2505,7 +2507,7 @@ fn queued_prompt_disappearing_after_enter_confirms_agy() {
             .unwrap()
             .lock()
             .injection_delivery_uncertain,
-        "{agent_type} accepted the queued command after its prompt disappeared"
+        "{agent_type} accepted the queued command once its working hint appeared"
     );
 }
 

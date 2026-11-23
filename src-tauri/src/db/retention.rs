@@ -81,6 +81,8 @@ fn live_sessions(state: &crate::AppState) -> Option<HashSet<String>> {
                 .iter()
                 .map(|entry| entry.key().clone()),
         )
+        // Saved tabs that have not respawned yet still own their files.
+        .chain(state.restorable_terminals.iter().map(|id| id.clone()))
         .collect();
     match crate::suspended_sessions::list() {
         Ok(records) => {
@@ -116,7 +118,7 @@ pub(crate) fn run(
     now_ms: i64,
     in_use: &InUse,
 ) -> Vec<(&'static str, usize)> {
-    let rules: [(&'static str, &'static str, u32, Rule); 6] = [
+    let rules: [(&'static str, &'static str, u32, Rule); 7] = [
         (
             "progress",
             super::PROGRESS_DB,
@@ -143,6 +145,12 @@ pub(crate) fn run(
             mcp_usage,
         ),
         ("launches", super::TUIC_DB, config.launch_days, launches),
+        (
+            "work_item_visits",
+            super::TUIC_DB,
+            config.work_item_visit_days,
+            work_item_visits,
+        ),
     ];
     let mut removed = Vec::new();
     for (store, file, days, rule) in rules {
@@ -324,6 +332,17 @@ fn launches(path: &Path, cutoff: i64) -> Result<usize, String> {
         tx.execute(
             "DELETE FROM launches WHERE updated_ms < ?1
                AND json_extract(record, '$.stage') IN ('created', 'blocked')",
+            [cutoff],
+        )
+    })
+}
+
+/// A visit is dead once nobody opened the panel within the window; the next
+/// visit then starts over and marks no comment new.
+fn work_item_visits(path: &Path, cutoff: i64) -> Result<usize, String> {
+    in_transaction(path, |tx| {
+        tx.execute(
+            "DELETE FROM work_item_visits WHERE visited_ms < ?1",
             [cutoff],
         )
     })

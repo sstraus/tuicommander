@@ -161,3 +161,18 @@ fn loading_a_capability_record_refreshes_its_age() {
     assert!(crate::agent_capabilities::load(dir.path(), identity).is_none());
     assert!(files::modified_ms(&path) > fresh());
 }
+
+// Catches: the daily sweep deleting the capability record of a saved tab that
+// has not respawned yet (restore would fall back to automation capabilities).
+#[test]
+fn live_sessions_keep_restorable_terminals_in_both_name_forms() {
+    let state = crate::state::tests_support::make_test_app_state();
+    let uuid = "33333333-3333-3333-3333-333333333333";
+    state.restorable_terminals.insert(uuid.to_owned());
+    state
+        .restorable_terminals
+        .insert("client/restorable".to_owned());
+    let live = live_sessions(&state).expect("suspended sessions are readable");
+    assert!(live.contains(uuid));
+    assert!(live.contains(&crate::agent_capabilities::file_stem("client/restorable")));
+}

@@ -9,15 +9,27 @@ Gemini CLI agent type. See [agent-ui-analysis.md](../agent-ui-analysis.md) for s
 
 | Surface | Status |
 |---|---|
-| Flags and subcommands | Verified from `agy --help` on 1.5.10 |
-| Hook events and payloads | Recorded 2026-11-21 from a headless turn (`SessionStart`, `PreInvocation`, `PostInvocation`, `PreToolUse`, `PostToolUse`, `Stop`); contract also in the embedded guide |
-| MCP and rules files | Taken from the guides embedded in the binary |
-| Conversation store layout | Recorded: `conversations/<uuid>.db` (SQLite), `presence/<uuid>.lock` |
-| Headless resume | Recorded: `agy -p ... --conversation <id>` and `-c` resume the same conversation; `--output-format json` returns `conversation_id` |
-| Screen layout, working/idle/awaiting captures | **Not recorded.** The first interactive launch shows a one-time onboarding (colour scheme, terms and data-use consent) that only the user may answer. Detection is UNVERIFIED |
+| Flags and subcommands | Verified from `agy --help` on 1.5.10 (re-checked 2026-11-22): `-i`, `-p`, `--conversation`, `--continue`/`-c`, `--add-dir`, `--settings`, `--model`, `--effort`, `--mode` all exist |
+| Hook events and payloads | Recorded 2026-11-21 from a headless turn (`SessionStart`, `PreInvocation`, `PostInvocation`, `PreToolUse`, `PostToolUse`, `Stop`); contract also in the embedded guide. A live `hooks.json` written by another integration on 2026-11-22 has the same shape (named top-level section, flat `PreInvocation`/`PostInvocation`/`Stop`, grouped `PreToolUse`/`PostToolUse`) |
+| MCP file | Recorded 2026-11-22: `HOME=<throwaway> agy mcp add probe echo hi` writes `<home>/.gemini/config/mcp_config.json` with `{"mcpServers":{"probe":{"command":"echo","args":["hi"],"disabled":false}}}` |
+| Conversation store layout | Recorded: `conversations/<uuid>.db` (SQLite), `presence/<uuid>.lock`. The lock files are empty (0 bytes, checked 2026-11-22): they hold no pid, so agy has no pid registry |
+| Headless resume | Recorded 2026-11-21 and again 2026-11-22: `agy -p ... --output-format json` returns `conversation_id`; `agy -p ... --conversation <id>` and `agy -p ... -c` continue that conversation (same `conversation_id`, prior reply recalled, `num_turns` grows) |
+| Fork | **No headless fork.** `--help` lists no fork flag or subcommand. Forking exists only inside an interactive session (`/fork`, named in the changelog's "already open in another CLI instance" banner entry) |
+| Screen layout, working/idle/awaiting captures | Recorded 2026-11-22 on 1.5.10 after the user finished the first-run onboarding: four `.tcap` files, described in `src-tauri/src/fixtures/agent_prompts/agy-1.5.10.md` and replayed by `src-tauri/src/pty/agy_capture_tests.rs` |
 
-Record the missing captures with `scripts/agent_capture` from a throwaway directory once a
-sign-in exists, then add the fixtures to `src-tauri/src/fixtures/agent_prompts/`.
+## Screen states
+
+- **Ready:** a `>` composer row between two full-width rules, and no `esc to cancel` hint below it.
+- **Working:** the hint row below the composer reads `esc to cancel`. The composer stays visible
+  for the whole turn, so the prompt alone never means ready.
+- **Awaiting:** three pickers, each with its own footer at column 2: workspace trust
+  (`enter Confirm`), command approval (`tab Amend`), native question (`enter Select · esc Skip`).
+  TUIC publishes them as a navigate-then-Enter choice prompt. Number keys are not recorded.
+- A new directory shows the workspace-trust picker before the composer. Trusting it adds the
+  path to `trustedWorkspaces` in `~/.gemini/antigravity-cli/settings.json`.
+- The default mode `auto` approves safe commands without a picker; `--mode accept-edits`
+  asks for each command.
+- Not recorded: a user status-line command, wrapped option labels, the write-in row.
 
 ## Identity and launch
 
@@ -42,7 +54,8 @@ Everything lives under `~/.gemini/`:
 | `antigravity-cli/implicit/<uuid>.pb`, `brain/`, `log/`, `conversation_summaries.db` | internal state |
 | `config/hooks.json` | lifecycle hooks (top-level key = hook name) |
 | `config/mcp_config.json` | MCP servers (`mcpServers` map) |
-| `config/config.json` | settings |
+| `config/config.json` | plugin switches (for example `plugins.swarm.enabled`) |
+| `antigravity-cli/settings.json` | CLI settings, including the onboarding completion and the colour scheme (per the embedded guide; absent until onboarding finishes) |
 
 Session discovery is newest-unclaimed over `conversations/*.db` within five minutes. The files
 name no project or pid, so it is a heuristic, not a binding. Every hook payload carries

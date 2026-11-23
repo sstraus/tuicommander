@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, lazy, onCleanup, onMount, Show, Suspense } from "solid-js";
 import { registerModal } from "../../stores/modalStack";
 import {
 	answerWorkflowApproval,
@@ -8,8 +8,12 @@ import {
 } from "../../stores/workflowApprovals";
 import d from "../shared/dialog.module.css";
 import { Button } from "../ui/Button";
-import { ContentRenderer } from "../ui/ContentRenderer";
 import s from "./WorkflowDesigner.module.css";
+
+// The host mounts at startup on desktop and mobile, but the markdown renderer is
+// needed only while a question is open. A static import puts the renderer and its
+// dependencies in the initial mobile load graph (about 70 kB gzip, over the budget).
+const ContentRenderer = lazy(() => import("../ui/ContentRenderer").then((m) => ({ default: m.ContentRenderer })));
 
 /** Shared by desktop and mobile; resolving elsewhere removes the selected question. */
 export function WorkflowApprovalHost() {
@@ -71,7 +75,9 @@ export function WorkflowApprovalHost() {
 							</div>
 							<div class={d.body}>
 								<p>Run {question().run}</p>
-								<ContentRenderer content={question().approval.question.title} untrustedContent />
+								<Suspense fallback={<p>{question().approval.question.title}</p>}>
+									<ContentRenderer content={question().approval.question.title} untrustedContent />
+								</Suspense>
 								<Show when={question().approval.operator_request}>
 									<details>
 										<summary>Exact operator request</summary>
