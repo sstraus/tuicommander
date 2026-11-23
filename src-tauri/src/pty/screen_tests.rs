@@ -709,7 +709,7 @@ fn ps_fallback_is_taken_only_when_native_is_insufficient() {
     let degraded = process_tree_snapshot_from(&sudo_tree, 10, now, |_| None).unwrap();
     let inner = degraded.iter().find(|p| p.pid == 12).unwrap();
     assert!(inner.argv_unknown);
-    assert!(inner.command.is_empty());
+    assert_eq!(inner.command, "");
 
     // Unreadable processes OUTSIDE our subtree (other users' daemons) are
     // normal on every Mac and must not trigger ps.
