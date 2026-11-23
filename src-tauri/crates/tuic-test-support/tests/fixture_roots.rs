@@ -15,6 +15,9 @@ fn non_temporary_fixture_root_is_outside_every_repository() {
         .arg("-C")
         .arg(probe.path())
         .args(["rev-parse", "--show-toplevel"])
+        // The test process fences git at the scratch root's parent, which would stop
+        // discovery before it reached an enclosing checkout and make this pass vacuously.
+        .env_remove("GIT_CEILING_DIRECTORIES")
         .output()
         .unwrap();
     assert!(
