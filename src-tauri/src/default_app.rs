@@ -192,25 +192,20 @@ mod tests {
             }
             let deadline = Instant::now() + Duration::from_secs(5);
             loop {
-                let output = Command::new("/bin/ps")
-                    .args(["-o", "stat=", "--ppid", &std::process::id().to_string()])
-                    .output()
-                    .unwrap();
-                let states = String::from_utf8(output.stdout).unwrap();
-                if !states
-                    .lines()
-                    .any(|state| state.trim_start().starts_with('Z'))
-                {
-                    // Allow the launcher to finish before accepting a clean table.
-                    if !states.lines().any(|state| {
-                        !state.trim().is_empty() && !state.trim_start().starts_with('R')
-                    }) {
-                        break;
-                    }
+                let me = std::process::id();
+                // Zombies are listed by `children` too; a clean table has neither zombies nor a
+                // launcher still running.
+                // A failed inspection must not satisfy the reaping assertion.
+                let zombies = tuic_core::process_info::zombie_children(me)
+                    .expect("zombie children of this process are enumerable");
+                let children = tuic_core::process_info::children(me)
+                    .expect("children of this process are enumerable");
+                if zombies.is_empty() && children.is_empty() {
+                    break;
                 }
                 assert!(
                     Instant::now() < deadline,
-                    "default-app open left an unreaped launcher: {states}"
+                    "default-app open left an unreaped launcher: zombies={zombies:?} children={children:?}"
                 );
                 std::thread::sleep(Duration::from_millis(10));
             }

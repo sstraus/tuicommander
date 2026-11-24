@@ -24,18 +24,10 @@ impl DiscoveredTerminal {
         let project = crate::agent_session::claude_project_dir_path(cwd, config.to_str()).unwrap();
         std::fs::create_dir_all(&project).unwrap();
         let pair = native_pty_system().openpty(PtySize::default()).unwrap();
-        let executable = scratch.path().join("cat-probe");
-        std::fs::copy("/bin/cat", &executable).unwrap();
-        // Apple's protected binaries do not expose their environment to sysctl.
-        #[cfg(target_os = "macos")]
-        assert!(
-            std::process::Command::new("/usr/bin/codesign")
-                .args(["--force", "--sign", "-"])
-                .arg(&executable)
-                .status()
-                .unwrap()
-                .success()
-        );
+        // The compiled identity probe echoes stdin like cat and, unlike a copied
+        // Apple system binary, exposes its environment and is not killed by the
+        // agent sandbox.
+        let executable = tuic_test_support::install_identity_probe(scratch.path(), "cat-probe");
         let mut command = CommandBuilder::new(&executable);
         command.env("CLAUDE_CONFIG_DIR", &config);
         let mut child = pair.slave.spawn_command(command).unwrap();

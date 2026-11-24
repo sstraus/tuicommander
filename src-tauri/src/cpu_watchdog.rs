@@ -139,24 +139,11 @@ fn count_open_fds() -> usize {
 }
 
 fn thread_count() -> usize {
-    #[cfg(target_os = "macos")]
+    // Native (`PROC_PIDTASKINFO` on macOS, `/proc/self/stat` on Linux): the
+    // old `ps -M` exec is refused in sandboxed hosts, where this read 0.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
-        let pid = std::process::id();
-        std::process::Command::new("ps")
-            .args(["-M", "-p", &pid.to_string()])
-            .output()
-            .map(|o| {
-                String::from_utf8_lossy(&o.stdout)
-                    .lines()
-                    .count()
-                    .saturating_sub(1)
-            })
-            .unwrap_or(0)
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let pid = std::process::id();
-        std::fs::read_dir(format!("/proc/{pid}/task")).map_or(0, |d| d.count())
+        tuic_core::process_info::usage(std::process::id()).map_or(0, |usage| usage.threads as usize)
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
@@ -164,26 +151,41 @@ fn thread_count() -> usize {
     }
 }
 
+/// TUIC's direct children with their lifetime-average CPU, read natively
+/// (`tuic_core::process_info`) — `ps | awk` cannot run in a sandboxed host.
+fn direct_children_cpu() -> Option<Vec<tuic_core::process_info::ChildCpu>> {
+    tuic_core::process_info::children_cpu(
+        &tuic_core::process_info::NativeProcessSource,
+        std::process::id(),
+        std::time::SystemTime::now(),
+    )
+}
+
 fn child_process_summary() -> String {
-    let pid = std::process::id();
-    // macOS `ps` doesn't support --ppid; use -o + awk to filter
-    let output = std::process::Command::new("sh")
-        .args([
-            "-c",
-            &format!("ps -eo pid,ppid,comm,%cpu | awk '$2 == {pid}'"),
-        ])
-        .output();
-    match output {
-        Ok(o) => {
-            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if s.is_empty() {
-                "(no children)".to_string()
-            } else {
-                s
-            }
-        }
-        Err(_) => "(failed to list children)".to_string(),
+    format_child_process_summary(std::process::id(), direct_children_cpu())
+}
+
+/// One `pid ppid comm %cpu` line per child, the columns the old `ps` listing had.
+fn format_child_process_summary(
+    own_pid: u32,
+    children: Option<Vec<tuic_core::process_info::ChildCpu>>,
+) -> String {
+    let Some(children) = children else {
+        return "(failed to list children)".to_string();
+    };
+    if children.is_empty() {
+        return "(no children)".to_string();
     }
+    children
+        .iter()
+        .map(|child| {
+            let cpu = child
+                .cpu_percent
+                .map_or_else(|| "?".to_string(), |pct| format!("{pct:.1}"));
+            format!("{} {own_pid} {} {cpu}", child.pid, child.comm)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Compact aggregate %CPU of direct PTY children, for the periodic HEALTH log.
@@ -191,32 +193,26 @@ fn child_process_summary() -> String {
 /// The spike trigger uses `getrusage(RUSAGE_SELF)`, which by design excludes
 /// children (it watches TUIC's own runaway loops, not legitimate `cargo`/agent
 /// load). So this is the only place child CPU surfaces during a diagnostic
-/// session that ISN'T already a TUIC-process spike. `%cpu` from `ps` is the
-/// process-lifetime average, not instantaneous — good enough for visibility.
+/// session that ISN'T already a TUIC-process spike. `%cpu` is the
+/// process-lifetime average (CPU time over wall time since the child started),
+/// not instantaneous — good enough for visibility.
 fn child_cpu_summary() -> String {
-    let pid = std::process::id();
-    let output = std::process::Command::new("sh")
-        .args(["-c", &format!("ps -eo ppid,comm,%cpu | awk '$1 == {pid}'")])
-        .output();
-    let Ok(o) = output else {
+    format_child_cpu_summary(direct_children_cpu())
+}
+
+fn format_child_cpu_summary(children: Option<Vec<tuic_core::process_info::ChildCpu>>) -> String {
+    let Some(children) = children else {
         return "children_cpu=(failed)".to_string();
     };
-    let text = String::from_utf8_lossy(&o.stdout);
     let mut total = 0.0_f64;
     let mut top_comm = String::new();
     let mut top_pct = 0.0_f64;
-    for line in text.lines() {
-        // Columns: ppid comm %cpu. `comm` may contain spaces, so ppid is the
-        // first token and %cpu the last; everything between is the name.
-        let tokens: Vec<&str> = line.split_whitespace().collect();
-        if tokens.len() < 3 {
-            continue;
-        }
-        let pct: f64 = tokens[tokens.len() - 1].parse().unwrap_or(0.0);
+    for child in &children {
+        let pct = f64::from(child.cpu_percent.unwrap_or(0.0));
         total += pct;
         if pct > top_pct {
             top_pct = pct;
-            top_comm = tokens[1..tokens.len() - 1].join(" ");
+            top_comm.clone_from(&child.comm);
         }
     }
     if top_comm.is_empty() {
@@ -560,6 +556,69 @@ fn run(state: Arc<AppState>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn child(pid: u32, comm: &str, cpu: Option<f32>) -> tuic_core::process_info::ChildCpu {
+        tuic_core::process_info::ChildCpu {
+            pid,
+            comm: comm.to_string(),
+            cpu_percent: cpu,
+        }
+    }
+
+    #[test]
+    fn child_summaries_keep_their_log_shapes() {
+        assert_eq!(
+            format_child_process_summary(7, None),
+            "(failed to list children)"
+        );
+        assert_eq!(
+            format_child_process_summary(7, Some(vec![])),
+            "(no children)"
+        );
+        assert_eq!(
+            format_child_process_summary(
+                7,
+                Some(vec![child(11, "zsh", Some(1.3)), child(12, "sudo", None)])
+            ),
+            "11 7 zsh 1.3\n12 7 sudo ?"
+        );
+        assert_eq!(format_child_cpu_summary(None), "children_cpu=(failed)");
+        assert_eq!(format_child_cpu_summary(Some(vec![])), "children_cpu=0.0%");
+        assert_eq!(
+            format_child_cpu_summary(Some(vec![
+                child(11, "zsh", Some(2.0)),
+                child(12, "cargo", Some(30.5)),
+                child(13, "sudo", None),
+            ])),
+            "children_cpu=32.5% (top: cargo 30.5%)"
+        );
+    }
+
+    /// Red before the native read in a sandboxed host: `ps -M` could not be
+    /// exec'd there, so this read 0.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn thread_count_reads_this_process_natively() {
+        assert!(thread_count() >= 1);
+    }
+
+    /// A real child must show up in the spike-log listing.
+    #[cfg(unix)]
+    #[test]
+    fn direct_children_include_a_live_child() {
+        let mut sleeper = std::process::Command::new("/bin/sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn sleep");
+        let pid = sleeper.id();
+        let listed = direct_children_cpu().expect("children are listable");
+        let _ = sleeper.kill();
+        let _ = sleeper.wait();
+        assert!(
+            listed.iter().any(|c| c.pid == pid && c.comm == "sleep"),
+            "{listed:?}"
+        );
+    }
 
     const GB: u64 = 1024 * 1024 * 1024;
 

@@ -10,6 +10,7 @@ pub mod error_classification;
 pub mod jsonc_edit;
 pub mod path_spelling;
 pub mod process_env;
+pub mod process_info;
 pub mod redaction;
 pub mod temp_paths;
 pub mod text_rank;

@@ -800,8 +800,8 @@ safety. Desktop, mobile, and `agent ls` read this same derived lifecycle state.
 A descendant is excluded from that judgement two ways. By name: the persistent
 integration helpers (`mdkb`, `tuic-bridge`, and `node_repl`) and Claude's
 standalone timed `caffeinate -i -t <seconds>` assertion. Unix classification
-checks both `comm` and the authoritative argv path from unlimited-width `ps`
-output; a `caffeinate` invocation that wraps a command remains meaningful
+checks both the process name and the authoritative argv path from the shared
+process snapshot; a `caffeinate` invocation that wraps a command remains meaningful
 background work. And by age: a descendant that started within
 `AGENT_STARTUP_WINDOW_SECS` (60s) of the agent itself is session plumbing
 whatever it is called.
@@ -814,7 +814,7 @@ because a turn also runs npm. Measured on a live 14-session instance on
 a constant `true` and no session could ever leave `working`. In the same
 snapshot every daemon appeared within 18s of its agent while work spawned by a
 turn was hundreds of seconds younger, which is the gap the window sits in.
-Ages come from the `etime` column of the shared `ps` snapshot. Where the
+Ages come from each process's start time in the shared process snapshot. Where the
 platform cannot supply one — Windows `PROCESSENTRY32` carries no creation
 time — the window is skipped and the name list is the only rule, which errs
 toward reporting work rather than hiding it. Parent `idle` lifecycle mail is
@@ -971,6 +971,42 @@ transition; a debug record names that ordering and the pending queue depth.
 **Status line dedup is per turn:** `ChunkProcessor.last_status_task` keys its dedup on `(turn_epoch, task_name)`, so a spinner rotation inside one turn stays suppressed while the first status line of a *new* turn always re-emits. The epoch must stay in the key because an agent may name every turn identically — Codex always reports `Working`. A session-lifetime dedup swallowed every turn after the first, and since the `status-line` event is the only thing that clears the previous turn's `suggested_actions` (which `session_state_with_shell` reads as a completion marker), the session reported a busy agent as `completed`/`idle` permanently.
 
 **Agent detection:** `detectAgentForTerminal()` fires on shell-state transitions (immediate on idle, 500ms debounce on busy). A 30s fallback poll catches cold starts. This replaces the previous 3s polling interval, reducing syscalls ~30x.
+
+### Process snapshot: native first, `ps` only as a fallback
+
+The shared process snapshot (`pty/screen.rs` `process_tree_snapshot`, refreshed at
+most once a second while a probe or tracked child demands it; also the
+idle-close guard's `live_bg_runner_commands`) is read natively through
+`tuic_core::process_info`: macOS `proc_listallpids` + `PROC_PIDT_SHORTBSDINFO`
+(identity, every uid), `sysctl KERN_PROC_PID` (start time, every uid) and
+`KERN_PROCARGS2` (argv, same uid only); Linux `/proc`. It no longer execs
+`ps -ww -axo pid=,ppid=,etime=,comm=,args=`, which sandboxed hosts refuse to
+run (`/bin/ps` is setuid root). The entry's `name` is `argv[0]` when readable
+(what macOS `ps -o comm` printed, `-zsh` for a login shell), else the
+executable path, else the kernel short name; `command` is argv joined with
+spaces; zombies are not listed.
+
+`ps` remains a **fallback**, never the primary path. It is taken only when the
+native enumeration fails, or when a process inside TUIC's own subtree (where
+every PTY session lives) was listed but its argv or start time could not be
+read — in practice a root process under `sudo`, whose argv setuid `ps` can read
+and an unprivileged caller cannot. Unreadable processes outside that subtree
+(other users' daemons, present on every Mac) do not trigger it. The first
+fallback per reason logs one `process_snapshot` warning; if `ps` can never be
+spawned here — the exec is denied (a sandbox) or there is no `ps` — it is latched
+off for the process lifetime and the native entries are used with `argv_unknown`
+set. A transient spawn failure (EAGAIN under a process limit, EINTR) skips only
+that snapshot, and a `ps` that started but exited unsuccessfully arms a 60 s cooldown instead of
+latching (it may recover; a persistently failing one is not exec'd every second)
+(`run_ps_fallback`, test `ps_fallback_latches_only_when_ps_can_never_run`). A shell whose argv is unknown never counts as
+"at a prompt" for the nested-prompt override, so `sudo bash -c 'job'` cannot
+clear BUSY; such a subtree simply keeps its OSC 133 BUSY latch.
+
+**Removal:** keep the fallback for this release (decided 2026-10-09). Once the
+native path has soaked and the warning has not been seen in the field, delete
+`ps_process_tree_snapshot` and its allow-list entry in
+`scripts/check-no-process-exec.mjs` (which fails `make check` on any other
+`ps`/`pgrep`/`pkill` exec, production or test).
 
 ## Amber Tab Styling
 
