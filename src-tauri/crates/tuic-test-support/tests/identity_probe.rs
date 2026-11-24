@@ -2,14 +2,21 @@
 // stand-in tests exec wherever they need a process with a specific name.
 
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+#[cfg(unix)]
+use std::path::Path;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use std::path::PathBuf;
+#[cfg(unix)]
+use std::process::Child;
+use std::process::{Command, Stdio};
 
 fn scratch() -> tempfile::TempDir {
     tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap()
 }
 
-/// A probe that stays alive blocked on its open stdin, as the tests use it.
+/// A probe that stays alive blocked on its open stdin, as the tests use it. Unix only, like the
+/// tests that use it: on Windows they are compiled out and `-D warnings` rejects the dead helper.
+#[cfg(unix)]
 fn spawn_blocked(exe: &Path) -> Child {
     Command::new(exe)
         .stdin(Stdio::piped())
@@ -19,6 +26,7 @@ fn spawn_blocked(exe: &Path) -> Child {
         .unwrap()
 }
 
+#[cfg(unix)]
 fn reap(mut child: Child) {
     let _ = child.kill();
     let _ = child.wait();
