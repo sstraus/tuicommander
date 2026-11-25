@@ -307,7 +307,7 @@ fn start_receipt(
     match row {
         None => Ok(None),
         Some((_, old_hash)) if old_hash != hash => {
-            Err("neutral request identity was reused with different arguments".into())
+            Err(crate::workflows::neutral_api::refusal::REQUEST_IDENTITY_REUSED.into())
         }
         Some((id, _)) => read_run(conn, &id).map(Some),
     }

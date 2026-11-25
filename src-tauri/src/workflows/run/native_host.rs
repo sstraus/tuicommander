@@ -167,7 +167,7 @@ impl NeutralCatalogHost for NativeHost {
         let bindings = self.bindings.lock();
         let bound = bindings
             .get(run)
-            .ok_or("native trusted caller/run binding unavailable")?;
+            .ok_or(crate::workflows::neutral_api::refusal::ANSWER_BINDING_NOT_FOUND)?;
         if bound.store.database_path() != store.database_path() {
             return Err("native answer store differs from trusted binding".into());
         }
@@ -181,7 +181,7 @@ impl NeutralCatalogHost for NativeHost {
                     .current(Some(crate::agent_capabilities::Capability::Operator))
                     .map(|_| ())
             }
-            _ => Err("native answer requires authenticated owner or bound Operator agent".into()),
+            _ => Err(crate::workflows::neutral_api::refusal::ANSWER_AUTHORITY.into()),
         }
     }
 
@@ -202,7 +202,7 @@ impl NeutralCatalogHost for NativeHost {
             .name
             .starts_with("native.operator.")
         {
-            return Err("operator wait requires typed operator_answer, not effect approval".into());
+            return Err(crate::workflows::neutral_api::refusal::OPERATOR_WAIT_TYPED.into());
         }
         Ok(())
     }
@@ -218,7 +218,7 @@ impl NeutralCatalogHost for NativeHost {
     ) -> Result<super::neutral_effects::EffectCommand, String> {
         self.authorize_answer(store, run, caller)?;
         if !matches!(caller, Some(super::NativeCaller::Owner)) || key.fence.run != run {
-            return Err("operator consent requires authenticated human owner and exact run".into());
+            return Err(crate::workflows::neutral_api::refusal::OPERATOR_CONSENT_OWNER.into());
         }
         let bound = self
             .bindings

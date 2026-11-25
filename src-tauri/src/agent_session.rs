@@ -1396,11 +1396,32 @@ fn discover_ego_session(agent_pid: Option<u32>, ego_home: Option<&str>) -> Optio
 /// The provider half of `<sessions>/<session_id>/manifest.json`'s `model`
 /// (`provider/model`, split on the first `/` exactly as ego does).
 pub(crate) fn ego_session_provider(sessions_dir: &Path, session_id: &str) -> Option<String> {
-    let manifest =
-        std::fs::read_to_string(sessions_dir.join(session_id).join("manifest.json")).ok()?;
-    let manifest: serde_json::Value = serde_json::from_str(&manifest).ok()?;
-    let (provider, model) = manifest.get("model")?.as_str()?.split_once('/')?;
-    (!provider.is_empty() && !model.is_empty()).then(|| provider.to_string())
+    ego_session_quota_identity(sessions_dir, session_id)
+        .ok()
+        .map(|(provider, _)| provider)
+}
+
+/// The manifest projects the selected account from ego's authoritative run selections.
+/// An invalid account field is not a legacy session and must not select legacy auth.
+pub(crate) fn ego_session_quota_identity(
+    sessions_dir: &Path,
+    session_id: &str,
+) -> Result<(String, Option<String>), &'static str> {
+    let manifest = std::fs::read_to_string(sessions_dir.join(session_id).join("manifest.json"))
+        .map_err(|_| "ego manifest unreadable")?;
+    let manifest: serde_json::Value =
+        serde_json::from_str(&manifest).map_err(|_| "ego manifest invalid")?;
+    let (provider, _) = manifest["model"]
+        .as_str()
+        .and_then(|model| model.split_once('/'))
+        .filter(|(provider, model)| !provider.is_empty() && !model.is_empty())
+        .ok_or("ego model unresolved")?;
+    let connection = match &manifest["connection"] {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(id) if !id.is_empty() => Some(id.clone()),
+        _ => return Err("ego connection invalid"),
+    };
+    Ok((provider.to_owned(), connection))
 }
 
 /// Check if `<sessions>/<session_id>/manifest.json` exists.
@@ -1951,6 +1972,48 @@ mod tests {
         assert_eq!(ego_session_provider(h, EGO_A), None);
         write(EGO_A, "{}");
         assert_eq!(ego_session_provider(h, EGO_A), None);
+    }
+
+    // Catches: an invalid named-account field silently falls back to legacy credentials.
+    #[test]
+    fn ego_manifest_connection_is_explicit_and_malformed_identity_fails_closed() {
+        let dir = ego_store(&[(EGO_A, 111, 5)]);
+        let path = dir.path().join(EGO_A).join("manifest.json");
+        for connection in [
+            serde_json::json!(""),
+            serde_json::json!(7),
+            serde_json::json!({"id": "account_b"}),
+        ] {
+            fs::write(
+                &path,
+                serde_json::json!({"model": "anthropic/example", "connection": connection})
+                    .to_string(),
+            )
+            .unwrap();
+            assert_eq!(
+                ego_session_quota_identity(dir.path(), EGO_A),
+                Err("ego connection invalid")
+            );
+        }
+        for body in [
+            r#"{"model":"anthropic/example"}"#,
+            r#"{"model":"anthropic/example","connection":null}"#,
+        ] {
+            fs::write(&path, body).unwrap();
+            assert_eq!(
+                ego_session_quota_identity(dir.path(), EGO_A).unwrap(),
+                ("anthropic".into(), None)
+            );
+        }
+        fs::write(
+            &path,
+            r#"{"model":"anthropic/example","connection":"anthropic"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            ego_session_quota_identity(dir.path(), EGO_A).unwrap(),
+            ("anthropic".into(), Some("anthropic".into()))
+        );
     }
 
     /// Catches: ego missing from the env table, so a session under a custom

@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-11-19
+
+### AI Chat and agent spawning
+
+- MCP agent spawn now supports Ego's interactive positional prompt without explicit arguments or a named run profile. Explicit arguments and configured profiles keep their existing behavior.
+- AI Chat `/clear` now resets agent context through the New conversation action instead of only deleting the draft. Saved history remains; busy or failed resets keep the draft and attachments.
+- AI Chat shows submitted content as Sending before ACP confirmation and retains failed payloads for retry without changing newer drafts. Agent-advertised slash commands are no longer hidden by host names that have no active handler.
+### New features
+
+- Prepare native Linux ARM64 desktop deb, rpm and AppImage builds for 2.1.2, with architecture-specific install/update checks. Native package installation and desktop smoke verification remain release gates.
+
+### Fixes
+
+- Repository notifications now share one refresh coordinator and no longer serialize unchanged live repositories during adoption, reducing synchronous work that can interrupt terminal input and rendering.
+
+- Ego terminal quotas keep named accounts separate from other same-vendor accounts and legacy credentials. Active reads and passive updates use the selected connection identity (#3092-e0ee).
+- Toasts no longer cover the header buttons of an open dialog such as the Workflow Designer: they move to the bottom left while a dialog is open, and the empty area around them no longer blocks clicks.
+- On macOS, an update that unlinks a running native agent executable no longer blocks queued input when its current process name still identifies the agent.
+
+- A scheduled workflow trigger whose project directory was deleted no longer stops every other scheduled trigger from starting.
+- A trigger event that a newer event for the same resource replaced before it started now shows `superseded` instead of staying `pending` forever.
+
+- AI Chat shows only the first line of a long notice, such as the compaction summary; the rest opens on click (#3088-ef63).
+- Workflow actions over HTTP now answer 400, 403, 404 or 409 when they refuse a request (unknown id, stale approval, stale revision) instead of 500, so clients no longer treat a refusal as a server fault.
+- A workflow run whose read-only script lost its output in a restart now asks the operator to run the script again or abandon the activity, instead of waiting forever with no question. The script never runs again without that answer.
+- A scheduled workflow run that was started before an app restart now resumes after the restart instead of staying stuck until its deadline, and the first scheduled run after a restart is no longer refused as "handler unavailable". One old run that cannot be resumed no longer blocks the other scheduled starts of its project.
+
 ## [2.1.1] - 2026-11-15
 
 ### Fixes

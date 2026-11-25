@@ -390,6 +390,23 @@ impl NeutralHost for NativeHost {
         })
     }
 
+    fn original_stopped(&self, effect: &NeutralEffect) -> Result<(), String> {
+        if !families::script_target(&effect.invocation.descriptor) {
+            return Ok(());
+        }
+        Self::script(&self.binding(&effect.invocation)?)?.original_stopped(effect)
+    }
+
+    fn forget_original(&self, effect: &NeutralEffect) {
+        if families::script_target(&effect.invocation.descriptor)
+            && !effect.preparation.mutation
+            && let Ok(bound) = self.binding(&effect.invocation)
+            && let Ok(adapter) = Self::script(&bound)
+        {
+            adapter.forget_original(effect);
+        }
+    }
+
     fn cancel(&self, effect: NeutralEffect) -> ObservationFuture {
         if effect.invocation.descriptor.handler.name == "native.issue.handoff" {
             return self.issue_observe(effect, true);

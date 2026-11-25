@@ -1,6 +1,7 @@
 //! Source-neutral admission uses RuntimeOwner and its existing effect ledger.
 use super::neutral::{NeutralRun, NeutralStartRequest};
 use super::neutral_execution::{NeutralExecutionCommand, NeutralStatus};
+use super::neutral_trigger_store::TriggerIntent;
 use super::runtime::{RuntimeOwner, WorkflowRuntime};
 use crate::workflows::{
     WorkflowStore,
@@ -122,41 +123,32 @@ impl RuntimeOwner {
         project: &str,
         supersede: bool,
     ) -> Result<Vec<NeutralRun>, String> {
+        // The first pass of an admission rebinds; runs started between the two
+        // passes are bound by start_trigger, so a second rebind replays for nothing.
+        if !supersede {
+            self.rebind_trigger_runs(project)?;
+        }
         let mut started = Vec::new();
         for (active, intent) in self.store.trigger_pending(project)? {
             // A crash after run creation but before linking its receipt retries
             // the exact persisted start, never repins to today's binding.
             if let Some(active) = active {
-                let mut snapshot = self.store.neutral_execution(&active)?;
-                if snapshot.status == NeutralStatus::Running {
-                    if !supersede {
+                match self.active_run_allows_start(&active, &intent, supersede) {
+                    Ok(true) => {}
+                    Ok(false) => continue,
+                    // One unreadable old run must not starve the intents of other
+                    // bindings; it keeps its slot and the next pass retries it.
+                    Err(error) => {
+                        tracing::warn!(
+                            source = "workflows",
+                            project,
+                            run = %active,
+                            receipt = %intent.receipt,
+                            %error,
+                            "Active run of a pending trigger intent is unreadable; the intent waits and other admissions continue"
+                        );
                         continue;
                     }
-                    loop {
-                        match self.neutral_command(
-                            &active,
-                            &format!("trigger:superseded:{}", intent.receipt),
-                            snapshot.sequence,
-                            NeutralExecutionCommand::Cancel,
-                        ) {
-                            Err(e) if e.contains("sequence changed") => {
-                                snapshot = self.store.neutral_execution(&active)?
-                            }
-                            result => {
-                                snapshot = result?;
-                                break;
-                            }
-                        }
-                    }
-                }
-                // Effects are global across nested execution frames. Ended
-                // frames cannot release a mutating resource before certainty+stop.
-                if snapshot
-                    .effects
-                    .values()
-                    .any(|e| e.dispatched && !e.settled())
-                {
-                    continue;
                 }
             }
             let run = self.start_trigger(workflows, catalog, handlers, &intent.request)?;
@@ -164,6 +156,43 @@ impl RuntimeOwner {
             started.push(run);
         }
         Ok(started)
+    }
+    /// Whether the active run of a resource lets its pending intent start now.
+    /// Cancels it first when `supersede`. A read or cancel failure is per run.
+    fn active_run_allows_start(
+        &self,
+        active: &str,
+        intent: &TriggerIntent,
+        supersede: bool,
+    ) -> Result<bool, String> {
+        let mut snapshot = self.store.neutral_execution(active)?;
+        if snapshot.status == NeutralStatus::Running {
+            if !supersede {
+                return Ok(false);
+            }
+            loop {
+                match self.neutral_command(
+                    active,
+                    &format!("trigger:superseded:{}", intent.receipt),
+                    snapshot.sequence,
+                    NeutralExecutionCommand::Cancel,
+                ) {
+                    Err(e) if e.contains("sequence changed") => {
+                        snapshot = self.store.neutral_execution(active)?
+                    }
+                    result => {
+                        snapshot = result?;
+                        break;
+                    }
+                }
+            }
+        }
+        // Effects are global across nested execution frames. Ended
+        // frames cannot release a mutating resource before certainty+stop.
+        Ok(!snapshot
+            .effects
+            .values()
+            .any(|e| e.dispatched && !e.settled()))
     }
 }
 

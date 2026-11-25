@@ -155,7 +155,7 @@ it("rereads durable metadata when subscription configuration fails after a commi
 });
 
 // Catches: an enabled binding the backend holds without intake renders with no reason,
-// or a reason shown for a binding that has none.
+// a missing or incorrect accessible description, or a reason on a live binding.
 it("shows the refusal reason next to a held binding and nothing for a binding without one", async () => {
 	const draft = (id: string): TriggerBindingDraft => ({
 		id,
@@ -176,6 +176,7 @@ it("shows the refusal reason next to a held binding and nothing for a binding wi
 			enabled: true,
 			refusal_reason: "github repository octo-org/example is not registered",
 		},
+		{ draft: draft("held-two"), revision: 3, enabled: true, refusal_reason: "repository access revoked" },
 		{ draft: draft("live"), revision: 1, enabled: true },
 	];
 	render(() => <TriggerBindings project="/repo" publications={[publication]} />);
@@ -183,9 +184,16 @@ it("shows the refusal reason next to a held binding and nothing for a binding wi
 	const reason = screen.getByText("No intake: github repository octo-org/example is not registered");
 	expect(reason).toBeVisible();
 	expect(held.parentElement).toContainElement(reason);
+	expect(held).toHaveAccessibleDescription("No intake: github repository octo-org/example is not registered");
+	const heldTwo = screen.getByRole("button", { name: "Load held-two · revision 3 · enabled" });
+	expect(heldTwo).toHaveAccessibleDescription("No intake: repository access revoked");
+	expect(held.getAttribute("aria-describedby")).not.toBe(heldTwo.getAttribute("aria-describedby"));
+	fireEvent.click(held);
+	expect(screen.getByLabelText("Binding ID")).toHaveValue("held");
 	const live = screen.getByRole("button", { name: "Load live · revision 1 · enabled" });
 	expect(live.parentElement).not.toHaveTextContent("No intake");
-	expect(screen.getAllByText(/No intake:/)).toHaveLength(1);
+	expect(live).not.toHaveAttribute("aria-describedby");
+	expect(screen.getAllByText(/No intake:/)).toHaveLength(2);
 });
 
 // A slow preview must not restore acknowledgement after repository metadata changed.

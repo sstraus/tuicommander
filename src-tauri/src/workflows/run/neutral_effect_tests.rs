@@ -281,7 +281,19 @@ async fn early_callback_wins_pending_ack_and_exact_results_are_immutable() {
             .unwrap_err()
             .contains("correlation")
     );
-    let (finished, _) = owner.drive_neutral_turn(&run.run.id).unwrap();
+    // One turn stops at the graph's 5 ms Wait node; drive until the run is terminal.
+    let limit = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let finished = loop {
+        let (snapshot, _) = owner.drive_neutral_turn(&run.run.id).unwrap();
+        if snapshot.status != NeutralStatus::Running {
+            break snapshot;
+        }
+        assert!(
+            std::time::Instant::now() < limit,
+            "run never finished: {snapshot:?}"
+        );
+        tokio::task::yield_now().await;
+    };
     assert_eq!(finished.outputs.unwrap().values["result"], json!(7));
 }
 
@@ -464,6 +476,16 @@ fn exact_approval_revision_has_one_committed_winner_and_never_expires_to_yes() {
             .iter()
             .filter_map(|result| result.as_ref().err())
             .all(|error| error.contains("already answered"))
+    );
+    // Catches: the losing answer of a race is a refusal the HTTP layer reports as a 500.
+    assert!(
+        results
+            .iter()
+            .filter_map(|result| result.as_ref().err())
+            .all(
+                |error| crate::workflows::neutral_api::refusal::classify(error)
+                    == Some(crate::workflows::neutral_api::refusal::Refusal::Conflict)
+            )
     );
     let latest = owner.store.neutral_execution(&run.run.id).unwrap();
     assert!(latest.effect(&key).unwrap().answer.is_some());

@@ -1237,6 +1237,7 @@
 	"statusBar.updating": "Updating",
 	"statusBar.voiceDictation": "Voice Dictation",
 	"tabBar.alias": "Alias: {alias}",
+	"tabBar.session": "Session: {session}",
 	"tabBar.allowLiteralReads": "Allow Literal Terminal Reads",
 	"tabBar.captureSession": "Capture Session",
 	"tabBar.close": "Close",

@@ -1,4 +1,4 @@
-import { type Component, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { type Component, createEffect, createSignal, on, onCleanup, Show } from "solid-js";
 import { type GrokUsageApiResponse, grokPeriodLabel } from "../../features/grokUsage";
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
@@ -33,24 +33,38 @@ export const GrokUsageDashboard: Component<{ sessionId?: string | (() => string 
 		const detail = providerQuotaStore.viewForAgent(sessionId, "grok")?.snapshot?.detail;
 		return detail?.provider === "grok" ? (detail.response as GrokUsageApiResponse) : null;
 	};
-	const refresh = async () => {
-		try {
-			if (selectedSessionId()) {
-				await providerQuotaStore.start();
-				return;
-			}
-			setUsage(await invoke<GrokUsageApiResponse>("get_grok_usage_api"));
+	createEffect(
+		on(selectedSessionId, (sessionId) => {
+			let disposed = false;
+			setUsage(null);
 			setError(null);
-		} catch (reason) {
-			const message = String(reason);
-			setError(message);
-			appLogger.warn("network", "Grok usage fetch failed", message);
-		}
-	};
-
-	onMount(() => void refresh().finally(() => setLoading(false)));
-	const timer = setInterval(() => void refresh(), 5 * 60 * 1000);
-	onCleanup(() => clearInterval(timer));
+			setLoading(true);
+			const refresh = async () => {
+				try {
+					if (sessionId) {
+						await providerQuotaStore.start();
+					} else {
+						const response = await invoke<GrokUsageApiResponse>("get_grok_usage_api");
+						if (!disposed) setUsage(response);
+					}
+					if (!disposed) setError(null);
+				} catch (reason) {
+					if (disposed) return;
+					const message = String(reason);
+					setError(message);
+					appLogger.warn("network", "Grok usage fetch failed", message);
+				} finally {
+					if (!disposed) setLoading(false);
+				}
+			};
+			void refresh();
+			const timer = setInterval(() => void refresh(), 5 * 60 * 1000);
+			onCleanup(() => {
+				disposed = true;
+				clearInterval(timer);
+			});
+		}),
+	);
 
 	return (
 		<div class={s.dashboard}>

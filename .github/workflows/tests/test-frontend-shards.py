@@ -25,6 +25,15 @@ def job(name):
 
 
 class FrontendShardContracts(unittest.TestCase):
+    def test_public_release_branch_push_runs_ci_before_merge(self):
+        # Catches: release builds require a merge or a separate repository to run CI.
+        events = re.search(r"(?ms)^on:\n(.*?)(?=^\S|\Z)", SOURCE).group(1)
+        push = re.search(r"(?ms)^  push:\n(.*?)(?=^  \w|\Z)", events).group(1)
+        branches = re.search(r"(?ms)^    branches:\n((?:^      - .+\n)+)", push).group(1)
+        enabled = set(re.findall(r"(?m)^      - ['\"]?([^'\"\n]+)", branches))
+        self.assertTrue({"main", "release/**", "fix/release-*-public"} <= enabled)
+        self.assertRegex(events, r"(?m)^  pull_request:")
+
     def test_all_four_partitions_run_without_fail_fast_or_selection_filters(self):
         # Catches: one runner still owns the whole suite, or a shard is omitted.
         tests = job("frontend-tests")

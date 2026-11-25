@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+      - 'release/**'
+      - 'fix/release-*-public'
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -106,6 +108,11 @@ jobs:
 
       - name: Remote daemon release workflow contracts
         run: python3 .github/workflows/tests/test-remote-daemon-release.py
+
+      - name: Linux desktop release workflow contracts
+        run: |
+          python3 .github/workflows/tests/test-linux-desktop-release.py
+          node --test .github/workflows/tests/test-website-downloads.mjs
 
       - name: Frontend shard workflow contracts
         run: python3 .github/workflows/tests/test-frontend-shards.py

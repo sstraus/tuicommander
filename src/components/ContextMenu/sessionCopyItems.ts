@@ -8,7 +8,11 @@ import { getSessionConnection } from "../../transportRuntime";
 import { writeClipboard } from "../../utils/clipboard";
 import type { ContextMenuItem } from "./ContextMenu";
 
-export function createSessionCopyItems(terminalId: () => string | null, visible: () => boolean) {
+export function createSessionCopyItems(
+	terminalId: () => string | null,
+	visible: () => boolean,
+	presentation: "commands" | "values" = "commands",
+) {
 	type SessionIdentity = {
 		session_id: string;
 		child_pid?: number | null;
@@ -41,12 +45,16 @@ export function createSessionCopyItems(terminalId: () => string | null, visible:
 			})
 			.catch((error) => appLogger.warn("app", "Could not read session identifiers", error));
 	});
-	const copyId = async (kind: "session" | "process" | "alias") => {
+	const copyId = async (kind: "session" | "process" | "alias", displayedValue?: string) => {
 		const sessionId = menuTerminal()?.sessionId;
-		if (!sessionId) return;
+		if (!sessionId && displayedValue === undefined) return;
 		try {
-			const row = kind !== "session" && liveSessionId() === sessionId ? await readIdentity(sessionId) : null;
-			const value = kind === "session" ? sessionId : kind === "process" ? row?.child_pid : row?.alias;
+			const row =
+				displayedValue === undefined && kind !== "session" && sessionId && liveSessionId() === sessionId
+					? await readIdentity(sessionId)
+					: null;
+			const value =
+				displayedValue ?? (kind === "session" ? sessionId : kind === "process" ? row?.child_pid : row?.alias);
 			if (value == null || value === "")
 				throw new Error(t("sidebar.identifierUnavailable", "Session identifier unavailable"));
 			await writeClipboard(String(value));
@@ -83,6 +91,43 @@ export function createSessionCopyItems(terminalId: () => string | null, visible:
 			);
 		}
 	};
+	const valueMenuItems = (): ContextMenuItem[] => {
+		const id = terminalId();
+		const term = menuTerminal();
+		const sessionId = term?.sessionId;
+		const connectionId = sessionId ? getSessionConnection(sessionId) : undefined;
+		const row =
+			liveSessionId() && identity()?.session_id === sessionId && identity()?.connection_id === connectionId
+				? identity()
+				: null;
+		const alias = term?.alias || row?.alias;
+		// Copy the displayed snapshot, never a later menu's identity after an async lookup.
+		const copyDisplayed = (kind: "session" | "alias", value: string) => {
+			if (terminalId() !== id || menuTerminal()?.sessionId !== sessionId) return;
+			if (sessionId && getSessionConnection(sessionId) !== connectionId) return;
+			void copyId(kind, value);
+		};
+		return [
+			...(sessionId
+				? [
+						{
+							label: t("tabBar.session", "Session: {session}", { session: sessionId }),
+							title: sessionId,
+							action: () => copyDisplayed("session", sessionId),
+						},
+					]
+				: []),
+			...(alias
+				? [
+						{
+							label: t("tabBar.alias", "Alias: {alias}", { alias }),
+							title: alias,
+							action: () => copyDisplayed("alias", alias),
+						},
+					]
+				: []),
+		];
+	};
 	const sessionMenuItems = (): ContextMenuItem[] => [
 		{
 			label: t("sidebar.copySessionId", "Copy session ID"),
@@ -115,5 +160,5 @@ export function createSessionCopyItems(terminalId: () => string | null, visible:
 				]
 			: []),
 	];
-	return sessionMenuItems;
+	return presentation === "values" ? valueMenuItems : sessionMenuItems;
 }

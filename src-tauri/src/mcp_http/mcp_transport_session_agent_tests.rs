@@ -4505,6 +4505,75 @@ fn substitute_prompt_multiple_placeholders() {
 }
 
 // -----------------------------------------------------------------------
+// Catches: missing Ego fallback, headless `run`, deferred delivery, or split/duplicated task bytes.
+#[test]
+fn ego_default_spawn_keeps_one_interactive_positional_prompt() {
+    let resolved = resolve_run_config("ego", &crate::config::AgentsConfig::default());
+    assert!(resolved.args.is_none());
+    let template = crate::agent::default_prompt_args(&resolved.agent_type)
+        .expect("Ego has a built-in interactive prompt mapping");
+    for prompt in [
+        "perform the task",
+        "quotes ' \" and $HOME;\nUnicode: café {prompt}",
+        "",
+    ] {
+        let (argv, deferred) = compose_mcp_spawn_args(McpSpawnArgs {
+            agent_type: &resolved.agent_type,
+            args: &template,
+            prompt,
+            model: None,
+            print_mode: false,
+            output_format: None,
+            default_template: true,
+        })
+        .unwrap();
+        assert_eq!(argv, [prompt], "prompt={prompt:?}");
+        assert_eq!(deferred, None, "prompt={prompt:?}");
+    }
+}
+
+// Catches: Claude-only output flags switch Ego away from its interactive default or lose model.
+#[test]
+fn ego_default_spawn_merges_model_without_claude_output_flags() {
+    let template = crate::agent::default_prompt_args("ego").unwrap();
+    let (argv, deferred) = compose_mcp_spawn_args(McpSpawnArgs {
+        agent_type: "ego",
+        args: &template,
+        prompt: "perform the task",
+        model: Some("ollama/qwen3"),
+        print_mode: true,
+        output_format: Some("json"),
+        default_template: true,
+    })
+    .unwrap();
+    assert_eq!(argv, ["perform the task", "--model", "ollama/qwen3"]);
+    assert_eq!(deferred, None);
+}
+
+// Catches: adding the fallback overrides an explicit headless choice or drops flags-only tasks.
+#[test]
+fn ego_explicit_spawn_args_remain_authoritative() {
+    for (args, expected) in [
+        (vec!["run", "{prompt}"], vec!["run", "perform the task"]),
+        (vec!["--bare"], vec!["--bare", "perform the task"]),
+        (vec![], vec!["perform the task"]),
+    ] {
+        let args = args.into_iter().map(String::from).collect::<Vec<_>>();
+        let (argv, deferred) = compose_mcp_spawn_args(McpSpawnArgs {
+            agent_type: "ego",
+            args: &args,
+            prompt: "perform the task",
+            model: None,
+            print_mode: false,
+            output_format: None,
+            default_template: false,
+        })
+        .unwrap();
+        assert_eq!(argv, expected);
+        assert_eq!(deferred, None);
+    }
+}
+
 // finalize_spawn_args tests (story 091 — prefill-only TUIs)
 // -----------------------------------------------------------------------
 

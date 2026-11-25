@@ -11,7 +11,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 REF = sys.argv.pop(1) if len(sys.argv) > 1 else None
 VERSION = "2.0.0-beta.1"
-# Recorded from the build-only shell block at 8ff1d6475, not re-derived in CI.
+# Recorded at 8ff1d6475; extended with the ARM64 download legend contract.
+# Kept independent of the workflow output, not re-derived in CI.
 SHORT_BODY = Path(__file__).with_name("release-body-short.md").read_bytes()
 
 

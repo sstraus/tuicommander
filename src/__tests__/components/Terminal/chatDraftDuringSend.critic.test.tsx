@@ -1,6 +1,6 @@
 import { EditorView } from "@codemirror/view";
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const pending = vi.hoisted(() => ({ send: vi.fn(), queue: vi.fn() }));
 
@@ -63,6 +63,12 @@ afterEach(async () => {
 	// Real CodeMirror leaves a measurement frame and a 10ms blur timer on destroy.
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	await new Promise<void>((resolve) => setTimeout(resolve, 20));
+});
+
+// The first test otherwise pays the lazy ComposePanel/CodeMirror import inside
+// waitFor's 1000 ms window and fails under a loaded parallel run.
+beforeAll(async () => {
+	await import("../../../components/ComposePanel/ComposePanel");
 });
 
 describe("Chat draft during delayed send", () => {

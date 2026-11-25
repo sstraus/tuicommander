@@ -1,5 +1,9 @@
 # TUICommander — Complete Feature Reference
 
+Linux ARM64 desktop packaging is prepared for 2.1.2. Native package architecture
+and install/update selection are checked; actual ARM64 installation and desktop
+smoke remain release gates. See [the platform contract](guides/ci.md#native-linux-arm64-desktop-packages-212).
+
 The parallel Catalog authoring view includes trigger bindings: select a pinned workflow, map installed source fields, preview normalized payloads and inspect overlap revisions before explicit enable acknowledgement. A stored binding that an installed-source prerequisite holds without intake shows its reason ("No intake: …") next to it in the binding list. Authoring uses the shared desktop/HTTP action contract; native activities require the installed backend catalog/provider. Catalog failures remain explicit while independent saved drafts stay available.
 
 ### Neutral catalog authoring
@@ -321,7 +325,7 @@ Expanded tool rows use theme colours for Bash/execute commands, flags, strings a
 - Tab type colors: red gradient=diff, blue gradient=editor, teal gradient=markdown, purple gradient=panel, amber gradient=remote PTY session
 - Remote PTY sessions (created via HTTP/MCP) show "PTY:" prefix and amber styling
 - Progress bar (OSC 9;4)
-- Context menu (right-click): Close Tab, Close Other Tabs, Close Tabs to the Right, Detach to Window, Copy Path. Terminal tabs also offer Copy session ID, Copy process ID and Copy alias when available.
+- Context menu (right-click): Close Tab, Close Other Tabs, Close Tabs to the Right, Detach to Window, Copy Path. Terminal tabs show clickable **Session: <full ID>** and **Alias: <value>** rows when available. Each row copies its displayed value; the tab menu does not show a process ID.
   - Copy Path appears on every file-backed tab — diff, editor, markdown, HTML preview, and a plugin panel opened from a `file://` url — and copies the ABSOLUTE path with `$HOME` shortened to `~`. The tab stores keep `filePath` relative to the tab's filesystem root, so the root is joined back on before copying
   - "Open in Browser" on a `file://` plugin panel hands the file to the OS default application, not to the URL allowlist (which permits only http/https/mailto, because the URLs it was built for come off a PTY)
 - **Context menu shortcut chords** — while a context menu is open, pressing a menu item's keyboard shortcut chord (modifier + key, or Enter) fires that action directly without needing to click. Modifier-only keystrokes (Cmd, Shift, etc.) do not close the menu so multi-key chords can form; any other non-matching key closes the menu normally
@@ -983,6 +987,10 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 
 ## 6. AI Agent Support
 
+On macOS, process detection falls back to the current kernel process name if an
+update unlinks a running executable. Existing foreground and composer guards
+still apply; unknown names do not gain agent identity.
+
 - **Env-prefixed Claude launches** — named Unix launches and resumes receive status hooks and init instructions through the same PATH shim, including `env CLAUDE_CONFIG_DIR=… claude`. Explicit settings and administrative commands retain precedence.
 
 - **Independent ego advisors** — the Unix shim isolates headless and redirected advisors from implicit parent UI instructions, attachments and MCP identity. Direct terminals and explicit one-launch hosted peers retain their context.
@@ -1191,6 +1199,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - `slash_mode` cleared on user-input events and status-line events
 
 ### 6.13 Inter-Agent Messaging
+- **Ego interactive spawn**: the built-in MCP spawn fallback sends the task as one positional argument, without the headless `run` subcommand. Explicit arguments and named run profiles keep precedence.
 - **Claude background output**: managed MCP peers default to `CLAUDE_CODE_TMPDIR=$HOME/Gits/.tmp/claude/`, created before spawn; explicit inherited, run-config or caller values take precedence.
 - Agent-to-agent coordination when multiple agents are spawned in parallel, carried by the `agent` MCP tool — there is no separate `messaging` tool
 - **Identity**: Each agent uses its `$TUIC_SESSION` env var (stable tab UUID) as its messaging identity. A headerless external caller may `register` without `tuic_session` to be issued an MCP-scoped UUID, or supply a stable UUID to reclaim an existing identity
@@ -1804,6 +1813,12 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 ---
 
 ## 11. Settings
+
+Ego credential inventory uses versioned machine output. Full named-account IDs,
+legacy provider slots and missing local sources stay distinct. Named and orphan
+accounts do not generate legacy auth edit targets; malformed inventory fails
+without a human-text fallback.
+
 
 AI Chat settings retain model controls when ego health diagnostics fail, with a non-blocking explanation and preserved credential evidence.
 
@@ -3646,18 +3661,27 @@ Native story notes: the shared project-scoped story service appends immutable co
 
 ## AI Chat slash commands
 
+Local **Sending…** receipts show submitted text and attachments before the ACP
+receipt. Backend queue, active-turn, or settlement evidence clears each receipt.
+Failed submissions retain their payload for explicit retry without changing newer
+drafts. These local receipts have no cancel or recall action. Agent-advertised
+slash offers stay available when no active host handler owns the same name.
+
 A leading `/` opens the selected conversation's ACP command offer with descriptions,
 input hints, prefix filtering and keyboard/mouse completion. Agent invocations keep
 `/<name> <arguments>` prompt text. Supported host actions (`/new`, `/clear`, `/quit`
 with `/q`, `/usage`, and advertised `/compact`, `/fork`, `/pause`, `/resume`) use the
-existing controls, not model prompts. Unknown or unsupported commands retain the
+existing controls, not model prompts. `/clear` resets agent context through the
+same fresh-session action as **New**, without deleting saved history. It keeps
+the source draft on failure and refuses during running or paused turns. An agent
+offer named `clear` cannot replace this host action. Unknown or unsupported commands retain the
 draft and show an inline list of available commands (#2393-19fc). A leading path
 token with another `/` is prompt text unless it is an advertised command name;
 bare unknown names remain command attempts (#2421-6e0a).
 
 ### Ego terminal usage (#2386-6f7c)
 
-Ego terminal usage uses the exact live pid lease and `ego usage --json --session <id>` reports v3–v6. The badge does not show the ego model or context. Subscription quotas come from the provider quota registry under the key that the foreground ego harness owns; an ego session never borrows a Claude or Codex CLI account. The status bar reads that quota from the shared registry store, with no provider request on a session switch. The ego quota owner reads only ego's `rate_limits` contract: passively, the provider-limit observations in the usage report v6 supply the badge quota for every provider; actively, `ego auth usage <provider> --json` runs with the bound `EGO_HOME`. Ego ledger costs do not supply badge quotas; session details still show ledger accounting. Unsupported report versions return an error and log one warning per process, rather than silently emptying the badge. The executable comes from the live terminal, not the AI Chat setting.
+Ego terminal usage uses the exact live pid lease and `ego usage --json --session <id>` reports v3–v6. The badge does not show the ego model or context. Subscription quotas come from the provider quota registry under the key that the foreground ego harness owns; an ego session never borrows a Claude or Codex CLI account. The status bar reads that quota from the shared registry store, with no provider request on a session switch. The ego quota owner reads only ego's `rate_limits` contract: passively, the provider-limit observations in the usage report v6 supply the badge quota for every provider; actively, `ego auth usage <provider> --json` runs with the bound `EGO_HOME` for a legacy session. A named session uses the manifest's stable `connection` ID and `ego auth --connection <id> usage --json`. Registry keys and both observation paths keep the vendor and connection separate, including when an account ID equals a vendor name. Named OAuth model routes use their vendor identity for quota matching (`openai-codex` → `openai`, `xai-oauth` → `xai`, `minimax-oauth` → `minimax`); legacy route identities stay unchanged. Missing or null connection means legacy; malformed connection identity leaves quota unavailable rather than selecting legacy credentials. Ego ledger costs do not supply badge quotas; session details still show ledger accounting. Unsupported report versions return an error and log one warning per process, rather than silently emptying the badge. The executable comes from the live terminal, not the AI Chat setting.
 
 ### Story drafts from requests
 
