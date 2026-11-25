@@ -262,6 +262,8 @@ async fn operator_answer_fences_artifact_and_reconciles_original_resume() {
 
 #[path = "native_operator_tests/closure.rs"]
 mod closure;
+#[path = "native_operator_tests/http.rs"]
+mod http;
 
 // Catches a normalized generation label accepted after a newer source intent
 // owns the resource, including the admission-to-cancellation-flush window.

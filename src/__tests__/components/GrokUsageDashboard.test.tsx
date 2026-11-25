@@ -1,10 +1,12 @@
 import { render } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatMoney, GrokUsageDashboard } from "../../components/GrokUsageDashboard/GrokUsageDashboard";
+import type { GrokUsageApiResponse } from "../../features/grokUsage";
 import { providerQuotaStore } from "../../stores/providerQuota";
 import { mockInvoke } from "../mocks/tauri";
 
-const grokFixture = {
+const grokFixture: GrokUsageApiResponse = {
 	config: {
 		credit_usage_percent: 26,
 		current_period: { period_type: "USAGE_PERIOD_TYPE_WEEKLY", start: "2026-09-15", end: "2026-09-22" },
@@ -83,6 +85,53 @@ describe("GrokUsageDashboard", () => {
 		expect(mockInvoke.mock.calls.map(([command]) => command)).toEqual(["get_provider_quotas"]);
 		unmount();
 		providerQuotaStore.stop();
+	});
+
+	// Catches: a reused singleton waits for the timer on session-to-host changes,
+	// reuses old host billing on a later open, or shows a late reply after switching.
+	it("switching_session_and_host_refreshes_without_reusing_account_detail", async () => {
+		let resolveHost!: (value: typeof grokFixture) => void;
+		mockInvoke.mockImplementation(async (command) =>
+			command === "get_provider_quotas"
+				? []
+				: new Promise<typeof grokFixture>((resolve) => {
+						resolveHost = resolve;
+					}),
+		);
+		const [sessionId, setSessionId] = createSignal<string | undefined>("private-session");
+		const { container, unmount } = render(() => GrokUsageDashboard({ sessionId }));
+		await vi.advanceTimersByTimeAsync(0);
+		setSessionId(undefined);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(mockInvoke.mock.calls.map(([command]) => command)).toEqual(["get_provider_quotas", "get_grok_usage_api"]);
+		resolveHost(grokFixture);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(container.textContent).toContain("X Premium+");
+		setSessionId("other-session");
+		await vi.advanceTimersByTimeAsync(0);
+		expect(container.textContent).not.toContain("X Premium+");
+		setSessionId(undefined);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(container.textContent).not.toContain("X Premium+");
+		const lateReply = resolveHost;
+		setSessionId("third-session");
+		await vi.advanceTimersByTimeAsync(0);
+		lateReply(grokFixture);
+		await vi.advanceTimersByTimeAsync(0);
+		setSessionId(undefined);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(container.textContent).not.toContain("X Premium+");
+		resolveHost({
+			...grokFixture,
+			subscription_tier: "Host billing",
+			config: { ...grokFixture.config, credit_usage_percent: null },
+		});
+		await vi.advanceTimersByTimeAsync(0);
+		expect(container.textContent).toContain("Host billing");
+		expect(container.textContent).toContain("Provider did not report a usage percentage.");
+		expect(container.textContent).toContain("2.50");
+		expect(container.textContent).not.toContain("26%");
+		unmount();
 	});
 
 	it("does not turn an absent amount into zero", () => {

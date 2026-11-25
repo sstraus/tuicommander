@@ -96,6 +96,13 @@ pub(super) enum Command {
         meta: Option<v1::Meta>,
         reply: Reply<AcpTurnId>,
     },
+    /// Admit a mail wake only while the actor's entire connection is idle.
+    /// Unlike an owner prompt, this must never queue or steer.
+    WakeIdle {
+        session_id: v1::SessionId,
+        prompt: Vec<v1::ContentBlock>,
+        reply: Reply<Option<AcpTurnId>>,
+    },
     Cancel {
         session_id: v1::SessionId,
         expected_turn: Option<AcpTurnId>,
@@ -659,6 +666,38 @@ impl ConnectionActor {
                     }));
                 } else {
                     self.handle_prompt(session_id, prompt, meta, reply, connection, in_flight);
+                }
+            }
+            Command::WakeIdle {
+                session_id,
+                prompt,
+                reply,
+            } => {
+                if self.attachments.values().any(|attachment| {
+                    attachment.state != AcpAttachmentState::Idle
+                        || !attachment.queued_prompts.is_empty()
+                        || attachment
+                            .active_turn
+                            .as_ref()
+                            .is_some_and(|turn| turn.state != AcpTurnState::Settled)
+                }) {
+                    let _ = reply.send(Ok(None));
+                    return;
+                }
+                match self.start_prompt(&session_id, prompt, None, connection) {
+                    Ok((turn_id, sent)) => {
+                        let _ = reply.send(Ok(Some(turn_id)));
+                        if let Some(sent) = sent {
+                            in_flight.push(Box::pin(async move {
+                                Pending::Turn {
+                                    session_id,
+                                    turn_id,
+                                    outcome: sent.await,
+                                }
+                            }));
+                        }
+                    }
+                    Err(error) => drop(reply.send(Err(error))),
                 }
             }
             Command::Cancel {

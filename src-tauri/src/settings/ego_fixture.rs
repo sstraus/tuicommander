@@ -1,4 +1,4 @@
-//! Isolated process replay; all JSON payloads were captured from installed Ego.
+//! Isolated process replay of recorded Ego producer output; see fixture provenance.
 use super::{registry::Registry, request::*};
 use crate::{AppState, state::tests_support::make_test_app_state};
 use serde_json::{Value, json};
@@ -21,7 +21,10 @@ pub(super) fn fixture() -> Fixture {
         ("beta.json", include_str!("fixtures/ego/stored-alpha.json")),
         ("models.json", include_str!("fixtures/ego/models.json")),
         ("doctor.json", include_str!("fixtures/ego/doctor.json")),
-        ("auth.txt", include_str!("fixtures/ego/auth-empty.txt")),
+        (
+            "auth.json",
+            include_str!("fixtures/ego/auth-inventory.json"),
+        ),
         (
             "capabilities.json",
             include_str!("fixtures/ego/capabilities.json"),

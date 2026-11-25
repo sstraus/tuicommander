@@ -1057,6 +1057,18 @@ say what was measured, not what the list costs today.
 | `settings` | describe, get, set, reset, patch, perform, refresh | Disabled; trusted UI opt-in required |
 | `debug` | agent_detection, logs, sessions, invoke_js, help | Disabled |
 
+### Ego spawn prompt fallback
+
+`agent action=spawn agent_type=ego prompt="<task>"` uses Ego's interactive
+positional prompt when no explicit `args` or named run-profile arguments apply.
+The built-in template is `["{prompt}"]`, not `["run", "{prompt}"]`: `ego run`
+is headless. The task stays one argv element, and Ego does not use deferred PTY
+prompt injection. Structured `model` adds `--model`; Claude-only `print_mode`
+and `output_format` parameters are ignored with a warning, as for other
+non-Claude agents. Choose an explicit headless invocation or a named run profile
+if needed; neither is replaced by the fallback. Unknown agents still require
+explicit prompt arguments or a configured profile.
+
 ### `agent` surface by caller role (#2805-4ee2)
 
 `tools/list`, `get_tool_schema` and the initialize instructions give each caller

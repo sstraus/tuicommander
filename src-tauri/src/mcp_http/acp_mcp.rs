@@ -97,6 +97,85 @@ impl AcpMcpHost {
         }
     }
 
+    fn connect_inner(
+        &self,
+        peer_id: Option<&str>,
+        notify: McpNotify,
+        origin: Option<&crate::acp::AcpMcpOrigin>,
+    ) -> Result<String, McpOverAcpError> {
+        let state = self.state()?;
+        let id = uuid::Uuid::new_v4().to_string();
+        refresh_mcp_session(&state, &id, false, peer_id);
+        // Subscribed under the session entry, the order `mcp_get` keeps:
+        // `mcp_sessions` before `messaging_channels`.
+        let messages = {
+            let Some(mut meta) = state.mcp.sessions.get_mut(&id) else {
+                return Err(McpOverAcpError::new(
+                    INTERNAL_ERROR,
+                    "MCP session vanished while opening",
+                ));
+            };
+            meta.has_sse_stream = true;
+            state
+                .session_maps
+                .messaging_channels
+                .entry(id.clone())
+                .or_insert_with(|| broadcast::channel(64).0)
+                .subscribe()
+        };
+        let subscriptions = Subscriptions::default();
+        let feeds = Feeds {
+            tools: state.mcp.tools_changed.subscribe(),
+            messages,
+            events: state.event_bus.subscribe(),
+            inbox: peer_id.map(|peer| state.subscribe_agent_inbox(peer)),
+            peer: peer_id.map(str::to_owned),
+            turns: if let Some(origin) = origin {
+                state
+                    .acp
+                    .snapshot(origin.connection_id)
+                    .ok()
+                    .and_then(|snapshot| {
+                        state
+                            .acp
+                            .subscribe(
+                                origin.connection_id,
+                                snapshot.latest_sequence.saturating_add(1),
+                            )
+                            .ok()
+                    })
+            } else {
+                peer_id.and_then(|peer| {
+                    state
+                        .acp
+                        .subscribe_peer_tail(peer)
+                        .map(|(stream, _)| stream)
+                })
+            },
+        };
+        let wake = peer_id.map(|peer| {
+            let wake = Arc::clone(&self.wake);
+            let peer = peer.to_owned();
+            Box::new(move || wake(peer.clone())) as Box<dyn Fn() -> WakeResult + Send>
+        });
+        let forwarder = tokio::spawn(forward(
+            Arc::downgrade(&state),
+            feeds,
+            Arc::clone(&subscriptions),
+            notify,
+            wake,
+        ));
+        self.connections.lock().insert(
+            id.clone(),
+            Link {
+                peer_id: peer_id.map(str::to_owned),
+                subscriptions,
+                forwarder,
+            },
+        );
+        Ok(id)
+    }
+
     fn state(&self) -> Result<Arc<AppState>, McpOverAcpError> {
         self.state
             .upgrade()
@@ -140,55 +219,7 @@ impl McpOverAcpHost for AcpMcpHost {
     }
 
     fn connect(&self, peer_id: Option<&str>, notify: McpNotify) -> Result<String, McpOverAcpError> {
-        let state = self.state()?;
-        let id = uuid::Uuid::new_v4().to_string();
-        refresh_mcp_session(&state, &id, false, peer_id);
-        // Subscribed under the session entry, the order `mcp_get` keeps:
-        // `mcp_sessions` before `messaging_channels`.
-        let messages = {
-            let Some(mut meta) = state.mcp.sessions.get_mut(&id) else {
-                return Err(McpOverAcpError::new(
-                    INTERNAL_ERROR,
-                    "MCP session vanished while opening",
-                ));
-            };
-            meta.has_sse_stream = true;
-            state
-                .session_maps
-                .messaging_channels
-                .entry(id.clone())
-                .or_insert_with(|| broadcast::channel(64).0)
-                .subscribe()
-        };
-        let subscriptions = Subscriptions::default();
-        let feeds = Feeds {
-            tools: state.mcp.tools_changed.subscribe(),
-            messages,
-            events: state.event_bus.subscribe(),
-            inbox: peer_id.map(|peer| state.subscribe_agent_inbox(peer)),
-            peer: peer_id.map(str::to_owned),
-        };
-        let wake = peer_id.map(|peer| {
-            let wake = Arc::clone(&self.wake);
-            let peer = peer.to_owned();
-            Box::new(move || wake(peer.clone())) as Box<dyn Fn() -> WakeResult + Send>
-        });
-        let forwarder = tokio::spawn(forward(
-            Arc::downgrade(&state),
-            feeds,
-            Arc::clone(&subscriptions),
-            notify,
-            wake,
-        ));
-        self.connections.lock().insert(
-            id.clone(),
-            Link {
-                peer_id: peer_id.map(str::to_owned),
-                subscriptions,
-                forwarder,
-            },
-        );
-        Ok(id)
+        self.connect_inner(peer_id, notify, None)
     }
 
     fn connect_scoped(
@@ -198,7 +229,7 @@ impl McpOverAcpHost for AcpMcpHost {
         origin: Option<&crate::acp::AcpMcpOrigin>,
     ) -> Result<String, McpOverAcpError> {
         let state = self.state()?;
-        let id = self.connect(peer_id, notify)?;
+        let id = self.connect_inner(peer_id, notify, origin)?;
         if let Some(origin) = origin {
             state.mcp.acp_origins.insert(id.clone(), origin.clone());
         }
@@ -522,6 +553,9 @@ struct Feeds {
     inbox: Option<tokio::sync::watch::Receiver<u64>>,
     /// The peer whose inbox `inbox` watches.
     peer: Option<String>,
+    /// The owning ACP connection when scoped; legacy unscoped callers use
+    /// the peer's newest live generation at connect time.
+    turns: Option<crate::acp::AcpEventStream>,
 }
 
 /// Carry what GET `/mcp` would have streamed to ego, and announce subscribed
@@ -550,6 +584,7 @@ async fn forward(
     let mut last_workspace: Option<Value> = None;
     let mut notified_subscriptions = std::collections::HashMap::new();
     let mut woken_subscriptions = std::collections::HashMap::new();
+    let mut woken_inbox = None;
     let arm = |due: &mut Option<tokio::time::Instant>| {
         due.get_or_insert_with(|| tokio::time::Instant::now() + COALESCE);
     };
@@ -606,6 +641,26 @@ async fn forward(
                 }
                 Err(_) => feeds.inbox = None,
             },
+            event = async {
+                match feeds.turns.as_mut() {
+                    Some(turns) => turns.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => match event {
+                Some(Ok(event)) if matches!(event.event,
+                    crate::acp::AcpClientEvent::TurnSettled { .. }
+                    | crate::acp::AcpClientEvent::TurnFailed { .. }) => {
+                    // The actor has published retirement before journaling this
+                    // event. Retry through the same debounce and unread check;
+                    // never prompt directly from a lifecycle notification.
+                    wake_due.get_or_insert_with(|| tokio::time::Instant::now() + WAKE_DEBOUNCE);
+                }
+                Some(Ok(_)) => {}
+                // A stream gap can include a retirement. The idle and unread
+                // checks below still decide whether a wake is warranted.
+                Some(Err(_)) => { wake_due.get_or_insert_with(|| tokio::time::Instant::now() + WAKE_DEBOUNCE); }
+                None => feeds.turns = None,
+            },
             () = until(workspace_due) => {
                 workspace_due = None;
                 let Some(state) = state.upgrade() else { return };
@@ -639,10 +694,14 @@ async fn forward(
                 woken_subscriptions.retain(|uri, _| uris.contains(uri));
                 let mut unread = false;
                 let mut candidates = Vec::new();
+                let mut inbox_candidate = None;
                 if uris.is_empty() {
-                    unread = feeds.peer.as_deref().is_some_and(|peer| {
-                        inbox_snapshot(&state, Some(peer))["messages"].as_array().is_some_and(|messages| !messages.is_empty())
-                    });
+                    if let Some(peer) = feeds.peer.as_deref()
+                        && inbox_snapshot(&state, Some(peer))["messages"].as_array().is_some_and(|messages| !messages.is_empty()) {
+                        inbox_candidate = state.agent_inbox.get(peer)
+                            .and_then(|messages| messages.back().map(|message| message.id.clone()));
+                        unread = inbox_candidate.is_some() && inbox_candidate != woken_inbox;
+                    }
                 } else if let Some(peer) = feeds.peer.as_deref() {
                     // A durable resource selection also filters the idle ego wake.
                     for uri in uris {
@@ -658,6 +717,7 @@ async fn forward(
                     // An attempted wake can be skipped while ego is busy. Only
                     // an accepted turn consumes this frozen batch's wake.
                     woken_subscriptions.extend(candidates);
+                    if inbox_candidate.is_some() { woken_inbox = inbox_candidate; }
                 }
             },
         }
@@ -1104,6 +1164,262 @@ mod tests {
         state.agent_read_cursor.insert(PEER.to_owned(), last);
         tokio::time::sleep(WAKE_DEBOUNCE + COALESCE).await;
         assert_eq!(woken.lock().len(), 1, "mail already read wakes nothing");
+    }
+
+    // Exercises the real actor, manager, inbox and MCP forwarder together. The
+    // fixture holds the owner turn until session/list releases it and rejects
+    // any prompt sent before that barrier or after the one permitted mail wake.
+    async fn retirement_mail_case(
+        read_before_retirement: bool,
+        repeat_events: bool,
+        owner_race: bool,
+    ) {
+        use crate::acp::{AcpClientEvent, AcpConnectRequest, AcpSessionAuthority, EgoAcpConfig};
+        use agent_client_protocol::schema::v1;
+
+        let root = tempfile::TempDir::new_in(tuic_test_support::test_temp_root()).unwrap();
+        std::fs::copy(
+            if owner_race {
+                "tests/fixtures/acp/ego-steer-initialize.json"
+            } else {
+                "tests/fixtures/acp/ego-initialize.json"
+            },
+            root.path().join("ego-initialize.json"),
+        )
+        .unwrap();
+        let mut steps = vec![
+            json!({"step":"expect","method":"initialize","capture":"init"}),
+            json!({"step":"respond","to":"init","result_file":"ego-initialize.json"}),
+            json!({"step":"expect","method":"session/new","capture":"new"}),
+            json!({"step":"respond","to":"new","result":{"sessionId":"mail-chat","configOptions":[]}}),
+            json!({"step":"expect","method":"session/prompt","params":{"prompt":[{"type":"text","text":"owner turn"}]},"capture":"owner"}),
+            json!({"step":"expect","method":"session/list","capture":"release"}),
+            json!({"step":"respond","to":"owner","result":{"stopReason":"end_turn"}}),
+            json!({"step":"respond","to":"release","result":{"sessions":[]}}),
+        ];
+        if !read_before_retirement && !owner_race {
+            steps.extend([
+                json!({"step":"expect","method":"session/prompt","params":{"prompt":[{"type":"text","text":crate::pty::PEER_MAIL_WAKE}]},"capture":"wake"}),
+                json!({"step":"respond","to":"wake","result":{"stopReason":"end_turn"}}),
+            ]);
+        }
+        steps.extend([
+            json!({"step":"expect","method":"session/list","capture":"finish"}),
+            json!({"step":"respond","to":"finish","result":{"sessions":[]}}),
+            json!({"step":"expect_no_frame"}),
+        ]);
+        std::fs::write(
+            root.path().join("scenario.jsonl"),
+            steps
+                .iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        let executable = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join(format!(
+                "tuic-acp-fixture-agent{}",
+                std::env::consts::EXE_SUFFIX
+            ));
+        assert!(
+            executable.is_file(),
+            "fixture agent must be built by nextest setup"
+        );
+        let state = test_state();
+        let connection = state
+            .acp
+            .connect_with_peer(
+                &EgoAcpConfig {
+                    executable,
+                    profile: String::new(),
+                    master_prompt: String::new(),
+                    ai_chat: false,
+                },
+                AcpConnectRequest {
+                    root: root.path().to_owned(),
+                    env: None,
+                },
+                PEER.to_owned(),
+            )
+            .await
+            .unwrap();
+        let session = state
+            .acp
+            .new_session(
+                connection.connection_id,
+                AcpSessionAuthority {
+                    cwd: root.path().to_owned(),
+                    additional_directories: vec![],
+                    mcp_servers: vec![],
+                },
+            )
+            .await
+            .unwrap();
+        let host = AcpMcpHost::new(&state);
+        let (notify, _) = listener();
+        let id = host
+            .connect_scoped(
+                Some(PEER),
+                notify,
+                Some(&crate::acp::AcpMcpOrigin {
+                    peer_id: Some(PEER.to_owned()),
+                    connection_id: connection.connection_id,
+                    generation: connection.generation,
+                }),
+            )
+            .unwrap();
+        if owner_race {
+            // On this current-thread runtime all three calls enqueue before
+            // the actor runs: the manager snapshot still says idle for both
+            // wakes. The recorded capability makes the old path steer.
+            let (owner, first_wake, second_wake) = tokio::join!(
+                biased;
+                state.acp.prompt(
+                    connection.connection_id,
+                    session.session_id.clone(),
+                    vec![v1::ContentBlock::Text(v1::TextContent::new("owner turn"))],
+                ),
+                state.acp.wake_idle_peer(PEER, crate::pty::PEER_MAIL_WAKE),
+                state.acp.wake_idle_peer(PEER, crate::pty::PEER_MAIL_WAKE),
+            );
+            owner.unwrap();
+            assert_eq!(
+                first_wake.unwrap(),
+                None,
+                "a wake must not steer into the owner turn"
+            );
+            assert_eq!(
+                second_wake.unwrap(),
+                None,
+                "another forwarder must not queue or steer either"
+            );
+            assert_eq!(
+                state
+                    .acp
+                    .snapshot(connection.connection_id)
+                    .unwrap()
+                    .attachments[0]
+                    .queued_prompts,
+                Vec::<crate::acp::AcpQueuedPrompt>::new()
+            );
+            // The fixture accepts only session/list next: any _ego/steer
+            // frame or queued session/prompt makes these barriers fail.
+            for _ in 0..2 {
+                state
+                    .acp
+                    .list_sessions(connection.connection_id, Default::default())
+                    .await
+                    .unwrap();
+            }
+            host.disconnect(&id);
+            state
+                .acp
+                .disconnect(connection.connection_id)
+                .await
+                .unwrap();
+            return;
+        }
+        state
+            .acp
+            .prompt(
+                connection.connection_id,
+                session.session_id,
+                vec![v1::ContentBlock::Text(v1::TextContent::new("owner turn"))],
+            )
+            .await
+            .unwrap();
+        state.push_agent_inbox(PEER, mail("reply", "reply during owner turn"));
+        tokio::time::sleep(WAKE_DEBOUNCE + COALESCE).await;
+        let snapshot = state.acp.snapshot(connection.connection_id).unwrap();
+        assert!(
+            snapshot.attachments[0].queued_prompts.is_empty(),
+            "mail must not queue a prompt during the owner turn"
+        );
+        if read_before_retirement {
+            // Use the real consuming inbox boundary, not a hand-set read cursor.
+            host.message(
+                &id,
+                "tools/call".into(),
+                object(json!({
+                    "name":"agent", "arguments":{"action":"inbox"},
+                    "_meta": ego_meta(),
+                })),
+            )
+            .await
+            .unwrap();
+            assert_eq!(inbox_snapshot(&state, Some(PEER))["messages"], json!([]));
+        }
+        state
+            .acp
+            .list_sessions(connection.connection_id, Default::default())
+            .await
+            .unwrap();
+        let prompt_count = || {
+            state
+                .acp
+                .page(connection.connection_id, 0, None, None)
+                .unwrap()
+                .events
+                .iter()
+                .filter(|event| matches!(event.event, AcpClientEvent::PromptSent { .. }))
+                .count()
+        };
+        if !read_before_retirement {
+            eventually("the actual mail prompt after retirement", || {
+                prompt_count() == 2
+            })
+            .await;
+        }
+        if repeat_events {
+            for _ in 0..5 {
+                state.notify_mail_subscription_change(PEER);
+            }
+        }
+        // Includes retirement of the mail wake itself, which must not wake
+        // the same unread reply again, and duplicate inbox notifications.
+        tokio::time::sleep(WAKE_DEBOUNCE + COALESCE * 2).await;
+        assert_eq!(prompt_count(), if read_before_retirement { 1 } else { 2 });
+        state
+            .acp
+            .list_sessions(connection.connection_id, Default::default())
+            .await
+            .unwrap();
+        host.disconnect(&id);
+        state
+            .acp
+            .disconnect(connection.connection_id)
+            .await
+            .unwrap();
+    }
+
+    // Catches a busy-skipped wake being consumed forever (including a retained settled turn).
+    #[tokio::test]
+    async fn busy_reply_wakes_after_turn_retirement() {
+        retirement_mail_case(false, false, false).await;
+    }
+
+    // Catches retirement waking a reply already consumed by the active turn.
+    #[tokio::test]
+    async fn busy_reply_read_before_turn_retirement_does_not_wake() {
+        retirement_mail_case(true, false, false).await;
+    }
+
+    // Catches repeated inbox events or the wake turn's own retirement waking the same batch twice.
+    #[tokio::test]
+    async fn busy_reply_repeated_events_do_not_duplicate_wake() {
+        retirement_mail_case(false, true, false).await;
+    }
+
+    // Catches stale-idle manager checks steering or queueing concurrent wakes into an owner turn.
+    #[tokio::test]
+    async fn busy_reply_owner_prompt_race_never_steers_or_queues_wakes() {
+        retirement_mail_case(false, false, true).await;
     }
 
     /// ego admits the session only if every answer the host gives parses under

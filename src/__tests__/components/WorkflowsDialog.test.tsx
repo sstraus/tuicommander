@@ -23,6 +23,7 @@ afterEach(() => {
 	cleanup();
 	workflowsUi.close();
 	storiesUi.close();
+	repositoriesStore._testCancelPendingSave();
 	vi.mocked(invoke).mockReset();
 });
 
