@@ -749,13 +749,13 @@ function createRepositoriesStore() {
 		// The common event by far is this client's own echo, and the whole body below
 		// is `JSON.stringify` on every repository. Leave before paying for it.
 		if (jsonEqual(baseline, fresh)) return;
-		const current = serializableSnapshot(
-			state.repositories,
-			state.repoOrder,
-			state.activeRepoPath,
-			state.groups,
-			state.groupOrder,
-		);
+		// Repository removal also edits placement. Capture that small intent view
+		// before adoption mutates it, without traversing live repository metadata.
+		const current = {
+			groups: cloneJson(state.groups),
+			repoOrder: [...state.repoOrder],
+			groupOrder: [...state.groupOrder],
+		};
 		const previousOwners = Object.values(state.repositories).map((repo) => repo.connectionId);
 		const next = cloneJson(baseline);
 		let adopted = false;
@@ -766,7 +766,9 @@ function createRepositoriesStore() {
 			if (jsonEqual(mine, incoming)) continue;
 			// Unsaved local intent for this repo — leave it to the save path. Derived
 			// fields are excluded: a diffstat that moved under us is not an edit.
-			if (!jsonEqual(repositoryIntentView(mine), repositoryIntentView(current.repos[id] ?? null))) continue;
+			// Only inspect live intent for records that actually changed on disk.
+			const live = state.repositories[id];
+			if (!jsonEqual(repositoryIntentView(mine), repositoryIntentView(live ? serializableRepo(live) : null))) continue;
 			if (incoming) {
 				const normalized = cloneJson(incoming);
 				normalizeLoadedRepo(normalized);
@@ -869,21 +871,10 @@ function createRepositoriesStore() {
 			return;
 		}
 		remoteSyncPending = false;
-		loadPersistedSnapshot()
-			.then((fresh) => {
-				if (!fresh) return;
-				// A save can have started while the read was in flight — same window,
-				// checked again on the near side of it.
-				if (saveInFlight) {
-					remoteSyncPending = true;
-					return;
-				}
-				adoptRemoteRepositories(fresh);
-			})
-			.catch((err) => appLogger.error("store", "Failed to re-read repositories after a remote change", err));
+		settingsRefresh.invalidate("repositories_registration");
 	};
 
-	/** Subscribe once to the backend's `repositories-changed` broadcast. Started
+	/** Register one refresh owner and bridge the legacy broadcast into it. Started
 	 *  from `hydrate`, so the first adoption always has a baseline to diff against.
 	 *  This client's own saves echo back here too; they adopt nothing, because every
 	 *  key they moved still differs from the baseline they were diffed from. */
@@ -895,11 +886,14 @@ function createRepositoriesStore() {
 			read: loadPersistedSnapshot,
 			apply: (fresh) => {
 				if (!fresh) return;
+				// A save may have started while this read was in flight. Its reply
+				// owns the baseline until onSaveSettled requests a fresh read.
 				if (saveInFlight) {
 					remoteSyncPending = true;
 					return;
 				}
-				adoptRemoteRepositories(fresh);
+				// Publish one complete document, with its baseline settled before consumers run.
+				batch(() => adoptRemoteRepositories(fresh));
 			},
 		});
 		window.addEventListener("beforeunload", stopSettings, { once: true });

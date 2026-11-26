@@ -115,12 +115,13 @@ pub(super) fn grok_snapshot(
     let window = response
         .config
         .credit_usage_percent
-        .and_then(|pct| QuotaWindow::from_duration(pct, secs, end.map(|e| e.to_rfc3339()), None));
-    let Some(window) = window else {
-        return Err(QuotaError::Contract("No Grok quota windows".into()));
-    };
+        .map(|pct| {
+            QuotaWindow::from_duration(pct, secs, end.map(|e| e.to_rfc3339()), None)
+                .ok_or_else(|| QuotaError::Contract("Invalid Grok quota percentage".into()))
+        })
+        .transpose()?;
     Ok(QuotaSnapshot {
-        windows: vec![window],
+        windows: window.into_iter().collect(),
         plan: response.subscription_tier.clone(),
         credits: None,
         account: None,
@@ -158,6 +159,58 @@ mod tests {
         other.config.current_period.as_mut().unwrap().end = Some("16/11/2026".into());
         let value = grok_snapshot(other, 1).unwrap();
         assert_eq!(value.windows[0].window_seconds, None);
+    }
+
+    // Catches: supported omission of the percentage drops valid billing detail
+    // or becomes a registry contract error. This varies the recorded fixture
+    // according to the parser's optional-field contract, not a live API capture.
+    #[test]
+    fn grok_missing_percent_preserves_billing_through_policy() {
+        let mut response = fixture();
+        response.config.credit_usage_percent = None;
+        let snapshot = grok_snapshot(response.clone(), 1).unwrap();
+        assert_eq!(snapshot.windows, Vec::<QuotaWindow>::new());
+        assert_eq!(snapshot.credits, None);
+        let mut entry = policy::Entry::default();
+        policy::apply(&mut entry, Ok(snapshot), 1, 1000, None);
+        assert!(entry.contract_error.is_none());
+        assert!(policy::is_fresh(&entry, 2, 1000));
+        let detail = entry.snapshot.unwrap().detail.unwrap();
+        let QuotaDetail::Grok {
+            response: stored, ..
+        } = detail
+        else {
+            panic!("missing Grok billing detail");
+        };
+        assert_eq!(
+            serde_json::to_value(stored).unwrap(),
+            serde_json::to_value(response).unwrap()
+        );
+    }
+
+    // Catches: treating an invalid reported percent like an absent optional field.
+    #[test]
+    fn grok_invalid_percent_remains_a_contract_error() {
+        for percent in [-1.0, f64::NAN, f64::INFINITY] {
+            let mut response = fixture();
+            response.config.credit_usage_percent = Some(percent);
+            assert!(matches!(
+                grok_snapshot(response, 1),
+                Err(QuotaError::Contract(_))
+            ));
+        }
+    }
+
+    // Catches: an unknown period invents a duration or labels a percent as credits.
+    #[test]
+    fn grok_unknown_period_has_a_neutral_usage_label() {
+        let mut response = fixture();
+        response.config.current_period = None;
+        let snapshot = grok_snapshot(response, 1).unwrap();
+        assert_eq!(snapshot.windows[0].kind, WindowKind::Other);
+        assert_eq!(snapshot.windows[0].label, "usage");
+        assert_eq!(snapshot.windows[0].window_seconds, None);
+        assert_eq!(snapshot.windows[0].used_percent, 26.0);
     }
 
     // Catches: an expired Grok login retried as a network failure on every

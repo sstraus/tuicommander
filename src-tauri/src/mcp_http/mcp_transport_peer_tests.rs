@@ -2466,6 +2466,55 @@ async fn mcp_delivery_regression_agent_wait_remains_pending_beyond_ten_seconds_t
     assert_eq!(response["messages"][0]["content"], "wake the wait");
 }
 
+// Catches: the lazy-discovery `call_tool` route dispatching `agent wait` without the
+// caller's MCP session, so the wait never sees the recipient inbox and runs to timeout.
+#[tokio::test]
+async fn agent_wait_through_call_tool_wakes_on_send() {
+    let state = test_state();
+    let sender_mcp = "mcp-call-tool-wait-sender";
+    let recipient_mcp = "mcp-call-tool-wait-recipient";
+    register_peer(&state, TEST_UUID_A, "sender", sender_mcp);
+    register_peer(&state, TEST_UUID_B, "recipient", recipient_mcp);
+
+    let waiting_state = Arc::clone(&state);
+    let waiter = tokio::spawn(async move {
+        post_test_tool_call(
+            waiting_state,
+            recipient_mcp,
+            "call_tool",
+            serde_json::json!({
+                "tool_name": "agent",
+                "arguments": {"action": "wait", "since": 0, "timeout_ms": 30_000},
+            }),
+        )
+        .await
+    });
+
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert!(
+        !waiter.is_finished(),
+        "the wait must block until mail arrives"
+    );
+    let sent = handle_messaging(
+        &state,
+        &serde_json::json!({"action": "send", "to": TEST_UUID_B, "message": "wake via call_tool"}),
+        Some(sender_mcp),
+    );
+    assert_eq!(sent["delivery_path"], "waiter_and_inbox");
+
+    let rpc = tokio::time::timeout(std::time::Duration::from_secs(2), waiter)
+        .await
+        .expect("a call_tool wait must wake right after inbox delivery, not at its timeout")
+        .unwrap();
+    let text = rpc["result"]["content"][0]["text"]
+        .as_str()
+        .expect("MCP result text");
+    let response: serde_json::Value = serde_json::from_str(text).unwrap();
+    assert_eq!(response["met"], true);
+    assert_eq!(response["timed_out"], false);
+    assert_eq!(response["messages"][0]["content"], "wake via call_tool");
+}
+
 #[tokio::test]
 async fn mcp_delivery_regression_agent_wait_replayed_cursor_times_out_after_observation() {
     let state = test_state();

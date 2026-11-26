@@ -1740,8 +1740,14 @@ impl ChunkProcessor {
         session_id: &str,
         payload: &str,
     ) -> bool {
+        let session_active = self.ego_events.session_active();
         let before = self.ego_events.stop_generation();
         let edge = self.ego_events.receive(payload);
+        if session_active && !self.ego_events.session_active() {
+            // session_end retires owned work before its following coarse idle,
+            // which no longer belongs to an active native session.
+            note_ego_owned_work(state, session_id, "idle");
+        }
         if self.ego_events.stop_generation() != before {
             revoke_background_completion_origin(state, session_id);
         }
@@ -1894,6 +1900,7 @@ impl ChunkProcessor {
                 // The agent is gone: its open question requests went with it.
                 self.claude_hooks.clear();
                 self.ego_events.clear();
+                note_ego_owned_work(state, session_id, "idle");
                 self.agent_tools.clear();
                 crate::codex_binding::revoke(state, session_id);
                 transition_explicit_shell_state(state, session_id, SHELL_IDLE, "idle", false);

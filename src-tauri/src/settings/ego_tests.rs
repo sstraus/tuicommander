@@ -90,33 +90,28 @@ async fn adapter_secret_fields_presence_only() {
     let mut config = disk(&f, "alpha");
     config["values"]["unknown_secret"] = json!("canary-ego-secret-in-diagnostic");
     std::fs::write(f.dir.path().join("alpha.json"), config.to_string()).unwrap();
-    std::fs::write(
-        f.dir.path().join("auth.txt"),
-        include_str!("fixtures/ego/auth-present.txt"),
-    )
-    .unwrap();
     let snapshot = get(
         &f,
         &[
             "/model",
-            "/credentials/openrouter",
             "/credentials/anthropic",
+            "/credentials/connection:key_absent",
         ],
     )
     .await
     .unwrap();
     assert_eq!(
-        snapshot.values["/credentials/openrouter"].stored,
+        snapshot.values["/credentials/anthropic"].stored,
         json!({"status":"set"})
     );
     assert_eq!(
-        snapshot.values["/credentials/anthropic"].stored,
+        snapshot.values["/credentials/connection:key_absent"].stored,
         json!({"status":"unset"})
     );
     let rejected = set(
         &f,
         snapshot.revision.clone(),
-        "/credentials/openrouter",
+        "/credentials/anthropic",
         json!("canary-ego-secret-in-diagnostic"),
     )
     .await
@@ -497,4 +492,211 @@ async fn ego_profile_read_must_not_report_base_auth_unset() {
             "an owner read failure does not prove profile scope rejection: {error}"
         ),
     }
+}
+
+// Catches: human headings, truncated IDs, or vendor flattening lose real inventory rows.
+#[tokio::test]
+async fn ego_inventory_recorded_named_legacy_and_source_presence() {
+    let f = fixture();
+    let long_path = format!("/credentials/connection:long_{}", "x".repeat(80));
+    let snapshot = get(
+        &f,
+        &[
+            "/credentials/anthropic",
+            "/credentials/connection:anthropic",
+            "/credentials/connection:account_a",
+            "/credentials/connection:account_b",
+            "/credentials/connection:key_absent",
+            "/credentials/connection:key_blank",
+            "/credentials/connection:key_empty",
+            "/credentials/connection:key_present",
+            "/credentials/connection:orphan",
+            &long_path,
+        ],
+    )
+    .await
+    .unwrap();
+    for path in [
+        "/credentials/anthropic",
+        "/credentials/connection:anthropic",
+        "/credentials/connection:account_a",
+        "/credentials/connection:key_present",
+        "/credentials/connection:orphan",
+        &long_path,
+    ] {
+        assert_eq!(
+            snapshot.values[path].stored,
+            json!({"status":"set"}),
+            "{path}"
+        );
+    }
+    for path in [
+        "/credentials/connection:account_b",
+        "/credentials/connection:key_absent",
+        "/credentials/connection:key_blank",
+        "/credentials/connection:key_empty",
+    ] {
+        assert_eq!(
+            snapshot.values[path].stored,
+            json!({"status":"unset"}),
+            "{path}"
+        );
+    }
+    let calls = calls(&f);
+    assert!(
+        calls
+            .iter()
+            .filter(|c| c["args"][0] == "auth")
+            .all(|c| c["args"][1] == "status" && c["args"][2] == "--json")
+    );
+    assert!(!calls.iter().any(|c| c["args"][0] == "models"));
+}
+
+// Catches: equal-spelling named and legacy identities overwrite one another.
+#[tokio::test]
+async fn ego_inventory_named_presence_does_not_overwrite_legacy() {
+    let f = fixture();
+    // Deliberately divergent presence derived from the actual producer capture.
+    let mut inventory: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/ego/auth-inventory.json")).unwrap();
+    let named = inventory["credentials"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|row| row["connection"] == "anthropic")
+        .unwrap();
+    named["present"] = json!(false);
+    std::fs::write(f.dir.path().join("auth.json"), inventory.to_string()).unwrap();
+    let snapshot = get(
+        &f,
+        &[
+            "/credentials/anthropic",
+            "/credentials/connection:anthropic",
+        ],
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        snapshot.values["/credentials/anthropic"].stored,
+        json!({"status":"set"})
+    );
+    assert_eq!(
+        snapshot.values["/credentials/connection:anthropic"].stored,
+        json!({"status":"unset"})
+    );
+}
+
+// Catches: named vendors, account IDs, orphan rows, or model sources invent legacy edit targets.
+#[tokio::test]
+async fn ego_inventory_only_legacy_rows_project_auth_targets() {
+    use super::service::Store;
+    let f = fixture();
+    let owner = std::sync::Arc::new(super::ego::EgoSettingsStore::new(f.state.clone()).unwrap())
+        .resolve(&Target::Machine)
+        .unwrap();
+    let document = tokio::task::spawn_blocking(move || owner.read())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        document["auth"]["anthropic"]["headers"],
+        serde_json::Value::Null
+    );
+    assert!(document["auth"].get("anthropic").is_some());
+    assert!(document["auth"].get("openai-codex").is_some());
+    for key in [
+        "account_a",
+        "account_b",
+        "openai",
+        "orphan",
+        "connection:anthropic",
+        "key_absent",
+    ] {
+        assert!(
+            document["auth"].get(key).is_none(),
+            "fabricated auth target {key}"
+        );
+    }
+    assert_eq!(document["auth"].as_object().unwrap().len(), 2);
+}
+
+// Catches: invalid machine output silently becomes empty inventory or falls back to human TSV.
+#[tokio::test]
+async fn ego_inventory_invalid_machine_output_fails_sanitized() {
+    let f = fixture();
+    let capture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/ego/auth-inventory.json")).unwrap();
+    let mut cases = Vec::new();
+    for (label, field, value) in [
+        ("version", "v", json!(2)),
+        ("missing rows", "credentials", serde_json::Value::Null),
+    ] {
+        let mut invalid = capture.clone();
+        invalid[field] = value;
+        cases.push((label, invalid.to_string()));
+    }
+    for (label, field, value) in [
+        ("empty vendor", "provider", json!("")),
+        ("null vendor", "provider", serde_json::Value::Null),
+        ("null connection", "connection", serde_json::Value::Null),
+        ("human label", "provider", json!("legacy anthropic")),
+        ("bad connection type", "connection", json!(42)),
+        ("empty connection", "connection", json!("")),
+        ("path connection", "connection", json!("../canary-secret")),
+        ("control connection", "connection", json!("canary-secret\n")),
+        ("bad presence", "present", json!("canary-secret")),
+    ] {
+        let mut invalid = capture.clone();
+        invalid["credentials"][0][field] = value;
+        cases.push((label, invalid.to_string()));
+    }
+    let mut missing = capture.clone();
+    missing["credentials"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("provider");
+    cases.push(("missing identity", missing.to_string()));
+    let mut duplicate = capture.clone();
+    let row = duplicate["credentials"][0].clone();
+    duplicate["credentials"].as_array_mut().unwrap().push(row);
+    cases.push(("duplicate identity", duplicate.to_string()));
+    cases.extend([
+        ("human TSV", "anthropic\toauth\n".into()),
+        ("invalid JSON", "canary-secret".into()),
+        ("empty stdout", String::new()),
+    ]);
+    let mut failures = Vec::new();
+    for (label, raw) in cases {
+        std::fs::write(f.dir.path().join("auth.json"), raw).unwrap();
+        match get(&f, &["/model"]).await {
+            Err(error) if error.code == "store_failed" => {
+                assert!(
+                    !serde_json::to_string(&error)
+                        .unwrap()
+                        .contains("canary-secret")
+                );
+            }
+            result => failures.push(format!("{label}: {result:?}")),
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(
+        calls(&f)
+            .iter()
+            .filter(|c| c["args"][0] == "auth")
+            .all(|c| c["args"][2] == "--json")
+    );
+}
+
+// Catches: a valid empty inventory fails or model sources fabricate credential rows.
+#[tokio::test]
+async fn ego_inventory_valid_empty_keeps_managed_settings_available() {
+    let f = fixture();
+    let mut inventory: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/ego/auth-inventory.json")).unwrap();
+    inventory["credentials"].as_array_mut().unwrap().clear();
+    std::fs::write(f.dir.path().join("auth.json"), inventory.to_string()).unwrap();
+    assert!(get(&f, &["/model"]).await.is_ok());
+    let error = get(&f, &["/credentials/anthropic"]).await.unwrap_err();
+    assert_eq!(error.code, "not_found");
 }

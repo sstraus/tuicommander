@@ -26,6 +26,13 @@ fn run_child(test: &str, configure: impl FnOnce(&mut std::process::Command)) {
     );
 }
 
+// Windows uses TMP/TEMP rather than TMPDIR alone to select its temp directory.
+fn set_child_temp(child: &mut std::process::Command, path: &std::ffi::OsStr) {
+    for key in ["TMPDIR", "TMP", "TEMP"] {
+        child.env(key, path);
+    }
+}
+
 fn host_fixture() -> tempfile::TempDir {
     tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap()
 }
@@ -120,9 +127,8 @@ fn checkout_hash() -> String {
 fn default_root_is_the_per_checkout_dir_every_entry_point_uses() {
     let host = host_fixture();
     run_child("child_sees_the_per_checkout_default", |child| {
-        child
-            .env("TMPDIR", host.path())
-            .env("EXPECTED_HOST", host.path());
+        set_child_temp(child, host.path().as_os_str());
+        child.env("EXPECTED_HOST", host.path());
     });
 }
 
@@ -169,7 +175,8 @@ fn chained_test_processes_keep_one_root() {
     let host = host_fixture();
     let report = host.path().join("report");
     run_child("child_reports_its_roots", |child| {
-        child.env("TMPDIR", host.path()).env("REPORT", &report);
+        set_child_temp(child, host.path().as_os_str());
+        child.env("REPORT", &report);
     });
     let first = std::fs::read_to_string(&report).unwrap();
     let mut lines = first.lines();
@@ -180,8 +187,8 @@ fn chained_test_processes_keep_one_root() {
     );
     assert_eq!(PathBuf::from(&host_tmpdir), host.path());
     run_child("child_reports_its_roots", |child| {
+        set_child_temp(child, std::ffi::OsStr::new(&tmpdir));
         child
-            .env("TMPDIR", &tmpdir)
             .env("TUIC_TEST_HOST_TMPDIR", &host_tmpdir)
             .env("REPORT", &report);
     });

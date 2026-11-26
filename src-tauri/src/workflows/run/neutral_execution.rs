@@ -275,7 +275,7 @@ impl NeutralExecution {
             });
         }
         if self.status != NeutralStatus::Running {
-            return Err("neutral run is terminal".into());
+            return Err(crate::workflows::neutral_api::refusal::RUN_TERMINAL.into());
         }
         if matches!(command, NeutralExecutionCommand::Cancel) {
             return Ok(Some(NeutralDecision::Cancel));
@@ -283,7 +283,7 @@ impl NeutralExecution {
         if at_ms >= self.deadline_ms {
             return match command {
                 NeutralExecutionCommand::Step => Ok(Some(NeutralDecision::Expire)),
-                _ => Err("neutral run deadline elapsed".into()),
+                _ => Err(crate::workflows::neutral_api::refusal::RUN_DEADLINE_ELAPSED.into()),
             };
         }
         if let NeutralExecutionCommand::Complete { fence, .. }
@@ -1004,7 +1004,7 @@ impl RuntimeOwner {
         at_ms: i64,
     ) -> Result<NeutralExecution, String> {
         if command_id.trim().is_empty() {
-            return Err("neutral command requires an identity".into());
+            return Err(crate::workflows::neutral_api::refusal::COMMAND_NEEDS_IDENTITY.into());
         }
         let hash = content_digest(&command)?;
         let mut conn = self.store.connect()?;
@@ -1014,13 +1014,13 @@ impl RuntimeOwner {
         let (mut snapshot, events) = replay(&tx, run_id)?;
         if let Some(event) = events.iter().find(|event| event.command_id == command_id) {
             if event.command_hash != hash {
-                return Err("neutral command identity reused with different arguments".into());
+                return Err(crate::workflows::neutral_api::refusal::COMMAND_IDENTITY_REUSED.into());
             }
             // Return the original receipt projection, not today's cursor.
             return replay_until(&tx, run_id, Some(event.sequence)).map(|(snapshot, _)| snapshot);
         }
         if snapshot.sequence != expected_sequence {
-            return Err("neutral execution sequence changed; retry from current snapshot".into());
+            return Err(crate::workflows::neutral_api::refusal::SEQUENCE_CHANGED.into());
         }
         let Some(decision) = snapshot.decide(&command, at_ms)? else {
             return Ok(snapshot);
@@ -1091,7 +1091,7 @@ impl RunStore {
         limit: usize,
     ) -> Result<(NeutralExecution, Vec<NeutralEvent>), String> {
         if after_sequence < 0 || limit == 0 || limit > 500 {
-            return Err("invalid neutral event cursor or limit".into());
+            return Err(crate::workflows::neutral_api::refusal::INVALID_CURSOR.into());
         }
         let mut conn = self.connect()?;
         let tx = conn.transaction().map_err(|e| e.to_string())?;
@@ -1112,7 +1112,7 @@ impl RunStore {
         limit: usize,
     ) -> Result<Vec<NeutralEvent>, String> {
         if after_sequence < 0 || limit == 0 || limit > 500 {
-            return Err("invalid neutral event cursor or limit".into());
+            return Err(crate::workflows::neutral_api::refusal::INVALID_CURSOR.into());
         }
         let (_, events) = replay(&self.connect()?, run_id)?;
         Ok(events

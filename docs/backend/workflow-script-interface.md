@@ -124,9 +124,30 @@ A failure of owned process-tree stop is uncertain even for a read-only command.
 Reconciliation only inspects retained observation/identity and returns the
 original correlation plus the declared procedure. It never invokes the script.
 Without original completion evidence, manual effect reconciliation is required;
-no adapter automatically retries or claims rollback. Cancellation signals the
+no adapter automatically retries or claims rollback.
+
+A read-only script (`mutation: false`) whose output is lost, for example by a
+restart between dispatch and result, ends in that uncertainty and then waits for an
+operator decision. The run raises one effect question on the dispatched effect:
+run the script again, or abandon the activity. This uses the existing effect
+question and `Answer` action. "Run again" re-dispatches the original approved
+invocation under the same effect key (the dispatch count of the effect rises by one)
+and the new result completes the activity. "Abandon" fails the activity like any
+failed activity. Only a read-only script records the process group of its attempt, one
+file per effect in `<runs db>.processes/`; the record is dropped when the attempt
+ends cleanly, when the effect settles and when the run ends. Before a rerun the host
+looks for that group. A group that survived a TUIC kill is never signalled and never
+assumed to be the original, because its id may belong to another program now. If the
+group id is still alive, nothing starts: the run raises a new question (the next
+revision) saying the original process group may still be running, asking the operator
+to verify it is the original script and stop it, then answer run again, or abandon.
+The same two answers apply, so the operator always decides. Mutating scripts never get
+this question and keep the uncertainty and the manual reconciliation procedure. Cancellation signals the
 existing per-effect owned-process registry; signalling alone is not stop proof.
 The original worker independently reports stop when the executor returns.
+Invoke, reconciliation and cancellation replies stay bound to the rerun generation
+that started them. A delayed reply from an older generation cannot replace the
+current result or open another lost-output question.
 Uncertain mutations retain the neutral ledger's conflicting resource claims even
 when the process is stopped. No process-local handle is used as restart proof.
 

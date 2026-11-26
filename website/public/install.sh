@@ -123,9 +123,14 @@ make_private_tmpdir() {
 }
 
 install_linux() {
+  case "$(uname -m)" in
+    x86_64|amd64) DEB_ARCH=amd64; RPM_ARCH=x86_64; APPIMAGE_ARCH=amd64 ;;
+    aarch64|arm64) DEB_ARCH=arm64; RPM_ARCH=aarch64; APPIMAGE_ARCH=aarch64 ;;
+    *) echo "Unsupported Linux architecture: $(uname -m)"; exit 1 ;;
+  esac
   if command -v dpkg > /dev/null 2>&1; then
     echo "Detected dpkg — installing .deb package..."
-    URL=$(get_download_url 'amd64\.deb')
+    URL=$(get_download_url "${DEB_ARCH}\.deb")
     if [ -z "$URL" ]; then echo "Error: .deb asset not found in latest release"; exit 1; fi
     TMP_DIR=$(make_private_tmpdir)
     # `set -e` aborts on a failed download or install; still drop the scratch dir.
@@ -136,7 +141,7 @@ install_linux() {
     rm -rf "$TMP_DIR"
   elif command -v rpm > /dev/null 2>&1; then
     echo "Detected rpm — installing .rpm package..."
-    URL=$(get_download_url 'x86_64\.rpm')
+    URL=$(get_download_url "${RPM_ARCH}\.rpm")
     if [ -z "$URL" ]; then echo "Error: .rpm asset not found in latest release"; exit 1; fi
     TMP_DIR=$(make_private_tmpdir)
     # `set -e` aborts on a failed download or install; still drop the scratch dir.
@@ -147,7 +152,7 @@ install_linux() {
     rm -rf "$TMP_DIR"
   else
     echo "No dpkg or rpm found — installing AppImage..."
-    URL=$(get_download_url 'amd64\.AppImage')
+    URL=$(get_download_url "${APPIMAGE_ARCH}\.AppImage")
     if [ -z "$URL" ]; then echo "Error: AppImage asset not found in latest release"; exit 1; fi
     DEST="${HOME}/.local/bin/TUICommander.AppImage"
     mkdir -p "$(dirname "$DEST")"

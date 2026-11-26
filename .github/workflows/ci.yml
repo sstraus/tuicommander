@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+      - 'release/**'
+      - 'fix/release-*-public'
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -106,6 +108,11 @@ jobs:
 
       - name: Remote daemon release workflow contracts
         run: python3 .github/workflows/tests/test-remote-daemon-release.py
+
+      - name: Linux desktop release workflow contracts
+        run: |
+          python3 .github/workflows/tests/test-linux-desktop-release.py
+          node --test .github/workflows/tests/test-website-downloads.mjs
 
       - name: Frontend shard workflow contracts
         run: python3 .github/workflows/tests/test-frontend-shards.py
@@ -380,7 +387,8 @@ jobs:
   # - Windows: this compile check is CPU-only; releases add --features vulkan.
   #   CUDA support is optional (add Jimver/cuda-toolkit + --features cuda if needed).
   rust-cross:
-    timeout-minutes: 90
+    # Cold Windows and macOS builds can reach the 90-minute job cap.
+    timeout-minutes: 120
     name: Rust (${{ matrix.label }})
     # Runs on pull_request too, not just push. Gating it on push meant macOS and
     # Windows breakage was only ever discovered after a merge to main.
@@ -402,7 +410,7 @@ jobs:
       # checkout, because the test fixtures create their own repositories in
       # temp directories, which no .gitattributes of ours would reach.
       - name: Keep line endings verbatim (Windows)
-        if: matrix.platform == 'windows-latest'
+        if: matrix.label == 'Windows-x64'
         shell: bash
         run: git config --global core.autocrlf false
 
@@ -419,9 +427,15 @@ jobs:
       # hashtablez_sampler_force_weak_definition.cc resolves one character past
       # 260 from the meson build dir under a normal target path.
       - name: Short CARGO_TARGET_DIR (Windows)
-        if: matrix.platform == 'windows-latest'
+        if: matrix.label == 'Windows-x64'
         shell: bash
         run: echo "CARGO_TARGET_DIR=C:/t" >> $GITHUB_ENV
+
+      # VS 2026's STL requires Clang 22. Bindgen loads libclang, not clang.exe.
+      - name: Install LLVM 22 for bindgen (Windows)
+        if: matrix.label == 'Windows-x64'
+        shell: pwsh
+        run: ./.github/scripts/install-ci-llvm.ps1
 
       - uses: actions/setup-python@v5
         with:
@@ -456,10 +470,10 @@ jobs:
           # On Windows the real target dir is CARGO_TARGET_DIR=C:/t (MAX_PATH workaround).
           # rust-cache's `workspaces` input joins target with root, so it can't point at
           # an absolute path — use `cache-directories` instead.
-          cache-directories: ${{ matrix.platform == 'windows-latest' && 'C:/t' || '' }}
+          cache-directories: ${{ matrix.label == 'Windows-x64' && 'C:/t' || '' }}
           # A failed/cancelled test run must not discard an hour of compilation.
           # sccache cannot cache linked test/binary targets; retain C:/t too.
-          cache-on-failure: ${{ matrix.platform == 'windows-latest' }}
+          cache-on-failure: ${{ matrix.label == 'Windows-x64' }}
 
       - name: Install nextest
         uses: taiki-e/install-action@nextest
@@ -471,7 +485,7 @@ jobs:
       # reconfigures against the current toolchain (sccache still caches the
       # actual compiles, so the rebuild cost is minimal).
       - name: Clear stale CMake cache (Windows)
-        if: matrix.platform == 'windows-latest'
+        if: matrix.label == 'Windows-x64'
         shell: pwsh
         run: |
           if (Test-Path C:/t) {
@@ -505,7 +519,7 @@ jobs:
         run: bash scripts/check-desktop-embedding.sh
 
       - name: Windows library compile check
-        if: matrix.platform == 'windows-latest'
+        if: matrix.label == 'Windows-x64'
         # Reject platform-only source errors before building test targets.
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml --lib --target x86_64-pc-windows-msvc
 
