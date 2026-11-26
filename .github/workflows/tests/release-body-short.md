@@ -20,6 +20,10 @@ Pick the right build for your system:
     `TUICommander-2.0.0-beta.1-1.x86_64.rpm`
 * 🐧 **Linux** (portable)
     `TUICommander_2.0.0-beta.1_amd64.AppImage`
+* 🐧 **Linux ARM64** (Ubuntu 22.04+ / compatible distributions)
+    `TUICommander_2.0.0-beta.1_arm64.deb`
+    `TUICommander-2.0.0-beta.1-1.aarch64.rpm`
+    `TUICommander_2.0.0-beta.1_aarch64.AppImage`
 
 ---
 

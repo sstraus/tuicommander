@@ -264,7 +264,7 @@ mod native_public_checks_tests;
 mod native_public_http_tests;
 #[cfg(test)]
 #[path = "native_public_support.rs"]
-mod native_public_support;
+pub(super) mod native_public_support;
 
 #[cfg(test)]
 #[path = "native_agent_tests.rs"]
@@ -301,3 +301,10 @@ mod parity_schedule_tests;
 #[cfg(test)]
 #[path = "parity_github_live.rs"]
 mod parity_github_live;
+
+#[cfg(test)]
+#[path = "live_schedule_tests.rs"]
+mod live_schedule_tests;
+#[cfg(test)]
+#[path = "scenario/mod.rs"]
+mod scenario;

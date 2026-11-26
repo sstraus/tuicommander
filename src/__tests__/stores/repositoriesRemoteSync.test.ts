@@ -1,3 +1,5 @@
+import { createComputed, createRoot } from "solid-js";
+import { unwrap } from "solid-js/store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testInScope, testInScopeAsync } from "../helpers/store";
 
@@ -117,6 +119,156 @@ describe("repositoriesStore remote sync", () => {
 
 	afterEach(() => {
 		vi.useRealTimers();
+	});
+
+	// Catches: every changed record flushing consumers against a partial remote document.
+	it.each(["add and reorder", "remove and regroup", "unchanged echo"] as const)(
+		"publishes one coherent consumer snapshot for %s",
+		async (change) => {
+			setDisk({
+				repos: { "/old": repoRecord("/old", "Old"), "/keep": repoRecord("/keep", "Keep") },
+				repoOrder: ["/old", "/keep"],
+				groups: { g1: groupRecord("g1", "Before", ["/old"]) },
+				groupOrder: ["g1"],
+			});
+			await store.hydrate();
+			await vi.advanceTimersByTimeAsync(0);
+			const seen: unknown[] = [];
+			const dispose = createRoot((dispose) => {
+				createComputed(() => {
+					seen.push({
+						names: Object.values(store.state.repositories)
+							.map((repo) => repo.displayName)
+							.sort(),
+						order: [...store.state.repoOrder],
+						groups: Object.values(store.state.groups).map((group) => ({
+							name: group.name,
+							paths: [...group.repoOrder],
+						})),
+						groupOrder: [...store.state.groupOrder],
+					});
+				});
+				return dispose;
+			});
+			try {
+				seen.length = 0;
+				if (change === "add and reorder") {
+					setDisk({
+						repos: {
+							"/old": repoRecord("/old", "Renamed"),
+							"/keep": repoRecord("/keep", "Keep"),
+							"/new": repoRecord("/new", "New"),
+						},
+						repoOrder: ["/new", "/keep", "/old"],
+						groups: { g1: groupRecord("g1", "After", ["/new"]) },
+						groupOrder: ["g1"],
+					});
+				} else if (change === "remove and regroup") {
+					setDisk({
+						repos: { "/keep": repoRecord("/keep", "Renamed") },
+						repoOrder: ["/keep"],
+						groups: { g2: groupRecord("g2", "After", ["/keep"]) },
+						groupOrder: ["g2"],
+					});
+				}
+				await broadcast();
+				const expected =
+					change === "add and reorder"
+						? [
+								{
+									names: ["Keep", "New", "Renamed"],
+									order: ["/new", "/keep", "/old"],
+									groups: [{ name: "After", paths: ["/new"] }],
+									groupOrder: ["g1"],
+								},
+							]
+						: change === "remove and regroup"
+							? [
+									{
+										names: ["Renamed"],
+										order: ["/keep"],
+										groups: [{ name: "After", paths: ["/keep"] }],
+										groupOrder: ["g2"],
+									},
+								]
+							: [];
+				expect(seen).toEqual(expected);
+			} finally {
+				dispose();
+			}
+		},
+	);
+
+	// Catches: the legacy event and settings publication doing independent reads/adoptions.
+	it("coalesces paired legacy and settings notifications into one repository read", async () => {
+		await testInScopeAsync(async () => {
+			await store.hydrate();
+			await vi.advanceTimersByTimeAsync(0);
+			mockInvoke.mockClear();
+			setDisk({ repos: { "/other": repoRecord("/other", "Other") }, repoOrder: ["/other"] });
+			listeners.get("repositories-changed")!({ payload: {} });
+			listeners.get("settings-changed")!({
+				payload: { section: "repositories_registration", generation: 1, persisted: true, applied: true },
+			});
+			await vi.advanceTimersByTimeAsync(0);
+			expect(store.get("/other")?.displayName).toBe("Other");
+			expect(mockInvoke.mock.calls.filter(([command]) => command === "load_repositories")).toHaveLength(1);
+			expect(mockInvoke.mock.calls.filter(([command]) => command === "set_hot_repos")).toHaveLength(1);
+		});
+	});
+
+	// Catches: overlapping legacy reads letting an older snapshot overwrite a newer write.
+	it("discards an invalidated in-flight read and adopts the latest repository document", async () => {
+		await testInScopeAsync(async () => {
+			await store.hydrate();
+			await vi.advanceTimersByTimeAsync(0);
+			let finishOld!: (value: typeof disk) => void;
+			mockInvoke.mockImplementationOnce(
+				() =>
+					new Promise((resolve) => {
+						finishOld = resolve;
+					}),
+			);
+			listeners.get("repositories-changed")!({ payload: {} });
+			await vi.advanceTimersByTimeAsync(0);
+			setDisk({ repos: { "/other": repoRecord("/other", "Latest") }, repoOrder: ["/other"] });
+			listeners.get("repositories-changed")!({ payload: {} });
+			await vi.advanceTimersByTimeAsync(0);
+			expect(store.get("/other")).toBeUndefined();
+			finishOld({ ...disk, repos: { "/other": repoRecord("/other", "Stale") } });
+			await vi.advanceTimersByTimeAsync(0);
+			expect(store.get("/other")?.displayName).toBe("Latest");
+		});
+	});
+
+	// Catches: a one-record remote edit serializing every unrelated live workspace.
+	it("does not traverse saved terminal metadata of unchanged live repositories", async () => {
+		setDisk({
+			repos: {
+				"/changed": repoRecord("/changed", "Before"),
+				"/untouched": repoRecord("/untouched", "Keep", { main: branchRecord("main") }),
+			},
+			repoOrder: ["/changed", "/untouched"],
+		});
+		await testInScopeAsync(async () => {
+			await store.hydrate();
+			await vi.advanceTimersByTimeAsync(0);
+			const workspace = unwrap(store.get("/untouched")!.workspaces.main);
+			const metadata = workspace.savedTerminals;
+			let reads = 0;
+			Object.defineProperty(workspace, "savedTerminals", {
+				configurable: true,
+				enumerable: true,
+				get: () => {
+					reads++;
+					return metadata;
+				},
+			});
+			disk.repos["/changed"].displayName = "After";
+			await broadcast();
+			expect(store.get("/changed")?.displayName).toBe("After");
+			expect(reads).toBe(0);
+		});
 	});
 
 	it("adopts a repository another client added", async () => {
@@ -456,20 +608,35 @@ describe("repositoriesStore remote sync", () => {
 		});
 	});
 
-	it("adopts a removal of a repository with nothing open in it", async () => {
+	// Catches: removal mutating placement before the incoming order/group intent is checked.
+	it("adopts removal and placement changes with a matching baseline for the next save", async () => {
 		setDisk({
-			repos: { "/repo": repoRecord("/repo", "Original"), "/keep": repoRecord("/keep", "Keep") },
-			repoOrder: ["/repo", "/keep"],
+			repos: {
+				"/repo": repoRecord("/repo", "Original"),
+				"/keep": repoRecord("/keep", "Keep"),
+				"/also": repoRecord("/also", "Also"),
+			},
+			repoOrder: ["/repo", "/keep", "/also"],
+			groups: { g1: groupRecord("g1", "Before", ["/repo"]) },
+			groupOrder: ["g1"],
 		});
 
 		await testInScopeAsync(async () => {
 			await store.hydrate();
-
-			setDisk({ repos: { "/keep": repoRecord("/keep", "Keep") }, repoOrder: ["/keep"] });
+			setDisk({
+				repos: { "/keep": repoRecord("/keep", "Keep"), "/also": repoRecord("/also", "Also") },
+				repoOrder: ["/also", "/keep"],
+				groups: { g1: groupRecord("g1", "After") },
+				groupOrder: ["g1"],
+			});
 			await broadcast();
-
 			expect(store.get("/repo")).toBeUndefined();
-			expect(store.state.repoOrder).toEqual(["/keep"]);
+			expect(store.state.repoOrder).toEqual(["/also", "/keep"]);
+			expect(store.state.groups.g1.name).toBe("After");
+			store.add({ path: "/new", displayName: "New" });
+			await vi.advanceTimersByTimeAsync(500);
+			expect(lastSavedMutation()?.repoOrder?.before).toEqual(["/also", "/keep"]);
+			expect(lastSavedMutation()?.groups).toEqual([]);
 		});
 	});
 

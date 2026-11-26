@@ -33,7 +33,7 @@ import { toastsStore } from "../../stores/toasts";
 import { uiStore } from "../../stores/ui";
 import { isTauri } from "../../transport";
 import { cx } from "../../utils";
-import { copyPathToClipboard, writeClipboard } from "../../utils/clipboard";
+import { copyPathToClipboard } from "../../utils/clipboard";
 import { keyFor } from "../../utils/hotkey";
 import { literalReadsStore } from "../../utils/literalReads";
 import { markdownDocumentPanelId } from "../../utils/markdownDocumentPanelId";
@@ -120,7 +120,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 	// Context menu for tabs
 	const tabMenu = createContextMenu();
 	const [contextTabId, setContextTabId] = createSignal<string | null>(null);
-	const sessionCopyItems = createSessionCopyItems(contextTabId, tabMenu.visible);
+	const sessionCopyItems = createSessionCopyItems(contextTabId, tabMenu.visible, "values");
 
 	// Context menu for overflow tabs (right-click on scroll arrows)
 	const overflowMenu = createContextMenu();
@@ -368,21 +368,6 @@ export const TabBar: Component<TabBarProps> = (props) => {
 			);
 		}
 		items.push({ label: "", separator: true, action: () => {} }, ...sessionCopyItems());
-		// The alias is the address another agent is told to notify, so it has to be
-		// readable and copyable from the tab that owns it — otherwise it exists only
-		// inside an MCP payload.
-		if (term?.alias) {
-			const alias = term.alias;
-			items.push(
-				{ label: "", separator: true, action: () => {} },
-				{
-					label: t("tabBar.alias", "Alias: {alias}", { alias }),
-					action: () => {
-						writeClipboard(alias).catch((err) => appLogger.error("app", "Failed to copy alias", err));
-					},
-				},
-			);
-		}
 		// Global workspace promote/unpromote
 		const isPromoted = globalWorkspaceStore.isPromoted(id);
 		items.push(

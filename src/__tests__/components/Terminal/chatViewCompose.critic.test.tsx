@@ -1,7 +1,7 @@
 import { EditorView } from "@codemirror/view";
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../../stores/appLogger", () => ({
 	appLogger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), diag: { info: vi.fn() } },
@@ -128,6 +128,12 @@ function typeDraft(container: HTMLElement, text: string) {
 	const view = editor(container);
 	view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
 }
+
+// The first test otherwise pays the lazy ComposePanel/CodeMirror import inside
+// waitFor's 1000 ms window and fails under a loaded parallel run.
+beforeAll(async () => {
+	await import("../../../components/ComposePanel/ComposePanel");
+});
 
 describe("Chat transcript typing handoff", () => {
 	// Catches: clicking the transcript drops the first key or replaces the whole draft.

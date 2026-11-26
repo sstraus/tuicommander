@@ -36,7 +36,7 @@ DIST_DIR=dist-release
 TAURI_BUILD_FLAGS=$(if $(TAURI_SIGNING_PRIVATE_KEY),,--config '{"bundle":{"createUpdaterArtifacts":false}}')
 
 
-.PHONY: all clean dev test agent-test agent-test-stop agent-test-github agent-test-github-stop test-shell build build-dmg check check-desktop-embedding check-chat-readability cov crap fmt sign verify-sign notarize release dist \
+.PHONY: all clean dev test agent-test agent-test-stop workflow-e2e agent-test-github agent-test-github-stop test-shell build build-dmg check check-desktop-embedding check-chat-readability cov crap fmt sign verify-sign notarize release dist \
        nightly github-release preview bump release-notes hooks docs docs-serve \
        gh-debug-on gh-debug-off gh-debug-status gh-debug-logs gh-rate logs
 
@@ -125,6 +125,10 @@ agent-test:
 
 agent-test-stop:
 	@python3 -B scripts/agent-test.py stop --instance "$(AGENT_TEST_INSTANCE)" --port "$(AGENT_TEST_PORT)"
+
+# Black-box workflow E2E against a RUNNING `make agent-test` instance (never :9876/:14319).
+workflow-e2e:
+	@node e2e/workflows/run.mjs $(WF_E2E_ARGS)
 
 # Reuse the already-authenticated isolated namespace across GitHub live checks.
 # Explicit recursive assignments prevent per-agent overrides from hiding its login.

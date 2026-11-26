@@ -60,7 +60,7 @@ export const aiChatTabs = {
 		else delete pinnedRepos[session];
 		save(root, { ...current, pinnedRepos });
 	},
-	active: (root: string) => byRoot()[root]?.active ?? null,
+	active: (root: string) => byRoot()[root]?.active || null,
 	/** Apply the host selection without publishing another selection. A compaction successor
 	 *  names the tab it `replacing`, so a follower swaps it in place like the host did. */
 	adopt(root: string, session: string | null, replacing?: string | null): void {

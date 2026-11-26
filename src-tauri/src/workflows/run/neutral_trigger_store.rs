@@ -99,6 +99,32 @@ impl RunStore {
             VALUES(?1,?2,?3,?4,?5,?6,?7)",params![receipt,project,binding,intent.event.resource,intent.event.generation,replay_id,
             serde_json::to_string(&intent).map_err(|e|e.to_string())?]).map_err(|e|e.to_string())?;
         if enqueue {
+            // A newer intent takes the resource slot; the intent it replaces can
+            // never start, so its record ends `superseded` rather than `pending`.
+            let replaced: Option<String> = tx
+                .query_row(
+                    "SELECT pending_receipt FROM neutral_trigger_resources
+                    WHERE project=?1 AND binding_id=?2 AND resource=?3",
+                    params![project, binding, intent.event.resource],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(|e| e.to_string())?
+                .flatten();
+            if let Some(mut older) = replaced
+                .and_then(|r| read_intent(&tx, &r).transpose())
+                .transpose()?
+            {
+                older.admission.disposition = "superseded".into();
+                tx.execute(
+                    "UPDATE neutral_trigger_intents SET document=?2 WHERE receipt=?1",
+                    params![
+                        older.receipt,
+                        serde_json::to_string(&older).map_err(|e| e.to_string())?
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+            }
             tx.execute("INSERT INTO neutral_trigger_resources(project,binding_id,resource,pending_receipt) VALUES(?1,?2,?3,?4)
             ON CONFLICT(project,binding_id,resource) DO UPDATE SET pending_receipt=excluded.pending_receipt",
             params![project,binding,intent.event.resource,receipt]).map_err(|e|e.to_string())?;
@@ -150,6 +176,20 @@ impl RunStore {
             ))
         })
         .collect()
+    }
+    /// Runs that source admissions started and that still hold their resource.
+    pub(super) fn trigger_active_runs(&self, project: &str) -> Result<Vec<String>, String> {
+        let conn = self.trigger_connection()?;
+        let mut query = conn
+            .prepare(
+                "SELECT DISTINCT active_run FROM neutral_trigger_resources
+            WHERE project=?1 AND active_run IS NOT NULL ORDER BY active_run",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = query
+            .query_map([project], |r| r.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        rows.map(|r| r.map_err(|e| e.to_string())).collect()
     }
     pub(super) fn trigger_started(&self, intent: &TriggerIntent, run: &str) -> Result<(), String> {
         let mut updated = intent.clone();

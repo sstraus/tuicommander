@@ -76,6 +76,7 @@ scripts/*
 !scripts/check-mobile-session-chat-layout.mjs
 !scripts/check-mobile-jump-layout.mjs
 !scripts/check-chat-code-copy-layout.py
+!scripts/check-toast-stack-layout.py
 !scripts/fixtures/
 scripts/fixtures/*
 !scripts/fixtures/mobile-session-chat-layout.html
@@ -110,6 +111,11 @@ scripts/fixtures/*
 !scripts/check-release-tag.sh
 !scripts/check-ggml-x86-baseline.sh
 !scripts/check-appimage-vulkan-loader.sh
+!scripts/check-linux-desktop-packages.sh
+!scripts/build-linux-arm64-glslc.sh
+!scripts/stage-linux-arm64-mbx.sh
+!scripts/check-linux-build-script-env.py
+!scripts/check-linux-updater.py
 !scripts/fetch-vulkan-loader.py
 !scripts/publish-snapshot.py
 !scripts/test_release_targets.py

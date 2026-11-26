@@ -1,0 +1,1 @@
+{"rate_limits":[],"errors":[{"provider":"anthropic","connection":"missing","state":"auth_invalid","message":"no stored credential; repair with ego auth --connection missing login anthropic","retry_at":null}]}

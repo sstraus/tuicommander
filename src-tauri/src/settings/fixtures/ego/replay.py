@@ -60,7 +60,7 @@ elif args[:2] in [['config', op] for op in ['ls', 'snapshot', 'batch', 'set', 'u
         print('published_durably')
 elif args[0] in ['models', 'doctor']:
     print((root / (args[0] + '.json')).read_text())
-elif args[:2] == ['auth', 'status']:
-    print((root / 'auth.txt').read_text(), end='')
+elif args[:3] == ['auth', 'status', '--json']:
+    print((root / 'auth.json').read_text(), end='')
 else:
     sys.exit(2)
