@@ -94,6 +94,14 @@ impl ScriptAdapter {
         }
     }
 
+    pub fn original_stopped(&self, effect: &NeutralEffect) -> Result<(), String> {
+        super::check::original_process_gone(&self.runs_db, &owner(effect))
+    }
+
+    pub fn forget_original(&self, effect: &NeutralEffect) {
+        super::check::forget_process_group(&self.runs_db, &owner(effect));
+    }
+
     pub fn cancel(&self, effect: &NeutralEffect) -> EffectObservation {
         super::check::cancel_checks(&self.runs_db, &owner(effect));
         // Signalling is not stop proof or rollback. The original worker reports

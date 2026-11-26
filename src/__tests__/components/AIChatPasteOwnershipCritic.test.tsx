@@ -27,6 +27,8 @@ it.each([
 		phase: () => (connected && sessionId() ? "live" : "starting"),
 		busy: () => false,
 		queuedPrompts: () => [],
+		sendingPrompts: () => [],
+		retrySending: vi.fn(),
 		configOptions: () => [],
 		capabilities: () => (connected ? { promptImage: true } : null),
 		ensureStarted: () => startup,

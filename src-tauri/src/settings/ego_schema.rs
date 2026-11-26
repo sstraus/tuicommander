@@ -6,7 +6,7 @@ use super::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
@@ -104,22 +104,61 @@ pub(super) fn value(managed: &Managed) -> Result<Value, super::request::Failure>
     serde_json::to_value(managed).map_err(|_| super::request::Error::new("ego", "store_failed"))
 }
 
-pub(super) fn credentials(raw: &str) -> Result<BTreeMap<String, Value>, super::request::Failure> {
-    let mut result = BTreeMap::new();
-    for line in raw.lines().filter(|line| !line.is_empty()) {
-        let Some((provider, _metadata)) = line.split_once('\t') else {
-            return Err(super::request::Error::new("ego", "store_failed"));
-        };
-        if provider.is_empty()
-            || provider.len() > 64
-            || !provider
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
-        {
-            return Err(super::request::Error::new("ego", "store_failed"));
+/// Presence only; vendor and stable account identity stay separate until projection.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Credential {
+    #[serde(default, deserialize_with = "optional_identifier")]
+    pub provider: Option<String>,
+    #[serde(default, deserialize_with = "optional_identifier")]
+    pub connection: Option<String>,
+    pub present: bool,
+}
+
+// Optional means omitted, not null: a malformed named identity must not become legacy.
+fn optional_identifier<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    String::deserialize(deserializer).map(Some)
+}
+
+impl Credential {
+    pub fn key(&self) -> String {
+        match &self.connection {
+            Some(connection) => format!("connection:{connection}"),
+            None => self.provider.clone().expect("validated legacy identity"),
         }
-        // No credential kind, expiry, diagnostics or token material leaves this projection.
-        result.insert(provider.to_owned(), Value::String("set".into()));
     }
-    Ok(result)
+}
+
+pub(super) fn credentials(raw: &str) -> Result<Vec<Credential>, super::request::Failure> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Inventory {
+        v: u8,
+        credentials: Vec<Credential>,
+    }
+    let failure = || super::request::Error::new("ego", "store_failed");
+    let inventory: Inventory = serde_json::from_str(raw).map_err(|_| failure())?;
+    if inventory.v != 1 {
+        return Err(failure());
+    }
+    // Same grammar as the owner's connection ID/vendor validator; no display-label
+    // length limit, truncation, or token/metadata projection.
+    let valid = |s: &str| {
+        !s.is_empty()
+            && s.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"_-".contains(&b))
+    };
+    let mut seen = BTreeSet::new();
+    for row in &inventory.credentials {
+        if row.provider.as_deref().is_some_and(|p| !valid(p))
+            || row.connection.as_deref().is_some_and(|c| !valid(c))
+            || (row.provider.is_none() && row.connection.is_none())
+            || !seen.insert(row.key())
+        {
+            return Err(failure());
+        }
+    }
+    Ok(inventory.credentials)
 }

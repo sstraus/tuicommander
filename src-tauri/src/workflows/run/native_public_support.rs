@@ -6,7 +6,7 @@ use crate::workflows::WorkflowStore;
 use crate::workflows::neutral_api::{model::NeutralAction, neutral_action};
 use serde_json::{Value, json};
 
-pub(super) fn attach(f: &Fixture) {
+pub(in crate::workflows::run) fn attach(f: &Fixture) {
     *f.state.workflow_runtime.owner.lock() = Some(f.owner.clone());
 }
 pub(super) fn request(f: &Fixture, operation: &str, value: Value) -> NeutralStartRequest {

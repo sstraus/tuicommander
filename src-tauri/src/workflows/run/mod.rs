@@ -197,7 +197,15 @@ mod neutral_trigger_coalescing_tests;
 #[cfg(test)]
 mod neutral_trigger_fixture;
 #[cfg(test)]
+mod trigger_recovery_tests;
+#[cfg(test)]
 pub(crate) use neutral_trigger_fixture::install_github_issue_binding;
+#[cfg(test)]
+mod live_connector_tests;
+#[cfg(test)]
+mod live_delivery_tests;
+#[cfg(test)]
+mod live_support;
 mod neutral_trigger_start;
 mod neutral_trigger_store;
 #[cfg(test)]

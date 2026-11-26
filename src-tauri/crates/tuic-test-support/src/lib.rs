@@ -28,6 +28,9 @@ fn install_test_temp_root() {
     // builds an expected path from TMPDIR is compared against paths Git and the filesystem
     // report, which are always physical (a symlinked TMPDIR must not read as a different path).
     let root = test_temp_root();
+    // On Windows, canonicalize adds a verbatim prefix. Keep the runner's native
+    // spelling for paths passed to Git in GIT_CONFIG_GLOBAL and GIT_TEMPLATE_DIR.
+    #[cfg(not(windows))]
     let root = root.canonicalize().unwrap_or(root);
     // Freeze the checkout selected at process start: tests may change cwd.
     // SAFETY: this constructor runs before libtest creates worker threads.

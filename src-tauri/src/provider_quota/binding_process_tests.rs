@@ -298,3 +298,89 @@ async fn ego_process_never_binds_to_cli_credentials() {
     assert!(matches!(view.state, QuotaState::Unavailable { .. }));
     assert!(view.snapshot.is_none());
 }
+
+/// Pin the PTY report to an OS-unreadable process without mocking the process reader.
+struct UnreadableProcessMaster(Box<dyn portable_pty::MasterPty + Send>);
+impl portable_pty::MasterPty for UnreadableProcessMaster {
+    fn resize(&self, size: PtySize) -> Result<(), anyhow::Error> {
+        self.0.resize(size)
+    }
+    fn get_size(&self) -> Result<PtySize, anyhow::Error> {
+        self.0.get_size()
+    }
+    fn try_clone_reader(&self) -> Result<Box<dyn std::io::Read + Send>, anyhow::Error> {
+        self.0.try_clone_reader()
+    }
+    fn take_writer(&self) -> Result<Box<dyn std::io::Write + Send>, anyhow::Error> {
+        self.0.take_writer()
+    }
+    fn process_group_leader(&self) -> Option<libc::pid_t> {
+        Some(0)
+    }
+    fn as_raw_fd(&self) -> Option<portable_pty::unix::RawFd> {
+        self.0.as_raw_fd()
+    }
+    fn tty_name(&self) -> Option<std::path::PathBuf> {
+        self.0.tty_name()
+    }
+}
+
+/// Catches: reconcile silently dropping an unreadable environment, or warning every tick.
+#[tokio::test]
+async fn reconcile_logs_unreadable_process_environment_once() {
+    use std::io::Write;
+    #[derive(Clone)]
+    struct LogSink(Arc<std::sync::Mutex<Vec<u8>>>);
+    impl Write for LogSink {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for LogSink {
+        type Writer = Self;
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    // A real OS read establishes the failure condition before exercising reconcile.
+    assert!(crate::process_env::read_process_environment(0).is_err());
+    let state = Arc::new(make_test_app_state());
+    let id = "reconcile-unreadable-environment";
+    spawn_process(&state, id, "/quota-test/unreadable");
+    let (_, session) = state.session_maps.sessions.remove(id).unwrap();
+    let mut session = session.into_inner();
+    session._child.kill().unwrap();
+    session._child.wait().unwrap();
+    session.master = Box::new(UnreadableProcessMaster(session.master));
+    state
+        .session_maps
+        .sessions
+        .insert(id.into(), Mutex::new(session));
+    assert_eq!(crate::pty::session_leaf_pid(&state, id), Some(0));
+
+    let log = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(LogSink(log.clone()))
+        .with_ansi(false)
+        .finish();
+    // reconcile reads processes on spawn_blocking, so a thread-local dispatcher cannot
+    // observe its warnings. This is the only global subscriber in the library tests.
+    tracing::subscriber::set_global_default(subscriber).unwrap();
+    for _ in 0..3 {
+        super::binding::reconcile(state.clone()).await;
+    }
+    assert_eq!(state.provider_quota.binding(id), None);
+    let log = String::from_utf8(log.lock().unwrap().clone()).unwrap();
+    let warnings: Vec<_> = log.lines().filter(|line| line.contains(id)).collect();
+    assert_eq!(warnings.len(), 1, "{log}");
+    assert!(warnings[0].contains("Quota binding unavailable"), "{log}");
+    assert!(
+        warnings[0].contains("process environment unreadable"),
+        "{log}"
+    );
+}

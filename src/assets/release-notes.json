@@ -324,5 +324,18 @@
       "Windows release builds no longer fail on a compiler command line longer than the Windows limit."
     ],
     "date": "2026-11-15"
+  },
+  "2.1.2": {
+    "highlights": [
+      "Native Linux ARM64 desktop packages join the release pipeline with architecture-specific install and update checks.",
+      "AI Chat /clear resets context, failed sends stay available for retry, and agent slash commands remain visible.",
+      "Interactive agent prompts start without extra spawn arguments or a named profile.",
+      "Notifications no longer cover dialog controls or block clicks around them.",
+      "Named provider accounts keep their own subscription usage.",
+      "Repository refreshes do less work that can interrupt terminal input and rendering.",
+      "Scheduled workflows resume after restart; stale events and deleted projects no longer block other starts.",
+      "Workflow HTTP refusals use precise status codes; scripts with lost output ask before running again."
+    ],
+    "date": "2026-11-19"
   }
 }
