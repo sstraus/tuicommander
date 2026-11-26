@@ -24,6 +24,8 @@ it("does not lose a second paste when capabilities arrive before the initial ses
 		phase: () => (connected && sessionId() ? "live" : "starting"),
 		busy: () => false,
 		queuedPrompts: () => [],
+		sendingPrompts: () => [],
+		retrySending: vi.fn(),
 		configOptions: () => [],
 		capabilities: () => (connected ? { promptImage: true } : null),
 		ensureStarted: () => starting,

@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+      - 'release/**'
+      - 'fix/release-*-public'
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -107,6 +109,11 @@ jobs:
       - name: Remote daemon release workflow contracts
         run: python3 .github/workflows/tests/test-remote-daemon-release.py
 
+      - name: Linux desktop release workflow contracts
+        run: |
+          python3 .github/workflows/tests/test-linux-desktop-release.py
+          node --test .github/workflows/tests/test-website-downloads.mjs
+
       - name: Frontend shard workflow contracts
         run: python3 .github/workflows/tests/test-frontend-shards.py
 
@@ -178,7 +185,8 @@ jobs:
 
   # Always runs: clippy + tests on Linux (fastest, catches most issues)
   rust:
-    timeout-minutes: 60
+    # Leave headroom for cold builds and the post-job cache upload.
+    timeout-minutes: 80
     name: Rust (Linux-x64)
     runs-on: ubuntu-22.04
     steps:
@@ -380,7 +388,8 @@ jobs:
   # - Windows: this compile check is CPU-only; releases add --features vulkan.
   #   CUDA support is optional (add Jimver/cuda-toolkit + --features cuda if needed).
   rust-cross:
-    timeout-minutes: 90
+    # Separate macOS checks from the full native suite so each has its own budget.
+    timeout-minutes: ${{ matrix.timeout }}
     name: Rust (${{ matrix.label }})
     # Runs on pull_request too, not just push. Gating it on push meant macOS and
     # Windows breakage was only ever discovered after a merge to main.
@@ -390,8 +399,16 @@ jobs:
         include:
           - platform: macos-latest
             label: macOS-ARM
+            lane: tests
+            timeout: 120
+          - platform: macos-latest
+            label: macOS-ARM Clippy
+            lane: checks
+            timeout: 60
           - platform: windows-latest
             label: Windows-x64
+            lane: all
+            timeout: 120
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -402,7 +419,7 @@ jobs:
       # checkout, because the test fixtures create their own repositories in
       # temp directories, which no .gitattributes of ours would reach.
       - name: Keep line endings verbatim (Windows)
-        if: matrix.platform == 'windows-latest'
+        if: matrix.label == 'Windows-x64'
         shell: bash
         run: git config --global core.autocrlf false
 
@@ -419,9 +436,15 @@ jobs:
       # hashtablez_sampler_force_weak_definition.cc resolves one character past
       # 260 from the meson build dir under a normal target path.
       - name: Short CARGO_TARGET_DIR (Windows)
-        if: matrix.platform == 'windows-latest'
+        if: matrix.label == 'Windows-x64'
         shell: bash
         run: echo "CARGO_TARGET_DIR=C:/t" >> $GITHUB_ENV
+
+      # VS 2026's STL requires Clang 22. Bindgen loads libclang, not clang.exe.
+      - name: Install LLVM 22 for bindgen (Windows)
+        if: matrix.label == 'Windows-x64'
+        shell: pwsh
+        run: ./.github/scripts/install-ci-llvm.ps1
 
       - uses: actions/setup-python@v5
         with:
@@ -453,15 +476,17 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
+          key: ${{ matrix.lane == 'checks' && 'macos-checks' || '' }}
           # On Windows the real target dir is CARGO_TARGET_DIR=C:/t (MAX_PATH workaround).
           # rust-cache's `workspaces` input joins target with root, so it can't point at
           # an absolute path — use `cache-directories` instead.
-          cache-directories: ${{ matrix.platform == 'windows-latest' && 'C:/t' || '' }}
+          cache-directories: ${{ matrix.label == 'Windows-x64' && 'C:/t' || '' }}
           # A failed/cancelled test run must not discard an hour of compilation.
           # sccache cannot cache linked test/binary targets; retain C:/t too.
-          cache-on-failure: ${{ matrix.platform == 'windows-latest' }}
+          cache-on-failure: ${{ matrix.label == 'Windows-x64' }}
 
       - name: Install nextest
+        if: matrix.lane != 'checks'
         uses: taiki-e/install-action@nextest
 
       # A restored Windows build cache (C:/t) may hold a CMakeCache.txt from an
@@ -471,7 +496,7 @@ jobs:
       # reconfigures against the current toolchain (sccache still caches the
       # actual compiles, so the rebuild cost is minimal).
       - name: Clear stale CMake cache (Windows)
-        if: matrix.platform == 'windows-latest'
+        if: matrix.label == 'Windows-x64'
         shell: pwsh
         run: |
           if (Test-Path C:/t) {
@@ -501,15 +526,17 @@ jobs:
           fi
 
       - name: Desktop frontend embedding
+        if: matrix.lane != 'tests'
         shell: bash
         run: bash scripts/check-desktop-embedding.sh
 
       - name: Windows library compile check
-        if: matrix.platform == 'windows-latest'
+        if: matrix.label == 'Windows-x64'
         # Reject platform-only source errors before building test targets.
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml --lib --target x86_64-pc-windows-msvc
 
       - name: Clippy
+        if: matrix.lane != 'tests'
         working-directory: src-tauri
         env:
           SCCACHE_GHA_ENABLED: "true"
@@ -518,14 +545,15 @@ jobs:
           CMAKE_C_COMPILER_LAUNCHER: "sccache"
           CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
           # Use -Z7: Git Bash converts /Z7 into a Windows path before native Cargo.
-          CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Windows-x64' && '-Z7' || '' }}
-          CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Windows-x64' && '-Z7' || '' }}
+          CMAKE_C_FLAGS: ${{ matrix.platform == 'macos-latest' && '-march=armv8.4-a' || matrix.label == 'Windows-x64' && '-Z7' || '' }}
+          CMAKE_CXX_FLAGS: ${{ matrix.platform == 'macos-latest' && '-march=armv8.4-a' || matrix.label == 'Windows-x64' && '-Z7' || '' }}
         # bm25 is a vendored third-party patch (patches/bm25): not ours to lint.
         run: cargo clippy --workspace --exclude bm25 --all-targets --features dictation -- -D warnings
 
       # Windows runs the suite too. It used to be skipped, which is why Windows
       # regressions only ever surfaced in a user's build.
       - name: Tests
+        if: matrix.lane != 'checks'
         working-directory: src-tauri
         env:
           SCCACHE_GHA_ENABLED: "true"
@@ -540,6 +568,6 @@ jobs:
           CMAKE_C_COMPILER_LAUNCHER: "sccache"
           CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
           # Use -Z7: Git Bash converts /Z7 into a Windows path before native Cargo.
-          CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Windows-x64' && '-Z7' || '' }}
-          CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Windows-x64' && '-Z7' || '' }}
+          CMAKE_C_FLAGS: ${{ matrix.platform == 'macos-latest' && '-march=armv8.4-a' || matrix.label == 'Windows-x64' && '-Z7' || '' }}
+          CMAKE_CXX_FLAGS: ${{ matrix.platform == 'macos-latest' && '-march=armv8.4-a' || matrix.label == 'Windows-x64' && '-Z7' || '' }}
         run: bash ../scripts/with-test-tmp.sh cargo nextest run --workspace --features dictation,test-fixtures --profile ci

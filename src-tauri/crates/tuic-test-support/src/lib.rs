@@ -28,6 +28,9 @@ fn install_test_temp_root() {
     // builds an expected path from TMPDIR is compared against paths Git and the filesystem
     // report, which are always physical (a symlinked TMPDIR must not read as a different path).
     let root = test_temp_root();
+    // On Windows, canonicalize adds a verbatim prefix. Keep the runner's native
+    // spelling for paths passed to Git in GIT_CONFIG_GLOBAL and GIT_TEMPLATE_DIR.
+    #[cfg(not(windows))]
     let root = root.canonicalize().unwrap_or(root);
     // Freeze the checkout selected at process start: tests may change cwd.
     // SAFETY: this constructor runs before libtest creates worker threads.
@@ -1366,7 +1369,7 @@ mod ceiling_tests {
     #[test]
     fn ceiling_stops_git_from_finding_a_repository_above_the_root() {
         let dir = tempfile::tempdir_in(super::test_temp_root()).unwrap();
-        let outer = dir.path().canonicalize().unwrap().join("outer");
+        let outer = dir.path().join("outer");
         let root = outer.join("sub/root");
         let scratch = root.join("x");
         std::fs::create_dir_all(&scratch).unwrap();
@@ -1378,8 +1381,8 @@ mod ceiling_tests {
         assert!(init.success(), "git init {}", outer.display());
 
         assert_eq!(
-            toplevel(&scratch, None).as_deref(),
-            Ok(outer.as_path()),
+            toplevel(&scratch, None).unwrap().canonicalize().unwrap(),
+            outer.canonicalize().unwrap(),
             "control: without a ceiling git climbs to the outer repository"
         );
         let ceiling = git_ceiling_directories(&root, None).unwrap();
@@ -1395,8 +1398,11 @@ mod ceiling_tests {
             .unwrap();
         assert!(init.success());
         assert_eq!(
-            toplevel(&fixture.join("deep"), Some(&ceiling)).as_deref(),
-            Ok(fixture.as_path())
+            toplevel(&fixture.join("deep"), Some(&ceiling))
+                .unwrap()
+                .canonicalize()
+                .unwrap(),
+            fixture.canonicalize().unwrap()
         );
     }
 

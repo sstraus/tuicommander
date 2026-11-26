@@ -1,3 +1,0 @@
-hook_pid=3520 terminator=st
-console_mode_ok=0 console_mode=0x0
-write_ok=1 requested=120 written=120 error=None elapsed_us=607

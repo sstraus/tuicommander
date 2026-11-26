@@ -92,20 +92,114 @@ pub(super) fn agent_key(
         return Err("ego explicit session dir is not bound".into());
     }
     let env: Vec<_> = env.iter().filter_map(|v| v.split_once('=')).collect();
-    let provider = if agent == "ego" {
+    let (provider, connection) = if agent == "ego" {
         let (home, session) =
             crate::agent_session::ego_chat_session_for_pid(pid).ok_or("ego session unresolved")?;
-        crate::agent_session::ego_session_provider(&home.join("sessions"), &session)
+        let (provider, connection) =
+            crate::agent_session::ego_session_quota_identity(&home.join("sessions"), &session)?;
+        // The manifest keeps the model route; named quota publications use its vendor.
+        // Legacy publications keep their original route spelling.
+        let provider = if connection.is_some() {
+            match provider.as_str() {
+                "openai-codex" => "openai",
+                "xai-oauth" => "xai",
+                "minimax-oauth" => "minimax",
+                provider => provider,
+            }
+            .to_owned()
+        } else {
+            provider
+        };
+        (Some(provider), connection)
     } else if agent == "pi" {
-        super::pi::session_provider(session_id)
+        (super::pi::session_provider(session_id), None)
     } else {
-        None
+        (None, None)
     };
     let profile = codex
         .as_ref()
         .and_then(|(_, _, profile)| profile.as_deref());
-    resolve(agent, &env, provider.as_deref(), profile)
-        .ok_or_else(|| "no subscription for this agent environment".into())
+    let mut key = resolve(agent, &env, provider.as_deref(), profile)
+        .ok_or("no subscription for this agent environment")?;
+    key.connection = connection;
+    Ok(key)
+}
+
+#[cfg(all(test, unix))]
+mod ego_account_tests {
+    use super::*;
+
+    // Catches: a live named account reuses another account's or legacy quota key.
+    #[test]
+    fn ego_selected_accounts_do_not_share_vendor_quota_binding() {
+        let home = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
+        let session = "0198c7f4-9c1f-7a2b-8c3d-4e5f60718293";
+        let directory = home.path().join("sessions").join(session);
+        std::fs::create_dir_all(&directory).unwrap();
+        let mut child = std::process::Command::new("/bin/sh")
+            .args(["-c", "read -r line"])
+            .env("EGO_HOME", home.path())
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        // The shell blocks on its owned stdin; no timing sleeps or live ego data.
+        let pid = child.id();
+        let lease = directory.join("lease");
+        std::fs::write(&lease, format!("{{\"pid\":{pid},\"heartbeat\":1}}")).unwrap();
+        let lease = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(lease)
+            .unwrap();
+        lease.lock().unwrap();
+        let read = |connection: Option<&str>, model: &str| {
+            std::fs::write(
+                directory.join("manifest.json"),
+                serde_json::json!({"model": model, "connection": connection}).to_string(),
+            )
+            .unwrap();
+            agent_key("quota-account-test", "ego", Some(pid)).unwrap()
+        };
+        let account_a = read(Some("account_a"), "anthropic/example");
+        let account_b = read(Some("account_b"), "anthropic/example");
+        let legacy = read(None, "anthropic/example");
+        // ego's manifest uses a model route, but named quota publishes the vendor.
+        // Catches: named OAuth routes cannot match their vendor-keyed usage observations.
+        let routes: Vec<_> = [
+            ("openai-codex", "openai"),
+            ("xai-oauth", "xai"),
+            ("minimax-oauth", "minimax"),
+        ]
+        .into_iter()
+        .map(|(route, vendor)| {
+            let model = format!("{route}/example");
+            (
+                route,
+                vendor,
+                read(Some("account_b"), &model),
+                read(None, &model),
+            )
+        })
+        .collect();
+        drop(child.stdin.take());
+        child.wait().unwrap();
+        assert_ne!(account_a, account_b, "same-vendor accounts share quota");
+        assert_ne!(account_b, legacy, "named account can read legacy quota");
+        assert_eq!(
+            account_b.provider, "anthropic",
+            "vendor remains display identity"
+        );
+        for (route, vendor, named, legacy) in routes {
+            assert_eq!(
+                named.provider, vendor,
+                "named {route} must match vendor quota"
+            );
+            assert_eq!(
+                legacy.provider, route,
+                "legacy route identity must stay unchanged"
+            );
+        }
+    }
 }
 
 /// Agents `resolve` can bind; a failure of any other agent is not news.

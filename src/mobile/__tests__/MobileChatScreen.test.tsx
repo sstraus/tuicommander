@@ -32,6 +32,8 @@ function chat() {
 		],
 		busy: () => false,
 		queuedPrompts: () => [] as { turnId: string; summary: string }[],
+		sendingPrompts: () => [],
+		retrySending: vi.fn(),
 		held: () => false,
 		gap: () => null,
 		error: () => null,

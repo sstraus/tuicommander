@@ -355,3 +355,6 @@ async fn restarted_owner_resumes_the_run_without_repeating_a_committed_effect() 
         .count();
     assert_eq!(delivers, 1);
 }
+
+#[path = "delivery_regression_tests.rs"]
+mod delivery_regression_tests;
