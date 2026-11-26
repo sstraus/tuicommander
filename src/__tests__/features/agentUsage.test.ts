@@ -242,6 +242,15 @@ it("claude_extra_usage_is_not_a_monthly_limit", () => {
 	expect(formatAgentUsage(snap({ detail: claudeExtraUsage }), NOW)).toBeNull();
 });
 
+// Catches: an unknown account-wide billing period disappears, while model-only
+// limits must not masquerade as account usage and missing quota stays unknown.
+it("unknown_account_period_is_visible_without_invented_duration", () => {
+	const other = { kind: "other", label: "usage", used_percent: 26, resets_at: null, window_seconds: null, model: null };
+	expect(formatAgentUsage(snap({ windows: [other] }), NOW)).toEqual({ text: "usage: 26%", priority: 10 });
+	expect(formatAgentUsage(snap({ windows: [{ ...other, model: "model-only" }] }), NOW)).toBeNull();
+	expect(formatAgentUsage(snap({ windows: [] }), NOW)).toBeNull();
+});
+
 // Catches: reset time dropped from the text (regression of d4529cc706), weekly shown when absent,
 // monthly remaining not shown, and segments other than weekly/monthly leaking into the badge.
 it.each([

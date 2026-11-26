@@ -26,6 +26,15 @@ Verification check names come only from published constant `request` bindings on
 host. Dynamic check requests and names supplied only in start inputs are refused.
 After restart, volatile native bindings require trusted backend rebind; no caller
 metadata or grant registry is migrated into the run database.
+A scheduled or GitHub source rebinds its own running runs from the retained
+closure once per admission, before its first (non-superseding) pass. A run that
+cannot be rebound is logged (`source=workflows`, run id) and stays unbound; it
+does not block other runs or any admission of the project. The next admission
+retries it. The same holds when a
+pending intent waits behind an active run that cannot be read or cancelled: the
+intent is logged and skipped, and the other intents of the project still start.
+An unavailable host, or a failed read of the trigger store list (active runs or
+pending intents), still fails the pass.
 
 Authenticated Owner may answer any bound native run. Agent may answer only its
 own run with both captured and current Operator authority. The ledger still
@@ -210,7 +219,10 @@ existing rows are not migrated. Focused runtime validation passed, including
 corrupt-history isolation, contract-read error recovery, nested collection/subflow
 execution and refused SQLite-write retry. This internal integration does **not**
 enable a public neutral start or operational cutover. Preparation is not admission or a dispatch permit. A persisted dispatch
-claim is never automatically invoked again after restart. Full effect correlation,
+claim is never automatically invoked again after restart. The only exception is an
+operator answer: a read-only script whose output was lost asks "run again or
+abandon" and, when approved, dispatches the same effect key once more (see
+`workflow-script-interface.md`). Full effect correlation,
 approval, uncertainty resolution and native stop/resource observation belong to
 005; real native service adapters and freshness evidence remain required by 008.
 

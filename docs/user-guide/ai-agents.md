@@ -2,6 +2,10 @@
 
 TUICommander detects, monitors, and manages AI coding agents running in your terminals.
 
+On macOS, if an update removes a running agent's executable, detection falls back
+to its current OS process name. A recognized agent name keeps normal input
+readiness checks; TUIC does not trust a stale agent identity or bypass a dialog.
+
 Aider is no longer an agent harness. An `aider` command runs as a plain terminal command. Old settings remain readable, but Aider profiles are excluded from agent pickers and managed peer launches.
 
 ## Supported Agents

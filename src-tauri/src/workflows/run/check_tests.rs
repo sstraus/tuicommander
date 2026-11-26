@@ -163,3 +163,32 @@ fn assert_check_tree_stops(cancel: bool) {
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
 }
+
+// Catches: a rerun starting while the original attempt's process group survived a TUIC
+// kill (the group has its own id), or an unreadable or stale record blocking a rerun
+// forever. A live group refuses; a gone group and an absent record both prove it gone.
+#[cfg(unix)]
+#[test]
+fn original_process_gone_refuses_a_surviving_group_and_accepts_a_gone_one() {
+    use std::os::unix::process::CommandExt;
+    let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let db = dir.path().join("runs.sqlite3");
+    assert_eq!(original_process_gone(&db, "run:script:abc"), Ok(()));
+    let mut child = std::process::Command::new("sleep")
+        .arg("30")
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let record = dir.path().join("runs.processes").join("run_script_abc");
+    std::fs::create_dir_all(record.parent().unwrap()).unwrap();
+    std::fs::write(&record, child.id().to_string()).unwrap();
+    let refused = original_process_gone(&db, "run:script:abc").unwrap_err();
+    assert!(refused.contains("may still be running"), "{refused}");
+    assert!(record.exists(), "a refused proof keeps the record");
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert_eq!(original_process_gone(&db, "run:script:abc"), Ok(()));
+    assert!(!record.exists(), "a proven-gone group drops its record");
+    std::fs::write(&record, "not a pid").unwrap();
+    assert!(original_process_gone(&db, "run:script:abc").is_err());
+}

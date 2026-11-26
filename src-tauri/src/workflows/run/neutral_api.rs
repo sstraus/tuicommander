@@ -25,7 +25,7 @@ fn inspect(
 ) -> Result<Value, String> {
     let (snapshot, events) = store.neutral_inspection(id, after, limit)?;
     if snapshot.run.request.publication.project != project {
-        return Err("neutral run does not belong to project".into());
+        return Err(crate::workflows::neutral_api::refusal::RUN_FOREIGN_PROJECT.into());
     }
     Ok(json!({"snapshot":snapshot,"events":events}))
 }
@@ -146,7 +146,7 @@ fn start_request(
     caller: Option<super::NativeCaller>,
 ) -> Result<NeutralReply, String> {
     if request.publication.project != project {
-        return Err("neutral publication does not belong to project".into());
+        return Err(crate::workflows::neutral_api::refusal::PUBLICATION_FOREIGN_PROJECT.into());
     }
     let owner = state.workflow_runtime.neutral_owner()?;
     let _start = owner.neutral_start_lock.lock();
@@ -201,7 +201,7 @@ fn start_request(
 
 fn delivery_prefix(story: &str) -> Result<String, String> {
     if story.is_empty() || story.contains(':') {
-        return Err("story id must be nonempty and contain no ':'".into());
+        return Err(crate::workflows::neutral_api::refusal::STORY_ID_INVALID.into());
     }
     Ok(format!("{}{story}:", super::plan_delivery::RUN_PREFIX))
 }
@@ -217,7 +217,7 @@ fn start_delivery(
     caller: Option<super::NativeCaller>,
 ) -> Result<NeutralReply, String> {
     if key.is_empty() || key.len() > 200 {
-        return Err("delivery key must be nonempty and at most 200 bytes".into());
+        return Err(crate::workflows::neutral_api::refusal::DELIVERY_KEY_INVALID.into());
     }
     let request_id = format!("{}{key}", delivery_prefix(story)?);
     let owner = state.workflow_runtime.neutral_owner()?;
@@ -307,7 +307,7 @@ fn command(
 ) -> Result<NeutralReply, String> {
     let owner = state.workflow_runtime.neutral_owner()?;
     if owner.store.neutral_run(id)?.request.publication.project != project {
-        return Err("neutral run does not belong to project".into());
+        return Err(crate::workflows::neutral_api::refusal::RUN_FOREIGN_PROJECT.into());
     }
     let receipt = owner.neutral_command(id, command_id, sequence, command)?;
     state.workflow_runtime.wake(id);

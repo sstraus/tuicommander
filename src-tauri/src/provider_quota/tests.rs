@@ -230,7 +230,8 @@ async fn contract_error_hides_the_stale_value() {
     assert!(matches!(view.state, QuotaState::ContractError { .. }));
 }
 
-/// Catches: a weekly window shown as five-hour because a provider calls it "primary".
+/// Catches: a weekly window shown as five-hour because a provider calls it "primary",
+/// or a durationless percentage mislabeled as a credit quantity.
 /// Codex reported its 10080-minute window as `primary` on 2026-11-12.
 #[test]
 fn windows_are_classified_by_duration_not_field_name() {
@@ -249,10 +250,10 @@ fn windows_are_classified_by_duration_not_field_name() {
     ] {
         assert_eq!(classify(Some(seconds)), kind, "{seconds} s");
     }
-    let credits = QuotaWindow::from_duration(26.0, None, None, None).unwrap();
+    let usage = QuotaWindow::from_duration(26.0, None, None, None).unwrap();
     assert_eq!(
-        (credits.kind, credits.label.as_str()),
-        (WindowKind::Other, "credits")
+        (usage.kind, usage.label.as_str()),
+        (WindowKind::Other, "usage")
     );
     assert!(QuotaWindow::from_duration(f64::NAN, Some(18_000), None, None).is_none());
 }

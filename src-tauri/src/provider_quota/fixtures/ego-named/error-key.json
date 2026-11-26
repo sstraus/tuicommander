@@ -1,0 +1,1 @@
+{"rate_limits":[],"errors":[{"provider":"anthropic","connection":"key","state":"unavailable","message":"subscription usage requires an OAuth connection; this connection uses an API-key environment source","retry_at":null}]}

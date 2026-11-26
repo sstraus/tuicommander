@@ -46,7 +46,7 @@ impl BackendStatus {
                 "Native override"
             } else {
                 // Shown to every user in the panel header: product terms only.
-                "Plans and stories are stored in TUICommander. Create a plan to begin."
+                "Plans and stories are stored in TUICommander."
             }
             .into(),
             availability: "available".into(),

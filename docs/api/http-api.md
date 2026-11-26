@@ -4112,6 +4112,23 @@ constant verification requests select installed check names; start JSON does not
 
 `POST /workflows/neutral/action?path=<project>` accepts the same `NeutralAction` as desktop IPC; the JSON body is the action itself. Local/authenticated guard, closed request fields, snake_case `{type,value}` replies, cursor-based inspection and lifecycle SSE are shared. See [neutral transport](../backend/workflows.md#neutral-workflow-transport-015).
 
+Status codes of `POST /workflows/neutral/action`. The error body is always `{"error": "<text>"}`, and MCP returns the same text:
+
+| Code | Meaning | Examples |
+|------|---------|----------|
+| 400 | The request is malformed | relative project path, invalid event cursor or limit, empty draft name, oversized draft, invalid story id or delivery key |
+| 403 | The caller may not act on the object | run or publication of another project, approval without owner or bound Operator authority, trigger replay without owner authority |
+| 404 | The named object does not exist | unknown publication, draft, preset or run id; unavailable native caller/run binding |
+| 409 | The current state refuses the request | approval that is expired, stale or already answered, operator answer that differs from the exact current wait/sequence/reason, stale draft revision or operation version, changed run sequence, reused command or request identity, run already ended |
+| 500 | A fault or an unclassified legacy refusal | store, decode or host failure; see the limitations below |
+
+An `answer` or `operator_answer` for an unknown run returns 404 even when
+native caller binding rejects it before a run lookup. A stale `operator_answer`
+returns 409, including a moved sequence or a wait that is no longer current.
+An answer with an unknown effect key still returns 500 because its error text
+also describes an internal callback identity fault. Status mapping does not
+change the error text returned by HTTP, IPC or MCP.
+
 ### Scheduled neutral bindings
 
 The existing neutral action accepts trigger source `scheduled` with `kind: "schedule"`,
@@ -4126,7 +4143,7 @@ See [trigger admission](../backend/workflow-trigger-admission.md#scheduled-neutr
 
 - `GET /provider-quotas` returns the current registry views without a network read.
 - `GET /sessions/{session_id}/quota-binding` returns the subscription key for the session, or `null`.
-- `POST /provider-quotas/refresh` accepts `{ "key": { "owner": "…", "provider": "…", "credential": "…" } }` and returns the updated view. The registry limits forced refresh to once per minute per key; an early request returns an error with the retry time.
+- `POST /provider-quotas/refresh` accepts `{ "key": { "owner": "…", "provider": "…", "credential": "…" } }` and returns the updated view. An ego named-account key also includes `"connection": "<stable account ID>"`; `provider` stays the vendor. Missing/null connection identifies a legacy credential. Preserve this field in refresh requests and cache keys, as in binding and quota events. The registry limits forced refresh to once per minute per key; an early request returns an error with the retry time.
 - Each quota view includes `session_ids`, the initial client binding inventory for its key.
 - `/events` publishes `provider-quota-changed` with the changed view as its payload. Desktop clients receive the same payload through the Tauri event.
 - `/events` also publishes `provider-quota-binding-changed` with `{session_id, key}` when a binding changes. A null key retracts the binding. Desktop clients receive the same event. Clients subscribe before reading initial session bindings so a late read cannot overwrite a newer event.

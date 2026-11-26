@@ -71,6 +71,13 @@ pub(crate) struct NeutralEffect {
     pub tool: Option<ModelToolCall>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_session: Option<ModelSession>,
+    /// Operator-approved dispatches after the first, under the same effect key.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub reruns: u32,
+}
+
+fn is_zero(value: &u32) -> bool {
+    *value == 0
 }
 
 impl NeutralEffect {
@@ -111,6 +118,7 @@ impl NeutralEffect {
             observation: None,
             tool: None,
             model_session: None,
+            reruns: 0,
         })
     }
 
@@ -133,6 +141,27 @@ impl NeutralEffect {
                 stopped: true
             })
         )
+    }
+
+    /// A read-only script whose output is lost has nothing to roll back, so the
+    /// operator may run the original again. Any mutating effect keeps its
+    /// uncertainty and its reconciliation procedure.
+    pub fn rerun_candidate(&self) -> bool {
+        self.tool.is_none()
+            && self.dispatched
+            && !self.preparation.mutation
+            && !self.cancel_started
+            && matches!(
+                self.invocation.descriptor.target,
+                Some(crate::workflows::catalog::ReusableTarget::Script { .. })
+            )
+            && matches!(
+                &self.observation,
+                Some(EffectObservation {
+                    outcome: EffectOutcome::Uncertain { .. },
+                    ..
+                })
+            )
     }
 
     pub fn approved(&self) -> bool {
@@ -231,6 +260,10 @@ pub(crate) enum EffectDecision {
 }
 
 impl NeutralExecution {
+    // DEFERRED (2026-11-15) — an Answer naming an unknown effect key still answers
+    // HTTP 500 (3076-306f review follow-up). This text is shared with an internal
+    // callback identity mismatch, which is a fault, so it is not classified as a
+    // 404 by text alone; telling the two apart needs a typed error here.
     pub(super) fn effect(&self, key: &EffectKey) -> Result<&NeutralEffect, String> {
         self.effects
             .get(&key.digest)
@@ -559,7 +592,7 @@ impl NeutralExecution {
             }
             EffectCommand::Question { key, question } => {
                 let effect = self.effect(key)?;
-                if effect.dispatched
+                if (effect.dispatched && !effect.rerun_candidate())
                     || effect.answer == Some(false)
                     || !self.effect_attempt_pending(key)
                 {
@@ -632,17 +665,22 @@ impl NeutralExecution {
                     || at_ms >= question.deadline_ms
                     || question.revision != *revision
                     || effect.answer.is_some()
-                    || effect.dispatched
+                    || (effect.dispatched && !effect.rerun_candidate())
                 {
-                    return Err("neutral approval is expired, stale or already answered".into());
+                    return Err(crate::workflows::neutral_api::refusal::APPROVAL_STALE.into());
                 }
                 let result = if *approved {
                     None
                 } else {
+                    let diagnostic = if effect.dispatched || effect.reruns > 0 {
+                        "script output was lost and the operator abandoned the activity"
+                    } else {
+                        "neutral effect approval declined"
+                    };
                     self.callback_decision(
                         key,
                         &NeutralResult::Failed {
-                            diagnostic: "neutral effect approval declined".into(),
+                            diagnostic: diagnostic.into(),
                         },
                         at_ms,
                     )?
@@ -746,6 +784,16 @@ impl NeutralExecution {
                     .ok_or("neutral effect unavailable")?;
                 effect.answer = Some(*approved);
                 effect.answer_receipt = receipt.clone();
+                // Approval of a lost read-only script re-opens the original
+                // dispatch; the same key and the same retained invocation run again.
+                let rerun = *approved && effect.dispatched;
+                if rerun {
+                    effect.dispatched = false;
+                    effect.observation = None;
+                    effect.handle = None;
+                    effect.reruns += 1;
+                    self.attempt_mut(&key.fence)?.dispatched = false;
+                }
                 if let Some(result) = result {
                     self.apply(result)?;
                 }

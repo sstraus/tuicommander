@@ -6,6 +6,7 @@ export interface SubscriptionKey {
 	provider: string;
 	credential: string;
 	profile?: string | null;
+	connection?: string | null;
 }
 export interface QuotaWindow {
 	kind: string;
@@ -36,7 +37,8 @@ interface BindingChange {
 	session_id: string;
 	key: SubscriptionKey | null;
 }
-const keyId = (key: SubscriptionKey) => JSON.stringify([key.owner, key.provider, key.credential, key.profile ?? null]);
+const keyId = (key: SubscriptionKey) =>
+	JSON.stringify([key.owner, key.provider, key.credential, key.profile ?? null, key.connection ?? null]);
 const [views, setViews] = createSignal<Record<string, QuotaView>>({});
 const [bindings, setBindings] = createSignal<Record<string, SubscriptionKey | null>>({});
 let unlisten: (() => void)[] = [];

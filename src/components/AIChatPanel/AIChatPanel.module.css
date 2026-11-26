@@ -863,6 +863,7 @@
 .queueList {
   display: flex;
   flex: 0 0 100%;
+  min-width: 0;
   box-sizing: border-box;
   flex-direction: column;
   gap: 4px;
@@ -1135,6 +1136,14 @@
 
 .noticeAction {
   margin-top: 8px;
+}
+
+.noticeDetails > summary {
+  cursor: pointer;
+}
+
+.noticeDetails[open] > summary {
+  margin-bottom: 4px;
 }
 
 

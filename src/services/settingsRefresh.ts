@@ -110,6 +110,11 @@ export function createSettingsRefreshCoordinator(subscribe?: typeof subscribeEve
 	}
 
 	return {
+		/** Route legacy notices through the same coalescing and stale-read fence. */
+		invalidate(section: string, connectionId?: string): void {
+			for (const reader of readers)
+				if (reader.owner === connectionId && reader.section === section) reader.invalidate();
+		},
 		register<T>(reader: Reader<T>): () => void {
 			let disposed = false;
 			let sequence = 0;

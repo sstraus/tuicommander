@@ -141,7 +141,7 @@ impl WorkflowStore {
             params![project, id.namespace, id.name], |row| row.get(0),
         ).map_err(|e| format!("read reusable operation version: {e}"))?;
         if current != expected_version {
-            return Err("stale reusable operation version".into());
+            return Err(crate::workflows::neutral_api::refusal::OPERATION_VERSION_STALE.into());
         }
         let document = serde_json::to_string(&record)
             .map_err(|e| format!("encode reusable operation: {e}"))?;

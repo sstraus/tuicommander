@@ -444,6 +444,12 @@ impl ForegroundIdentityProbe {
         Self::spawn(state, sid, "bash", role, true, true)
     }
 
+    /// Model an updater removing the running image without ending its process.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn unlink_executable(&self, name: &str) {
+        std::fs::remove_file(self._scratch.path().join(name)).unwrap();
+    }
+
     /// Attach the production reader so normal EOF, rather than a manually
     /// injected lifecycle event, removes the probe's live process and identity.
     pub(crate) fn start_reader(&self) {
