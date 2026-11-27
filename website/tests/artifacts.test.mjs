@@ -36,7 +36,9 @@ test('website build retains area pages, published posts, shared markup and local
       assert.ok(existsSync(resolve(root, 'website/dist', `.${match[1]}`)), `${page}: ${match[1]}`);
     }
   }
-  assert.match(read('website/dist/2.0.html'), /\/video\/tuicommander-2\.0\.mp4/);
+  // Catch the home film reverting to the 2.0 cut or replacing the chaptered 2.0 film.
+  assert.match(read('website/dist/index.html'), /<source src="https:\/\/dl\.straus\.it\/tuicommander\/tuicommander-2\.1-home\.mp4" type="video\/mp4"/);
+  assert.match(read('website/dist/2.0.html'), /<source src="\/video\/tuicommander-2\.0\.mp4" type="video\/mp4"/);
   assert.match(read('website/dist/download.html'), /data-download="macos"/);
   assert.match(read('website/dist/download.html'), /data-download="windows"/);
   assert.match(read('website/dist/download.html'), /data-download="linux"/);
