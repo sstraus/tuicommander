@@ -17941,9 +17941,8 @@ pub fn detect_orphan_worktrees_blocking(repo_path: String) -> Result<Vec<String>
         .map_err(|e| format!("git worktree list failed: {e}"))?;
     let mut default_branch = None;
     let mut orphans = Vec::new();
-    let temp_roots = tuic_core::temp_paths::recognized_temp_roots();
     for path in parse_orphan_worktrees(&out.stdout) {
-        if tuic_core::temp_paths::is_under_temp_roots(Path::new(&path), &temp_roots) {
+        if tuic_core::temp_paths::is_temporary_path(Path::new(&path)) {
             continue;
         }
         // Detached describes HEAD, not branch lifetime. A non-default branch
