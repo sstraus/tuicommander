@@ -358,15 +358,16 @@ jobs:
           TAG="v${VERSION}"
 
           # Extract changelog section for this version
-          mkdir -p .tmp/tuic-tests
-          awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found" CHANGELOG.md > .tmp/tuic-tests/changelog-section.md
+          SCRATCH="${RUNNER_TEMP}/tuic-tests"
+          mkdir -p "${SCRATCH}"
+          awk "/^## \[${VERSION}\]/{found=1; next} /^## \[/{if(found) exit} found" CHANGELOG.md > "${SCRATCH}/changelog-section.md"
 
           # Build release body: changelog + download legend
           {
             echo "## What's Changed"
             echo ""
-            if [ -s .tmp/tuic-tests/changelog-section.md ]; then
-              cat .tmp/tuic-tests/changelog-section.md
+            if [ -s "${SCRATCH}/changelog-section.md" ]; then
+              cat "${SCRATCH}/changelog-section.md"
             else
               echo "See [CHANGELOG.md](https://github.com/sstraus/tuicommander/blob/main/CHANGELOG.md) for details."
             fi
@@ -423,15 +424,15 @@ jobs:
           irm https://tuicommander.com/install.ps1 | iex
           ```
           FOOTER
-          } > .tmp/tuic-tests/release-body.md
+          } > "${SCRATCH}/release-body.md"
 
           # GitHub rejects bodies over 125000 characters. A byte budget is stricter
           # for UTF-8; reserve the complete download footer and full-changelog link.
-          python3 - "${TAG}" <<'PY'
+          python3 - "${TAG}" "${SCRATCH}/release-body.md" <<'PY'
           from pathlib import Path
           import sys
 
-          path = Path(".tmp/tuic-tests/release-body.md")
+          path = Path(sys.argv[2])
           body = path.read_bytes()
           if len(body) > 120000:
               notes, separator, footer = body.rpartition("\n---\n\n📦 **Downloads**".encode("utf-8"))
@@ -450,7 +451,7 @@ jobs:
           eval "$(bash scripts/release-flags.sh "${VERSION}")"
           latest_flag=()
           [[ "${latest}" == false ]] && latest_flag=(--latest=false)
-          gh release edit "${TAG}" --notes-file .tmp/tuic-tests/release-body.md --draft=false \
+          gh release edit "${TAG}" --notes-file "${SCRATCH}/release-body.md" --draft=false \
             --prerelease="${prerelease}" "${latest_flag[@]}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"

@@ -1,5 +1,6 @@
 """Execute release-note generation without publishing. Optional argument: git ref."""
 
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -31,16 +32,25 @@ def build_body(workflow, changelog):
     )[0])
     # Stop before the publication boundary: never invoke gh, even in a test.
     script = script.split('# A stable release leaves "latest"', 1)[0]
-    scratch = ROOT / ".tmp/tuic-tests"
-    scratch.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=scratch) as directory:
+    # The workflow writes its scratch under RUNNER_TEMP; give it a throwaway one
+    # inside the OS temp dir so nothing lands in the checkout.
+    with tempfile.TemporaryDirectory() as directory:
         work = Path(directory)
+        runner_temp = work / "runner-temp"
+        runner_temp.mkdir()
         (work / "src-tauri").mkdir()
         (work / "src-tauri/tauri.conf.json").write_text('{"version":"' + VERSION + '"}')
         (work / "CHANGELOG.md").write_text(changelog)
         subprocess.run(["bash", "-e", "-o", "pipefail", "-c", script], cwd=work,
-                       check=True, capture_output=True, text=True)
-        return (work / ".tmp/tuic-tests/release-body.md").read_bytes()
+                       check=True, capture_output=True, text=True,
+                       env={**os.environ, "RUNNER_TEMP": str(runner_temp)})
+        body = runner_temp / "tuic-tests/release-body.md"
+        if not body.exists():
+            # Workflows from before the RUNNER_TEMP move (the optional git-ref
+            # mode) wrote under the working directory's .tmp. That directory is
+            # the throwaway one above, so the checkout is still untouched.
+            body = work / ".tmp/tuic-tests/release-body.md"
+        return body.read_bytes()
 
 
 class ReleaseBodyContracts(unittest.TestCase):
